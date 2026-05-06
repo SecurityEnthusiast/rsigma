@@ -50,6 +50,11 @@ enum Commands {
         /// Processing pipeline(s) to apply. Accepts builtin names (ecs_windows, sysmon) or YAML file paths
         #[arg(short = 'p', long = "pipeline")]
         pipelines: Vec<PathBuf>,
+
+        /// Also resolve dynamic pipeline sources during validation.
+        /// Sources must be reachable (file/command/HTTP) for validation to pass.
+        #[arg(long = "resolve-sources")]
+        resolve_sources: bool,
     },
 
     /// Parse a condition expression and print the AST
@@ -635,7 +640,8 @@ fn main() {
             path,
             verbose,
             pipelines,
-        } => commands::cmd_validate(path, verbose, pipelines),
+            resolve_sources,
+        } => commands::cmd_validate(path, verbose, pipelines, resolve_sources),
         Commands::Lint {
             path,
             schema,
