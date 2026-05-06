@@ -451,6 +451,25 @@ enum Commands {
         target: String,
     },
 
+    /// Resolve dynamic pipeline sources and display their data
+    ///
+    /// Test source resolution without running the daemon. Resolves all
+    /// dynamic sources declared in the given pipeline(s) and prints
+    /// the resulting data as JSON.
+    Resolve {
+        /// Processing pipeline(s) containing dynamic sources
+        #[arg(short = 'p', long = "pipeline", required = true)]
+        pipelines: Vec<PathBuf>,
+
+        /// Resolve only a specific source by ID
+        #[arg(short, long)]
+        source: Option<String>,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+    },
+
     /// List all fields referenced by Sigma rules
     ///
     /// Extracts field names from detection blocks, correlation group-by/condition
@@ -707,6 +726,11 @@ fn main() {
             no_filters,
             json,
         } => commands::cmd_fields(rules, pipelines, no_filters, json),
+        Commands::Resolve {
+            pipelines,
+            source,
+            pretty,
+        } => commands::cmd_resolve(pipelines, source, pretty),
     }
 }
 
