@@ -1049,10 +1049,64 @@ struct StatusResponse {
     detection_matches: u64,
     correlation_matches: u64,
     uptime_seconds: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dynamic_sources: Option<DynamicSourcesSummary>,
+}
+
+#[derive(Serialize)]
+struct DynamicSourcesSummary {
+    total: usize,
+    resolves_total: u64,
+    errors_total: u64,
+    cache_hits: u64,
 }
 
 async fn status(State(state): State<AppState>) -> impl IntoResponse {
     let stats = state.processor.stats();
+
+    let dynamic_sources = state.source_resolver.as_ref().map(|_| {
+        use prometheus::core::Collector;
+        let resolves: u64 = state
+            .metrics
+            .source_resolves_total
+            .collect()
+            .first()
+            .map(|mf| {
+                mf.get_metric()
+                    .iter()
+                    .map(|m| m.get_counter().get_value() as u64)
+                    .sum()
+            })
+            .unwrap_or(0);
+        let errors: u64 = state
+            .metrics
+            .source_resolve_errors
+            .collect()
+            .first()
+            .map(|mf| {
+                mf.get_metric()
+                    .iter()
+                    .map(|m| m.get_counter().get_value() as u64)
+                    .sum()
+            })
+            .unwrap_or(0);
+        let cache_hits = state.metrics.source_cache_hits.get();
+        let total = state
+            .metrics
+            .source_last_resolved
+            .collect()
+            .first()
+            .map(|mf| mf.get_metric().len())
+            .unwrap_or(0);
+
+        DynamicSourcesSummary {
+            total,
+            resolves_total: resolves,
+            errors_total: errors,
+            cache_hits,
+        }
+    });
+
     let resp = StatusResponse {
         status: if state.health.is_ready() {
             "running".to_string()
@@ -1066,6 +1120,7 @@ async fn status(State(state): State<AppState>) -> impl IntoResponse {
         detection_matches: state.metrics.detection_matches.get(),
         correlation_matches: state.metrics.correlation_matches.get(),
         uptime_seconds: state.start_time.elapsed().as_secs_f64(),
+        dynamic_sources,
     };
     Json(resp)
 }
