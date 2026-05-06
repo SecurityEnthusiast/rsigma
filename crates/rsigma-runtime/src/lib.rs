@@ -49,6 +49,7 @@ pub mod io;
 pub mod metrics;
 pub mod parse;
 pub mod processor;
+pub mod sources;
 
 pub use engine::{EngineStats, RuntimeEngine};
 pub use error::RuntimeError;
@@ -60,6 +61,11 @@ pub use metrics::{MetricsHook, NoopMetrics};
 pub use processor::{EventFilter, LogProcessor};
 
 pub use rsigma_eval::ProcessResult;
+pub use sources::refresh::{RefreshResult, RefreshScheduler, RefreshTrigger};
+pub use sources::{
+    DefaultSourceResolver, ResolvedValue, SourceCache, SourceError, SourceErrorKind,
+    SourceResolver, TemplateExpander,
+};
 
 #[cfg(feature = "nats")]
 pub use io::{NatsConnectConfig, NatsSink, NatsSource, ReplayPolicy};

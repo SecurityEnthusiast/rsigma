@@ -53,6 +53,8 @@ struct AppState {
     start_time: Instant,
     /// Channel for HTTP event ingestion. Set when --input is http.
     event_tx: Option<mpsc::Sender<RawEvent>>,
+    /// Channel for on-demand source resolution triggers.
+    sources_trigger_tx: Option<mpsc::Sender<rsigma_runtime::sources::refresh::RefreshTrigger>>,
     /// Channel for OTLP event ingestion. Always set when daemon-otlp is compiled in.
     #[cfg(feature = "daemon-otlp")]
     otlp_event_tx: mpsc::Sender<RawEvent>,
@@ -108,17 +110,36 @@ pub async fn run_daemon(config: DaemonConfig) {
     );
     engine.set_pipeline_paths(config.pipeline_paths.clone());
 
-    for pipeline in &config.pipelines {
-        if pipeline.is_dynamic() {
-            for source in &pipeline.sources {
-                tracing::warn!(
-                    pipeline = %pipeline.name,
-                    source_id = %source.id,
-                    refresh = ?source.refresh,
-                    required = source.required,
-                    "Dynamic source detected -- source resolution not yet supported"
-                );
-            }
+    // Set up dynamic source resolver if any pipeline has dynamic sources
+    let has_dynamic = config.pipelines.iter().any(|p| p.is_dynamic());
+    let mut sources_trigger_tx_val: Option<
+        mpsc::Sender<rsigma_runtime::sources::refresh::RefreshTrigger>,
+    > = None;
+
+    if has_dynamic {
+        let resolver: Arc<dyn rsigma_runtime::sources::SourceResolver> = Arc::new(
+            super::instrumented_resolver::InstrumentedResolver::new(metrics.clone()),
+        );
+        engine.set_source_resolver(resolver.clone());
+
+        // Resolve dynamic sources at startup (blocks on required sources)
+        if let Err(e) = engine.resolve_dynamic_pipelines().await {
+            tracing::error!(error = %e, "Failed to resolve required dynamic sources at startup");
+            std::process::exit(crate::exit_code::CONFIG_ERROR);
+        }
+
+        // Collect all dynamic sources for the refresh scheduler
+        let all_sources: Vec<_> = config
+            .pipelines
+            .iter()
+            .filter(|p| p.is_dynamic())
+            .flat_map(|p| p.sources.iter().cloned())
+            .collect();
+
+        if !all_sources.is_empty() {
+            let scheduler = rsigma_runtime::sources::refresh::RefreshScheduler::new();
+            sources_trigger_tx_val = Some(scheduler.trigger_sender());
+            scheduler.run(all_sources, resolver);
         }
     }
 
@@ -232,6 +253,7 @@ pub async fn run_daemon(config: DaemonConfig) {
         reload_tx: reload_tx.clone(),
         start_time,
         event_tx: http_event_tx,
+        sources_trigger_tx: sources_trigger_tx_val,
         #[cfg(feature = "daemon-otlp")]
         otlp_event_tx,
     };
@@ -243,7 +265,13 @@ pub async fn run_daemon(config: DaemonConfig) {
         .route("/api/v1/rules", get(list_rules))
         .route("/api/v1/status", get(status))
         .route("/api/v1/reload", post(trigger_reload))
-        .route("/api/v1/events", post(ingest_events));
+        .route("/api/v1/events", post(ingest_events))
+        .route("/api/v1/sources", get(list_sources))
+        .route("/api/v1/sources/resolve", post(resolve_sources))
+        .route(
+            "/api/v1/sources/resolve/{source_id}",
+            post(resolve_source_by_id),
+        );
 
     #[cfg(feature = "daemon-otlp")]
     let app = app.route("/v1/logs", post(otlp_http_logs));
@@ -995,6 +1023,74 @@ async fn trigger_reload(State(state): State<AppState>) -> impl IntoResponse {
         Err(_) => (
             StatusCode::TOO_MANY_REQUESTS,
             Json(serde_json::json!({ "status": "reload_already_pending" })),
+        ),
+    }
+}
+
+async fn list_sources(State(state): State<AppState>) -> impl IntoResponse {
+    let snapshot = state.processor.engine_snapshot();
+    let guard = snapshot.lock();
+    let pipelines = guard.pipelines();
+
+    let mut sources_info = Vec::new();
+    for pipeline in pipelines {
+        for source in &pipeline.sources {
+            sources_info.push(serde_json::json!({
+                "source_id": source.id,
+                "pipeline": pipeline.name,
+                "type": format!("{:?}", source.source_type).split('{').next().unwrap_or("Unknown").trim(),
+                "refresh": format!("{:?}", source.refresh),
+                "required": source.required,
+            }));
+        }
+    }
+
+    Json(serde_json::json!({ "sources": sources_info }))
+}
+
+async fn resolve_sources(State(state): State<AppState>) -> impl IntoResponse {
+    use rsigma_runtime::sources::refresh::RefreshTrigger;
+
+    let Some(tx) = &state.sources_trigger_tx else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "no dynamic sources configured" })),
+        );
+    };
+
+    match tx.try_send(RefreshTrigger::All) {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "status": "resolve_triggered" })),
+        ),
+        Err(_) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({ "status": "resolve_already_pending" })),
+        ),
+    }
+}
+
+async fn resolve_source_by_id(
+    State(state): State<AppState>,
+    axum::extract::Path(source_id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    use rsigma_runtime::sources::refresh::RefreshTrigger;
+
+    let Some(tx) = &state.sources_trigger_tx else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "no dynamic sources configured" })),
+        );
+    };
+
+    match tx.try_send(RefreshTrigger::Single(source_id.clone())) {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "status": "resolve_triggered", "source_id": source_id })),
+        ),
+        Err(_) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({ "status": "resolve_already_pending" })),
         ),
     }
 }

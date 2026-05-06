@@ -26,6 +26,10 @@ pub struct Metrics {
     pub dlq_events: IntCounter,
     pub detection_matches_by_rule: IntCounterVec,
     pub correlation_matches_by_rule: IntCounterVec,
+    pub source_resolves_total: IntCounterVec,
+    pub source_resolve_errors: IntCounterVec,
+    pub source_resolve_latency: Histogram,
+    pub source_cache_hits: IntCounter,
     #[cfg(feature = "daemon-otlp")]
     pub otlp_requests: IntCounterVec,
     #[cfg(feature = "daemon-otlp")]
@@ -202,6 +206,49 @@ impl Metrics {
             .register(Box::new(correlation_matches_by_rule.clone()))
             .unwrap();
 
+        let source_resolves_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_source_resolves_total",
+                "Total dynamic source resolution attempts",
+            ),
+            &["source_id", "source_type"],
+        )
+        .unwrap();
+        let source_resolve_errors = IntCounterVec::new(
+            Opts::new(
+                "rsigma_source_resolve_errors_total",
+                "Failed dynamic source resolutions",
+            ),
+            &["source_id", "error_kind"],
+        )
+        .unwrap();
+        let source_resolve_latency = Histogram::with_opts(
+            HistogramOpts::new(
+                "rsigma_source_resolve_seconds",
+                "Dynamic source resolution latency",
+            )
+            .buckets(vec![0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]),
+        )
+        .unwrap();
+        let source_cache_hits = IntCounter::with_opts(Opts::new(
+            "rsigma_source_cache_hits_total",
+            "Times cached source data was served on resolution failure",
+        ))
+        .unwrap();
+
+        registry
+            .register(Box::new(source_resolves_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(source_resolve_errors.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(source_resolve_latency.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(source_cache_hits.clone()))
+            .unwrap();
+
         #[cfg(feature = "daemon-otlp")]
         let otlp_requests = IntCounterVec::new(
             Opts::new(
@@ -254,6 +301,10 @@ impl Metrics {
             dlq_events,
             detection_matches_by_rule,
             correlation_matches_by_rule,
+            source_resolves_total,
+            source_resolve_errors,
+            source_resolve_latency,
+            source_cache_hits,
             #[cfg(feature = "daemon-otlp")]
             otlp_requests,
             #[cfg(feature = "daemon-otlp")]
