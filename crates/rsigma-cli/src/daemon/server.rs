@@ -88,6 +88,7 @@ pub struct DaemonConfig {
     pub state_restore_mode: StateRestoreMode,
     pub drain_timeout: u64,
     pub input_format: InputFormat,
+    pub allow_remote_include: bool,
 }
 
 pub async fn run_daemon(config: DaemonConfig) {
@@ -111,6 +112,7 @@ pub async fn run_daemon(config: DaemonConfig) {
         config.include_event,
     );
     engine.set_pipeline_paths(config.pipeline_paths.clone());
+    engine.set_allow_remote_include(config.allow_remote_include);
 
     // Set up dynamic source resolver if any pipeline has dynamic sources
     let has_dynamic = config.pipelines.iter().any(|p| p.is_dynamic());

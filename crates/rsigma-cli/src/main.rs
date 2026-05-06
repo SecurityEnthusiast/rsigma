@@ -309,6 +309,12 @@ enum Commands {
         #[cfg(feature = "daemon-nats")]
         #[arg(long = "consumer-group", env = "RSIGMA_CONSUMER_GROUP")]
         consumer_group: Option<String>,
+
+        /// Allow include directives to reference remote (HTTP/NATS) sources.
+        /// By default, includes are restricted to local sources (file/command)
+        /// for security. Use this flag to opt in to remote include resolution.
+        #[arg(long = "allow-remote-include")]
+        allow_remote_include: bool,
     },
 
     /// Evaluate events against Sigma rules
@@ -551,6 +557,7 @@ fn main() {
             timestamp_fallback,
             #[cfg(feature = "daemon-nats")]
             consumer_group,
+            allow_remote_include,
         } => {
             #[cfg(feature = "daemon-nats")]
             let nats_auth = NatsAuthArgs {
@@ -620,6 +627,7 @@ fn main() {
                 replay_policy,
                 #[cfg(feature = "daemon-nats")]
                 consumer_group,
+                allow_remote_include,
             )
         }
         Commands::Parse { path, pretty } => commands::cmd_parse(path, pretty),
@@ -781,6 +789,7 @@ fn cmd_daemon(
     #[cfg(feature = "daemon-nats")] nats_auth: NatsAuthArgs,
     #[cfg(feature = "daemon-nats")] replay_policy: rsigma_runtime::ReplayPolicy,
     #[cfg(feature = "daemon-nats")] consumer_group: Option<String>,
+    allow_remote_include: bool,
 ) {
     // Set up structured logging
     tracing_subscriber::fmt()
@@ -854,6 +863,7 @@ fn cmd_daemon(
         #[cfg(feature = "daemon-nats")]
         consumer_group,
         state_restore_mode,
+        allow_remote_include,
     };
 
     let rt = tokio::runtime::Builder::new_multi_thread()
