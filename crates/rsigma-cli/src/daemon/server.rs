@@ -169,7 +169,27 @@ pub async fn run_daemon(config: DaemonConfig) {
                 });
             }
 
+            // Collect optional source IDs for background retry
+            let optional_source_ids: Vec<String> = all_sources
+                .iter()
+                .filter(|s| !s.required)
+                .map(|s| s.id.clone())
+                .collect();
+
+            let bg_trigger_tx = scheduler.trigger_sender();
             scheduler.run(all_sources, resolver);
+
+            // Spawn background retry for optional sources that may have failed at startup
+            if !optional_source_ids.is_empty() {
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    for id in optional_source_ids {
+                        let _ = bg_trigger_tx
+                            .send(rsigma_runtime::sources::refresh::RefreshTrigger::Single(id))
+                            .await;
+                    }
+                });
+            }
         }
     }
 
