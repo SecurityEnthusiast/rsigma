@@ -256,7 +256,15 @@ impl LogProcessor {
     ///
     /// If pipeline or rule loading fails, the old engine remains active.
     pub fn reload_rules(&self) -> Result<crate::engine::EngineStats, String> {
-        let (old_state, rules_path, pipelines, pipeline_paths, corr_config, include_event) = {
+        let (
+            old_state,
+            rules_path,
+            pipelines,
+            pipeline_paths,
+            corr_config,
+            include_event,
+            resolver,
+        ) = {
             let snapshot = self.engine.load();
             let old = snapshot.lock();
             (
@@ -266,11 +274,15 @@ impl LogProcessor {
                 old.pipeline_paths().to_vec(),
                 old.corr_config().clone(),
                 old.include_event(),
+                old.source_resolver().cloned(),
             )
         };
 
         let mut new_engine = RuntimeEngine::new(rules_path, pipelines, corr_config, include_event);
         new_engine.set_pipeline_paths(pipeline_paths);
+        if let Some(resolver) = resolver {
+            new_engine.set_source_resolver(resolver);
+        }
         let stats = new_engine.load_rules()?;
 
         if let Some(state) = old_state
