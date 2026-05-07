@@ -3651,7 +3651,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "assert_cmd",
  "async-nats",
@@ -3698,7 +3698,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-convert"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "base64",
  "insta",
@@ -3718,7 +3718,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-eval"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "base64",
  "chrono",
@@ -3739,7 +3739,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-lsp"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "env_logger",
  "insta",
@@ -3752,7 +3752,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-parser"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "criterion",
  "globset",
@@ -3770,7 +3770,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-runtime"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "arc-swap",
  "async-nats",
