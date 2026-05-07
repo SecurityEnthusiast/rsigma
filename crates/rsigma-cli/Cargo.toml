@@ -31,7 +31,7 @@ yamlpatch_yaml = { package = "serde_yaml", version = "0.9" }
 jaq-interpret = "1.5.0"
 jaq-parse = "1.0.3"
 serde_json_path = "0.7.2"
-jsonschema = "0.42"
+jsonschema = "0.46"
 ureq = "3"
 dirs = "6"
 yamlpath = "1.24"
