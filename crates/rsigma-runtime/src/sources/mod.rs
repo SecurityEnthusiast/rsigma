@@ -15,9 +15,15 @@ pub mod nats;
 pub mod refresh;
 pub mod template;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use rsigma_eval::pipeline::sources::{DynamicSource, ErrorPolicy, SourceType};
+
+/// Maximum size of a source response body (HTTP, command stdout, NATS payload).
+pub const MAX_SOURCE_RESPONSE_BYTES: usize = 10 * 1024 * 1024; // 10 MB
+
+/// Minimum allowed refresh interval to prevent hot CPU loops.
+pub const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
 pub use cache::SourceCache;
 pub use template::TemplateExpander;
@@ -61,6 +67,8 @@ pub enum SourceErrorKind {
     Extract(String),
     /// The fetch exceeded the configured timeout.
     Timeout,
+    /// The response exceeded the maximum allowed size.
+    ResourceLimit(String),
 }
 
 impl std::fmt::Display for SourceErrorKind {
@@ -70,6 +78,7 @@ impl std::fmt::Display for SourceErrorKind {
             Self::Parse(msg) => write!(f, "parse failed: {msg}"),
             Self::Extract(msg) => write!(f, "extract failed: {msg}"),
             Self::Timeout => write!(f, "timed out"),
+            Self::ResourceLimit(msg) => write!(f, "resource limit exceeded: {msg}"),
         }
     }
 }
@@ -127,7 +136,7 @@ impl SourceResolver for DefaultSourceResolver {
                 command,
                 format,
                 extract,
-            } => command::resolve_command(command, *format, extract.as_ref()).await,
+            } => command::resolve_command(command, *format, extract.as_ref(), source.timeout).await,
             SourceType::Http {
                 url,
                 method,

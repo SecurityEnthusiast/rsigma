@@ -206,9 +206,10 @@ async fn command_source_echo_json() {
         format!("type {}", path.to_str().unwrap()),
     ];
 
-    let result = rsigma_runtime::sources::command::resolve_command(&cmd, DataFormat::Json, None)
-        .await
-        .unwrap();
+    let result =
+        rsigma_runtime::sources::command::resolve_command(&cmd, DataFormat::Json, None, None)
+            .await
+            .unwrap();
 
     let expected = serde_json::json!({"status": "ok", "count": 42});
     assert_eq!(result.data, expected);
@@ -230,10 +231,14 @@ async fn command_source_with_extract() {
     ];
 
     let extract = ExtractExpr::Jq(".items[]".to_string());
-    let result =
-        rsigma_runtime::sources::command::resolve_command(&cmd, DataFormat::Json, Some(&extract))
-            .await
-            .unwrap();
+    let result = rsigma_runtime::sources::command::resolve_command(
+        &cmd,
+        DataFormat::Json,
+        Some(&extract),
+        None,
+    )
+    .await
+    .unwrap();
 
     let expected = serde_json::json!([1, 2, 3]);
     assert_eq!(result.data, expected);
@@ -241,7 +246,6 @@ async fn command_source_with_extract() {
 
 #[tokio::test]
 async fn command_source_lines() {
-    // Use a cross-platform approach: write to a temp file and cat it
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("lines.txt");
     std::fs::write(&path, "line1\nline2\nline3\n").unwrap();
@@ -255,9 +259,10 @@ async fn command_source_lines() {
         format!("type {}", path.to_str().unwrap()),
     ];
 
-    let result = rsigma_runtime::sources::command::resolve_command(&cmd, DataFormat::Lines, None)
-        .await
-        .unwrap();
+    let result =
+        rsigma_runtime::sources::command::resolve_command(&cmd, DataFormat::Lines, None, None)
+            .await
+            .unwrap();
 
     let expected = serde_json::json!(["line1", "line2", "line3"]);
     assert_eq!(result.data, expected);
@@ -271,7 +276,7 @@ async fn command_source_failing_command() {
     let cmd = vec!["cmd".to_string(), "/C".to_string(), "exit 1".to_string()];
 
     let result =
-        rsigma_runtime::sources::command::resolve_command(&cmd, DataFormat::Json, None).await;
+        rsigma_runtime::sources::command::resolve_command(&cmd, DataFormat::Json, None, None).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -284,7 +289,7 @@ async fn command_source_failing_command() {
 #[tokio::test]
 async fn command_source_empty_command() {
     let result =
-        rsigma_runtime::sources::command::resolve_command(&[], DataFormat::Json, None).await;
+        rsigma_runtime::sources::command::resolve_command(&[], DataFormat::Json, None, None).await;
 
     assert!(result.is_err());
 }
@@ -609,4 +614,82 @@ fn cache_no_ttl_never_expires() {
     cache.store("src1", &serde_json::json!("persistent"));
     assert_eq!(cache.ttl(), None);
     assert_eq!(cache.get("src1").unwrap(), serde_json::json!("persistent"));
+}
+
+// =============================================================================
+// Security hardening tests
+// =============================================================================
+
+#[tokio::test]
+async fn command_source_timeout_kills_child() {
+    #[cfg(unix)]
+    let cmd = vec!["sleep".to_string(), "60".to_string()];
+    #[cfg(windows)]
+    let cmd = vec![
+        "powershell".to_string(),
+        "-Command".to_string(),
+        "Start-Sleep -Seconds 60".to_string(),
+    ];
+
+    let result = rsigma_runtime::sources::command::resolve_command(
+        &cmd,
+        DataFormat::Json,
+        None,
+        Some(std::time::Duration::from_millis(100)),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(matches!(
+        result.unwrap_err().kind,
+        rsigma_runtime::SourceErrorKind::Timeout
+    ));
+}
+
+#[tokio::test]
+async fn command_source_stdout_size_limit() {
+    #[cfg(unix)]
+    {
+        // Generate more than 100 bytes of stdout with a tiny limit
+        let cmd = vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            "yes | head -n 200".to_string(),
+        ];
+        let result = rsigma_runtime::sources::command::resolve_command_with_limit(
+            &cmd,
+            DataFormat::Lines,
+            None,
+            Some(std::time::Duration::from_secs(5)),
+            100, // 100 byte cap
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind,
+            rsigma_runtime::SourceErrorKind::ResourceLimit(_)
+        ));
+    }
+}
+
+#[cfg(feature = "nats")]
+#[test]
+fn nats_payload_size_rejected() {
+    let oversized = vec![b'x'; 11 * 1024 * 1024]; // 11 MB
+    let result =
+        rsigma_runtime::sources::nats::parse_nats_message(&oversized, DataFormat::Json, None);
+    assert!(result.is_err());
+    assert!(matches!(
+        result.unwrap_err().kind,
+        rsigma_runtime::SourceErrorKind::ResourceLimit(_)
+    ));
+}
+
+#[cfg(feature = "nats")]
+#[test]
+fn nats_payload_within_limit_accepted() {
+    let small = br#"{"key": "value"}"#;
+    let result = rsigma_runtime::sources::nats::parse_nats_message(small, DataFormat::Json, None);
+    assert!(result.is_ok());
 }
