@@ -934,10 +934,11 @@ Resolved values are cached in memory (and optionally SQLite). The cache supports
 | `logfmt` | off | Enables `logfmt` input format in `daemon` and `eval` |
 | `cef` | off | Enables CEF (ArcSight) input format in `daemon` and `eval` |
 | `evtx` | off | Enables EVTX (Windows Event Log) input format |
+| `daachorse-index` | off | Enables the `--cross-rule-ac` flag and links in [daachorse](https://crates.io/crates/daachorse) for cross-rule Aho-Corasick pre-filtering of large substring-heavy rule sets |
 
 ```bash
 # Build with all features
-cargo build --release --features daemon-nats,daemon-otlp,logfmt,cef,evtx
+cargo build --release --features daemon-nats,daemon-otlp,logfmt,cef,evtx,daachorse-index
 
 # Build without daemon (parser, eval, convert, lint only)
 cargo build --release --no-default-features
