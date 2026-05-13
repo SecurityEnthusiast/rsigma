@@ -3,7 +3,7 @@
 All notable changes to RSigma are documented in this file.
 Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma/releases).
 
-## [0.11.0] - 2026-05-13
+## [0.11.0] - 2026-05-14
 
 **TL;DR**
 RSigma v0.11.0 is the "eval performance" release:
