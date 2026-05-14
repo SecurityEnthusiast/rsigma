@@ -16,6 +16,7 @@ use rsigma_runtime::{
 };
 use serde::Serialize;
 use tokio::sync::mpsc;
+use tower_http::trace::TraceLayer;
 
 /// A dead-letter queue entry for events that fail processing.
 #[derive(Serialize)]
@@ -349,7 +350,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     #[cfg(feature = "daemon-otlp")]
     let app = app.route("/v1/logs", post(otlp_http_logs));
 
-    let app = app.with_state(app_state);
+    let app = app.layer(TraceLayer::new_for_http()).with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind(config.api_addr)
         .await
