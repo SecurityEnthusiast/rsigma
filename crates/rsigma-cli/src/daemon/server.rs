@@ -598,7 +598,14 @@ pub async fn run_daemon(config: DaemonConfig) {
                     Err(_) => break,
                 }
             }
-            engine_metrics.observe_batch_size(batch.len() as u64);
+            let initial_batch_size = batch.len();
+            engine_metrics.observe_batch_size(initial_batch_size as u64);
+            let batch_span = tracing::debug_span!(
+                "process_batch",
+                batch_size = initial_batch_size,
+                input_format = ?input_format,
+            );
+            let _batch_guard = batch_span.enter();
 
             // Pre-parse: route parse failures to DLQ before processing.
             let mut valid_payloads = Vec::with_capacity(batch.len());
@@ -609,13 +616,18 @@ pub async fn run_daemon(config: DaemonConfig) {
                     && !raw_event.payload.trim().is_empty()
                     && rsigma_runtime::parse_line(&raw_event.payload, &input_format).is_none()
                 {
-                    let _ = engine_dlq_tx
+                    tracing::debug!("Event routed to DLQ: parse error");
+                    if engine_dlq_tx
                         .send(DlqEntry {
                             original_event: raw_event.payload,
                             error: "parse error".to_string(),
                             timestamp: chrono::Utc::now().to_rfc3339(),
                         })
-                        .await;
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("DLQ channel closed, parse-error event dropped");
+                    }
                     if engine_ack_tx.send(raw_event.ack_token).await.is_err() {
                         break;
                     }
@@ -630,10 +642,22 @@ pub async fn run_daemon(config: DaemonConfig) {
                 continue;
             }
 
+            let process_start = std::time::Instant::now();
             let results: Vec<ProcessResult> = engine_processor.process_batch_with_format(
                 &valid_payloads,
                 &input_format,
                 Some(&filter_fn),
+            );
+            let process_elapsed_ms = process_start.elapsed().as_millis() as u64;
+            let match_count = results
+                .iter()
+                .filter(|r| !r.detections.is_empty() || !r.correlations.is_empty())
+                .count();
+            tracing::debug!(
+                batch_size = valid_payloads.len(),
+                matches = match_count,
+                elapsed_ms = process_elapsed_ms,
+                "Batch processed",
             );
 
             let mut shutdown = false;
@@ -714,7 +738,9 @@ pub async fn run_daemon(config: DaemonConfig) {
     // DLQ writer task: writes DLQ entries to the configured DLQ sink.
     let dlq_metrics = metrics.clone();
     let dlq_handle = tokio::spawn(async move {
+        tracing::debug!("DLQ task started");
         let mut dlq_sink = dlq_sink;
+        let mut no_sink_logged = false;
         while let Some(entry) = dlq_rx.recv().await {
             dlq_metrics.dlq_events.inc();
             if let Some(ref mut sink) = dlq_sink {
@@ -722,8 +748,12 @@ pub async fn run_daemon(config: DaemonConfig) {
                 if let Err(e) = sink.send_raw(&json).await {
                     tracing::warn!(error = %e, "Failed to write to DLQ sink");
                 }
+            } else if !no_sink_logged {
+                tracing::debug!("DLQ entry counted but no sink configured (use --dlq to persist)");
+                no_sink_logged = true;
             }
         }
+        tracing::debug!("DLQ task finished");
     });
 
     // Ack task: resolves ack tokens after the sink confirms delivery.
