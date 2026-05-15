@@ -362,7 +362,7 @@ fn apply_correlation_transformation(
 
         Transformation::SetCustomAttribute { attribute, value } => {
             corr.custom_attributes
-                .insert(attribute.clone(), serde_yaml::Value::String(value.clone()));
+                .insert(attribute.clone(), yaml_serde::Value::String(value.clone()));
             Ok(true)
         }
 

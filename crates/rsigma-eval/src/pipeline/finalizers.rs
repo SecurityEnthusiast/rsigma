@@ -70,25 +70,25 @@ impl Finalizer {
     }
 
     /// Parse a finalizer from a YAML mapping.
-    pub fn from_yaml(mapping: &serde_yaml::Value) -> Option<Self> {
+    pub fn from_yaml(mapping: &yaml_serde::Value) -> Option<Self> {
         let obj = mapping.as_mapping()?;
-        let type_val = obj.get(serde_yaml::Value::String("type".to_string()))?;
+        let type_val = obj.get(yaml_serde::Value::String("type".to_string()))?;
         let type_str = type_val.as_str()?;
 
         match type_str {
             "concat" => {
                 let separator = obj
-                    .get(serde_yaml::Value::String("separator".to_string()))
+                    .get(yaml_serde::Value::String("separator".to_string()))
                     .and_then(|v| v.as_str())
                     .unwrap_or(" ")
                     .to_string();
                 let prefix = obj
-                    .get(serde_yaml::Value::String("prefix".to_string()))
+                    .get(yaml_serde::Value::String("prefix".to_string()))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
                 let suffix = obj
-                    .get(serde_yaml::Value::String("suffix".to_string()))
+                    .get(yaml_serde::Value::String("suffix".to_string()))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
@@ -101,7 +101,7 @@ impl Finalizer {
 
             "json" => {
                 let indent = obj
-                    .get(serde_yaml::Value::String("indent".to_string()))
+                    .get(yaml_serde::Value::String("indent".to_string()))
                     .and_then(|v| v.as_u64())
                     .map(|n| n as usize);
                 Some(Finalizer::Json { indent })
@@ -109,7 +109,7 @@ impl Finalizer {
 
             "template" => {
                 let template = obj
-                    .get(serde_yaml::Value::String("template".to_string()))
+                    .get(yaml_serde::Value::String("template".to_string()))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn test_parse_concat_finalizer() {
-        let yaml = serde_yaml::from_str::<serde_yaml::Value>(
+        let yaml = yaml_serde::from_str::<yaml_serde::Value>(
             r#"
 type: concat
 separator: " OR "
@@ -154,7 +154,7 @@ suffix: ")"
 
     #[test]
     fn test_parse_json_finalizer() {
-        let yaml = serde_yaml::from_str::<serde_yaml::Value>(
+        let yaml = yaml_serde::from_str::<yaml_serde::Value>(
             r#"
 type: json
 indent: 2
@@ -172,7 +172,7 @@ indent: 2
 
     #[test]
     fn test_parse_template_finalizer() {
-        let yaml = serde_yaml::from_str::<serde_yaml::Value>(
+        let yaml = yaml_serde::from_str::<yaml_serde::Value>(
             r#"
 type: template
 template: "source={source} ({query})"

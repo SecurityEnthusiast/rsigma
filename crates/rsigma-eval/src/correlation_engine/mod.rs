@@ -178,7 +178,7 @@ impl CorrelationEngine {
     ///   Only applied when the CLI did not already set `--action`.
     fn apply_custom_attributes(
         &mut self,
-        attrs: &std::collections::HashMap<String, serde_yaml::Value>,
+        attrs: &std::collections::HashMap<String, yaml_serde::Value>,
     ) {
         // rsigma.timestamp_field — prepend to priority list, skip duplicates
         if let Some(field) = attrs.get("rsigma.timestamp_field").and_then(|v| v.as_str())

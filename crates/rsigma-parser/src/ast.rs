@@ -458,7 +458,7 @@ pub struct SigmaRule {
     /// Mirrors pySigma's `SigmaRule.custom_attributes` dict. Engines and
     /// backends can read these to modify per-rule behavior.
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub custom_attributes: HashMap<String, serde_yaml::Value>,
+    pub custom_attributes: HashMap<String, yaml_serde::Value>,
 }
 
 // =============================================================================
@@ -617,7 +617,7 @@ pub struct CorrelationRule {
     /// Engine-level `rsigma.*` extensions (e.g. `rsigma.correlation_event_mode`,
     /// `rsigma.suppress`, `rsigma.action`) are read from here.
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub custom_attributes: HashMap<String, serde_yaml::Value>,
+    pub custom_attributes: HashMap<String, yaml_serde::Value>,
 }
 
 // =============================================================================
@@ -665,7 +665,7 @@ pub struct FilterRule {
 
     /// Custom attributes attached to the filter rule.
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub custom_attributes: HashMap<String, serde_yaml::Value>,
+    pub custom_attributes: HashMap<String, yaml_serde::Value>,
 }
 
 // =============================================================================

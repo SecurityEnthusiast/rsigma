@@ -1782,10 +1782,10 @@ fn test_no_suppression_fires_every_event() {
 
 fn yaml_str_attrs<const N: usize>(
     pairs: [(&str, &str); N],
-) -> std::collections::HashMap<String, serde_yaml::Value> {
+) -> std::collections::HashMap<String, yaml_serde::Value> {
     pairs
         .into_iter()
-        .map(|(k, v)| (k.to_string(), serde_yaml::Value::String(v.to_string())))
+        .map(|(k, v)| (k.to_string(), yaml_serde::Value::String(v.to_string())))
         .collect()
 }
 

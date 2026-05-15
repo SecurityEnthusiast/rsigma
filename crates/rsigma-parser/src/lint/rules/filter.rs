@@ -1,7 +1,7 @@
 use super::super::{FixPatch, LintRule, LintWarning, err, key, safe_fix, warning};
 use super::detection::lint_logsource;
 
-pub(crate) fn lint_filter_rule(m: &serde_yaml::Mapping, warnings: &mut Vec<LintWarning>) {
+pub(crate) fn lint_filter_rule(m: &yaml_serde::Mapping, warnings: &mut Vec<LintWarning>) {
     // ── filter section ───────────────────────────────────────────────────
     let Some(filter_val) = m.get(key("filter")) else {
         warnings.push(err(
@@ -24,9 +24,9 @@ pub(crate) fn lint_filter_rule(m: &serde_yaml::Mapping, warnings: &mut Vec<LintW
     // ── filter.rules ─────────────────────────────────────────────────────
     if let Some(rules_val) = filter.get(key("rules")) {
         match rules_val {
-            serde_yaml::Value::Sequence(_) => {}
-            serde_yaml::Value::String(s) if s.eq_ignore_ascii_case("any") => {}
-            serde_yaml::Value::String(_) => {}
+            yaml_serde::Value::Sequence(_) => {}
+            yaml_serde::Value::String(s) if s.eq_ignore_ascii_case("any") => {}
+            yaml_serde::Value::String(_) => {}
             _ => {
                 warnings.push(err(
                     LintRule::MissingFilterRules,
@@ -102,8 +102,8 @@ pub(crate) fn lint_filter_rule(m: &serde_yaml::Mapping, warnings: &mut Vec<LintW
 mod tests {
     use super::super::super::{Fix, FixPatch, LintRule, LintWarning, Severity, lint_yaml_value};
 
-    fn yaml_value(yaml: &str) -> serde_yaml::Value {
-        serde_yaml::from_str(yaml).unwrap()
+    fn yaml_value(yaml: &str) -> yaml_serde::Value {
+        yaml_serde::from_str(yaml).unwrap()
     }
 
     fn lint(yaml: &str) -> Vec<LintWarning> {

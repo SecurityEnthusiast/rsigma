@@ -962,11 +962,11 @@ fn test_resolve_table_custom_attrs_override_all() {
     let mut attrs = HashMap::new();
     attrs.insert(
         "postgres.table".to_string(),
-        serde_yaml::Value::String("my_events".to_string()),
+        yaml_serde::Value::String("my_events".to_string()),
     );
     attrs.insert(
         "postgres.schema".to_string(),
-        serde_yaml::Value::String("custom".to_string()),
+        yaml_serde::Value::String("custom".to_string()),
     );
     let mut state = HashMap::new();
     state.insert("table".to_string(), serde_json::json!("pipeline_events"));
@@ -983,7 +983,7 @@ fn test_resolve_table_custom_table_only() {
     let mut attrs = HashMap::new();
     attrs.insert(
         "postgres.table".to_string(),
-        serde_yaml::Value::String("my_events".to_string()),
+        yaml_serde::Value::String("my_events".to_string()),
     );
     let state = HashMap::new();
     assert_eq!(backend.resolve_table(&attrs, &state).unwrap(), "my_events");
@@ -996,7 +996,7 @@ fn test_resolve_table_empty_schema_treated_as_none() {
     let mut attrs = HashMap::new();
     attrs.insert(
         "postgres.schema".to_string(),
-        serde_yaml::Value::String(String::new()),
+        yaml_serde::Value::String(String::new()),
     );
     let state = HashMap::new();
     // Empty schema in custom_attrs removes the schema prefix

@@ -25,7 +25,7 @@ use super::{Pipeline, TransformationItem};
 
 /// Parse a pipeline from a YAML string.
 pub fn parse_pipeline(yaml: &str) -> Result<Pipeline> {
-    let value: serde_yaml::Value = serde_yaml::from_str(yaml)
+    let value: yaml_serde::Value = yaml_serde::from_str(yaml)
         .map_err(|e| EvalError::InvalidModifiers(format!("pipeline YAML parse error: {e}")))?;
     parse_pipeline_value(&value)
 }
@@ -37,8 +37,8 @@ pub fn parse_pipeline_file(path: &Path) -> Result<Pipeline> {
     parse_pipeline(&content)
 }
 
-/// Parse a pipeline from a `serde_yaml::Value`.
-fn parse_pipeline_value(value: &serde_yaml::Value) -> Result<Pipeline> {
+/// Parse a pipeline from a `yaml_serde::Value`.
+fn parse_pipeline_value(value: &yaml_serde::Value) -> Result<Pipeline> {
     let obj = value.as_mapping().ok_or_else(|| {
         EvalError::InvalidModifiers("pipeline YAML must be a mapping".to_string())
     })?;
@@ -89,21 +89,21 @@ fn parse_pipeline_value(value: &serde_yaml::Value) -> Result<Pipeline> {
     })
 }
 
-fn ykey(s: &str) -> serde_yaml::Value {
-    serde_yaml::Value::String(s.to_string())
+fn ykey(s: &str) -> yaml_serde::Value {
+    yaml_serde::Value::String(s.to_string())
 }
 
-fn parse_vars(value: Option<&serde_yaml::Value>) -> HashMap<String, Vec<String>> {
+fn parse_vars(value: Option<&yaml_serde::Value>) -> HashMap<String, Vec<String>> {
     let mut vars = HashMap::new();
-    if let Some(serde_yaml::Value::Mapping(m)) = value {
+    if let Some(yaml_serde::Value::Mapping(m)) = value {
         for (k, v) in m {
             if let Some(key) = k.as_str() {
                 let values = match v {
-                    serde_yaml::Value::Sequence(seq) => seq
+                    yaml_serde::Value::Sequence(seq) => seq
                         .iter()
                         .filter_map(|item| item.as_str().map(String::from))
                         .collect(),
-                    serde_yaml::Value::String(s) => vec![s.clone()],
+                    yaml_serde::Value::String(s) => vec![s.clone()],
                     _ => Vec::new(),
                 };
                 vars.insert(key.to_string(), values);
@@ -114,7 +114,7 @@ fn parse_vars(value: Option<&serde_yaml::Value>) -> HashMap<String, Vec<String>>
 }
 
 /// Parse a YAML value as a sequence of transformation items.
-pub fn parse_transformation_items(value: &serde_yaml::Value) -> Result<Vec<TransformationItem>> {
+pub fn parse_transformation_items(value: &yaml_serde::Value) -> Result<Vec<TransformationItem>> {
     let items = value.as_sequence().ok_or_else(|| {
         EvalError::InvalidModifiers("transformations must be a sequence".to_string())
     })?;
@@ -122,7 +122,7 @@ pub fn parse_transformation_items(value: &serde_yaml::Value) -> Result<Vec<Trans
     items.iter().map(parse_transformation_item).collect()
 }
 
-fn parse_transformation_item(value: &serde_yaml::Value) -> Result<TransformationItem> {
+fn parse_transformation_item(value: &yaml_serde::Value) -> Result<TransformationItem> {
     let obj = value.as_mapping().ok_or_else(|| {
         EvalError::InvalidModifiers("transformation item must be a mapping".to_string())
     })?;
@@ -180,7 +180,7 @@ fn parse_transformation_item(value: &serde_yaml::Value) -> Result<Transformation
     })
 }
 
-fn parse_transformation(obj: &serde_yaml::Mapping) -> Result<Transformation> {
+fn parse_transformation(obj: &yaml_serde::Mapping) -> Result<Transformation> {
     let type_str = obj
         .get(ykey("type"))
         .and_then(|v| v.as_str())
@@ -424,7 +424,7 @@ fn parse_transformation(obj: &serde_yaml::Mapping) -> Result<Transformation> {
             let items_yaml = obj
                 .get(ykey("items"))
                 .or_else(|| obj.get(ykey("transformations")));
-            let items = if let Some(serde_yaml::Value::Sequence(seq)) = items_yaml {
+            let items = if let Some(yaml_serde::Value::Sequence(seq)) = items_yaml {
                 let mut parsed = Vec::new();
                 for entry in seq {
                     parsed.push(parse_transformation_item(entry)?);
@@ -446,7 +446,7 @@ fn parse_transformation(obj: &serde_yaml::Mapping) -> Result<Transformation> {
 // Condition YAML parsing
 // =============================================================================
 
-fn parse_rule_conditions(value: &serde_yaml::Value) -> Result<Vec<NamedRuleCondition>> {
+fn parse_rule_conditions(value: &yaml_serde::Value) -> Result<Vec<NamedRuleCondition>> {
     let items = value.as_sequence().ok_or_else(|| {
         EvalError::InvalidModifiers("rule_conditions must be a sequence".to_string())
     })?;
@@ -454,7 +454,7 @@ fn parse_rule_conditions(value: &serde_yaml::Value) -> Result<Vec<NamedRuleCondi
     items.iter().map(parse_rule_condition).collect()
 }
 
-fn parse_rule_condition(value: &serde_yaml::Value) -> Result<NamedRuleCondition> {
+fn parse_rule_condition(value: &yaml_serde::Value) -> Result<NamedRuleCondition> {
     let obj = value.as_mapping().ok_or_else(|| {
         EvalError::InvalidModifiers("rule condition must be a mapping".to_string())
     })?;
@@ -568,7 +568,7 @@ fn parse_rule_condition(value: &serde_yaml::Value) -> Result<NamedRuleCondition>
 }
 
 fn parse_detection_item_conditions(
-    value: &serde_yaml::Value,
+    value: &yaml_serde::Value,
 ) -> Result<Vec<DetectionItemCondition>> {
     let items = value.as_sequence().ok_or_else(|| {
         EvalError::InvalidModifiers("detection_item_conditions must be a sequence".to_string())
@@ -577,7 +577,7 @@ fn parse_detection_item_conditions(
     items.iter().map(parse_detection_item_condition).collect()
 }
 
-fn parse_detection_item_condition(value: &serde_yaml::Value) -> Result<DetectionItemCondition> {
+fn parse_detection_item_condition(value: &yaml_serde::Value) -> Result<DetectionItemCondition> {
     let obj = value.as_mapping().ok_or_else(|| {
         EvalError::InvalidModifiers("detection item condition must be a mapping".to_string())
     })?;
@@ -647,7 +647,7 @@ fn parse_detection_item_condition(value: &serde_yaml::Value) -> Result<Detection
     }
 }
 
-fn parse_field_name_conditions(value: &serde_yaml::Value) -> Result<Vec<FieldNameCondition>> {
+fn parse_field_name_conditions(value: &yaml_serde::Value) -> Result<Vec<FieldNameCondition>> {
     let items = value.as_sequence().ok_or_else(|| {
         EvalError::InvalidModifiers("field_name_conditions must be a sequence".to_string())
     })?;
@@ -655,7 +655,7 @@ fn parse_field_name_conditions(value: &serde_yaml::Value) -> Result<Vec<FieldNam
     items.iter().map(parse_field_name_condition).collect()
 }
 
-fn parse_field_name_condition(value: &serde_yaml::Value) -> Result<FieldNameCondition> {
+fn parse_field_name_condition(value: &yaml_serde::Value) -> Result<FieldNameCondition> {
     let obj = value.as_mapping().ok_or_else(|| {
         EvalError::InvalidModifiers("field name condition must be a mapping".to_string())
     })?;
@@ -722,9 +722,9 @@ fn parse_field_name_condition(value: &serde_yaml::Value) -> Result<FieldNameCond
 // YAML parsing helpers
 // =============================================================================
 
-fn parse_string_mapping(value: Option<&serde_yaml::Value>) -> Result<HashMap<String, String>> {
+fn parse_string_mapping(value: Option<&yaml_serde::Value>) -> Result<HashMap<String, String>> {
     let mut map = HashMap::new();
-    if let Some(serde_yaml::Value::Mapping(m)) = value {
+    if let Some(yaml_serde::Value::Mapping(m)) = value {
         for (k, v) in m {
             if let (Some(key), Some(val)) = (k.as_str(), v.as_str()) {
                 map.insert(key.to_string(), val.to_string());
@@ -745,15 +745,15 @@ fn parse_string_mapping(value: Option<&serde_yaml::Value>) -> Result<HashMap<Str
 ///     - quux
 /// ```
 fn parse_string_or_list_mapping(
-    value: Option<&serde_yaml::Value>,
+    value: Option<&yaml_serde::Value>,
 ) -> Result<HashMap<String, Vec<String>>> {
     let mut map = HashMap::new();
-    if let Some(serde_yaml::Value::Mapping(m)) = value {
+    if let Some(yaml_serde::Value::Mapping(m)) = value {
         for (k, v) in m {
             if let Some(key) = k.as_str() {
                 let values = match v {
-                    serde_yaml::Value::String(s) => vec![s.clone()],
-                    serde_yaml::Value::Sequence(seq) => {
+                    yaml_serde::Value::String(s) => vec![s.clone()],
+                    yaml_serde::Value::Sequence(seq) => {
                         let mut strings = Vec::with_capacity(seq.len());
                         for item in seq {
                             if let Some(s) = item.as_str() {
@@ -779,14 +779,14 @@ fn parse_string_or_list_mapping(
     Ok(map)
 }
 
-fn parse_value_mapping(value: Option<&serde_yaml::Value>) -> Result<HashMap<String, SigmaValue>> {
+fn parse_value_mapping(value: Option<&yaml_serde::Value>) -> Result<HashMap<String, SigmaValue>> {
     let mut map = HashMap::new();
-    if let Some(serde_yaml::Value::Mapping(m)) = value {
+    if let Some(yaml_serde::Value::Mapping(m)) = value {
         for (k, v) in m {
             if let Some(key) = k.as_str() {
                 let sv = match v {
-                    serde_yaml::Value::String(s) => SigmaValue::String(SigmaString::new(s)),
-                    serde_yaml::Value::Number(n) => {
+                    yaml_serde::Value::String(s) => SigmaValue::String(SigmaString::new(s)),
+                    yaml_serde::Value::Number(n) => {
                         if let Some(i) = n.as_i64() {
                             SigmaValue::Integer(i)
                         } else if let Some(f) = n.as_f64() {
@@ -795,8 +795,8 @@ fn parse_value_mapping(value: Option<&serde_yaml::Value>) -> Result<HashMap<Stri
                             SigmaValue::Null
                         }
                     }
-                    serde_yaml::Value::Bool(b) => SigmaValue::Bool(*b),
-                    serde_yaml::Value::Null => SigmaValue::Null,
+                    yaml_serde::Value::Bool(b) => SigmaValue::Bool(*b),
+                    yaml_serde::Value::Null => SigmaValue::Null,
                     _ => SigmaValue::Null,
                 };
                 map.insert(key.to_string(), sv);
@@ -822,18 +822,18 @@ fn build_field_matcher(fields: Vec<String>, is_regex: bool) -> Result<FieldMatch
     }
 }
 
-fn parse_string_list(value: Option<&serde_yaml::Value>) -> Vec<String> {
+fn parse_string_list(value: Option<&yaml_serde::Value>) -> Vec<String> {
     match value {
-        Some(serde_yaml::Value::Sequence(seq)) => seq
+        Some(yaml_serde::Value::Sequence(seq)) => seq
             .iter()
             .filter_map(|item| item.as_str().map(String::from))
             .collect(),
-        Some(serde_yaml::Value::String(s)) => vec![s.clone()],
+        Some(yaml_serde::Value::String(s)) => vec![s.clone()],
         _ => Vec::new(),
     }
 }
 
-fn parse_finalizers(value: &serde_yaml::Value) -> Vec<Finalizer> {
+fn parse_finalizers(value: &yaml_serde::Value) -> Vec<Finalizer> {
     if let Some(seq) = value.as_sequence() {
         seq.iter().filter_map(Finalizer::from_yaml).collect()
     } else {
@@ -846,7 +846,7 @@ fn parse_finalizers(value: &serde_yaml::Value) -> Vec<Finalizer> {
 // =============================================================================
 
 /// Parse the `sources` section of a pipeline YAML.
-fn parse_sources(value: &serde_yaml::Value) -> Result<Vec<DynamicSource>> {
+fn parse_sources(value: &yaml_serde::Value) -> Result<Vec<DynamicSource>> {
     let items = value
         .as_sequence()
         .ok_or_else(|| EvalError::InvalidModifiers("sources must be a sequence".to_string()))?;
@@ -855,7 +855,7 @@ fn parse_sources(value: &serde_yaml::Value) -> Result<Vec<DynamicSource>> {
 }
 
 /// Parse a single dynamic source declaration.
-fn parse_dynamic_source(value: &serde_yaml::Value) -> Result<DynamicSource> {
+fn parse_dynamic_source(value: &yaml_serde::Value) -> Result<DynamicSource> {
     let obj = value
         .as_mapping()
         .ok_or_else(|| EvalError::InvalidModifiers("source must be a mapping".to_string()))?;
@@ -981,7 +981,7 @@ fn parse_dynamic_source(value: &serde_yaml::Value) -> Result<DynamicSource> {
 /// - A plain string (always treated as jq): `extract: ".emails[]"`
 /// - A structured mapping: `extract: { expr: "$.emails[*]", type: jsonpath }`
 fn parse_extract_expr(
-    value: Option<&serde_yaml::Value>,
+    value: Option<&yaml_serde::Value>,
     source_id: &str,
 ) -> Result<Option<ExtractExpr>> {
     let Some(val) = value else {
@@ -1027,7 +1027,7 @@ fn parse_extract_expr(
     )))
 }
 
-fn parse_data_format(value: Option<&serde_yaml::Value>) -> DataFormat {
+fn parse_data_format(value: Option<&yaml_serde::Value>) -> DataFormat {
     match value.and_then(|v| v.as_str()) {
         Some("json") => DataFormat::Json,
         Some("yaml" | "yml") => DataFormat::Yaml,
@@ -1037,7 +1037,7 @@ fn parse_data_format(value: Option<&serde_yaml::Value>) -> DataFormat {
     }
 }
 
-fn parse_refresh_policy(value: Option<&serde_yaml::Value>) -> RefreshPolicy {
+fn parse_refresh_policy(value: Option<&yaml_serde::Value>) -> RefreshPolicy {
     match value.and_then(|v| v.as_str()) {
         Some("once") => RefreshPolicy::Once,
         Some("watch") => RefreshPolicy::Watch,
@@ -1054,7 +1054,7 @@ fn parse_refresh_policy(value: Option<&serde_yaml::Value>) -> RefreshPolicy {
     }
 }
 
-fn parse_error_policy(value: Option<&serde_yaml::Value>) -> ErrorPolicy {
+fn parse_error_policy(value: Option<&yaml_serde::Value>) -> ErrorPolicy {
     match value.and_then(|v| v.as_str()) {
         Some("use_cached") => ErrorPolicy::UseCached,
         Some("fail") => ErrorPolicy::Fail,
@@ -1063,7 +1063,7 @@ fn parse_error_policy(value: Option<&serde_yaml::Value>) -> ErrorPolicy {
     }
 }
 
-fn parse_duration_field(value: Option<&serde_yaml::Value>) -> Option<Duration> {
+fn parse_duration_field(value: Option<&yaml_serde::Value>) -> Option<Duration> {
     value.and_then(|v| v.as_str()).and_then(parse_duration_str)
 }
 
@@ -1088,9 +1088,9 @@ fn parse_duration_str(s: &str) -> Option<Duration> {
     }
 }
 
-fn parse_string_headers(value: Option<&serde_yaml::Value>) -> HashMap<String, String> {
+fn parse_string_headers(value: Option<&yaml_serde::Value>) -> HashMap<String, String> {
     let mut map = HashMap::new();
-    if let Some(serde_yaml::Value::Mapping(m)) = value {
+    if let Some(yaml_serde::Value::Mapping(m)) = value {
         for (k, v) in m {
             if let (Some(key), Some(val)) = (k.as_str(), v.as_str()) {
                 map.insert(key.to_string(), val.to_string());
@@ -1100,13 +1100,13 @@ fn parse_string_headers(value: Option<&serde_yaml::Value>) -> HashMap<String, St
     map
 }
 
-fn parse_command_field(value: Option<&serde_yaml::Value>) -> Result<Vec<String>> {
+fn parse_command_field(value: Option<&yaml_serde::Value>) -> Result<Vec<String>> {
     match value {
-        Some(serde_yaml::Value::Sequence(seq)) => Ok(seq
+        Some(yaml_serde::Value::Sequence(seq)) => Ok(seq
             .iter()
             .filter_map(|item| item.as_str().map(String::from))
             .collect()),
-        Some(serde_yaml::Value::String(s)) => Ok(vec![s.clone()]),
+        Some(yaml_serde::Value::String(s)) => Ok(vec![s.clone()]),
         _ => Ok(Vec::new()),
     }
 }
@@ -1158,11 +1158,11 @@ fn source_ref_regex() -> &'static Regex {
 
 /// Scan the entire pipeline YAML for `${source.*}` template references and
 /// `include` directives, returning all found references.
-fn scan_source_refs(obj: &serde_yaml::Mapping) -> Vec<SourceRef> {
+fn scan_source_refs(obj: &yaml_serde::Mapping) -> Vec<SourceRef> {
     let mut refs = Vec::new();
 
     // Scan vars
-    if let Some(serde_yaml::Value::Mapping(vars)) = obj.get(ykey("vars")) {
+    if let Some(yaml_serde::Value::Mapping(vars)) = obj.get(ykey("vars")) {
         for (k, v) in vars {
             if let (Some(var_name), Some(s)) = (k.as_str(), yaml_value_as_str(v)) {
                 for cap in source_ref_regex().captures_iter(s) {
@@ -1180,7 +1180,7 @@ fn scan_source_refs(obj: &serde_yaml::Mapping) -> Vec<SourceRef> {
     }
 
     // Scan transformations
-    if let Some(serde_yaml::Value::Sequence(transforms)) = obj.get(ykey("transformations")) {
+    if let Some(yaml_serde::Value::Sequence(transforms)) = obj.get(ykey("transformations")) {
         for (idx, item) in transforms.iter().enumerate() {
             if let Some(mapping) = item.as_mapping() {
                 // Check for `include` directive
@@ -1212,7 +1212,7 @@ fn scan_source_refs(obj: &serde_yaml::Mapping) -> Vec<SourceRef> {
     }
 
     // Scan finalizers
-    if let Some(serde_yaml::Value::Sequence(finalizers)) = obj.get(ykey("finalizers")) {
+    if let Some(yaml_serde::Value::Sequence(finalizers)) = obj.get(ykey("finalizers")) {
         for (idx, item) in finalizers.iter().enumerate() {
             if let Some(mapping) = item.as_mapping() {
                 for (field_key, field_val) in mapping {
@@ -1229,13 +1229,13 @@ fn scan_source_refs(obj: &serde_yaml::Mapping) -> Vec<SourceRef> {
 
 /// Recursively scan a YAML value for `${source.*}` references.
 fn scan_yaml_value_for_refs(
-    value: &serde_yaml::Value,
+    value: &yaml_serde::Value,
     transform_index: usize,
     field_name: &str,
     refs: &mut Vec<SourceRef>,
 ) {
     match value {
-        serde_yaml::Value::String(s) => {
+        yaml_serde::Value::String(s) => {
             for cap in source_ref_regex().captures_iter(s) {
                 refs.push(SourceRef {
                     source_id: cap[1].to_string(),
@@ -1248,7 +1248,7 @@ fn scan_yaml_value_for_refs(
                 });
             }
         }
-        serde_yaml::Value::Mapping(m) => {
+        yaml_serde::Value::Mapping(m) => {
             for (k, v) in m {
                 let nested_field = if let Some(key) = k.as_str() {
                     format!("{field_name}.{key}")
@@ -1258,7 +1258,7 @@ fn scan_yaml_value_for_refs(
                 scan_yaml_value_for_refs(v, transform_index, &nested_field, refs);
             }
         }
-        serde_yaml::Value::Sequence(seq) => {
+        yaml_serde::Value::Sequence(seq) => {
             for item in seq {
                 scan_yaml_value_for_refs(item, transform_index, field_name, refs);
             }
@@ -1268,6 +1268,6 @@ fn scan_yaml_value_for_refs(
 }
 
 /// Helper to get a string from a YAML value (including tagged strings).
-fn yaml_value_as_str(value: &serde_yaml::Value) -> Option<&str> {
+fn yaml_value_as_str(value: &yaml_serde::Value) -> Option<&str> {
     value.as_str()
 }

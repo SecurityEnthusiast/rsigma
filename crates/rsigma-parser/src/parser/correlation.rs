@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde_yaml::Value;
+use yaml_serde::Value;
 
 use crate::ast::*;
 use crate::condition::parse_condition;
@@ -138,7 +138,7 @@ pub(super) fn parse_correlation_rule(value: &Value) -> Result<CorrelationRule> {
 ///
 /// Reference: pySigma correlations.py SigmaCorrelationCondition.from_dict
 fn parse_correlation_condition(
-    corr: &serde_yaml::Mapping,
+    corr: &yaml_serde::Mapping,
     correlation_type: CorrelationType,
 ) -> Result<CorrelationCondition> {
     let condition_val = corr.get(val_key("condition"));
@@ -223,7 +223,7 @@ fn parse_correlation_condition(
 }
 
 /// Parse correlation field aliases.
-fn parse_correlation_aliases(corr: &serde_yaml::Mapping) -> Vec<FieldAlias> {
+fn parse_correlation_aliases(corr: &yaml_serde::Mapping) -> Vec<FieldAlias> {
     let Some(Value::Mapping(aliases_map)) = corr.get(val_key("aliases")) else {
         return Vec::new();
     };

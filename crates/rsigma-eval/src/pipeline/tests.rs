@@ -889,7 +889,7 @@ transformations:
 
     assert_eq!(
         corr.custom_attributes["rsigma.action"],
-        serde_yaml::Value::String("reset".to_string())
+        yaml_serde::Value::String("reset".to_string())
     );
 }
 

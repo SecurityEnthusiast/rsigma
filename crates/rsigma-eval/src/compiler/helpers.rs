@@ -20,12 +20,12 @@ pub(super) fn pattern_matches(pattern: &str, name: &str) -> bool {
     pattern == name
 }
 
-/// Convert a `serde_yaml::Value` to a `serde_json::Value`.
-pub(super) fn yaml_to_json(value: &serde_yaml::Value) -> serde_json::Value {
+/// Convert a `yaml_serde::Value` to a `serde_json::Value`.
+pub(super) fn yaml_to_json(value: &yaml_serde::Value) -> serde_json::Value {
     match value {
-        serde_yaml::Value::Null => serde_json::Value::Null,
-        serde_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
-        serde_yaml::Value::Number(n) => {
+        yaml_serde::Value::Null => serde_json::Value::Null,
+        yaml_serde::Value::Bool(b) => serde_json::Value::Bool(*b),
+        yaml_serde::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 serde_json::Value::Number(i.into())
             } else if let Some(u) = n.as_u64() {
@@ -39,24 +39,24 @@ pub(super) fn yaml_to_json(value: &serde_yaml::Value) -> serde_json::Value {
                 serde_json::Value::Null
             }
         }
-        serde_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
-        serde_yaml::Value::Sequence(seq) => {
+        yaml_serde::Value::String(s) => serde_json::Value::String(s.clone()),
+        yaml_serde::Value::Sequence(seq) => {
             serde_json::Value::Array(seq.iter().map(yaml_to_json).collect())
         }
-        serde_yaml::Value::Mapping(map) => {
+        yaml_serde::Value::Mapping(map) => {
             let obj: serde_json::Map<String, serde_json::Value> = map
                 .iter()
                 .filter_map(|(k, v)| Some((k.as_str()?.to_string(), yaml_to_json(v))))
                 .collect();
             serde_json::Value::Object(obj)
         }
-        serde_yaml::Value::Tagged(tagged) => yaml_to_json(&tagged.value),
+        yaml_serde::Value::Tagged(tagged) => yaml_to_json(&tagged.value),
     }
 }
 
 /// Convert a map of YAML values to a map of JSON values.
 pub(crate) fn yaml_to_json_map(
-    map: &std::collections::HashMap<String, serde_yaml::Value>,
+    map: &std::collections::HashMap<String, yaml_serde::Value>,
 ) -> std::collections::HashMap<String, serde_json::Value> {
     map.iter()
         .map(|(k, v)| (k.clone(), yaml_to_json(v)))

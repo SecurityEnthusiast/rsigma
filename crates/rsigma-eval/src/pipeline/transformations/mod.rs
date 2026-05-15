@@ -149,7 +149,7 @@ pub enum Transformation {
     /// Set a custom attribute on the rule.
     ///
     /// Stores the key-value pair in `SigmaRule.custom_attributes` as a
-    /// `serde_yaml::Value::String`. Backends / engines can read these to
+    /// `yaml_serde::Value::String`. Backends / engines can read these to
     /// modify per-rule behavior (e.g. `rsigma.suppress`, `rsigma.action`).
     /// Mirrors pySigma's `SetCustomAttributeTransformation`.
     SetCustomAttribute { attribute: String, value: String },
@@ -439,7 +439,7 @@ impl Transformation {
 
             Transformation::SetCustomAttribute { attribute, value } => {
                 rule.custom_attributes
-                    .insert(attribute.clone(), serde_yaml::Value::String(value.clone()));
+                    .insert(attribute.clone(), yaml_serde::Value::String(value.clone()));
                 Ok(true)
             }
 

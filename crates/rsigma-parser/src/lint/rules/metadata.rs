@@ -1,4 +1,4 @@
-use serde_yaml::Value;
+use yaml_serde::Value;
 
 use super::super::{
     Fix, FixDisposition, FixPatch, LintRule, LintWarning, Severity, closest_match, err, info, key,
@@ -49,13 +49,13 @@ fn is_valid_date(s: &str) -> bool {
     day <= max_day
 }
 
-/// Extract a date string from a YAML value, handling serde_yaml auto-parsing.
+/// Extract a date string from a YAML value, handling yaml_serde auto-parsing.
 ///
-/// `serde_yaml` sometimes deserialises `YYYY-MM-DD` as a tagged/non-string
+/// `yaml_serde` sometimes deserialises `YYYY-MM-DD` as a tagged/non-string
 /// type. This helper coerces such values back to a trimmed string.
 fn extract_date_string(raw: &Value) -> Option<String> {
     raw.as_str().map(|s| s.to_string()).or_else(|| {
-        serde_yaml::to_string(raw)
+        yaml_serde::to_string(raw)
             .ok()
             .map(|s| s.trim().to_string())
     })
@@ -77,7 +77,7 @@ pub(crate) fn is_valid_uuid(s: &str) -> bool {
         .all(|(part, &len)| part.len() == len && part.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
-pub(crate) fn lint_shared(m: &serde_yaml::Mapping, warnings: &mut Vec<LintWarning>) {
+pub(crate) fn lint_shared(m: &yaml_serde::Mapping, warnings: &mut Vec<LintWarning>) {
     // ── title ────────────────────────────────────────────────────────────
     match super::super::get_str(m, "title") {
         None => warnings.push(err(
@@ -279,8 +279,8 @@ mod tests {
     use super::super::super::{Fix, LintRule, LintWarning, Severity, lint_yaml_value};
     use super::*;
 
-    fn yaml_value(yaml: &str) -> serde_yaml::Value {
-        serde_yaml::from_str(yaml).unwrap()
+    fn yaml_value(yaml: &str) -> yaml_serde::Value {
+        yaml_serde::from_str(yaml).unwrap()
     }
 
     fn lint(yaml: &str) -> Vec<LintWarning> {

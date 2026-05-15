@@ -62,7 +62,7 @@ pub(crate) const KNOWN_KEYS_FILTER: &[&str] = &[
 
 /// Check for unknown top-level keys that are likely typos of known keys.
 pub(crate) fn lint_unknown_keys(
-    m: &serde_yaml::Mapping,
+    m: &yaml_serde::Mapping,
     doc_type: DocType,
     warnings: &mut Vec<LintWarning>,
 ) {
@@ -104,8 +104,8 @@ pub(crate) fn lint_unknown_keys(
 mod tests {
     use super::super::super::{Fix, FixPatch, LintRule, LintWarning, Severity, lint_yaml_value};
 
-    fn yaml_value(yaml: &str) -> serde_yaml::Value {
-        serde_yaml::from_str(yaml).unwrap()
+    fn yaml_value(yaml: &str) -> yaml_serde::Value {
+        yaml_serde::from_str(yaml).unwrap()
     }
 
     fn lint(yaml: &str) -> Vec<LintWarning> {
