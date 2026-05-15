@@ -11,7 +11,7 @@ homepage.workspace = true
 
 [features]
 default = ["daemon"]
-daemon = ["rsigma-runtime", "tokio", "axum", "async-trait", "prometheus", "notify", "rusqlite"]
+daemon = ["rsigma-runtime", "tokio", "axum", "async-trait", "prometheus", "notify", "rusqlite", "tower-http"]
 daemon-nats = ["daemon", "rsigma-runtime/nats", "async-nats", "tokio-stream", "time"]
 daemon-otlp = ["daemon", "rsigma-runtime/otlp", "prost", "tonic", "flate2", "tokio-stream"]
 logfmt = ["rsigma-runtime/logfmt"]
@@ -28,7 +28,6 @@ clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = { package = "yaml_serde", version = "0.10" }
-yamlpatch_yaml = { package = "serde_yaml", version = "0.9" }
 jaq-interpret = "1.5.0"
 jaq-parse = "1.0.3"
 serde_json_path = "0.7.2"
@@ -36,7 +35,7 @@ jsonschema = "0.46"
 ureq = "3"
 dirs = "6"
 yamlpath = "1.24"
-yamlpatch = "1.24"
+yamlpatch = "1.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 chrono = { version = "0.4", default-features = false, features = ["std", "now"] }
@@ -48,7 +47,8 @@ async-trait = { version = "0.1", optional = true }
 prometheus = { version = "0.14", default-features = false, optional = true }
 notify = { version = "8.2", optional = true }
 rusqlite = { version = "0.39", features = ["bundled"], optional = true }
-async-nats = { version = "0.47", optional = true }
+tower-http = { version = "0.6", features = ["trace"], optional = true }
+async-nats = { version = "0.48", optional = true }
 tokio-stream = { version = "0.1", optional = true }
 time = { version = "0.3", optional = true }
 prost = { version = "0.14", optional = true }
@@ -61,7 +61,7 @@ predicates = "3.1.4"
 tempfile = "3.25.0"
 insta = "1.46"
 tokio = { version = "1", features = ["full"] }
-async-nats = "0.47"
+async-nats = "0.48"
 bytes = "1"
 futures = "0.3"
 testcontainers = "0.27"
