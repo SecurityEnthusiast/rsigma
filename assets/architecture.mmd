@@ -5,6 +5,7 @@ flowchart TD
     OUTPUT["MatchResult · CorrelationResult\nrule title · id · level · tags\nmatched selections · field matches\naggregated values · optional events"]
     QUERIES["SQL · SPL · KQL · Lucene"]
     EDITOR["Editor diagnostics + code actions"]
+    LEGEND["* = feature-gated\n** = requires daachorse-index feature"]
 
     subgraph rsigma-parser
         direction TB
@@ -16,10 +17,10 @@ flowchart TD
     subgraph rsigma-eval
         direction TB
         ETRAIT["Event trait\nJsonEvent · KvEvent · PlainEvent"]
-        ETRAIT --> EPIPE["pipeline/\nPipeline · conditions\ntransformations · state · finalizers"]
-        EPIPE --> ECOMP["compiler.rs → CompiledRule"]
-        ECOMP --> EENG["engine.rs → Engine (stateless)"]
-        EENG --> ECORR["correlation.rs\nsliding windows · group-by\nchaining · suppression"]
+        ETRAIT --> EPIPE["pipeline/\nPipeline · conditions · transformations\nstate · finalizers\nbuiltin: ecs_windows · sysmon\ndynamic: ${source.*} template expansion"]
+        EPIPE --> ECOMP["compiler/\ncompile_rule → CompiledRule\nmatcher optimizer (AnyOf):\nAho-Corasick batching (|contains)\nRegexSet batching (|re)\nCaseInsensitiveGroup"]
+        ECOMP --> EENG["engine/\nEngine (stateless)\nprefilters:\nRuleIndex (exact-value pruning)\nbloom trigram filter* (substring)\ncross-rule AC index** (daachorse)"]
+        EENG --> ECORR["correlation/\nsliding windows · group-by\nchaining · suppression"]
         ECORR --> ECUST["rsigma.* custom attributes"]
     end
 
@@ -42,9 +43,10 @@ flowchart TD
     subgraph rsigma-runtime
         direction TB
         RINPUT["input/ format adapters:\nJSON · syslog · logfmt* · CEF* · EVTX*\nplain text · auto-detect\nraw line → EventInputDecoded"]
-        RINPUT --> RPROC["LogProcessor\nbatch evaluation · ArcSwap hot-reload\nMetricsHook · EventFilter"]
+        RINPUT --> RPROC["LogProcessor\nbatch evaluation\nArcSwap hot-reload (rules + pipelines)\nMetricsHook · EventFilter"]
         RPROC --> RENG["RuntimeEngine\nwraps Engine + CorrelationEngine\nwith rule loading"]
-        RENG --> RIO["io/\nEventSource (stdin · HTTP · NATS)\nOTLP* (HTTP + gRPC)\nSink (stdout · file · NATS)"]
+        RENG --> RIO["io/\nEventSource (stdin · HTTP · NATS)\nOTLP* (HTTP + gRPC)\nSink (stdout · file · NATS) · DLQ"]
+        RSRC["sources/ (dynamic pipelines)\nSourceResolver: HTTP · command · file · NATS\nTemplateExpander · SourceCache (SQLite TTL)\nRefreshScheduler: interval · watch · push\nSIGHUP · NATS control · includes\nextract: jq · JSONPath · CEL"]
     end
 
     YAML -->|"Raw YAML Value"| SERDE
@@ -57,3 +59,4 @@ flowchart TD
     RIO --> OUTPUT
     CENDS --> QUERIES
     LEDIT --> EDITOR
+    RSRC -.->|"${source.*} values"| EPIPE
