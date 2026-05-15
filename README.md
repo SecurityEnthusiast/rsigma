@@ -361,7 +361,7 @@ The daemon emits Prometheus metrics on `/metrics` and structured JSON logs to st
 
 Everything starts with a Sigma rule in YAML format:
 
-- **Parsing:** `serde_yaml` deserializes the YAML into a raw value, then `rsigma-parser` turns it into a strongly-typed AST. A PEG grammar (`sigma.pest`) handles the document structure while a Pratt parser (`condition.rs`) handles condition expressions. Supporting modules define value types (`value.rs`: `SigmaStr`, wildcards, timespans) and AST nodes (`ast.rs`: modifiers, enums). The result is a `SigmaRule`, `CorrelationRule`, `FilterRule`, or `SigmaCollection`.
+- **Parsing:** `yaml_serde` deserializes the YAML into a raw value, then `rsigma-parser` turns it into a strongly-typed AST. A PEG grammar (`sigma.pest`) handles the document structure while a Pratt parser (`condition.rs`) handles condition expressions. Supporting modules define value types (`value.rs`: `SigmaStr`, wildcards, timespans) and AST nodes (`ast.rs`: modifiers, enums). The result is a `SigmaRule`, `CorrelationRule`, `FilterRule`, or `SigmaCollection`.
 
 From there, the AST can go in three directions depending on what you need:
 
@@ -385,7 +385,7 @@ Feature-gated items are marked with \* in the diagram.
 
 ```
                     ┌──────────────────┐
-   YAML input ───>  │   serde_yaml     │──> Raw YAML Value
+   YAML input ───>  │   yaml_serde     │──> Raw YAML Value
                     └──────────────────┘
                              │
                              ▼

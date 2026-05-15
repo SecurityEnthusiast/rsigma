@@ -444,7 +444,7 @@ fn test_compile_timestamp_month_modifier() {
 
 fn make_test_sigma_rule(
     title: &str,
-    custom_attributes: HashMap<String, serde_yaml::Value>,
+    custom_attributes: HashMap<String, yaml_serde::Value>,
 ) -> SigmaRule {
     use rsigma_parser::{Detections, LogSource};
     SigmaRule {
@@ -498,7 +498,7 @@ fn test_include_event_custom_attribute() {
     let mut attrs = HashMap::new();
     attrs.insert(
         "rsigma.include_event".to_string(),
-        serde_yaml::Value::String("true".to_string()),
+        yaml_serde::Value::String("true".to_string()),
     );
     let rule = make_test_sigma_rule("Include Event Test", attrs);
 

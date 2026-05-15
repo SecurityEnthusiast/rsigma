@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde_yaml::Value;
+use yaml_serde::Value;
 
 use crate::ast::*;
 use crate::condition::parse_condition;

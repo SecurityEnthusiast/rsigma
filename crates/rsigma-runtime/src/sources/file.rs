@@ -44,7 +44,7 @@ pub fn parse_data(raw: &str, format: DataFormat) -> Result<serde_json::Value, So
             kind: SourceErrorKind::Parse(format!("invalid JSON: {e}")),
         }),
         DataFormat::Yaml => {
-            let yaml: serde_yaml::Value = serde_yaml::from_str(raw).map_err(|e| SourceError {
+            let yaml: yaml_serde::Value = yaml_serde::from_str(raw).map_err(|e| SourceError {
                 source_id: String::new(),
                 kind: SourceErrorKind::Parse(format!("invalid YAML: {e}")),
             })?;

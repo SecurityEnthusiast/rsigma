@@ -66,7 +66,7 @@ Fix types are yamlpath/yamlpatch-agnostic (all owned data, no external dependenc
 
 ### Multi-Document Behavior
 
-1. `serde_yaml::Deserializer` yields documents separated by `---`.
+1. `yaml_serde::Deserializer` yields documents separated by `---`.
 2. Non-mapping documents are skipped; errors are accumulated in `collection.errors`.
 3. YAML parse errors stop iteration (the deserializer may not recover from malformed input).
 4. **Collection actions:**
@@ -183,7 +183,7 @@ When the `re` modifier is present, string values are parsed with `SigmaValue::fr
 - **Extended (string):** `"rule_a and rule_b"` for temporal types — parsed as a boolean expression over rule references.
 - **Default (temporal, no condition):** `Threshold { predicates: [(Gte, 1)], field: None }`.
 - **Timeframe/timespan:** The parser accepts both `timeframe` and `timespan` keys.
-- **Custom attributes:** Both detection and correlation rules expose a unified `custom_attributes` map (`HashMap<String, serde_yaml::Value>`). It merges (a) any arbitrary top-level YAML key that is not part of the Sigma schema, (b) entries of the optional top-level `custom_attributes:` mapping (explicit block wins over arbitrary keys of the same name), and (c) values set by pipeline `SetCustomAttribute` transformations (applied last, last-write-wins). Engines read `rsigma.*` extensions (`rsigma.suppress`, `rsigma.action`, `rsigma.correlation_event_mode`, etc.) from this map.
+- **Custom attributes:** Both detection and correlation rules expose a unified `custom_attributes` map (`HashMap<String, yaml_serde::Value>`). It merges (a) any arbitrary top-level YAML key that is not part of the Sigma schema, (b) entries of the optional top-level `custom_attributes:` mapping (explicit block wins over arbitrary keys of the same name), and (c) values set by pipeline `SetCustomAttribute` transformations (applied last, last-write-wins). Engines read `rsigma.*` extensions (`rsigma.suppress`, `rsigma.action`, `rsigma.correlation_event_mode`, etc.) from this map.
 
 ## Filter Rules
 
@@ -358,7 +358,7 @@ The `schema_violation` lint rule optionally validates rules against a JSON schem
 
 | Error | When |
 |-------|------|
-| `Yaml` | serde_yaml parse failure |
+| `Yaml` | yaml_serde parse failure |
 | `Condition` | Condition expression parse failure (PEG/Pratt); carries optional `SourceLocation` with line/column |
 | `UnknownModifier` | Unknown modifier in field spec |
 | `NotIsNotAModifier` | The literal string `\|not` was used as a modifier; Sigma expresses negation at the condition level (`condition: not selection`) or via `\|neq` for inequality. Surfaced with guidance on how to rewrite the rule |

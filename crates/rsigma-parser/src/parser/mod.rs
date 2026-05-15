@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use serde::Deserialize;
-use serde_yaml::Value;
+use yaml_serde::Value;
 
 use crate::ast::*;
 use crate::error::{Result, SigmaParserError};
@@ -42,7 +42,7 @@ pub fn parse_sigma_yaml(yaml: &str) -> Result<SigmaCollection> {
     let mut global: Option<Value> = None;
     let mut previous: Option<Value> = None;
 
-    for doc in serde_yaml::Deserializer::from_str(yaml) {
+    for doc in yaml_serde::Deserializer::from_str(yaml) {
         let value: Value = match Value::deserialize(doc) {
             Ok(v) => v,
             Err(e) => {
@@ -230,7 +230,7 @@ fn parse_document(value: &Value) -> Result<SigmaDocument> {
 /// Pipeline transformations such as `SetCustomAttribute` are applied later
 /// and can further override both sources.
 pub(super) fn collect_custom_attributes(
-    m: &serde_yaml::Mapping,
+    m: &yaml_serde::Mapping,
     standard_keys: &[&str],
 ) -> HashMap<String, Value> {
     let mut attrs: HashMap<String, Value> = m
@@ -309,11 +309,11 @@ pub(super) fn val_key(s: &str) -> Value {
     Value::String(s.to_string())
 }
 
-pub(super) fn get_str<'a>(m: &'a serde_yaml::Mapping, key: &str) -> Option<&'a str> {
+pub(super) fn get_str<'a>(m: &'a yaml_serde::Mapping, key: &str) -> Option<&'a str> {
     m.get(val_key(key)).and_then(|v| v.as_str())
 }
 
-pub(super) fn get_str_list(m: &serde_yaml::Mapping, key: &str) -> Vec<String> {
+pub(super) fn get_str_list(m: &yaml_serde::Mapping, key: &str) -> Vec<String> {
     match m.get(val_key(key)) {
         Some(Value::String(s)) => vec![s.clone()],
         Some(Value::Sequence(seq)) => seq
@@ -339,8 +339,8 @@ fn deep_merge(dest: Value, src: Value) -> crate::error::Result<Value> {
     };
 
     fn merge_level(
-        dest: &mut serde_yaml::Mapping,
-        src: serde_yaml::Mapping,
+        dest: &mut yaml_serde::Mapping,
+        src: yaml_serde::Mapping,
         depth: usize,
     ) -> crate::error::Result<()> {
         if depth > MAX_DEPTH {

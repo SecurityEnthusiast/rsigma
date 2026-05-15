@@ -370,8 +370,8 @@ fn validate_file_against_schema(
         }
     };
 
-    for doc in serde_yaml::Deserializer::from_str(&content) {
-        let yaml_value: serde_yaml::Value = match serde_yaml::Value::deserialize(doc) {
+    for doc in yaml_serde::Deserializer::from_str(&content) {
+        let yaml_value: yaml_serde::Value = match yaml_serde::Value::deserialize(doc) {
             Ok(v) => v,
             Err(_) => continue,
         };
@@ -379,7 +379,7 @@ fn validate_file_against_schema(
         // Skip action fragments
         if let Some(m) = yaml_value.as_mapping()
             && let Some(action) = m
-                .get(serde_yaml::Value::String("action".into()))
+                .get(yaml_serde::Value::String("action".into()))
                 .and_then(|v| v.as_str())
             && matches!(action, "global" | "reset" | "repeat")
         {

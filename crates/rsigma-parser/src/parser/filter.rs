@@ -1,4 +1,4 @@
-use serde_yaml::Value;
+use yaml_serde::Value;
 
 use crate::ast::*;
 use crate::error::{Result, SigmaParserError};
@@ -48,7 +48,7 @@ pub(super) fn parse_filter_rule(value: &Value) -> Result<FilterRule> {
     // Parse detection from filter.selection + filter.condition
     // (Sigma filter spec: selection/condition live inside the filter section).
     let detection = if let Some(fm) = filter_mapping {
-        let mut det_map = serde_yaml::Mapping::new();
+        let mut det_map = yaml_serde::Mapping::new();
         for (k, v) in fm.iter() {
             let key_str = k.as_str().unwrap_or("");
             if key_str != "rules" {

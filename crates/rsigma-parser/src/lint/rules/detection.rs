@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use serde_yaml::Value;
+use yaml_serde::Value;
 
 use super::super::{
     FixPatch, LintRule, LintWarning, err, get_mapping, get_seq, get_str, key, safe_fix, warning,
@@ -45,7 +45,7 @@ fn is_valid_logsource_value(s: &str) -> bool {
         })
 }
 
-pub(crate) fn lint_detection_rule(m: &serde_yaml::Mapping, warnings: &mut Vec<LintWarning>) {
+pub(crate) fn lint_detection_rule(m: &yaml_serde::Mapping, warnings: &mut Vec<LintWarning>) {
     // ── level ─────────────────────────────────────────────────────────────
     if !m.contains_key(key("level")) {
         warnings.push(warning(
@@ -301,7 +301,7 @@ pub(crate) fn lint_detection_rule(m: &serde_yaml::Mapping, warnings: &mut Vec<Li
     }
 }
 
-pub(crate) fn lint_logsource(m: &serde_yaml::Mapping, warnings: &mut Vec<LintWarning>) {
+pub(crate) fn lint_logsource(m: &yaml_serde::Mapping, warnings: &mut Vec<LintWarning>) {
     if let Some(ls) = get_mapping(m, "logsource") {
         for field in &["category", "product", "service"] {
             if let Some(val) = get_str(ls, field)
@@ -358,7 +358,7 @@ fn has_deprecated_aggregation(condition: &str) -> bool {
 }
 
 /// Checks detection logic: null in value lists, single-value |all, empty value lists.
-fn lint_detection_logic(det: &serde_yaml::Mapping, warnings: &mut Vec<LintWarning>) {
+fn lint_detection_logic(det: &yaml_serde::Mapping, warnings: &mut Vec<LintWarning>) {
     for (det_key, det_val) in det {
         let det_key_str = det_key.as_str().unwrap_or("");
         if det_key_str == "condition" || det_key_str == "timeframe" {
@@ -581,8 +581,8 @@ mod tests {
     use super::super::super::{Fix, FixPatch, LintRule, LintWarning, Severity, lint_yaml_value};
     use super::*;
 
-    fn yaml_value(yaml: &str) -> serde_yaml::Value {
-        serde_yaml::from_str(yaml).unwrap()
+    fn yaml_value(yaml: &str) -> yaml_serde::Value {
+        yaml_serde::from_str(yaml).unwrap()
     }
 
     fn lint(yaml: &str) -> Vec<LintWarning> {

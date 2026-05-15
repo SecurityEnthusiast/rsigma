@@ -853,7 +853,7 @@ transformations:
 | Format | Description |
 |--------|-------------|
 | `json` | Parsed with serde_json |
-| `yaml` | Parsed with serde_yaml |
+| `yaml` | Parsed with yaml_serde |
 | `lines` | One value per line (produces a JSON array of strings) |
 | `csv` | Comma-separated values |
 

@@ -1356,12 +1356,12 @@ correlation:
 
 #[test]
 fn deep_merge_handles_deeply_nested_global() {
-    use serde_yaml::Value;
+    use yaml_serde::Value;
 
     fn nested_map(depth: usize) -> Value {
         let mut v = Value::String("leaf".into());
         for i in (0..depth).rev() {
-            let mut map = serde_yaml::Mapping::new();
+            let mut map = yaml_serde::Mapping::new();
             map.insert(Value::String(format!("k{i}")), v);
             v = Value::Mapping(map);
         }
@@ -1379,12 +1379,12 @@ fn deep_merge_handles_deeply_nested_global() {
 
 #[test]
 fn deep_merge_succeeds_at_reasonable_depth() {
-    use serde_yaml::Value;
+    use yaml_serde::Value;
 
     fn nested_map(depth: usize) -> Value {
         let mut v = Value::String("leaf".into());
         for i in (0..depth).rev() {
-            let mut map = serde_yaml::Mapping::new();
+            let mut map = yaml_serde::Mapping::new();
             map.insert(Value::String(format!("k{i}")), v);
             v = Value::Mapping(map);
         }

@@ -18,7 +18,7 @@
 //!
 //! - **PEG grammar** ([`pest`]) for condition expression parsing with correct operator
 //!   precedence (`NOT` > `AND` > `OR`) and Pratt parsing
-//! - **serde_yaml** for YAML structure deserialization
+//! - **yaml_serde** for YAML structure deserialization
 //! - **Custom parsing** for field modifiers, wildcard strings, and timespan values
 //!
 //! ## Quick Start

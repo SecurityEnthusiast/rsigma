@@ -198,7 +198,7 @@ impl PostgresBackend {
     /// **schema**: `custom_attributes["postgres.schema"]` > `state["schema"]` > `self.schema`
     fn resolve_table(
         &self,
-        custom_attrs: &HashMap<String, serde_yaml::Value>,
+        custom_attrs: &HashMap<String, yaml_serde::Value>,
         state: &HashMap<String, serde_json::Value>,
     ) -> Result<String> {
         let table = custom_attrs
