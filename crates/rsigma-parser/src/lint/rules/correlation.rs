@@ -40,7 +40,7 @@ fn is_valid_timespan(s: &str) -> bool {
     !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit())
 }
 
-pub(crate) fn lint_correlation_rule(m: &serde_yaml::Mapping, warnings: &mut Vec<LintWarning>) {
+pub(crate) fn lint_correlation_rule(m: &yaml_serde::Mapping, warnings: &mut Vec<LintWarning>) {
     let Some(corr_val) = m.get(key("correlation")) else {
         warnings.push(err(
             LintRule::MissingCorrelation,
@@ -163,7 +163,7 @@ pub(crate) fn lint_correlation_rule(m: &serde_yaml::Mapping, warnings: &mut Vec<
 }
 
 fn lint_correlation_condition(
-    cond: &serde_yaml::Mapping,
+    cond: &yaml_serde::Mapping,
     corr_type: &str,
     warnings: &mut Vec<LintWarning>,
 ) {
@@ -204,8 +204,8 @@ mod tests {
     use super::super::super::{LintRule, LintWarning, Severity, lint_yaml_value};
     use super::*;
 
-    fn yaml_value(yaml: &str) -> serde_yaml::Value {
-        serde_yaml::from_str(yaml).unwrap()
+    fn yaml_value(yaml: &str) -> yaml_serde::Value {
+        yaml_serde::from_str(yaml).unwrap()
     }
 
     fn lint(yaml: &str) -> Vec<LintWarning> {

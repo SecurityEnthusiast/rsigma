@@ -31,7 +31,7 @@ pub struct DynamicSource {
     /// Whether the daemon must resolve this source before processing events.
     pub required: bool,
     /// Fallback value if the source cannot be resolved.
-    pub default: Option<serde_yaml::Value>,
+    pub default: Option<yaml_serde::Value>,
 }
 
 /// Type-specific configuration for a dynamic source.
@@ -112,7 +112,7 @@ pub enum ErrorPolicy {
 pub enum DataFormat {
     /// JSON (parsed with serde_json).
     Json,
-    /// YAML (parsed with serde_yaml).
+    /// YAML (parsed with yaml_serde).
     Yaml,
     /// One value per line.
     Lines,

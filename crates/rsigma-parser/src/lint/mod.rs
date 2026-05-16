@@ -1,6 +1,6 @@
 //! Built-in linter for Sigma rules, correlations, and filters.
 //!
-//! Validates raw `serde_yaml::Value` documents against the Sigma specification
+//! Validates raw `yaml_serde::Value` documents against the Sigma specification
 //! v2.1.0 constraints — catching metadata issues that the parser silently
 //! ignores (invalid enums, date formats, tag patterns, etc.).
 //!
@@ -10,7 +10,7 @@
 //! use rsigma_parser::lint::{lint_yaml_value, Severity};
 //!
 //! let yaml = "title: Test\nlogsource:\n  category: test\ndetection:\n  sel:\n    field: value\n  condition: sel\n";
-//! let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+//! let value: yaml_serde::Value = yaml_serde::from_str(yaml).unwrap();
 //! let warnings = lint_yaml_value(&value);
 //! for w in &warnings {
 //!     if w.severity == Severity::Error {
@@ -27,7 +27,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
-use serde_yaml::Value;
+use yaml_serde::Value;
 
 // =============================================================================
 // Public types
@@ -362,18 +362,18 @@ pub(crate) fn key(s: &str) -> &'static Value {
         .unwrap_or_else(|| panic!("lint key not pre-cached: \"{s}\" — add it to KEY_CACHE"))
 }
 
-pub(crate) fn get_str<'a>(m: &'a serde_yaml::Mapping, k: &str) -> Option<&'a str> {
+pub(crate) fn get_str<'a>(m: &'a yaml_serde::Mapping, k: &str) -> Option<&'a str> {
     m.get(key(k)).and_then(|v| v.as_str())
 }
 
 pub(crate) fn get_mapping<'a>(
-    m: &'a serde_yaml::Mapping,
+    m: &'a yaml_serde::Mapping,
     k: &str,
-) -> Option<&'a serde_yaml::Mapping> {
+) -> Option<&'a yaml_serde::Mapping> {
     m.get(key(k)).and_then(|v| v.as_mapping())
 }
 
-pub(crate) fn get_seq<'a>(m: &'a serde_yaml::Mapping, k: &str) -> Option<&'a serde_yaml::Sequence> {
+pub(crate) fn get_seq<'a>(m: &'a yaml_serde::Mapping, k: &str) -> Option<&'a yaml_serde::Sequence> {
     m.get(key(k)).and_then(|v| v.as_sequence())
 }
 
@@ -483,7 +483,7 @@ impl DocType {
     }
 }
 
-fn detect_doc_type(m: &serde_yaml::Mapping) -> DocType {
+fn detect_doc_type(m: &yaml_serde::Mapping) -> DocType {
     if m.contains_key(key("correlation")) {
         DocType::Correlation
     } else if m.contains_key(key("filter")) {
@@ -493,7 +493,7 @@ fn detect_doc_type(m: &serde_yaml::Mapping) -> DocType {
     }
 }
 
-fn is_action_fragment(m: &serde_yaml::Mapping) -> bool {
+fn is_action_fragment(m: &yaml_serde::Mapping) -> bool {
     matches!(get_str(m, "action"), Some("global" | "reset" | "repeat"))
 }
 
@@ -535,7 +535,7 @@ pub fn lint_yaml_value(value: &Value) -> Vec<LintWarning> {
 pub fn lint_yaml_str(text: &str) -> Vec<LintWarning> {
     let mut all_warnings = Vec::new();
 
-    for doc in serde_yaml::Deserializer::from_str(text) {
+    for doc in yaml_serde::Deserializer::from_str(text) {
         let value: Value = match Value::deserialize(doc) {
             Ok(v) => v,
             Err(e) => {
@@ -767,7 +767,7 @@ struct RawLintConfig {
 impl LintConfig {
     pub fn load(path: &Path) -> crate::error::Result<Self> {
         let content = std::fs::read_to_string(path)?;
-        let raw: RawLintConfig = serde_yaml::from_str(&content)?;
+        let raw: RawLintConfig = yaml_serde::from_str(&content)?;
 
         let disabled_rules: HashSet<String> = raw.disabled_rules.into_iter().collect();
         let mut severity_overrides = HashMap::new();
@@ -1069,7 +1069,7 @@ mod tests {
     use super::*;
 
     fn yaml_value(yaml: &str) -> Value {
-        serde_yaml::from_str(yaml).unwrap()
+        yaml_serde::from_str(yaml).unwrap()
     }
 
     fn lint(yaml: &str) -> Vec<LintWarning> {
@@ -1110,7 +1110,7 @@ tags:
 
     #[test]
     fn not_a_mapping() {
-        let v: serde_yaml::Value = serde_yaml::from_str("- item1\n- item2").unwrap();
+        let v: yaml_serde::Value = yaml_serde::from_str("- item1\n- item2").unwrap();
         let w = lint_yaml_value(&v);
         assert!(has_rule(&w, LintRule::NotAMapping));
     }

@@ -173,11 +173,11 @@ pub enum SigmaValue {
 }
 
 impl SigmaValue {
-    /// Create a SigmaValue from a serde_yaml::Value.
-    pub fn from_yaml(v: &serde_yaml::Value) -> Self {
+    /// Create a SigmaValue from a yaml_serde::Value.
+    pub fn from_yaml(v: &yaml_serde::Value) -> Self {
         match v {
-            serde_yaml::Value::String(s) => SigmaValue::String(SigmaString::new(s)),
-            serde_yaml::Value::Number(n) => {
+            yaml_serde::Value::String(s) => SigmaValue::String(SigmaString::new(s)),
+            yaml_serde::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     SigmaValue::Integer(i)
                 } else if let Some(f) = n.as_f64() {
@@ -186,8 +186,8 @@ impl SigmaValue {
                     SigmaValue::Null
                 }
             }
-            serde_yaml::Value::Bool(b) => SigmaValue::Bool(*b),
-            serde_yaml::Value::Null => SigmaValue::Null,
+            yaml_serde::Value::Bool(b) => SigmaValue::Bool(*b),
+            yaml_serde::Value::Null => SigmaValue::Null,
             _ => SigmaValue::String(SigmaString::new(&format!("{v:?}"))),
         }
     }

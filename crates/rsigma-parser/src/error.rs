@@ -23,7 +23,7 @@ impl fmt::Display for SourceLocation {
 #[non_exhaustive]
 pub enum SigmaParserError {
     #[error("YAML parsing error: {0}")]
-    Yaml(#[from] serde_yaml::Error),
+    Yaml(#[from] yaml_serde::Error),
 
     #[error("{}", format_with_location(.0, .1))]
     Condition(String, Option<SourceLocation>),

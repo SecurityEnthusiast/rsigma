@@ -8,7 +8,7 @@ fuzz_target!(|data: &[u8]| {
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
         if json.is_array() {
             if let Ok(yaml_str) = serde_json::to_string(&json) {
-                if let Ok(yaml_val) = serde_yaml::from_str::<serde_yaml::Value>(&yaml_str) {
+                if let Ok(yaml_val) = yaml_serde::from_str::<yaml_serde::Value>(&yaml_str) {
                     let _ = rsigma_eval::parse_transformation_items(&yaml_val);
                 }
             }
@@ -16,7 +16,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     // Path 2: direct YAML parse -> transformation items
-    if let Ok(yaml_val) = serde_yaml::from_str::<serde_yaml::Value>(s) {
+    if let Ok(yaml_val) = yaml_serde::from_str::<yaml_serde::Value>(s) {
         let _ = rsigma_eval::parse_transformation_items(&yaml_val);
     }
 });

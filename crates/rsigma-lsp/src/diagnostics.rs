@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn extract_range_from_yaml_error() {
-        // serde_yaml typical error format
+        // yaml_serde typical error format
         let msg = "invalid type: string \"foo\", expected a mapping at line 5 column 3";
         let text = "title: Test\nstatus: test\nlevel: high\nlogsource:\n  foo\n";
         let index = LineIndex::new(text);

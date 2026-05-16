@@ -68,13 +68,13 @@ For rule quality and editor integration, a built-in linter validates rules again
 
 ```bash
 # Build all crates
-cargo build --release
+cargo build --release --all-features --workspace
 
 # Install the CLI
-cargo install rsigma
+cargo install --locked rsigma
 
 # Install the LSP server
-cargo install --path crates/rsigma-lsp
+cargo install --locked --path crates/rsigma-lsp
 ```
 
 ### Docker
@@ -361,7 +361,7 @@ The daemon emits Prometheus metrics on `/metrics` and structured JSON logs to st
 
 Everything starts with a Sigma rule in YAML format:
 
-- **Parsing:** `serde_yaml` deserializes the YAML into a raw value, then `rsigma-parser` turns it into a strongly-typed AST. A PEG grammar (`sigma.pest`) handles the document structure while a Pratt parser (`condition.rs`) handles condition expressions. Supporting modules define value types (`value.rs`: `SigmaStr`, wildcards, timespans) and AST nodes (`ast.rs`: modifiers, enums). The result is a `SigmaRule`, `CorrelationRule`, `FilterRule`, or `SigmaCollection`.
+- **Parsing:** `yaml_serde` deserializes the YAML into a raw value, then `rsigma-parser` turns it into a strongly-typed AST. A PEG grammar (`sigma.pest`) handles the document structure while a Pratt parser (`condition.rs`) handles condition expressions. Supporting modules define value types (`value.rs`: `SigmaStr`, wildcards, timespans) and AST nodes (`ast.rs`: modifiers, enums). The result is a `SigmaRule`, `CorrelationRule`, `FilterRule`, or `SigmaCollection`.
 
 From there, the AST can go in three directions depending on what you need:
 
@@ -385,7 +385,7 @@ Feature-gated items are marked with \* in the diagram.
 
 ```
                     ┌──────────────────┐
-   YAML input ───>  │   serde_yaml     │──> Raw YAML Value
+   YAML input ───>  │   yaml_serde     │──> Raw YAML Value
                     └──────────────────┘
                              │
                              ▼
@@ -419,18 +419,31 @@ Feature-gated items are marked with \* in the diagram.
     │  pipeline/ ──>          │   │  TextQueryConfig    │   │    (lint + parse   │
     │    Pipeline, conditions,│   │    ──> ~90 config   │   │     + compile)     │
     │    transformations,     │   │    fields for text  │   │  • completions     │
-    │    state, finalizers    │   │    query backends   │   │  • hover           │
-    │                         │   │                     │   │  • document        │
-    │  compiler.rs ──>        │   │  Condition walker,  │   │    symbols         │
-    │    CompiledRule         │   │    deferred exprs,  │   │                    │
-    │  engine.rs ──>          │   │    conversion state │   │  Editors:          │
-    │    Engine (stateless)   │   │                     │   │  VSCode, Neovim,   │
-    │                         │   │  backends/ ──>      │   │  Helix, Zed, ...   │
-    │  correlation.rs ──>     │   │    TextQueryTest,   │   └────────────────────┘
-    │    sliding windows,     │   │    PostgreSQL/      │
-    │    group-by, chaining,  │   │    TimescaleDB,     │
-    │    suppression, events  │   │    LynxDB           │
-    │                         │   └─────────────────────┘
+    │    state, finalizers,   │   │    query backends   │   │  • hover           │
+    │    builtin pipelines    │   │                     │   │  • document        │
+    │    (ecs_windows,        │   │  Condition walker,  │   │    symbols         │
+    │     sysmon),            │   │    deferred exprs,  │   │                    │
+    │    ${source.*} expand   │   │    conversion state │   │  Editors:          │
+    │                         │   │                     │   │  VSCode, Neovim,   │
+    │  compiler/ ──>          │   │  backends/ ──>      │   │  Helix, Zed, ...   │
+    │    CompiledRule         │   │    TextQueryTest,   │   └────────────────────┘
+    │    + matcher optimizer  │   │    PostgreSQL/      │
+    │      (Aho-Corasick,     │   │    TimescaleDB,     │
+    │       RegexSet, case-   │   │    LynxDB           │
+    │       insens. group)    │   └─────────────────────┘
+    │                         │
+    │  engine/ ──>            │
+    │    Engine (stateless)   │
+    │    + RuleIndex          │
+    │      (exact-value prune)│
+    │    + bloom prefilter*   │
+    │    + cross-rule AC**    │
+    │      (daachorse)        │
+    │                         │
+    │  correlation/ ──>       │
+    │    sliding windows,     │
+    │    group-by, chaining,  │
+    │    suppression, events  │
     │                         │
     │  rsigma.* custom        │
     │    attributes           │
@@ -445,8 +458,22 @@ Feature-gated items are marked with \* in the diagram.
     │    EVTX*, plain text, auto-detect        │
     │    ↓ raw line → EventInputDecoded        │
     │                                          │
+    │  sources/ ──> dynamic pipelines:         │
+    │    SourceResolver (HTTP, command,        │
+    │      file, NATS subjects)                │
+    │    TemplateExpander (${source.*})        │
+    │    SourceCache (in-mem + SQLite TTL)     │
+    │    RefreshScheduler (interval, watch,    │
+    │      NATS push, SIGHUP, control msg)     │
+    │    extract: jq, JSONPath, CEL            │
+    │    include directives                    │
+    │    └──> feeds resolved values into the   │
+    │         eval pipeline at load/refresh    │
+    │                                          │
     │  LogProcessor ──> batch evaluation       │
-    │    ArcSwap hot-reload, MetricsHook,      │
+    │    ArcSwap hot-reload                    │
+    │      (rules + pipelines),                │
+    │    MetricsHook,                          │
     │    EventFilter (JSON payload extraction) │
     │                                          │
     │  RuntimeEngine ──> wraps Engine +        │
@@ -455,8 +482,10 @@ Feature-gated items are marked with \* in the diagram.
     │  io/ ──> EventSource (stdin, HTTP, NATS) │
     │          OTLP* (HTTP + gRPC)             │
     │          Sink (stdout, file, NATS)       │
+    │          DLQ (failed events)             │
     └──────────────────────────────────────────┘
-              │                (* = feature-gated)
+              │       (*  = feature-gated)
+              │       (** = requires daachorse-index feature)
               ▼
      ┌────────────────────┐
      │  MatchResult       │──> rule title, id, level, tags,

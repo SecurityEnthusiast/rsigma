@@ -778,23 +778,23 @@ fn test_extract_event_id_common_fields() {
 fn test_compile_correlation_with_custom_attributes() {
     use rsigma_parser::*;
 
-    let mut custom_attributes: HashMap<String, serde_yaml::Value> =
+    let mut custom_attributes: HashMap<String, yaml_serde::Value> =
         std::collections::HashMap::new();
     custom_attributes.insert(
         "rsigma.correlation_event_mode".to_string(),
-        serde_yaml::Value::String("refs".to_string()),
+        yaml_serde::Value::String("refs".to_string()),
     );
     custom_attributes.insert(
         "rsigma.max_correlation_events".to_string(),
-        serde_yaml::Value::String("25".to_string()),
+        yaml_serde::Value::String("25".to_string()),
     );
     custom_attributes.insert(
         "rsigma.suppress".to_string(),
-        serde_yaml::Value::String("5m".to_string()),
+        yaml_serde::Value::String("5m".to_string()),
     );
     custom_attributes.insert(
         "rsigma.action".to_string(),
-        serde_yaml::Value::String("reset".to_string()),
+        yaml_serde::Value::String("reset".to_string()),
     );
 
     let rule = CorrelationRule {

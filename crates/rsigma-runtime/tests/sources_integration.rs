@@ -358,7 +358,7 @@ async fn resolver_use_default_on_failure() {
     let resolver = DefaultSourceResolver::new();
 
     let default_val =
-        serde_yaml::Value::Sequence(vec![serde_yaml::Value::String("fallback@corp.com".into())]);
+        yaml_serde::Value::Sequence(vec![yaml_serde::Value::String("fallback@corp.com".into())]);
 
     let source = DynamicSource {
         id: "missing_source".to_string(),

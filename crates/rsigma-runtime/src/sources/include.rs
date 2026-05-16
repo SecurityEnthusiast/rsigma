@@ -119,10 +119,10 @@ fn parse_transformation_array(data: &serde_json::Value) -> Result<Vec<Transforma
         return Err("include source data must be an array of transformation objects".to_string());
     }
 
-    // Convert JSON -> YAML string -> serde_yaml::Value, then use the eval parser
+    // Convert JSON -> YAML string -> yaml_serde::Value, then use the eval parser
     let yaml_str =
         serde_json::to_string(data).map_err(|e| format!("include serialization: {e}"))?;
-    let yaml_val: serde_yaml::Value = serde_yaml::from_str(&yaml_str)
+    let yaml_val: yaml_serde::Value = yaml_serde::from_str(&yaml_str)
         .map_err(|e| format!("include data is not valid YAML: {e}"))?;
 
     rsigma_eval::parse_transformation_items(&yaml_val)
