@@ -47,39 +47,51 @@ impl RuleIndex {
     /// Otherwise, the rule is placed in the unindexable set to avoid false
     /// negatives from OR conditions that reach an unindexable branch.
     pub(crate) fn build(rules: &[CompiledRule]) -> Self {
-        let mut field_index: HashMap<String, HashMap<String, Vec<usize>>> = HashMap::new();
-        let mut unindexable: Vec<usize> = Vec::new();
-
+        let mut index = Self::empty();
         for (rule_idx, rule) in rules.iter().enumerate() {
-            let mut all_pairs: Vec<(String, String)> = Vec::new();
-            let mut every_detection_has_pairs = true;
+            index.append_rule(rule_idx, rule);
+        }
+        // `build` is called with a fresh slice; trust `rules.len()` even if
+        // some indices in the tail had no pairs and so did not bump
+        // `rule_count` via `append_rule`'s `max` logic.
+        index.rule_count = rules.len();
+        index
+    }
 
-            for detection in rule.detections.values() {
-                let pairs = extract_exact_pairs(detection);
-                if pairs.is_empty() {
-                    every_detection_has_pairs = false;
-                }
-                all_pairs.extend(pairs);
+    /// Incrementally fold a single rule into the index.
+    ///
+    /// Cost is bounded by the number of `(field, exact_value)` pairs in the
+    /// rule's detection tree, not by the total rule count. Callers must
+    /// invoke this with strictly increasing `rule_idx` values for the rule
+    /// indices within each `(field, value)` bucket to stay ascending, which
+    /// keeps the bucket layout identical to the batched `build` path.
+    pub(crate) fn append_rule(&mut self, rule_idx: usize, rule: &CompiledRule) {
+        let mut all_pairs: Vec<(String, String)> = Vec::new();
+        let mut every_detection_has_pairs = true;
+
+        for detection in rule.detections.values() {
+            let pairs = extract_exact_pairs(detection);
+            if pairs.is_empty() {
+                every_detection_has_pairs = false;
             }
+            all_pairs.extend(pairs);
+        }
 
-            if all_pairs.is_empty() || !every_detection_has_pairs {
-                unindexable.push(rule_idx);
-            } else {
-                for (field, value) in all_pairs {
-                    field_index
-                        .entry(field)
-                        .or_default()
-                        .entry(value)
-                        .or_default()
-                        .push(rule_idx);
-                }
+        if all_pairs.is_empty() || !every_detection_has_pairs {
+            self.unindexable.push(rule_idx);
+        } else {
+            for (field, value) in all_pairs {
+                self.field_index
+                    .entry(field)
+                    .or_default()
+                    .entry(value)
+                    .or_default()
+                    .push(rule_idx);
             }
         }
 
-        RuleIndex {
-            field_index,
-            unindexable,
-            rule_count: rules.len(),
+        if rule_idx + 1 > self.rule_count {
+            self.rule_count = rule_idx + 1;
         }
     }
 
@@ -531,5 +543,131 @@ detection:
 
         assert_eq!(index.unindexable_count(), 1);
         assert_eq!(index.indexed_field_count(), 0);
+    }
+
+    /// Folding rules one at a time via `append_rule` must produce the same
+    /// candidate verdicts as the batched `build` path. This pins the
+    /// equivalence the engine wiring in P2 will rely on.
+    #[test]
+    fn test_append_rule_matches_build() {
+        let yaml = r#"
+title: Login
+logsource:
+    product: windows
+detection:
+    selection:
+        EventType: 'login'
+    condition: selection
+---
+title: File Create
+logsource:
+    product: windows
+detection:
+    selection:
+        EventType: 'file_create'
+        Protocol: 'TCP'
+    condition: selection
+---
+title: Keyword Rule
+logsource:
+    product: windows
+detection:
+    keywords:
+        - 'malware'
+    condition: keywords
+---
+title: Multi Value
+logsource:
+    product: windows
+detection:
+    selection:
+        EventType:
+            - 'logon'
+            - 'logoff'
+    condition: selection
+---
+title: Regex Rule
+logsource:
+    product: windows
+detection:
+    selection:
+        CommandLine|re: '(?i)whoami.*'
+    condition: selection
+"#;
+        let collection = parse_sigma_yaml(yaml).unwrap();
+        let mut engine = Engine::new();
+        engine.add_collection(&collection).unwrap();
+        let rules = engine.rules();
+
+        let batched = RuleIndex::build(rules);
+        let mut incremental = RuleIndex::empty();
+        for (rule_idx, rule) in rules.iter().enumerate() {
+            incremental.append_rule(rule_idx, rule);
+        }
+
+        assert_eq!(incremental.rule_count(), batched.rule_count());
+        assert_eq!(incremental.unindexable_count(), batched.unindexable_count());
+        assert_eq!(
+            incremental.indexed_field_count(),
+            batched.indexed_field_count()
+        );
+
+        let events = [
+            json!({"EventType": "login"}),
+            json!({"EventType": "logoff"}),
+            json!({"EventType": "file_create", "Protocol": "TCP"}),
+            json!({"CommandLine": "whoami /all"}),
+            json!({"SomeField": "nothing"}),
+        ];
+        for ev in &events {
+            let event = JsonEvent::borrow(ev);
+            let mut a = batched.candidates(&event);
+            let mut b = incremental.candidates(&event);
+            a.sort_unstable();
+            b.sort_unstable();
+            assert_eq!(a, b, "verdicts diverge for event {ev}");
+        }
+    }
+
+    /// `append_rule` is meant to be called with monotonic rule indices.
+    /// Verify that calling it on a fresh index, then on additional rules,
+    /// keeps `rule_count` consistent and the candidate sets growing
+    /// monotonically.
+    #[test]
+    fn test_append_rule_grows_rule_count() {
+        let yaml = r#"
+title: A
+logsource:
+    product: windows
+detection:
+    selection:
+        EventType: 'a'
+    condition: selection
+---
+title: B
+logsource:
+    product: windows
+detection:
+    selection:
+        EventType: 'b'
+    condition: selection
+"#;
+        let collection = parse_sigma_yaml(yaml).unwrap();
+        let mut engine = Engine::new();
+        engine.add_collection(&collection).unwrap();
+        let rules = engine.rules();
+
+        let mut index = RuleIndex::empty();
+        assert_eq!(index.rule_count(), 0);
+
+        index.append_rule(0, &rules[0]);
+        assert_eq!(index.rule_count(), 1);
+        let ev = json!({"EventType": "a"});
+        assert_eq!(index.candidates(&JsonEvent::borrow(&ev)), vec![0]);
+
+        index.append_rule(1, &rules[1]);
+        assert_eq!(index.rule_count(), 2);
+        let ev = json!({"EventType": "b"});
+        assert_eq!(index.candidates(&JsonEvent::borrow(&ev)), vec![1]);
     }
 }
