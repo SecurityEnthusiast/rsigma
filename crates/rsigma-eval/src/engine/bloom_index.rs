@@ -858,32 +858,37 @@ detection:
             );
         }
 
-        // Disjoint digit-only haystacks must reject under the batched
-        // index. The incremental path is allowed to be more conservative
-        // (MaybeMatch) because each rule sizes its initial filter against
-        // its own trigram count; the subsequent appends fold extra
-        // trigrams into that filter without resizing, which raises FPR
-        // until the next full rebuild. `MaybeMatch` is always safe (the
-        // engine just evaluates the rule directly), so the contract is
-        // "no false negatives" not "identical FPR".
-        for haystack in ["12345", "987654321", "000111222"] {
-            assert_eq!(
-                batched.probe("CommandLine", haystack),
-                BloomVerdict::DefinitelyNoMatch,
-                "batched should answer DefinitelyNoMatch for {haystack}"
-            );
-            // Incremental must not falsely flip a true MaybeMatch into a
-            // DefinitelyNoMatch (would be a false negative). Either verdict
-            // is safe; we only assert correctness, not optimality.
-            let v = incremental.probe("CommandLine", haystack);
-            assert!(
-                matches!(
-                    v,
-                    BloomVerdict::MaybeMatch | BloomVerdict::DefinitelyNoMatch
-                ),
-                "incremental probe must return a defined verdict for {haystack}, got {v:?}"
-            );
+        // Disjoint haystacks (no rule trigrams) ideally answer
+        // `DefinitelyNoMatch` under both paths, but the bloom is sized
+        // for ~1% FPR per trigram and the underlying AHasher uses a
+        // runtime-randomized seed, so individual probes can flip to
+        // `MaybeMatch` non-deterministically. We assert the property at
+        // an aggregate rate over a 1000-trigram digit sweep on the
+        // batched index (rejection rate must stay >= 90%); that
+        // matches the per-version guarantee tested in
+        // `populates_filter_for_contains_field` while staying robust
+        // against single-haystack false positives. Incremental is not
+        // checked here because its filter is sized against per-rule
+        // trigram counts and so allows higher FPR drift between
+        // rebuilds; that is the documented trade-off.
+        let mut rejected = 0usize;
+        let mut total = 0usize;
+        for a in b'0'..=b'9' {
+            for b in b'0'..=b'9' {
+                for c in b'0'..=b'9' {
+                    total += 1;
+                    let bytes = [a, b, c];
+                    let s = std::str::from_utf8(&bytes).unwrap();
+                    if batched.probe("CommandLine", s) == BloomVerdict::DefinitelyNoMatch {
+                        rejected += 1;
+                    }
+                }
+            }
         }
+        assert!(
+            rejected * 100 >= total * 90,
+            "expected >= 90% rejection on disjoint trigram sweep; got {rejected}/{total}"
+        );
     }
 
     /// New rules with new fields create fresh per-field blooms. Trigrams
