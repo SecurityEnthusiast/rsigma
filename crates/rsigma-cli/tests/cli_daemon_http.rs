@@ -9,8 +9,9 @@ mod common;
 
 use common::{SIMPLE_RULE, temp_file};
 use std::io::{BufRead, BufReader};
+use std::net::TcpStream;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn rsigma_bin() -> String {
     assert_cmd::cargo::cargo_bin("rsigma")
@@ -19,43 +20,131 @@ fn rsigma_bin() -> String {
         .to_string()
 }
 
+enum StartupEvent {
+    ApiAddr(String),
+    SinkStarted,
+}
+
+/// Scope guard that owns a `Child` and kills + waits on drop. Used during
+/// daemon startup so that a handshake panic does not leak a daemon process.
+struct ChildGuard(Option<std::process::Child>);
+
+impl ChildGuard {
+    fn as_child_mut(&mut self) -> &mut std::process::Child {
+        self.0.as_mut().expect("guard already disarmed")
+    }
+
+    fn disarm(mut self) -> std::process::Child {
+        self.0.take().expect("guard already disarmed")
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 struct DaemonProcess {
     child: std::process::Child,
     api_addr: String,
 }
 
+/// Poll `check` every 50ms until it returns `Some(value)` or `deadline`
+/// elapses. Use this in place of fixed sleeps when you actually want to wait
+/// for a specific observable condition.
+fn poll_until<T>(deadline: Duration, mut check: impl FnMut() -> Option<T>) -> Option<T> {
+    let end = Instant::now() + deadline;
+    loop {
+        if let Some(v) = check() {
+            return Some(v);
+        }
+        if Instant::now() >= end {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 impl DaemonProcess {
     fn spawn(args: &[&str]) -> Self {
-        let mut child = Command::new(rsigma_bin())
+        let child = Command::new(rsigma_bin())
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .expect("failed to spawn rsigma daemon");
+        let mut guard = ChildGuard(Some(child));
 
-        let stderr = child.stderr.take().unwrap();
-        let reader = BufReader::new(stderr);
-        let mut api_addr = String::new();
+        // Drain stdout in a background thread. Otherwise a daemon that writes
+        // match output to its sink can fill the pipe buffer (~64 KiB on macOS)
+        // and block on its own write, which surfaces in tests as a stale
+        // socket and `ConnectionRefused` later.
+        if let Some(stdout) = guard.as_child_mut().stdout.take() {
+            std::thread::spawn(move || {
+                let mut sink = std::io::sink();
+                let _ = std::io::copy(&mut BufReader::new(stdout), &mut sink);
+            });
+        }
 
-        for line in reader.lines() {
-            let line = line.unwrap();
-            if line.contains("API server listening")
-                && let Some(addr) = extract_addr(&line)
-            {
-                api_addr = addr;
+        // Read stderr in a background thread so it never blocks the daemon
+        // once it fills the OS pipe buffer. The thread forwards interesting
+        // log lines back over a channel for the spawn handshake.
+        let stderr = guard.as_child_mut().stderr.take().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel::<StartupEvent>();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines() {
+                let Ok(line) = line else { return };
+                if line.contains("API server listening")
+                    && let Some(addr) = extract_addr(&line)
+                {
+                    let _ = tx.send(StartupEvent::ApiAddr(addr));
+                }
+                if line.contains("Sink started") {
+                    let _ = tx.send(StartupEvent::SinkStarted);
+                }
             }
-            if line.contains("Sink started") {
-                break;
+        });
+
+        let mut api_addr = String::new();
+        let mut sink_started = false;
+        let handshake_deadline = Instant::now() + Duration::from_secs(10);
+        while !sink_started || api_addr.is_empty() {
+            let remaining = handshake_deadline
+                .checked_duration_since(Instant::now())
+                .unwrap_or(Duration::ZERO);
+            match rx.recv_timeout(remaining) {
+                Ok(StartupEvent::ApiAddr(addr)) => api_addr = addr,
+                Ok(StartupEvent::SinkStarted) => sink_started = true,
+                Err(_) => panic!(
+                    "daemon did not finish startup within 10s (api_addr={api_addr:?}, sink_started={sink_started})"
+                ),
             }
         }
 
-        assert!(
-            !api_addr.is_empty(),
-            "failed to discover API address from daemon stderr"
-        );
-
-        Self { child, api_addr }
+        // `Sink started` is logged before `axum::serve` enters its accept
+        // loop in practice, so probe the listening socket until it actually
+        // accepts a connection before returning.
+        let socket: std::net::SocketAddr = api_addr
+            .parse()
+            .unwrap_or_else(|e| panic!("invalid api_addr {api_addr:?}: {e}"));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if TcpStream::connect_timeout(&socket, Duration::from_millis(200)).is_ok() {
+                return Self {
+                    child: guard.disarm(),
+                    api_addr,
+                };
+            }
+            if Instant::now() >= deadline {
+                panic!("daemon API at {api_addr} never became reachable within 5s");
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
     }
 
     fn url(&self, path: &str) -> String {
@@ -246,10 +335,15 @@ fn ingest_updates_status_counters() {
         r#"{"CommandLine":"malware.exe"}"#,
     );
 
-    // Give the engine a moment to process
-    std::thread::sleep(Duration::from_millis(500));
+    let body = poll_until(Duration::from_secs(5), || {
+        let (_, body) = http_get(&daemon.url("/api/v1/status"));
+        let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+        let processed = v["events_processed"].as_u64()?;
+        let matched = v["detection_matches"].as_u64()?;
+        (processed >= 1 && matched >= 1).then_some(body)
+    })
+    .expect("status counters never reflected the ingested event within 5s");
 
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(
         v["events_processed"].as_u64().unwrap() >= 1,
@@ -271,10 +365,16 @@ fn metrics_include_per_rule_labels_after_detection() {
         r#"{"CommandLine":"malware.exe"}"#,
     );
 
-    std::thread::sleep(Duration::from_millis(500));
+    let body = poll_until(Duration::from_secs(5), || {
+        let (status, body) = http_get(&daemon.url("/metrics"));
+        (status == 200
+            && body.contains("rsigma_detection_matches_by_rule_total")
+            && body.contains(r#"rule_title="Test Rule""#)
+            && body.contains(r#"level="high""#))
+        .then_some(body)
+    })
+    .expect("per-rule detection metrics never appeared within 5s");
 
-    let (status, body) = http_get(&daemon.url("/metrics"));
-    assert_eq!(status, 200);
     assert!(
         body.contains("rsigma_detection_matches_by_rule_total"),
         "metrics should contain per-rule detection counter"
