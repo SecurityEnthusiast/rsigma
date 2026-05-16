@@ -18,7 +18,7 @@ use rsigma_parser::{
 use crate::compiler::{
     CompiledRule, compile_detection, compile_rule, evaluate_rule, evaluate_rule_with_bloom,
 };
-use crate::error::Result;
+use crate::error::{EvalError, Result};
 use crate::event::Event;
 use crate::pipeline::{Pipeline, apply_pipelines};
 use crate::result::MatchResult;
@@ -247,19 +247,45 @@ impl Engine {
 
     /// Add a single parsed Sigma rule.
     ///
-    /// If pipelines are set, the rule is cloned and transformed before compilation.
-    /// The inverted index is rebuilt after adding the rule.
+    /// If pipelines are set, the rule is cloned and transformed before
+    /// compilation. The rule index folds the new rule incrementally; the
+    /// bloom index also folds it incrementally and only triggers a full
+    /// rebuild when its doubling watermark is reached, so this call is
+    /// amortized O(1) per rule. With the `daachorse-index` feature
+    /// enabled **and** the cross-rule AC index turned on at runtime, the
+    /// call falls back to a full rebuild because the daachorse automaton
+    /// has no incremental update path.
     pub fn add_rule(&mut self, rule: &SigmaRule) -> Result<()> {
-        let compiled = if self.pipelines.is_empty() {
-            compile_rule(rule)?
-        } else {
-            let mut transformed = rule.clone();
-            apply_pipelines(&self.pipelines, &mut transformed)?;
-            compile_rule(&transformed)?
-        };
+        let compiled = self.compile_with_pipelines(rule)?;
         self.rules.push(compiled);
-        self.rebuild_index();
+        self.index_append_last_rule();
         Ok(())
+    }
+
+    /// Add many parsed Sigma rules in a single batch.
+    ///
+    /// Each rule is compiled (with the engine's pipelines applied, if any)
+    /// and pushed onto the rule set. Compilation errors are collected and
+    /// returned as `(rule_index_in_input, error)` pairs without aborting the
+    /// batch; rules that did compile remain loaded. The inverted index and
+    /// per-field bloom filter are rebuilt **once** at the end of the batch.
+    ///
+    /// Prefer this over a loop of [`Engine::add_rule`] when loading large
+    /// rule sets: the per-call rebuild is O(N) in the total rule count, so
+    /// per-rule adds turn a 3K-rule corpus into O(N²) work.
+    pub fn add_rules<'a, I>(&mut self, rules: I) -> Vec<(usize, EvalError)>
+    where
+        I: IntoIterator<Item = &'a SigmaRule>,
+    {
+        let mut errors = Vec::new();
+        for (idx, rule) in rules.into_iter().enumerate() {
+            match self.compile_with_pipelines(rule) {
+                Ok(compiled) => self.rules.push(compiled),
+                Err(e) => errors.push((idx, e)),
+            }
+        }
+        self.rebuild_index();
+        errors
     }
 
     /// Add all detection rules from a parsed collection, then apply filters.
@@ -269,13 +295,7 @@ impl Engine {
     /// The inverted index is rebuilt once after all rules and filters are loaded.
     pub fn add_collection(&mut self, collection: &SigmaCollection) -> Result<()> {
         for rule in &collection.rules {
-            let compiled = if self.pipelines.is_empty() {
-                compile_rule(rule)?
-            } else {
-                let mut transformed = rule.clone();
-                apply_pipelines(&self.pipelines, &mut transformed)?;
-                compile_rule(&transformed)?
-            };
+            let compiled = self.compile_with_pipelines(rule)?;
             self.rules.push(compiled);
         }
         for filter in &collection.filters {
@@ -283,6 +303,19 @@ impl Engine {
         }
         self.rebuild_index();
         Ok(())
+    }
+
+    /// Compile a rule, applying any configured pipelines first. Shared by
+    /// the single- and batched-add paths so they stay behaviourally
+    /// identical.
+    fn compile_with_pipelines(&self, rule: &SigmaRule) -> Result<CompiledRule> {
+        if self.pipelines.is_empty() {
+            compile_rule(rule)
+        } else {
+            let mut transformed = rule.clone();
+            apply_pipelines(&self.pipelines, &mut transformed)?;
+            compile_rule(&transformed)
+        }
     }
 
     /// Add all detection rules from a collection, applying the given pipelines.
@@ -392,17 +425,36 @@ impl Engine {
         Ok(())
     }
 
-    /// Add a pre-compiled rule directly and rebuild the index.
+    /// Add a pre-compiled rule directly. The rule index folds the new
+    /// rule incrementally; the bloom index also folds it incrementally
+    /// and only triggers a full rebuild when its doubling watermark is
+    /// reached, so this call is amortized O(1) per rule. With the
+    /// cross-rule AC index enabled (`daachorse-index` feature, runtime
+    /// toggle), this falls back to a full rebuild because daachorse has
+    /// no incremental update path.
     pub fn add_compiled_rule(&mut self, rule: CompiledRule) {
         self.rules.push(rule);
+        self.index_append_last_rule();
+    }
+
+    /// Add many pre-compiled rules in a single batch. The inverted index
+    /// and bloom filter are rebuilt exactly once at the end, regardless of
+    /// how many rules are appended.
+    pub fn extend_compiled_rules<I>(&mut self, rules: I)
+    where
+        I: IntoIterator<Item = CompiledRule>,
+    {
+        self.rules.extend(rules);
         self.rebuild_index();
     }
 
     /// Rebuild every per-engine index from the current rule set.
     ///
-    /// Called after every rule mutation. Both the inverted index and the
-    /// per-field bloom filter must reflect the same view of the rules,
-    /// so they share a single rebuild path.
+    /// Used by batched rule loads (`add_rules`, `extend_compiled_rules`,
+    /// `add_collection`) and by mutations that rewrite existing rules
+    /// (`apply_filter`), where rebuilding once over the final shape is
+    /// cheaper than maintaining incremental state across mutations. The
+    /// single-rule paths use [`Engine::index_append_last_rule`] instead.
     fn rebuild_index(&mut self) {
         self.rule_index = RuleIndex::build(&self.rules);
         self.bloom_index = match self.bloom_max_bytes {
@@ -422,6 +474,37 @@ impl Engine {
                 self.cross_rule_ac_index = cross_rule_ac::CrossRuleAcIndex::empty();
                 self.cross_rule_ac_prunable.clear();
             }
+        }
+    }
+
+    /// Fold the rule most recently pushed onto `self.rules` into the
+    /// inverted and bloom indexes incrementally. Cost is bounded by the
+    /// new rule's detection tree size, not by the total rule count.
+    ///
+    /// The bloom index periodically forces a full rebuild via its
+    /// doubling watermark to re-enforce the memory budget and reset the
+    /// FPR drift that incremental inserts accumulate. Cross-rule AC
+    /// (daachorse) has no incremental story, so when it is enabled this
+    /// call falls back to [`Engine::rebuild_index`].
+    fn index_append_last_rule(&mut self) {
+        #[cfg(feature = "daachorse-index")]
+        {
+            if self.cross_rule_ac_enabled {
+                self.rebuild_index();
+                return;
+            }
+        }
+
+        let new_idx = self.rules.len() - 1;
+        let rule = &self.rules[new_idx];
+        self.rule_index.append_rule(new_idx, rule);
+        self.bloom_index.append_rule(rule);
+
+        if self.bloom_index.should_rebuild(self.rules.len()) {
+            self.bloom_index = match self.bloom_max_bytes {
+                Some(budget) => FieldBloomIndex::build_with_budget(&self.rules, budget),
+                None => FieldBloomIndex::build(&self.rules),
+            };
         }
     }
 
