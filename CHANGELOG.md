@@ -70,6 +70,38 @@ When `cross_rule_ac_enabled` is on, the daachorse cross-rule index has no increm
 
 The 12 flat top-level subcommands are reorganized into five noun-led command groups so the CLI scales as more subcommands arrive. The flat aliases continue to work for one release as visible-deprecated forwarders, are hidden in the next release, and are removed in v1.0. Every existing invocation keeps working, so there is no breaking change in this release.
 
+```bash
+$ rsigma
+Parse, validate, and evaluate Sigma detection rules
+
+Usage: rsigma [OPTIONS] <COMMAND>
+
+Commands:
+  engine        Run rules against events (eval / daemon)
+  rule          Inspect and operate on Sigma rule files
+  backend       Convert Sigma rules to backend-native queries
+  pipeline      Pipeline tooling (resolve dynamic sources, …)
+  attack        MITRE ATT&CK tooling (reserved; populated by the ATT&CK contributor PR)
+  eval          [deprecated] Use `rsigma engine eval` instead
+  daemon        [deprecated] Use `rsigma engine daemon` instead
+  parse         [deprecated] Use `rsigma rule parse` instead
+  validate      [deprecated] Use `rsigma rule validate` instead
+  lint          [deprecated] Use `rsigma rule lint` instead
+  fields        [deprecated] Use `rsigma rule fields` instead
+  condition     [deprecated] Use `rsigma rule condition` instead
+  stdin         [deprecated] Use `rsigma rule stdin` instead
+  convert       [deprecated] Use `rsigma backend convert` instead
+  list-targets  [deprecated] Use `rsigma backend targets` instead
+  list-formats  [deprecated] Use `rsigma backend formats` instead
+  resolve       [deprecated] Use `rsigma pipeline resolve` instead
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+      --log-format <LOG_FORMAT>  Emit structured diagnostic logs to stderr (for CI / log aggregation) [possible values: json, text]
+  -h, --help                     Print help (see more with '--help')
+  -V, --version                  Print version
+```
+
 **Migration:**
 
 | Old (flat) | New (grouped) |
