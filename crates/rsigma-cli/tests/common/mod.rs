@@ -64,7 +64,7 @@ impl Drop for ChildGuard {
     }
 }
 
-/// A live `rsigma daemon` subprocess with a known API address. Killed and
+/// A live `rsigma engine daemon` subprocess with a known API address. Killed and
 /// reaped on drop.
 pub struct DaemonProcess {
     child: std::process::Child,
@@ -96,7 +96,7 @@ impl DaemonProcess {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .expect("failed to spawn rsigma daemon");
+            .expect("failed to spawn rsigma engine daemon");
         let mut guard = ChildGuard(Some(child));
 
         if let Some(stdout) = guard.as_child_mut().stdout.take() {
@@ -156,9 +156,10 @@ impl DaemonProcess {
         }
     }
 
-    /// Spawn `rsigma daemon -r RULE --input http --api-addr 127.0.0.1:0`.
+    /// Spawn `rsigma engine daemon -r RULE --input http --api-addr 127.0.0.1:0`.
     pub fn spawn_http(rule_path: &str) -> Self {
         Self::spawn(&[
+            "engine",
             "daemon",
             "-r",
             rule_path,
