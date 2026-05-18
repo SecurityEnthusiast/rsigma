@@ -124,7 +124,7 @@ rsigma --version
 rsigma --help
 ```
 
-You should see `rsigma {{ rsigma.version }}` and a list of the top-level command groups (`engine`, `rule`, `backend`, `pipeline`, `attack`).
+You should see `rsigma {{ rsigma.version }}` and a list of the top-level command groups (`engine`, `rule`, `backend`, `pipeline`).
 
 ## Next steps
 

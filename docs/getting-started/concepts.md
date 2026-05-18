@@ -156,7 +156,6 @@ The RSigma CLI has been reorganized into noun-led command groups so it can scale
 | `rule` | `parse`, `validate`, `lint`, `fields`, `condition`, `stdin` | Operate on rule files. |
 | `backend` | `convert`, `targets`, `formats` | Generate backend-native queries. |
 | `pipeline` | `resolve` | Test dynamic pipeline source resolution. |
-| `attack` | (reserved) | MITRE ATT&CK tooling (planned). |
 
 The previous flat commands (`rsigma eval`, `rsigma daemon`, ...) still work for one release as deprecated aliases. See the [CLI reference](../cli/index.md) for the full migration table.
 
