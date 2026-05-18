@@ -1,0 +1,15 @@
+nav:
+  - Home: index.md
+  - Getting Started: getting-started
+  - User Guide: guide
+  - CLI Reference: cli
+  - Library: library
+  - Developers: developers
+  - Reference: reference
+  - Deployment: deployment
+  - Editors: editors
+  - Ecosystem: ecosystem
+  - Release Notes: release-notes.md
+  - Contributing: contributing.md
+  - Security: security-policy.md
+  - Blog: blog.md
