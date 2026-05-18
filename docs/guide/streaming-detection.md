@@ -69,7 +69,7 @@ By default the daemon auto-detects the line format (JSON, syslog, plain text). U
 
 ```bash
 rsigma engine daemon -r rules/ --input-format json
-rsigma engine daemon -r rules/ --input-format syslog --syslog-tz +0530
+rsigma engine daemon -r rules/ --input-format syslog --syslog-tz +05:30
 rsigma engine daemon -r rules/ --input-format logfmt
 rsigma engine daemon -r rules/ --input-format cef
 ```

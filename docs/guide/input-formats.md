@@ -52,7 +52,7 @@ tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog
 RFC 3164 syslog does not carry a timezone. RSigma assumes UTC by default. Override with `--syslog-tz`:
 
 ```bash
-tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --syslog-tz +0530
+tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --syslog-tz +05:30
 ```
 
 The value is a fixed offset (`+0530`, `-0800`). For ambiguity-free parsing, prefer RFC 5424 sources that carry the offset inline.
@@ -102,17 +102,41 @@ EVTX files are the binary Windows Event Log format. RSigma parses them directly 
 
 ```bash
 rsigma engine eval -r rules/ -e @security.evtx
-rsigma engine eval -r rules/ -p sysmon -e @Microsoft-Windows-Sysmon%4Operational.evtx
 rsigma engine eval -r rules/ -e @C:\Windows\System32\winevt\Logs\Security.evtx
 ```
 
-Detection happens automatically by file extension. Any `@file` argument ending in `.evtx` (case-insensitive) is routed through the EVTX reader. Each record is converted to a flat JSON object with field names matching what the rules expect (`EventID`, `Channel`, `Provider_Name`, `Computer`, `EventData_*`, etc.).
+Detection happens automatically by file extension. Any `@file` argument ending in `.evtx` (case-insensitive) is routed through the EVTX reader. Records are yielded as JSON in the **nested shape** produced by the `evtx` crate (which mirrors the original Windows XML structure):
 
-Pair with the builtin `sysmon` pipeline to add `EventID` routing conditions:
-
-```bash
-rsigma engine eval -r rules/ -p sysmon -e @sysmon.evtx
+```json
+{
+  "Event": {
+    "System": {
+      "Provider": { "#attributes": { "Name": "Microsoft-Windows-Security-Auditing", "Guid": "..." } },
+      "EventID": 4624,
+      "Channel": "Security",
+      "Computer": "WIN-HOST-01",
+      "TimeCreated": { "#attributes": { "SystemTime": "2016-07-08T18:12:51.681640Z" } }
+    },
+    "EventData": {
+      "SubjectUserName": "SYSTEM",
+      "TargetUserName": "Administrator",
+      "LogonType": 3
+    }
+  }
+}
 ```
+
+Sigma rules must reference fields by their full dotted path, not by the flat Sigma-Windows-convention names:
+
+```yaml
+detection:
+    sel:
+        Event.System.EventID: 4624
+        Event.EventData.TargetUserName: 'Administrator'
+    condition: sel
+```
+
+If you would rather write rules against the conventional flat names (`EventID`, `Channel`, `TargetUserName`, etc.), supply a pipeline that maps the nested paths to the flat ones with `field_name_mapping`. The builtin `sysmon` and `ecs_windows` pipelines do **not** do this flattening; they map the flat schema to either Sysmon's `EventID` routing or to Elastic Common Schema. They are useful once you have already-flat events (for example, when an agent ingests EVTX and emits ECS), not for raw `.evtx` files.
 
 Build with the `evtx` feature (on by default):
 
@@ -120,7 +144,7 @@ Build with the `evtx` feature (on by default):
 cargo install --locked rsigma --features evtx
 ```
 
-EVTX is read in streaming mode, so the file can be larger than memory. Records are evaluated one at a time and a `Processed N records, M matches.` summary lands on stderr at the end.
+EVTX is read in streaming mode, so the file can be larger than memory. Records are evaluated one at a time and a `Processed N EVTX records, M matches.` summary lands on stderr at the end.
 
 EVTX is only supported through the `@file` syntax. There is no `--input-format evtx` for stdin, since the format is binary and stdin streaming would not interact well with the chunked record layout.
 

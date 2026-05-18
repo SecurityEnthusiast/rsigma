@@ -139,7 +139,7 @@ For per-rule control, set the `rsigma.include_event` custom attribute on the rul
 `--input-format` accepts `auto` (the default), `json`, `syslog`, `plain`, and the feature-gated `logfmt`, `cef`. Auto-detect tries JSON, then syslog, then plain text:
 
 ```bash
-tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --syslog-tz +0530
+tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --syslog-tz +05:30
 rsigma engine eval -r rules/ --input-format logfmt < app.log
 rsigma engine eval -r rules/ --input-format cef < arcsight.log
 ```
