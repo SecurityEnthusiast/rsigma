@@ -132,21 +132,38 @@ Adds `time_bucket()` clauses and other TimescaleDB-specific optimizations. Use t
 
 #### `continuous_aggregate`
 
-Generates `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous) AS ...` for aggregation correlation rules (`event_count`, `value_count`, etc.). TimescaleDB then refreshes the aggregate in the background and your dashboards query the materialised result instead of the raw hypertable.
+Wraps each base detection rule in `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous) AS ... WITH NO DATA`. For a Sigma `EventID: 4625` rule, you get:
+
+```sql
+CREATE MATERIALIZED VIEW sigma_9d2e7c48_4a3b_4f99_93c9_1c5f7c8b1a2b
+    WITH (timescaledb.continuous) AS
+    SELECT time_bucket('1 hour', time) AS bucket, *
+    FROM security_events WHERE "EventID" = 4625
+    WITH NO DATA
+```
+
+TimescaleDB then refreshes the aggregate in the background and your dashboards query the materialised result instead of the raw hypertable. Convert the base detection rules separately (or pass `--skip-unsupported`) and skip the `event_count` / `value_count` correlation rules; the materialised view above is the queryable surface you want.
 
 #### `sliding_window`
 
-Uses SQL window functions for `event_count` correlations, producing a per-row sliding window that emits every event that crosses the threshold:
+Uses SQL window functions for `event_count` correlations, producing a per-row sliding window that emits every event that crosses the threshold. Only the correlation rule itself converts under this format; base detection rules return `unknown output format: sliding_window`, so pair the conversion with `--skip-unsupported`:
+
+```bash
+rsigma backend convert rules/ -t postgres -f sliding_window --skip-unsupported
+```
 
 ```sql
-WITH combined_events AS (...),
+WITH source AS (
+    SELECT * FROM security_events
+    WHERE time >= NOW() - INTERVAL '300 seconds'
+),
 event_counts AS (
     SELECT *, COUNT(*) OVER (
         PARTITION BY "User"
         ORDER BY time
         RANGE BETWEEN INTERVAL '300 seconds' PRECEDING AND CURRENT ROW
     ) AS correlation_event_count
-    FROM combined_events
+    FROM source
 )
 SELECT * FROM event_counts WHERE correlation_event_count >= 5
 ```
