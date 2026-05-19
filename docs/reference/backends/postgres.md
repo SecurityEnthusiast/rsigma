@@ -185,7 +185,7 @@ Tracked items not yet implemented:
 - `prepared` output format that emits PL/pgSQL-friendly placeholders for parameter binding.
 - Value modifier transforms (`base64`, `base64offset`, `wide`, `utf16le`) — currently fail with `Unsupported`. Most workloads do not need these because they can be preprocessed at ingest by the agent.
 
-See [roadmap item #3 (PostgreSQL Backend remaining)](https://github.com/timescale/rsigma/issues) for the full list.
+These are tracked on the project roadmap and are not blocking any current user.
 
 ## See also
 

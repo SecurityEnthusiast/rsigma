@@ -16,3 +16,4 @@ editors/vscode/*.vsix
 .cargo/credentials.toml
 .cursor/
 
+/docs-drafts/

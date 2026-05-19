@@ -220,7 +220,6 @@ plugins:
           - reference/architecture.md
         Deployment:
           - deployment/docker.md
-          - deployment/kubernetes.md
         Editors:
           - editors/vscode.md
           - editors/neovim.md

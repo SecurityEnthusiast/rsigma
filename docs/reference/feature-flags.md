@@ -96,7 +96,7 @@ echo "" | rsigma engine eval -r /dev/null -e @/dev/null --input-format json 2>&1
 # Inspect feature flags via the binary's version output (planned: not yet implemented).
 ```
 
-A `rsigma --features` introspection flag is on the [roadmap](https://github.com/timescale/rsigma/issues) but not yet shipped.
+A first-class `rsigma --features` introspection flag would be a nice-to-have but is not implemented today.
 
 ## See also
 
