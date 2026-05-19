@@ -103,6 +103,20 @@ RSigma is the only Sigma toolkit that combines pySigma-style conversion with a r
 
     [DEW #154](https://www.detectionengineering.net/i/195467950/state-of-the-art)
 
+## Built with RSigma
+
+<div class="grid cards" markdown>
+
+- :material-flask-outline:{ .lg .middle } **[detection.studio](https://detection.studio/)**
+
+    ---
+
+    A browser-based Sigma rule playground. Added real-time rule evaluation powered by RSigma compiled to WebAssembly, so every rule edit runs against sample events in the browser without a backend.
+
+    [:octicons-arrow-right-24: Source on GitHub](https://github.com/northsh/detection.studio)
+
+</div>
+
 ## Read the deep dives
 
 A five-part article series on building RSigma and using it in production:
