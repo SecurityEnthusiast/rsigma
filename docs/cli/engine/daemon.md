@@ -1,0 +1,202 @@
+# `rsigma engine daemon`
+
+Run as a long-running daemon with hot-reload, health checks, and Prometheus metrics.
+
+## Synopsis
+
+```text
+rsigma engine daemon [OPTIONS] --rules <RULES>
+```
+
+## Description
+
+Loads rules and pipelines, opens an event source, evaluates events as they arrive, fans the detections out to one or more sinks, and stays alive until it receives `SIGTERM`/`SIGINT`. Reloads rules and pipelines on file change, `SIGHUP`, or `POST /api/v1/reload`. Exposes Prometheus metrics, REST control endpoints, and OTLP log ingestion on the same `--api-addr`.
+
+This is the long-running counterpart of [`engine eval`](eval.md). Use it when you need state to survive restarts, hot-reload across rule changes, or a Prometheus-scrapeable detection engine.
+
+For narrative coverage see [Streaming Detection](../../guide/streaming-detection.md). For NATS-specific operations (auth, replay, consumer groups, DLQ) see [NATS Streaming](../../guide/nats-streaming.md).
+
+## Flags
+
+### Required
+
+| Flag | Description |
+|------|-------------|
+| `-r, --rules <RULES>` | Path to a Sigma rule file or directory of rules (recursive). |
+
+### Event input
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--input <URL>` | `stdin` | Event source. Schemes: `stdin`, `http` (accepts `POST /api/v1/events`), `nats://<host>:<port>/<subject>`. |
+| `--input-format <FORMAT>` | `auto` | Input log format: `auto`, `json`, `syslog`, `plain`. With features: `logfmt`, `cef`. |
+| `--syslog-tz <OFFSET>` | `+00:00` | Timezone offset for RFC 3164 syslog (`+HH:MM` or `-HH:MM`). |
+| `--jq <JQ>` | unset | `jq` filter to extract the event payload from each JSON object. Mutually exclusive with `--jsonpath`. |
+| `--jsonpath <JSONPATH>` | unset | JSONPath ([RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)) query to extract the event payload. |
+
+### Output sinks and DLQ
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--output <URL>` | `stdout` | Detection sink. Schemes: `stdout`, `file://<path>`, `nats://<host>:<port>/<subject>`. Repeatable for fan-out. |
+| `--dlq <URL>` | unset | Dead-letter queue for events that fail parsing or sink delivery. Same schemes as `--output`. When unset, failed events are logged and discarded. |
+| `--include-event` | off | Embed the full event JSON in every detection match. |
+| `--pretty` | off | Pretty-print JSON output. |
+
+### Pipelines and dynamic sources
+
+| Flag | Description |
+|------|-------------|
+| `-p, --pipeline <PIPELINES>` | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `sysmon`) or YAML file paths. Repeatable. |
+| `--allow-remote-include` | Allow `include:` directives in pipelines to reference remote (HTTP/NATS) sources. Off by default for security. |
+
+### API server
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--api-addr <ADDR>` | `0.0.0.0:9090` | Bind address for `/healthz`, `/readyz`, `/metrics`, `/api/v1/*`, and (with the `daemon-otlp` feature) `/v1/logs`. |
+
+### Correlation behavior
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--suppress <DURATION>` | unset | Suppress duplicate correlation alerts within the window (`5m`, `1h`, `30s`). |
+| `--action <ACTION>` | `alert` | Post-fire action: `alert` (keep state, re-alert on next match) or `reset` (clear window state). |
+| `--no-detections` | off | Suppress detection output for correlation-only base rules. |
+| `--correlation-event-mode <MODE>` | `none` | `none`, `full` (deflate-compressed full bodies), `refs` (timestamp + ID only). |
+| `--max-correlation-events <N>` | `10` | Cap on stored events per correlation window. |
+| `--timestamp-field <FIELD>` | unset | Field name to prepend to the timestamp extraction list. Repeatable. |
+| `--timestamp-fallback <MODE>` | `wallclock` | Behavior when no timestamp is found: `wallclock` (use wall clock time) or `skip` (skip correlation state for that event). Use `skip` for forensic replay. |
+
+### State persistence
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--state-db <PATH>` | unset | SQLite database for persisting correlation state across restarts. When set, state is loaded on startup and saved periodically and on shutdown. |
+| `--state-save-interval <SECONDS>` | `30` | Periodic snapshot interval. No effect without `--state-db`. |
+| `--clear-state` | off | Clear stored state on startup. With `--replay-from-*`, forces a clean slate even if the replay starts after the stored position. |
+| `--keep-state` | off | Force restore stored state even during replay. Use for forward catch-up where you want to preserve cross-boundary correlation windows. Mutually exclusive with `--clear-state`. |
+
+### Throughput
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--buffer-size <N>` | `10000` | Bounded mpsc capacity for source→engine and engine→sink queues. |
+| `--batch-size <N>` | `1` | Maximum events per engine lock acquisition. Raise to 64 or 128 under load to amortize mutex overhead. |
+| `--drain-timeout <SECONDS>` | `5` | Seconds to wait for in-flight events to drain on shutdown. |
+
+### NATS (requires the `daemon-nats` build feature)
+
+| Flag | Env | Description |
+|------|-----|-------------|
+| `--nats-creds <FILE>` | `NATS_CREDS` | NATS credentials file (`.creds`) for JWT + NKey authentication. |
+| `--nats-token <TOKEN>` | `NATS_TOKEN` | NATS authentication token. |
+| `--nats-user <USER>` | `NATS_USER` | NATS username (requires `--nats-password`). |
+| `--nats-password <PASS>` | `NATS_PASSWORD` | NATS password (requires `--nats-user`). |
+| `--nats-nkey <SEED>` | `NATS_NKEY` | NATS NKey seed. |
+| `--nats-tls-cert <FILE>` | unset | TLS client certificate for mutual TLS with NATS. |
+| `--nats-tls-key <FILE>` | unset | TLS client private key for mutual TLS with NATS. |
+| `--nats-require-tls` | off | Refuse to connect to a NATS server that does not negotiate TLS. |
+| `--replay-from-sequence <SEQ>` | unset | Replay from a specific JetStream sequence number. |
+| `--replay-from-time <TIMESTAMP>` | unset | Replay from a wall-clock time (ISO 8601: `2026-05-15T10:00:00Z`). |
+| `--replay-from-latest` | off | Start from the last existing message in the stream, then deliver new ones. |
+| `--consumer-group <NAME>` | `RSIGMA_CONSUMER_GROUP` | Consumer group name for JetStream load balancing across daemon instances. |
+
+The auth methods are mutually exclusive. See [NATS Streaming](../../guide/nats-streaming.md) for the full operational guide.
+
+### Performance (advanced)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--bloom-prefilter` | off | Enable per-field bloom over positive substring needles. See [Performance Tuning](../../guide/performance-tuning.md#bloom-pre-filter-for-substring-heavy-rule-sets). |
+| `--bloom-max-bytes <BYTES>` | `1048576` | Memory budget for the bloom index (1 MiB default). No effect without `--bloom-prefilter`. |
+| `--cross-rule-ac` | off | Enable cross-rule Aho-Corasick. Available with the `daachorse-index` build feature. See [Performance Tuning](../../guide/performance-tuning.md#cross-rule-aho-corasick-pre-filter). |
+
+## Examples
+
+### Minimal daemon: stdin → stdout
+
+```bash
+rsigma engine daemon -r rules/
+```
+
+Reads NDJSON from stdin, writes detections to stdout. Default API on `0.0.0.0:9090`.
+
+### HTTP ingest with persistent state
+
+```bash
+rsigma engine daemon -r rules/ \
+    --input http \
+    --state-db /var/lib/rsigma/state.db \
+    --pipeline ecs_windows
+```
+
+Accepts `POST /api/v1/events` for ingest; correlation state survives restarts.
+
+### NATS source + sink + DLQ
+
+```bash
+NATS_CREDS=/etc/rsigma/nats.creds \
+rsigma engine daemon -r /etc/rsigma/rules/ \
+    --input "nats://nats.internal:4222/events.>" \
+    --output "nats://nats.internal:4222/detections" \
+    --dlq "file:///var/log/rsigma/dlq.ndjson" \
+    --state-db /var/lib/rsigma/state.db \
+    --buffer-size 50000 \
+    --batch-size 128 \
+    --drain-timeout 30 \
+    --nats-require-tls \
+    --api-addr 0.0.0.0:9090
+```
+
+### Multi-output fan-out
+
+```bash
+rsigma engine daemon -r rules/ \
+    --output stdout \
+    --output "file:///var/log/rsigma/detections.ndjson" \
+    --output "nats://nats.internal:4222/detections.urgent"
+```
+
+### Forensic replay from a NATS sequence
+
+```bash
+rsigma engine daemon -r rules/ \
+    --input "nats://localhost:4222/events.>" \
+    --replay-from-sequence 1001 \
+    --state-db /var/lib/rsigma/replay-state.db \
+    --timestamp-fallback skip
+```
+
+`--timestamp-fallback skip` prevents wall-clock contamination of correlation windows when replaying old events.
+
+## Health and readiness
+
+| Endpoint | Returns | Probe wiring |
+|----------|---------|--------------|
+| `/healthz` | 200 once the listener is up. | Liveness probe. |
+| `/readyz` | 200 once rules + pipelines are loaded; 503 during startup or after a failed reload. | Readiness probe. Drain traffic when 503. |
+| `/metrics` | Prometheus text format. ~20 metrics at startup; up to 27 once dynamic sources and OTLP fire. | Scrape every 15-30 s. |
+
+Full HTTP API reference: [HTTP API](../../reference/http-api.md). All metric definitions: [Prometheus metrics](../../reference/metrics.md).
+
+## Shutdown
+
+`SIGTERM` and `SIGINT` trigger a graceful drain bounded by `--drain-timeout`. In-flight events are processed and acknowledged before the daemon exits. With `--state-db`, the final correlation state snapshot is written during shutdown.
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Normal shutdown. |
+| `2` | Rules path could not be read at startup. |
+| `3` | Configuration error: bad `-p`, malformed `--suppress`, invalid `--input` URL, etc. |
+
+## See also
+
+- [Streaming Detection](../../guide/streaming-detection.md) for the daemon walkthrough.
+- [NATS Streaming](../../guide/nats-streaming.md) for auth, replay, consumer groups, and DLQ details.
+- [OTLP Integration](../../guide/otlp-integration.md) for the OTLP receiver and agent recipes.
+- [Performance Tuning](../../guide/performance-tuning.md) for `--bloom-prefilter`, `--cross-rule-ac`, `--batch-size`, and `--buffer-size`.
+- [Observability](../../guide/observability.md) for the RUST_LOG targets, tracing spans, and metric alerting recipes.
+- [`engine eval`](eval.md) for the one-shot evaluation counterpart.

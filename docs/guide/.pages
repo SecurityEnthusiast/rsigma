@@ -1,0 +1,12 @@
+nav:
+  - Evaluating Rules: evaluating-rules.md
+  - Streaming Detection: streaming-detection.md
+  - Rule Conversion: rule-conversion.md
+  - Linting Rules: linting-rules.md
+  - Processing Pipelines: processing-pipelines.md
+  - Input Formats: input-formats.md
+  - NATS Streaming: nats-streaming.md
+  - OTLP Integration: otlp-integration.md
+  - CI/CD: ci-cd.md
+  - Performance Tuning: performance-tuning.md
+  - Observability: observability.md

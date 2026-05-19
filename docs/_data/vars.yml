@@ -1,0 +1,17 @@
+# Variables exposed to MkDocs pages via mkdocs-macros-plugin.
+# Update these in lockstep with the workspace Cargo.toml on release.
+rsigma:
+  version: "0.11.0"
+  msrv: "1.88.0"
+  edition: "2024"
+  license: "MIT"
+  repo: "timescale/rsigma"
+  repo_url: "https://github.com/timescale/rsigma"
+  docker_image: "ghcr.io/timescale/rsigma"
+  crates:
+    - { name: rsigma-parser, role: "Parse Sigma YAML into a strongly-typed AST" }
+    - { name: rsigma-eval, role: "Compile and evaluate rules against JSON events" }
+    - { name: rsigma-convert, role: "Transform rules into backend-native query strings" }
+    - { name: rsigma-runtime, role: "Streaming runtime with input adapters, log processor, and hot-reload" }
+    - { name: rsigma, role: "CLI for parsing, validating, linting, evaluating, converting rules, and running the daemon" }
+    - { name: rsigma-lsp, role: "Language Server Protocol (LSP) server for IDE support" }

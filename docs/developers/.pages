@@ -1,0 +1,7 @@
+nav:
+  - Overview: index.md
+  - Testing: testing.md
+  - Fuzzing: fuzzing.md
+  - Adding Backends: adding-backends.md
+  - Adding Input Formats: adding-input-formats.md
+  - Linter and LSP: linter-and-lsp.md
