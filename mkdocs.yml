@@ -105,6 +105,8 @@ markdown_extensions:
       slugify: !!python/object/apply:pymdownx.slugs.slugify
         kwds:
           case: lower
+  - pymdownx.tasklist:
+      custom_checkbox: true
 
 plugins:
   - search:
@@ -196,11 +198,8 @@ plugins:
           - library/runtime.md
         Developers:
           - developers/index.md
-          - developers/architecture.md
-          - developers/contributing.md
           - developers/testing.md
           - developers/fuzzing.md
-          - developers/benchmarks.md
           - developers/adding-backends.md
           - developers/adding-input-formats.md
           - developers/linter-and-lsp.md
