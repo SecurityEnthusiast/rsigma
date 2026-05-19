@@ -127,10 +127,6 @@ plugins:
       enable_creation_date: true
       enabled: !ENV [CI, false]
       fallback_to_build_date: true
-  - git-committers:
-      repository: timescale/rsigma
-      branch: main
-      enabled: !ENV [CI, false]
   - include-markdown:
       preserve_includer_indent: true
       dedent: false
