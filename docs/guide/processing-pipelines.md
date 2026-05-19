@@ -97,7 +97,7 @@ Pipelines compose 26 transformation types. The most common ones in practice are:
 | `query_expression_placeholders` | Backend query template envelope (used by `rsigma-convert`). |
 | `nest` | Apply a group of transformations conditionally. |
 
-The full list with every field is in the [rsigma-eval Library reference](../library/eval.md#transformations-26-types). All transformations support the same three-tier condition system below.
+The full list with every field is in the [`rsigma-eval` README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-eval/README.md#transformations-26-types). All transformations support the same three-tier condition system below.
 
 ## Conditions: when does a transformation run?
 
@@ -400,4 +400,4 @@ Use them as templates and copy/customise for your schema. They're typical exampl
 - [Custom Attributes reference](../reference/custom-attributes.md) for every `rsigma.*` and `postgres.*` knob.
 - [Security Hardening reference](../reference/security.md) for the resource limits enforced on dynamic sources.
 - [CLI reference: `pipeline resolve`](../cli/pipeline/resolve.md) for the offline source-testing command.
-- [Library API: rsigma-eval pipelines](../library/eval.md#processing-pipelines) for embedding the pipeline engine in your own code.
+- [Library API: rsigma-eval](../library/eval.md) for embedding the pipeline engine in your own code.
