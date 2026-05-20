@@ -1,7 +1,7 @@
 mod helpers;
 
 use helpers::{corr_engine, eval, process};
-use rsigma_eval::{Engine, JsonEvent, parse_pipeline};
+use rsigma_eval::{Engine, JsonEvent, ProcessResultExt, parse_pipeline};
 use rsigma_parser::parse_sigma_yaml;
 use serde_json::json;
 
@@ -38,7 +38,7 @@ level: critical
             1000 + i,
         );
         assert!(
-            r.correlations.is_empty(),
+            r.correlation_count() == 0,
             "should not fire before threshold"
         );
     }
@@ -48,13 +48,31 @@ level: critical
         json!({"EventType": "failed_login", "User": "admin"}),
         1004,
     );
-    assert_eq!(r.correlations.len(), 1);
-    assert_eq!(r.correlations[0].rule_title, "Brute Force");
+    assert_eq!(r.correlation_count(), 1);
     assert_eq!(
-        r.correlations[0].group_key,
+        r.correlations().next().unwrap().header.rule_title,
+        "Brute Force"
+    );
+    assert_eq!(
+        r.correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
+            .group_key,
         vec![("User".to_string(), "admin".to_string())]
     );
-    assert!((r.correlations[0].aggregated_value - 5.0).abs() < f64::EPSILON);
+    assert!(
+        (r.correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
+            .aggregated_value
+            - 5.0)
+            .abs()
+            < f64::EPSILON
+    );
 
     // Different user should not fire (independent group)
     let r2 = process(
@@ -62,7 +80,7 @@ level: critical
         json!({"EventType": "failed_login", "User": "guest"}),
         1010,
     );
-    assert!(r2.correlations.is_empty());
+    assert!(r2.correlation_count() == 0);
 }
 
 #[test]
@@ -104,7 +122,7 @@ level: high
         json!({"EventType": "login", "User": "admin", "SourceIP": "10.0.0.2"}),
         base_ts + 1,
     );
-    assert!(r.correlations.is_empty());
+    assert!(r.correlation_count() == 0);
 
     // Third distinct IP -- fires
     let r = process(
@@ -112,8 +130,18 @@ level: high
         json!({"EventType": "login", "User": "admin", "SourceIP": "10.0.0.3"}),
         base_ts + 2,
     );
-    assert_eq!(r.correlations.len(), 1);
-    assert!((r.correlations[0].aggregated_value - 3.0).abs() < f64::EPSILON);
+    assert_eq!(r.correlation_count(), 1);
+    assert!(
+        (r.correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
+            .aggregated_value
+            - 3.0)
+            .abs()
+            < f64::EPSILON
+    );
 }
 
 #[test]
@@ -273,10 +301,15 @@ level: medium
     );
     assert_eq!(matches.len(), 1);
     let m = &matches[0];
-    assert_eq!(m.rule_title, "Port Scan");
-    assert_eq!(m.matched_selections, vec!["selection"]);
+    let det = m.as_detection().unwrap();
+    assert_eq!(m.header.rule_title, "Port Scan");
+    assert_eq!(det.matched_selections, vec!["selection"]);
 
-    let field_names: Vec<&str> = m.matched_fields.iter().map(|f| f.field.as_str()).collect();
+    let field_names: Vec<&str> = det
+        .matched_fields
+        .iter()
+        .map(|f| f.field.as_str())
+        .collect();
     assert!(field_names.contains(&"DestinationPort"));
     assert!(field_names.contains(&"Protocol"));
     // SourceIP was not part of detection, should not appear
@@ -513,9 +546,12 @@ level: high
         base_ts + 2,
     );
     assert_eq!(
-        r.correlations.len(),
+        r.correlation_count(),
         1,
         "3 events from two rules should trigger correlation"
     );
-    assert_eq!(r.correlations[0].rule_title, "Recon Burst");
+    assert_eq!(
+        r.correlations().next().unwrap().header.rule_title,
+        "Recon Burst"
+    );
 }

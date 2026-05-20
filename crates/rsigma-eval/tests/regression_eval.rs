@@ -8,7 +8,7 @@
 //! files: the corpus is small enough that locality matters more than
 //! externalization, and a snapshot diff is easier to review in a PR.
 
-use rsigma_eval::{Engine, JsonEvent, MatchResult, parse_pipeline};
+use rsigma_eval::{Engine, EvaluationResult, JsonEvent, parse_pipeline};
 use rsigma_parser::parse_sigma_yaml;
 use serde_json::{Value, json};
 
@@ -21,8 +21,8 @@ fn engine_from(yaml: &str) -> Engine {
 }
 
 /// Sort match results by `rule_id` for stable comparison.
-fn sorted_titles(results: Vec<MatchResult>) -> Vec<String> {
-    let mut titles: Vec<String> = results.into_iter().map(|m| m.rule_title).collect();
+fn sorted_titles(results: Vec<EvaluationResult>) -> Vec<String> {
+    let mut titles: Vec<String> = results.into_iter().map(|m| m.header.rule_title).collect();
     titles.sort();
     titles
 }

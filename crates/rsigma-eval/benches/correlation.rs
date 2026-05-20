@@ -10,7 +10,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use rand::RngExt;
-use rsigma_eval::{CorrelationConfig, CorrelationEngine, JsonEvent};
+use rsigma_eval::{CorrelationConfig, CorrelationEngine, JsonEvent, ProcessResultExt};
 use rsigma_parser::parse_sigma_yaml;
 
 // ---------------------------------------------------------------------------
@@ -136,8 +136,8 @@ fn bench_correlation_throughput(c: &mut Criterion) {
                         for (i, event) in events.iter().enumerate() {
                             let result =
                                 engine.process_event_at(black_box(event), base_ts + i as i64);
-                            det_total += result.detections.len();
-                            corr_total += result.correlations.len();
+                            det_total += result.detection_count();
+                            corr_total += result.correlation_count();
                         }
                         black_box((det_total, corr_total));
                     },

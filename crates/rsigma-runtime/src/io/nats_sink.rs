@@ -51,18 +51,12 @@ impl NatsSink {
     /// Each message is published with publish-ack: the call blocks until the
     /// server confirms persistence, or returns an error on failure.
     pub async fn send(&self, result: &ProcessResult) -> Result<(), RuntimeError> {
-        if result.detections.is_empty() && result.correlations.is_empty() {
+        if result.is_empty() {
             return Ok(());
         }
 
         let mut published = 0_usize;
-        for m in &result.detections {
-            let json = serde_json::to_string(m)?;
-            self.publish_one(&json).await?;
-            published += 1;
-        }
-
-        for m in &result.correlations {
+        for m in result {
             let json = serde_json::to_string(m)?;
             self.publish_one(&json).await?;
             published += 1;

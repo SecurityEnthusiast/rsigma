@@ -3,6 +3,36 @@
 All notable changes to RSigma are documented in this file.
 Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma/releases).
 
+## [Unreleased]
+
+### Unified evaluation result type (#132)
+
+`MatchResult` and `CorrelationResult` are collapsed into a single `EvaluationResult` via composition. The five fields shared between detection and correlation today (`rule_title`, `rule_id`, `level`, `tags`, `custom_attributes`) move into a new `RuleHeader` struct along with a new optional `enrichments` map. Kind-specific fields live in `DetectionBody` and `CorrelationBody`, behind a `#[serde(untagged)]` `ResultBody` enum.
+
+**Wire shape preservation.** Both the header and the body flatten into the parent JSON object via `#[serde(flatten)]`, so each NDJSON line remains a single flat object: same field set, same values, same `skip_serializing_if` behavior. Downstream consumers continue to distinguish detection from correlation by presence of `correlation_type` (correlation-only). The one cosmetic change is key order on rules with a non-empty `custom_attributes` map: `custom_attributes` is now emitted between the rule header fields and the kind-specific body fields rather than after them. JSON objects are unordered per spec, so this is invisible to compliant consumers; the golden snapshot tests at `crates/rsigma-eval/tests/wire_shape_golden.rs` pin the new ordering for both kinds.
+
+**Library API is breaking but pre-1.0.** The old `MatchResult`, `CorrelationResult`, and the struct shape of `ProcessResult { detections, correlations }` are replaced by:
+
+- `EvaluationResult` (the single result type)
+- `RuleHeader`, `DetectionBody`, `CorrelationBody`, `ResultBody` (the composable parts)
+- `ProcessResult` (now a type alias for `Vec<EvaluationResult>`; detections come first, correlations after, in evaluation order)
+- `ProcessResultExt` extension trait on `[EvaluationResult]` exposing `detections()` / `correlations()` iterators and `detection_count()` / `correlation_count()`
+
+Migration on the consumer side:
+
+| Before | After |
+|--------|-------|
+| `m.rule_title`, `m.tags`, etc. | `m.header.rule_title`, `m.header.tags`, ... |
+| `m.matched_fields`, `m.event` | `m.as_detection().unwrap().matched_fields`, `m.as_detection().unwrap().event` |
+| `m.correlation_type`, `m.group_key`, ... | `m.as_correlation().unwrap().correlation_type`, ... |
+| `result.detections.len()` | `result.detection_count()` |
+| `result.correlations.iter()` | `result.correlations()` |
+| `result.detections[0]` | `result.detections().next().unwrap()` |
+
+Internally, the three duplicated `for m in &result.detections / for m in &result.correlations` loops in the file, stdout, and NATS sinks collapse to one `for m in result` loop.
+
+A new Criterion bench (`crates/rsigma-eval/benches/result_serialize.rs`) pins serialize throughput of the new design against a byte-for-byte copy of the old types across four representative inputs; the derived `#[serde(flatten)]` path is within ±4% of the baseline on every sample.
+
 ## [0.12.0] - 2026-05-20
 
 **TL;DR**

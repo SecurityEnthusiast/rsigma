@@ -508,8 +508,9 @@ fn test_include_event_custom_attribute() {
     let ev = json!({"action": "login", "user": "alice"});
     let event = JsonEvent::borrow(&ev);
     let result = evaluate_rule(&compiled, &event).unwrap();
-    assert!(result.event.is_some());
-    assert_eq!(result.event.unwrap(), ev);
+    let det = result.as_detection().unwrap();
+    assert!(det.event.is_some());
+    assert_eq!(det.event.as_ref().unwrap(), &ev);
 }
 
 #[test]
@@ -522,7 +523,7 @@ fn test_no_include_event_by_default() {
     let ev = json!({"action": "login", "user": "alice"});
     let event = JsonEvent::borrow(&ev);
     let result = evaluate_rule(&compiled, &event).unwrap();
-    assert!(result.event.is_none());
+    assert!(result.as_detection().unwrap().event.is_none());
 }
 
 #[test]
@@ -561,11 +562,11 @@ severity_score: 42
     let result = evaluate_rule(&compiled, &event).unwrap();
 
     assert_eq!(
-        result.custom_attributes.get("my_custom_field"),
+        result.header.custom_attributes.get("my_custom_field"),
         Some(&serde_json::Value::String("some_value".to_string()))
     );
     assert_eq!(
-        result.custom_attributes.get("severity_score"),
+        result.header.custom_attributes.get("severity_score"),
         Some(&serde_json::json!(42))
     );
 }
@@ -579,7 +580,7 @@ fn test_empty_custom_attributes() {
     let ev = json!({"action": "login"});
     let event = JsonEvent::borrow(&ev);
     let result = evaluate_rule(&compiled, &event).unwrap();
-    assert!(result.custom_attributes.is_empty());
+    assert!(result.header.custom_attributes.is_empty());
 }
 
 #[test]

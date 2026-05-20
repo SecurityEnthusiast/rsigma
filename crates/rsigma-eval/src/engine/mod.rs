@@ -21,7 +21,7 @@ use crate::compiler::{
 use crate::error::{EvalError, Result};
 use crate::event::Event;
 use crate::pipeline::{Pipeline, apply_pipelines};
-use crate::result::MatchResult;
+use crate::result::EvaluationResult;
 use crate::rule_index::RuleIndex;
 
 use bloom_index::{BloomCache, FieldBloomIndex};
@@ -61,7 +61,7 @@ use filters::{filter_logsource_contains, logsource_matches, rewrite_condition_id
 /// let event = JsonEvent::borrow(&event_val);
 /// let matches = engine.evaluate(&event);
 /// assert_eq!(matches.len(), 1);
-/// assert_eq!(matches[0].rule_title, "Detect Whoami");
+/// assert_eq!(matches[0].header.rule_title, "Detect Whoami");
 /// ```
 pub struct Engine {
     rules: Vec<CompiledRule>,
@@ -509,7 +509,7 @@ impl Engine {
     }
 
     /// Evaluate an event against candidate rules using the inverted index.
-    pub fn evaluate<E: Event>(&self, event: &E) -> Vec<MatchResult> {
+    pub fn evaluate<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
         if self.bloom_prefilter {
             self.evaluate_with_bloom_path(event)
         } else {
@@ -551,7 +551,7 @@ impl Engine {
         None
     }
 
-    fn evaluate_no_bloom_path<E: Event>(&self, event: &E) -> Vec<MatchResult> {
+    fn evaluate_no_bloom_path<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
         // The public `evaluate_rule` is not generic over `BloomLookup`, so
         // the no-bloom hot path lowers to straight-line code identical to
         // the pre-bloom engine.
@@ -565,8 +565,11 @@ impl Engine {
             }
             let rule = &self.rules[idx];
             if let Some(mut m) = evaluate_rule(rule, event) {
-                if self.include_event && m.event.is_none() {
-                    m.event = Some(event.to_json());
+                if self.include_event
+                    && let Some(d) = m.as_detection_mut()
+                    && d.event.is_none()
+                {
+                    d.event = Some(event.to_json());
                 }
                 results.push(m);
             }
@@ -574,7 +577,7 @@ impl Engine {
         results
     }
 
-    fn evaluate_with_bloom_path<E: Event>(&self, event: &E) -> Vec<MatchResult> {
+    fn evaluate_with_bloom_path<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
         let bloom = BloomCache::new(&self.bloom_index, event);
         let keep = self.cross_rule_ac_keep_mask(event);
         let mut results = Vec::new();
@@ -586,8 +589,11 @@ impl Engine {
             }
             let rule = &self.rules[idx];
             if let Some(mut m) = evaluate_rule_with_bloom(rule, event, &bloom) {
-                if self.include_event && m.event.is_none() {
-                    m.event = Some(event.to_json());
+                if self.include_event
+                    && let Some(d) = m.as_detection_mut()
+                    && d.event.is_none()
+                {
+                    d.event = Some(event.to_json());
                 }
                 results.push(m);
             }
@@ -604,7 +610,7 @@ impl Engine {
         &self,
         event: &E,
         event_logsource: &LogSource,
-    ) -> Vec<MatchResult> {
+    ) -> Vec<EvaluationResult> {
         if self.bloom_prefilter {
             self.evaluate_with_logsource_with_bloom(event, event_logsource)
         } else {
@@ -616,7 +622,7 @@ impl Engine {
         &self,
         event: &E,
         event_logsource: &LogSource,
-    ) -> Vec<MatchResult> {
+    ) -> Vec<EvaluationResult> {
         let keep = self.cross_rule_ac_keep_mask(event);
         let mut results = Vec::new();
         for idx in self.rule_index.candidates(event) {
@@ -629,8 +635,11 @@ impl Engine {
             if logsource_matches(&rule.logsource, event_logsource)
                 && let Some(mut m) = evaluate_rule(rule, event)
             {
-                if self.include_event && m.event.is_none() {
-                    m.event = Some(event.to_json());
+                if self.include_event
+                    && let Some(d) = m.as_detection_mut()
+                    && d.event.is_none()
+                {
+                    d.event = Some(event.to_json());
                 }
                 results.push(m);
             }
@@ -642,7 +651,7 @@ impl Engine {
         &self,
         event: &E,
         event_logsource: &LogSource,
-    ) -> Vec<MatchResult> {
+    ) -> Vec<EvaluationResult> {
         let bloom = BloomCache::new(&self.bloom_index, event);
         let keep = self.cross_rule_ac_keep_mask(event);
         let mut results = Vec::new();
@@ -656,8 +665,11 @@ impl Engine {
             if logsource_matches(&rule.logsource, event_logsource)
                 && let Some(mut m) = evaluate_rule_with_bloom(rule, event, &bloom)
             {
-                if self.include_event && m.event.is_none() {
-                    m.event = Some(event.to_json());
+                if self.include_event
+                    && let Some(d) = m.as_detection_mut()
+                    && d.event.is_none()
+                {
+                    d.event = Some(event.to_json());
                 }
                 results.push(m);
             }
@@ -670,7 +682,7 @@ impl Engine {
     /// When the `parallel` feature is enabled, events are evaluated concurrently
     /// using rayon's work-stealing thread pool. Otherwise, falls back to
     /// sequential evaluation.
-    pub fn evaluate_batch<E: Event + Sync>(&self, events: &[&E]) -> Vec<Vec<MatchResult>> {
+    pub fn evaluate_batch<E: Event + Sync>(&self, events: &[&E]) -> Vec<Vec<EvaluationResult>> {
         #[cfg(feature = "parallel")]
         {
             use rayon::prelude::*;

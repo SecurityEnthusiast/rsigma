@@ -2,7 +2,7 @@ flowchart TD
     YAML["YAML input"]
     SERDE["yaml_serde"]
     EVENTS["Log events"]
-    OUTPUT["MatchResult · CorrelationResult\nrule title · id · level · tags\nmatched selections · field matches\naggregated values · optional events"]
+    OUTPUT["EvaluationResult\nRuleHeader: title · id · level · tags\nResultBody: Detection (matched fields/selections) ·\nCorrelation (correlation_type · group_key · aggregated_value)"]
     QUERIES["SQL · SPL · KQL · Lucene"]
     EDITOR["Editor diagnostics + code actions"]
     LEGEND["* = feature-gated\n** = requires daachorse-index feature"]

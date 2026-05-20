@@ -201,7 +201,18 @@ Stateful processing with sliding time windows, group-by aggregation, and all 8 c
 
 ## Output Types
 
-### MatchResult
+`EvaluationResult` is the single output type produced by both detection and correlation. It composes a `RuleHeader` (shared rule metadata) and a `ResultBody` (kind-specific payload), both serialized into one flat JSON object via `#[serde(flatten)]`. Downstream consumers distinguish detection from correlation by presence of `correlation_type` (correlation-only) or `matched_fields` (detection-only). `ProcessResult` is an alias for `Vec<EvaluationResult>`.
+
+### EvaluationResult
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `header` | `RuleHeader` | Shared rule metadata, flattened on serialize |
+| `body` | `ResultBody` | `Detection(DetectionBody)` or `Correlation(CorrelationBody)`, flattened on serialize |
+
+Accessors: `is_detection()` / `is_correlation()`, `as_detection() -> Option<&DetectionBody>`, `as_correlation() -> Option<&CorrelationBody>` (plus mutable variants).
+
+### RuleHeader
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -209,9 +220,27 @@ Stateful processing with sliding time windows, group-by aggregation, and all 8 c
 | `rule_id` | `Option<String>` | Rule UUID |
 | `level` | `Option<Level>` | Severity level |
 | `tags` | `Vec<String>` | Tags |
+| `custom_attributes` | `Arc<HashMap<String, Value>>` | Custom attributes from the rule; skipped when empty |
+| `enrichments` | `Option<Map<String, Value>>` | Optional enrichment map; skipped when `None` |
+
+### DetectionBody
+
+| Field | Type | Description |
+|-------|------|-------------|
 | `matched_selections` | `Vec<String>` | Detection names that matched |
 | `matched_fields` | `Vec<FieldMatch>` | Field/value pairs that contributed to the match |
 | `event` | `Option<Value>` | Full event JSON when `include_event` is enabled |
+
+### CorrelationBody
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `correlation_type` | `CorrelationType` | e.g. `event_count`, `temporal` |
+| `group_key` | `Vec<(String, String)>` | Group-by field/value pairs |
+| `aggregated_value` | `f64` | Computed aggregate (count, sum, avg, percentile, median) |
+| `timespan_secs` | `u64` | Correlation window duration |
+| `events` | `Option<Vec<Value>>` | Contributing events (Full mode) |
+| `event_refs` | `Option<Vec<EventRef>>` | Event references (Refs mode) |
 
 ### FieldMatch
 
@@ -220,27 +249,25 @@ Stateful processing with sliding time windows, group-by aggregation, and all 8 c
 | `field` | `String` |
 | `value` | `serde_json::Value` |
 
-### CorrelationResult
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `rule_title` | `String` | Correlation rule title |
-| `rule_id` | `Option<String>` | Rule UUID |
-| `level` | `Option<Level>` | Severity level |
-| `tags` | `Vec<String>` | Tags |
-| `correlation_type` | `CorrelationType` | e.g. `event_count`, `temporal` |
-| `group_key` | `Vec<(String, String)>` | Group-by field/value pairs |
-| `aggregated_value` | `f64` | Computed aggregate (count, sum, avg, percentile, median) |
-| `timespan_secs` | `u64` | Correlation window duration |
-| `events` | `Option<Vec<Value>>` | Contributing events (Full mode) |
-| `event_refs` | `Option<Vec<EventRef>>` | Event references (Refs mode) |
-
 ### EventRef
 
 | Field | Type |
 |-------|------|
 | `timestamp` | `i64` |
 | `id` | `Option<String>` |
+
+### ProcessResultExt
+
+Extension trait on `[EvaluationResult]` that exposes by-kind views without forcing pattern matching:
+
+| Method | Returns |
+|--------|---------|
+| `detections()` | `impl Iterator<Item = &EvaluationResult>` filtering to Detection-bodied results |
+| `correlations()` | `impl Iterator<Item = &EvaluationResult>` filtering to Correlation-bodied results |
+| `detection_count()` | `usize` |
+| `correlation_count()` | `usize` |
+
+Bring `rsigma_eval::ProcessResultExt` into scope to use these methods.
 
 ## Processing Pipelines
 
@@ -546,10 +573,10 @@ let mut engine = CorrelationEngine::new(config);
 engine.set_include_event(true);                  // embed event JSON in all match results
 engine.add_collection(&collection).unwrap();
 let result = engine.process_event_at(&event, timestamp_secs);
-// result.detections: Vec<MatchResult>
-// result.correlations: Vec<CorrelationResult>
-// result.correlations[0].events: Option<Vec<serde_json::Value>>     (Full mode)
-// result.correlations[0].event_refs: Option<Vec<EventRef>>          (Refs mode)
+// result: Vec<EvaluationResult>, detections-then-correlations in evaluation order
+// result.detections() / result.correlations(): filtered iterators (ProcessResultExt)
+// result.correlations().next().unwrap().as_correlation().unwrap().events:     (Full mode)
+// result.correlations().next().unwrap().as_correlation().unwrap().event_refs: (Refs mode)
 ```
 
 ## Benchmarks

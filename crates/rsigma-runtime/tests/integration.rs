@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rsigma_eval::CorrelationConfig;
+use rsigma_eval::{CorrelationConfig, ProcessResultExt};
 use rsigma_runtime::{LogProcessor, NoopMetrics, RuntimeEngine};
 
 fn build_processor(rules_yaml: &str) -> (LogProcessor, tempfile::TempDir) {
@@ -43,16 +43,17 @@ level: high
 
     assert_eq!(results.len(), 2);
     assert_eq!(
-        results[0].detections.len(),
+        results[0].detection_count(),
         1,
         "powershell line should match"
     );
     assert_eq!(
-        results[0].detections[0].rule_title, "Suspicious Process",
+        results[0].detections().next().unwrap().header.rule_title,
+        "Suspicious Process",
         "detection should carry the rule title"
     );
     assert!(
-        results[1].detections.is_empty(),
+        results[1].detection_count() == 0,
         "notepad line should not match"
     );
 }
@@ -76,7 +77,7 @@ detection:
     let results = proc.process_batch_lines(&batch, &identity_filter);
 
     assert_eq!(results.len(), 1);
-    assert!(results[0].detections.is_empty());
+    assert!(results[0].detection_count() == 0);
 }
 
 #[test]
@@ -110,7 +111,7 @@ detection:
     let batch = vec![r#"{"EventID": 42}"#.to_string()];
     let results = proc.process_batch_lines(&batch, &identity_filter);
     assert!(
-        results[0].detections.is_empty(),
+        results[0].detection_count() == 0,
         "should not match EventID=42 yet"
     );
 
@@ -132,6 +133,13 @@ detection:
     proc.reload_rules().expect("reload should succeed");
 
     let results = proc.process_batch_lines(&batch, &identity_filter);
-    assert_eq!(results[0].detections.len(), 1, "reloaded rule should match");
-    assert_eq!(results[0].detections[0].rule_title, "Updated");
+    assert_eq!(
+        results[0].detection_count(),
+        1,
+        "reloaded rule should match"
+    );
+    assert_eq!(
+        results[0].detections().next().unwrap().header.rule_title,
+        "Updated"
+    );
 }

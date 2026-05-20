@@ -288,16 +288,7 @@ impl RuntimeEngine {
     /// depending on whether correlation rules are loaded.
     pub fn process_batch<E: Event + Sync>(&mut self, events: &[&E]) -> Vec<ProcessResult> {
         match &mut self.engine {
-            EngineVariant::DetectionOnly(engine) => {
-                let batch_detections = engine.evaluate_batch(events);
-                batch_detections
-                    .into_iter()
-                    .map(|detections| ProcessResult {
-                        detections,
-                        correlations: vec![],
-                    })
-                    .collect()
-            }
+            EngineVariant::DetectionOnly(engine) => engine.evaluate_batch(events),
             EngineVariant::WithCorrelations(engine) => engine.process_batch(events),
         }
     }

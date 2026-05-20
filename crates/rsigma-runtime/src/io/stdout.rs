@@ -16,23 +16,14 @@ impl StdoutSink {
 
     /// Serialize and write a ProcessResult to stdout.
     pub fn send(&self, result: &ProcessResult) -> Result<(), RuntimeError> {
-        if result.detections.is_empty() && result.correlations.is_empty() {
+        if result.is_empty() {
             return Ok(());
         }
 
         let stdout = std::io::stdout();
         let mut out = stdout.lock();
 
-        for m in &result.detections {
-            let json = if self.pretty {
-                serde_json::to_string_pretty(m)?
-            } else {
-                serde_json::to_string(m)?
-            };
-            writeln!(out, "{json}")?;
-        }
-
-        for m in &result.correlations {
+        for m in result {
             let json = if self.pretty {
                 serde_json::to_string_pretty(m)?
             } else {

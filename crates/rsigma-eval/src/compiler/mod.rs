@@ -34,7 +34,7 @@ use rsigma_parser::{
 use crate::error::{EvalError, Result};
 use crate::event::Event;
 use crate::matcher::{CompiledMatcher, sigma_string_to_regex};
-use crate::result::{FieldMatch, MatchResult};
+use crate::result::{DetectionBody, EvaluationResult, FieldMatch, ResultBody, RuleHeader};
 
 pub(crate) use helpers::yaml_to_json_map;
 use helpers::{
@@ -273,13 +273,14 @@ fn validate_condition_refs(
     }
 }
 
-/// Evaluate a compiled rule against an event, returning a `MatchResult` if it matches.
+/// Evaluate a compiled rule against an event, returning an
+/// [`EvaluationResult`] if it matches.
 ///
 /// This is the public entry point for one-shot rule evaluation. It does no
 /// bloom pre-filtering; every detection item is evaluated directly. Engines
 /// that maintain a [`crate::engine::bloom_index::FieldBloomIndex`] should
 /// instead call [`evaluate_rule_with_bloom`].
-pub fn evaluate_rule(rule: &CompiledRule, event: &impl Event) -> Option<MatchResult> {
+pub fn evaluate_rule(rule: &CompiledRule, event: &impl Event) -> Option<EvaluationResult> {
     evaluate_rule_with_bloom(rule, event, &crate::engine::bloom_index::NoBloom)
 }
 
@@ -294,7 +295,7 @@ pub(crate) fn evaluate_rule_with_bloom<E, B>(
     rule: &CompiledRule,
     event: &E,
     bloom: &B,
-) -> Option<MatchResult>
+) -> Option<EvaluationResult>
 where
     E: Event,
     B: crate::engine::bloom_index::BloomLookup,
@@ -317,15 +318,20 @@ where
                 None
             };
 
-            return Some(MatchResult {
-                rule_title: rule.title.clone(),
-                rule_id: rule.id.clone(),
-                level: rule.level,
-                tags: rule.tags.clone(),
-                matched_selections,
-                matched_fields,
-                event: event_data,
-                custom_attributes: rule.custom_attributes.clone(),
+            return Some(EvaluationResult {
+                header: RuleHeader {
+                    rule_title: rule.title.clone(),
+                    rule_id: rule.id.clone(),
+                    level: rule.level,
+                    tags: rule.tags.clone(),
+                    custom_attributes: rule.custom_attributes.clone(),
+                    enrichments: None,
+                },
+                body: ResultBody::Detection(DetectionBody {
+                    matched_selections,
+                    matched_fields,
+                    event: event_data,
+                }),
             });
         }
     }

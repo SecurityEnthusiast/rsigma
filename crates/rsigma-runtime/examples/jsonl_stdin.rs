@@ -63,16 +63,15 @@ fn flush_batch(processor: &LogProcessor, batch: &mut Vec<String>) {
     let results = processor.process_batch_with_format(batch, &InputFormat::Json, None);
 
     for (i, result) in results.iter().enumerate() {
-        for det in &result.detections {
+        for r in result {
+            let kind = if r.is_detection() {
+                "DETECTION"
+            } else {
+                "CORRELATION"
+            };
             println!(
-                "DETECTION line={} rule=\"{}\" level={:?} id={:?}",
-                i, det.rule_title, det.level, det.rule_id,
-            );
-        }
-        for corr in &result.correlations {
-            println!(
-                "CORRELATION line={} rule=\"{}\" level={:?} id={:?}",
-                i, corr.rule_title, corr.level, corr.rule_id,
+                "{kind} line={} rule=\"{}\" level={:?} id={:?}",
+                i, r.header.rule_title, r.header.level, r.header.rule_id,
             );
         }
     }

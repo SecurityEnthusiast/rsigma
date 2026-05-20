@@ -2,7 +2,8 @@ mod helpers;
 
 use helpers::{corr_engine, corr_engine_with_config, process};
 use rsigma_eval::{
-    CorrelationAction, CorrelationConfig, CorrelationEngine, JsonEvent, TimestampFallback,
+    CorrelationAction, CorrelationConfig, CorrelationEngine, JsonEvent, ProcessResultExt,
+    TimestampFallback,
 };
 use rsigma_parser::parse_sigma_yaml;
 use serde_json::json;
@@ -47,7 +48,7 @@ fn window_expiry_all_events_stale() {
     let r = process(&mut engine, login_event("admin"), base + 200);
     // The old events expired; only 1 new event exists in the window
     assert!(
-        r.correlations.is_empty(),
+        r.correlation_count() == 0,
         "stale events should have expired, only 1 event in window"
     );
 }
@@ -69,9 +70,17 @@ fn exact_window_boundary() {
     // Whether this fires depends on boundary semantics (< vs <=).
     // The test documents the actual behavior rather than asserting one way.
     // If 3 events survive: correlation fires. If t=1000 was evicted: doesn't fire.
-    let fired = !r.correlations.is_empty();
+    let fired = r.correlation_count() > 0;
     if fired {
-        assert_eq!(r.correlations[0].aggregated_value, 3.0);
+        assert_eq!(
+            r.correlations()
+                .next()
+                .unwrap()
+                .as_correlation()
+                .unwrap()
+                .aggregated_value,
+            3.0
+        );
     }
     // Either way, this test ensures no panic at boundary
 }
@@ -160,7 +169,7 @@ level: high
     process(&mut engine, json!({"type": "c", "User": "admin"}), base);
     process(&mut engine, json!({"type": "b", "User": "admin"}), base + 1);
     let r = process(&mut engine, json!({"type": "a", "User": "admin"}), base + 2);
-    assert!(r.correlations.is_empty(), "reverse order should not fire");
+    assert!(r.correlation_count() == 0, "reverse order should not fire");
 
     // Now correct order: A, B, C
     process(
@@ -178,7 +187,11 @@ level: high
         json!({"type": "c", "User": "admin"}),
         base + 12,
     );
-    assert_eq!(r.correlations.len(), 1, "correct A->B->C order should fire");
+    assert_eq!(
+        r.correlation_count(),
+        1,
+        "correct A->B->C order should fire"
+    );
 }
 
 #[test]
@@ -222,11 +235,14 @@ fn suppress_prevents_re_fire_within_window() {
     process(&mut engine, login_event("admin"), base);
     process(&mut engine, login_event("admin"), base + 1);
     let r = process(&mut engine, login_event("admin"), base + 2);
-    assert_eq!(r.correlations.len(), 1, "should fire first time");
+    assert_eq!(r.correlation_count(), 1, "should fire first time");
 
     // 4th event within suppress window (30s) -- should be suppressed
     let r = process(&mut engine, login_event("admin"), base + 10);
-    assert!(r.correlations.is_empty(), "should be suppressed within 30s");
+    assert!(
+        r.correlation_count() == 0,
+        "should be suppressed within 30s"
+    );
 
     // Event after suppress window expires (>30s from first fire at t=1002)
     let r = process(&mut engine, login_event("admin"), base + 35);
@@ -249,17 +265,17 @@ fn reset_action_clears_window_after_firing() {
     process(&mut engine, login_event("admin"), base);
     process(&mut engine, login_event("admin"), base + 1);
     let r = process(&mut engine, login_event("admin"), base + 2);
-    assert_eq!(r.correlations.len(), 1, "should fire");
+    assert_eq!(r.correlation_count(), 1, "should fire");
 
     // After reset: window is cleared. Next event should not fire (only 1 event)
     let r = process(&mut engine, login_event("admin"), base + 3);
-    assert!(r.correlations.is_empty(), "window should have been reset");
+    assert!(r.correlation_count() == 0, "window should have been reset");
 
     // Must accumulate 3 fresh events to fire again
     process(&mut engine, login_event("admin"), base + 4);
     let r = process(&mut engine, login_event("admin"), base + 5);
     assert_eq!(
-        r.correlations.len(),
+        r.correlation_count(),
         1,
         "should fire again after 3 fresh events"
     );
@@ -283,9 +299,9 @@ fn timestamp_fallback_skip_runs_detection_but_skips_correlation() {
         let ev = json!({"EventType": "login", "User": "admin"});
         let event = JsonEvent::borrow(&ev);
         let r = engine.process_event(&event);
-        assert_eq!(r.detections.len(), 1, "detection should fire");
+        assert_eq!(r.detection_count(), 1, "detection should fire");
         assert!(
-            r.correlations.is_empty(),
+            r.correlation_count() == 0,
             "correlation should be skipped without timestamp"
         );
     }
@@ -331,7 +347,7 @@ level: high
         base + 1,
     );
     assert!(
-        r.correlations.is_empty(),
+        r.correlation_count() == 0,
         "different (User, SourceIP) groups should not combine"
     );
 
@@ -341,9 +357,14 @@ level: high
         json!({"EventType": "login", "User": "admin", "SourceIP": "10.0.0.1"}),
         base + 2,
     );
-    assert_eq!(r.correlations.len(), 1, "same group should accumulate");
+    assert_eq!(r.correlation_count(), 1, "same group should accumulate");
     assert_eq!(
-        r.correlations[0].group_key,
+        r.correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
+            .group_key,
         vec![
             ("User".to_string(), "admin".to_string()),
             ("SourceIP".to_string(), "10.0.0.1".to_string()),
