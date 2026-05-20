@@ -50,8 +50,8 @@ enum LogFormat {
     Text,
 }
 
-// The new noun-led command groups (`engine`, `rule`, `backend`, `pipeline`,
-// `attack`) are the source of truth. The flat top-level variants that follow
+// The new noun-led command groups (`engine`, `rule`, `backend`, `pipeline`)
+// are the source of truth. The flat top-level variants that follow
 // are deprecated aliases kept for one release; each carries `[deprecated]` in
 // its `about` text and prints a stderr warning before forwarding to the same
 // `cmd_*` helper.
@@ -84,12 +84,6 @@ enum Commands {
     Pipeline {
         #[command(subcommand)]
         cmd: PipelineCommands,
-    },
-
-    /// MITRE ATT&CK tooling (reserved; populated by the ATT&CK contributor PR)
-    Attack {
-        #[command(subcommand)]
-        cmd: AttackCommands,
     },
 
     // ---- Deprecated flat aliases (visible this release, hidden next) ----
@@ -183,15 +177,6 @@ enum PipelineCommands {
     Resolve(ResolveArgs),
 }
 
-/// Reserved for the MITRE ATT&CK contributor work in
-/// [post-evaluation_enrichment_f3efb7b4.plan.md].
-///
-/// Concrete variants (`Coverage`, `Update`) land in that PR behind
-/// `#[cfg(feature = "attack-mapping")]`. Until then this enum is empty and
-/// `rsigma attack` reports "no available subcommands" via clap.
-#[derive(Subcommand)]
-enum AttackCommands {}
-
 fn main() {
     let cli = Cli::parse();
 
@@ -231,7 +216,6 @@ fn dispatch(command: Commands) {
         Commands::Rule { cmd } => dispatch_rule(cmd),
         Commands::Backend { cmd } => dispatch_backend(cmd),
         Commands::Pipeline { cmd } => dispatch_pipeline(cmd),
-        Commands::Attack { cmd } => dispatch_attack(cmd),
 
         // -- Deprecated flat aliases ----------------------------------------
         Commands::Eval(args) => {
@@ -317,14 +301,6 @@ fn dispatch_pipeline(cmd: PipelineCommands) {
     match cmd {
         PipelineCommands::Resolve(args) => commands::cmd_resolve(args),
     }
-}
-
-fn dispatch_attack(cmd: AttackCommands) {
-    // `AttackCommands` is intentionally empty until the ATT&CK contributor PR
-    // populates it. The exhaustive `match` keeps it impossible to add a
-    // variant without wiring a handler. Once `Coverage` and `Update` land,
-    // they slot in here.
-    match cmd {}
 }
 
 /// Shared eval entry point used by both `engine eval` and the deprecated

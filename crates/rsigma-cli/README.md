@@ -45,7 +45,7 @@ rsigma backend targets
 
 ## Subcommands
 
-Commands are grouped into five noun-led groups: `engine` (eval / daemon), `rule` (parse / validate / lint / fields / condition / stdin), `backend` (convert / targets / formats), `pipeline` (resolve), and `attack` (reserved; populated by the upcoming MITRE ATT&CK contributor PR).
+Commands are grouped into four noun-led groups: `engine` (eval / daemon), `rule` (parse / validate / lint / fields / condition / stdin), `backend` (convert / targets / formats), and `pipeline` (resolve).
 
 ### Migrating from the old flat commands
 

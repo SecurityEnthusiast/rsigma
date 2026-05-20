@@ -37,7 +37,6 @@ fn root_help_lists_all_groups_and_deprecated_aliases() {
         .stdout(predicate::str::contains("rule"))
         .stdout(predicate::str::contains("backend"))
         .stdout(predicate::str::contains("pipeline"))
-        .stdout(predicate::str::contains("attack"))
         // Every deprecated alias keeps its row and is tagged `[deprecated]`.
         .stdout(predicate::str::contains("[deprecated]"));
 
