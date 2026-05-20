@@ -492,8 +492,8 @@ Feature-gated items are marked with \* in the diagram.
      ┌────────────────────────┐
      │  EvaluationResult      │──> rule title, id, level, tags,
      │  = RuleHeader +        │    matched selections, field matches,
-     │    ResultBody::        │    aggregated values, optional events,
-     │      Detection /       │    optional enrichments (#34)
+     │    ResultBody::        │    aggregated values, optional events
+     │      Detection /       │
      │      Correlation       │
      └────────────────────────┘
 ```

@@ -221,7 +221,7 @@ Accessors: `is_detection()` / `is_correlation()`, `as_detection() -> Option<&Det
 | `level` | `Option<Level>` | Severity level |
 | `tags` | `Vec<String>` | Tags |
 | `custom_attributes` | `Arc<HashMap<String, Value>>` | Custom attributes from the rule; skipped when empty |
-| `enrichments` | `Option<Map<String, Value>>` | Optional enrichments injected by post-evaluation middleware (#34); skipped when `None` |
+| `enrichments` | `Option<Map<String, Value>>` | Optional enrichment map; skipped when `None` |
 
 ### DetectionBody
 

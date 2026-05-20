@@ -5,9 +5,9 @@ Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma
 
 ## [Unreleased]
 
-### Unified evaluation result type (#PR No.)
+### Unified evaluation result type (#43)
 
-`MatchResult` and `CorrelationResult` are collapsed into a single `EvaluationResult` via composition. The five fields shared between detection and correlation today (`rule_title`, `rule_id`, `level`, `tags`, `custom_attributes`) move into a new `RuleHeader` struct along with a new optional `enrichments` map reserved for post-evaluation enrichment work (#34). Kind-specific fields live in `DetectionBody` and `CorrelationBody`, behind a `#[serde(untagged)]` `ResultBody` enum.
+`MatchResult` and `CorrelationResult` are collapsed into a single `EvaluationResult` via composition. The five fields shared between detection and correlation today (`rule_title`, `rule_id`, `level`, `tags`, `custom_attributes`) move into a new `RuleHeader` struct along with a new optional `enrichments` map. Kind-specific fields live in `DetectionBody` and `CorrelationBody`, behind a `#[serde(untagged)]` `ResultBody` enum.
 
 **Wire shape is preserved exactly.** Both the header and the body flatten into the parent JSON object via `#[serde(flatten)]`, so each NDJSON line remains a flat object identical to today's serialization. No `result_kind` discriminator is added. Downstream consumers continue to distinguish detection from correlation by presence of `correlation_type` (correlation-only).
 
@@ -31,9 +31,7 @@ Migration on the consumer side:
 
 Internally, the three duplicated `for m in &result.detections / for m in &result.correlations` loops in the file, stdout, and NATS sinks collapse to one `for m in result` loop.
 
-**Phase 0 bench gate** (`crates/rsigma-eval/benches/result_serialize.rs`) compared the new design's serialize throughput against a byte-for-byte copy of the old types across four representative inputs. The derived `#[serde(flatten)]` path landed within ±4% of the baseline on every sample, so the hand-written `Serialize` fallback documented in the plan was not needed.
-
-The post-evaluation enrichment plan (#34) is rewritten in lockstep to consume the unified types: one `Enricher` trait taking `&mut EvaluationResult`, no separate context structs, four single-type primitives (`TemplateEnricher`, `HttpEnricher`, `CommandEnricher`, `LookupEnricher`) instead of eight, and a single daemon loop with a runtime `kind`-vs-`body` filter. Estimated effort for #34 drops from ~12 days to ~9.5 days.
+A new Criterion bench (`crates/rsigma-eval/benches/result_serialize.rs`) pins serialize throughput of the new design against a byte-for-byte copy of the old types across four representative inputs; the derived `#[serde(flatten)]` path is within ±4% of the baseline on every sample.
 
 ## [0.12.0] - 2026-05-20
 

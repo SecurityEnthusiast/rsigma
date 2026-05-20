@@ -102,8 +102,7 @@ fn correlation_golden_ndjson_line() {
     assert!(parsed.get("matched_fields").is_none());
 }
 
-/// `enrichments` is `None` by default and must be skipped from serialization,
-/// matching the contract for fields added by post-evaluation middleware (#34).
+/// `enrichments` is `None` by default and must be skipped from serialization.
 #[test]
 fn enrichments_none_is_skipped() {
     let result = EvaluationResult {
@@ -122,8 +121,8 @@ fn enrichments_none_is_skipped() {
     );
 }
 
-/// When enrichment middleware populates the map, the field is emitted at the
-/// top level (flattened from `RuleHeader`).
+/// When a downstream consumer populates the map, the field is emitted at
+/// the top level (flattened from `RuleHeader`).
 #[test]
 fn enrichments_some_serializes_at_top_level() {
     let mut enrichments = serde_json::Map::new();

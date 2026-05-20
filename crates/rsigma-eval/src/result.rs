@@ -82,9 +82,9 @@ impl EvaluationResult {
 
 /// Fields shared between detection and correlation results.
 ///
-/// The `enrichments` map is reserved for post-evaluation enrichment work
-/// (#34 on the rsigma roadmap); it is `None` for results emitted by the
-/// engine and only populated by downstream enrichment middleware.
+/// The optional `enrichments` map is `None` for results emitted directly
+/// by the engine; downstream middleware can populate it with arbitrary
+/// JSON values to ride along with each result.
 #[derive(Debug, Clone, Serialize)]
 pub struct RuleHeader {
     /// Title of the matched rule.
@@ -100,7 +100,8 @@ pub struct RuleHeader {
     /// Wrapped in `Arc` so per-match cloning is a pointer bump.
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub custom_attributes: Arc<HashMap<String, serde_json::Value>>,
-    /// Optional enrichments injected by post-evaluation middleware.
+    /// Optional map of arbitrary enrichment values, written by downstream
+    /// middleware. `None` for engine-emitted results; skipped on serialize.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enrichments: Option<serde_json::Map<String, serde_json::Value>>,
 }
