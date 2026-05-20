@@ -42,6 +42,8 @@ use async_trait::async_trait;
 use rsigma_eval::{EvaluationResult, ResultBody};
 use tokio::sync::Semaphore;
 
+use crate::metrics::{MetricsHook, NoopMetrics};
+
 mod command;
 mod http;
 pub mod http_cache;
@@ -246,6 +248,7 @@ enum EnrichOutcome {
 pub struct EnrichmentPipeline {
     enrichers: Vec<Box<dyn Enricher>>,
     semaphore: Arc<Semaphore>,
+    metrics: Arc<dyn MetricsHook>,
 }
 
 impl std::fmt::Debug for EnrichmentPipeline {
@@ -262,6 +265,9 @@ impl EnrichmentPipeline {
     ///
     /// `max_concurrent_enrichments` bounds the number of results that can
     /// be enriched in parallel; defaults to 16 if zero is passed.
+    /// Metrics default to a no-op sink; call [`Self::with_metrics`] to
+    /// route counters and latency histograms into a real
+    /// [`MetricsHook`] implementation.
     pub fn new(enrichers: Vec<Box<dyn Enricher>>, max_concurrent_enrichments: usize) -> Self {
         let permits = if max_concurrent_enrichments == 0 {
             16
@@ -271,7 +277,16 @@ impl EnrichmentPipeline {
         Self {
             enrichers,
             semaphore: Arc::new(Semaphore::new(permits)),
+            metrics: Arc::new(NoopMetrics),
         }
+    }
+
+    /// Replace the metrics hook this pipeline reports into. The daemon
+    /// passes its Prometheus-backed `Metrics` here; library consumers
+    /// can pass any [`MetricsHook`] implementation.
+    pub fn with_metrics(mut self, metrics: Arc<dyn MetricsHook>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     /// Returns true if no enrichers are configured.
@@ -341,7 +356,7 @@ impl EnrichmentPipeline {
 
             let mut should_drop = false;
             for enricher in &self.enrichers {
-                match Self::run_one(enricher.as_ref(), result).await {
+                match Self::run_one(enricher.as_ref(), result, self.metrics.as_ref()).await {
                     EnrichOutcome::Drop => {
                         should_drop = true;
                         break;
@@ -367,10 +382,14 @@ impl EnrichmentPipeline {
 
     /// Run a single enricher against a single result, applying the
     /// kind-vs-body filter, scope filter, timeout, and on_error policy.
-    ///
-    /// `pub(crate)` so the metrics layer (Phase 4) can wire counter
-    /// increments around it without re-implementing the dispatch.
-    async fn run_one(enricher: &dyn Enricher, result: &mut EvaluationResult) -> EnrichOutcome {
+    /// Records `rsigma_enrichment_total{enricher_id, kind, status}` and
+    /// `rsigma_enrichment_duration_seconds{enricher_id, kind}` via the
+    /// configured `MetricsHook` for every non-filtered call.
+    async fn run_one(
+        enricher: &dyn Enricher,
+        result: &mut EvaluationResult,
+        metrics: &dyn MetricsHook,
+    ) -> EnrichOutcome {
         if !enricher.kind().matches(&result.body) {
             return EnrichOutcome::Filtered;
         }
@@ -381,12 +400,20 @@ impl EnrichmentPipeline {
         let inject_field = enricher.inject_field().to_string();
         let timeout = enricher.timeout();
         let id = enricher.id().to_string();
+        let kind_label = enricher.kind().as_str();
         let on_error = enricher.on_error();
 
+        metrics.on_enrichment_queue_depth_change(1);
+        let started = std::time::Instant::now();
         let outcome = tokio::time::timeout(timeout, enricher.enrich(result)).await;
+        let elapsed = started.elapsed().as_secs_f64();
+        metrics.on_enrichment_queue_depth_change(-1);
 
         let err = match outcome {
-            Ok(Ok(())) => return EnrichOutcome::Ok,
+            Ok(Ok(())) => {
+                metrics.on_enrichment_completed(&id, kind_label, "success", elapsed);
+                return EnrichOutcome::Ok;
+            }
             Ok(Err(e)) => e,
             Err(_) => EnrichError {
                 enricher_id: id.clone(),
@@ -394,20 +421,27 @@ impl EnrichmentPipeline {
             },
         };
 
+        let is_timeout = matches!(err.kind, EnrichErrorKind::Timeout);
         match on_error {
             OnError::Skip => {
                 tracing::warn!(
                     enricher_id = %id,
-                    kind = %enricher.kind().as_str(),
+                    kind = %kind_label,
                     error = %err,
                     "Enricher failed, skipping"
+                );
+                metrics.on_enrichment_completed(
+                    &id,
+                    kind_label,
+                    if is_timeout { "timeout" } else { "skip" },
+                    elapsed,
                 );
                 EnrichOutcome::Skip
             }
             OnError::Null => {
                 tracing::warn!(
                     enricher_id = %id,
-                    kind = %enricher.kind().as_str(),
+                    kind = %kind_label,
                     error = %err,
                     "Enricher failed, injecting null"
                 );
@@ -416,15 +450,22 @@ impl EnrichmentPipeline {
                     .enrichments
                     .get_or_insert_with(serde_json::Map::new);
                 map.insert(inject_field, serde_json::Value::Null);
+                metrics.on_enrichment_completed(
+                    &id,
+                    kind_label,
+                    if is_timeout { "timeout" } else { "error" },
+                    elapsed,
+                );
                 EnrichOutcome::Null
             }
             OnError::Drop => {
                 tracing::warn!(
                     enricher_id = %id,
-                    kind = %enricher.kind().as_str(),
+                    kind = %kind_label,
                     error = %err,
                     "Enricher failed, dropping result"
                 );
+                metrics.on_enrichment_completed(&id, kind_label, "drop", elapsed);
                 EnrichOutcome::Drop
             }
         }
@@ -434,6 +475,24 @@ impl EnrichmentPipeline {
 impl Default for EnrichmentPipeline {
     fn default() -> Self {
         Self::new(Vec::new(), 16)
+    }
+}
+
+impl Clone for EnrichmentPipeline {
+    fn clone(&self) -> Self {
+        // Boxes of `dyn Enricher` are not `Clone`, so a true deep clone
+        // is not possible here. The hot-reload path always rebuilds the
+        // pipeline from config rather than cloning, but `Clone` is
+        // useful for tests and for `ArcSwap` adapter code that wants a
+        // throwaway snapshot. Returning an empty pipeline that shares
+        // the metrics hook is the safest behaviour: a misuse degrades
+        // to "no enrichment" rather than panicking or silently
+        // double-counting.
+        Self {
+            enrichers: Vec::new(),
+            semaphore: Arc::clone(&self.semaphore),
+            metrics: Arc::clone(&self.metrics),
+        }
     }
 }
 

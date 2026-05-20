@@ -22,10 +22,11 @@ use serde_json::Value;
 
 use super::{
     EnrichError, EnrichErrorKind, Enricher, EnricherKind, OnError, Scope,
-    http_cache::{CacheKey, HttpResponseCache},
+    http_cache::{CacheKey, CacheOutcome, HttpResponseCache},
     inject_enrichment,
     template::render_template,
 };
+use crate::metrics::{MetricsHook, NoopMetrics};
 
 /// One HTTP enricher instance.
 ///
@@ -46,6 +47,7 @@ pub struct HttpEnricher {
     extract: Option<ExtractExpr>,
     client: HttpEnricherClient,
     cache: HttpResponseCache,
+    metrics: Arc<dyn MetricsHook>,
 }
 
 /// Opaque handle around a process-wide `reqwest::Client`. Constructed by
@@ -118,7 +120,14 @@ impl HttpEnricher {
             extract,
             client,
             cache,
+            metrics: Arc::new(NoopMetrics),
         }
+    }
+
+    /// Replace the metrics hook this enricher reports cache events into.
+    pub fn with_metrics(mut self, metrics: Arc<dyn MetricsHook>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     /// Read-only view of the response cache. Used by the metrics layer
@@ -154,7 +163,15 @@ impl Enricher for HttpEnricher {
         let body = self.body.as_ref().map(|b| render_template(b, result));
 
         let cache_key = CacheKey::new(&self.method, &url, body.as_deref().map(str::as_bytes));
-        let (_outcome, cached) = self.cache.lookup(&cache_key);
+        let (outcome, cached) = self.cache.lookup(&cache_key);
+        match outcome {
+            CacheOutcome::Hit => self.metrics.on_enrichment_http_cache_hit(&self.id),
+            CacheOutcome::Miss => self.metrics.on_enrichment_http_cache_miss(&self.id),
+            CacheOutcome::Expired => {
+                self.metrics.on_enrichment_http_cache_expiration(&self.id);
+                self.metrics.on_enrichment_http_cache_miss(&self.id);
+            }
+        }
         if let Some(cached_value) = cached {
             let extracted = self.maybe_extract(&cached_value)?;
             inject_enrichment(result, &self.inject_field, extracted);

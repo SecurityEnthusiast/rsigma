@@ -539,6 +539,160 @@ fn register_builtin_rejects_duplicate_name() {
     assert!(err.contains("already registered"));
 }
 
+// ---------------------------------------------------------------------------
+// Metrics hook
+// ---------------------------------------------------------------------------
+
+#[derive(Default)]
+struct CollectingMetrics {
+    completed: std::sync::Mutex<Vec<(String, String, String)>>,
+    queue_changes: std::sync::Mutex<Vec<i64>>,
+    cache_hits: std::sync::Mutex<Vec<String>>,
+    cache_misses: std::sync::Mutex<Vec<String>>,
+    cache_expirations: std::sync::Mutex<Vec<String>>,
+}
+
+impl crate::MetricsHook for CollectingMetrics {
+    fn on_parse_error(&self) {}
+    fn on_events_processed(&self, _: u64) {}
+    fn on_detection_matches(&self, _: u64) {}
+    fn on_correlation_matches(&self, _: u64) {}
+    fn observe_processing_latency(&self, _: f64) {}
+    fn on_input_queue_depth_change(&self, _: i64) {}
+    fn on_back_pressure(&self) {}
+    fn observe_batch_size(&self, _: u64) {}
+    fn on_output_queue_depth_change(&self, _: i64) {}
+    fn observe_pipeline_latency(&self, _: f64) {}
+    fn set_correlation_state_entries(&self, _: u64) {}
+    fn on_enrichment_completed(
+        &self,
+        enricher_id: &str,
+        kind: &str,
+        status: &str,
+        _duration_seconds: f64,
+    ) {
+        self.completed.lock().unwrap().push((
+            enricher_id.to_string(),
+            kind.to_string(),
+            status.to_string(),
+        ));
+    }
+    fn on_enrichment_queue_depth_change(&self, delta: i64) {
+        self.queue_changes.lock().unwrap().push(delta);
+    }
+    fn on_enrichment_http_cache_hit(&self, enricher_id: &str) {
+        self.cache_hits
+            .lock()
+            .unwrap()
+            .push(enricher_id.to_string());
+    }
+    fn on_enrichment_http_cache_miss(&self, enricher_id: &str) {
+        self.cache_misses
+            .lock()
+            .unwrap()
+            .push(enricher_id.to_string());
+    }
+    fn on_enrichment_http_cache_expiration(&self, enricher_id: &str) {
+        self.cache_expirations
+            .lock()
+            .unwrap()
+            .push(enricher_id.to_string());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn metrics_records_success_and_queue_depth() {
+    let m = std::sync::Arc::new(CollectingMetrics::default());
+    let enricher = Box::new(template_enricher(
+        "ok_one",
+        EnricherKind::Detection,
+        "out",
+        "static-${detection.rule.id}",
+    )) as Box<dyn Enricher>;
+    let pipeline = EnrichmentPipeline::new(vec![enricher], 4)
+        .with_metrics(m.clone() as std::sync::Arc<dyn crate::MetricsHook>);
+    let mut results = vec![detection_result()];
+    pipeline.run(&mut results).await;
+
+    let completed = m.completed.lock().unwrap().clone();
+    assert_eq!(completed.len(), 1);
+    assert_eq!(completed[0].0, "ok_one");
+    assert_eq!(completed[0].1, "detection");
+    assert_eq!(completed[0].2, "success");
+
+    let qc = m.queue_changes.lock().unwrap().clone();
+    assert_eq!(qc, vec![1, -1], "queue depth must rise then fall by 1");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn metrics_records_skip_status_on_error() {
+    let m = std::sync::Arc::new(CollectingMetrics::default());
+    let e = Box::new(ErroringEnricher {
+        id: "boom".to_string(),
+        kind: EnricherKind::Detection,
+        inject_field: "out".to_string(),
+        on_error: OnError::Skip,
+        scope: Scope::default(),
+    }) as Box<dyn Enricher>;
+    let pipeline = EnrichmentPipeline::new(vec![e], 1)
+        .with_metrics(m.clone() as std::sync::Arc<dyn crate::MetricsHook>);
+    let mut results = vec![detection_result()];
+    pipeline.run(&mut results).await;
+    let completed = m.completed.lock().unwrap().clone();
+    assert_eq!(completed[0].2, "skip");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn metrics_records_drop_status() {
+    let m = std::sync::Arc::new(CollectingMetrics::default());
+    let e = Box::new(ErroringEnricher {
+        id: "drop_me".to_string(),
+        kind: EnricherKind::Detection,
+        inject_field: "out".to_string(),
+        on_error: OnError::Drop,
+        scope: Scope::default(),
+    }) as Box<dyn Enricher>;
+    let pipeline = EnrichmentPipeline::new(vec![e], 1)
+        .with_metrics(m.clone() as std::sync::Arc<dyn crate::MetricsHook>);
+    let mut results = vec![detection_result()];
+    pipeline.run(&mut results).await;
+    let completed = m.completed.lock().unwrap().clone();
+    assert_eq!(completed[0].2, "drop");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn metrics_records_timeout_status() {
+    let m = std::sync::Arc::new(CollectingMetrics::default());
+    let e = Box::new(SleepingEnricher {
+        id: "slow".to_string(),
+        sleep_for: Duration::from_millis(200),
+        timeout: Duration::from_millis(20),
+        on_error: OnError::Skip,
+        scope: Scope::default(),
+    }) as Box<dyn Enricher>;
+    let pipeline = EnrichmentPipeline::new(vec![e], 1)
+        .with_metrics(m.clone() as std::sync::Arc<dyn crate::MetricsHook>);
+    let mut results = vec![detection_result()];
+    pipeline.run(&mut results).await;
+    let completed = m.completed.lock().unwrap().clone();
+    assert_eq!(completed[0].2, "timeout");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn metrics_skips_filtered_results() {
+    // A correlation result hitting a detection-only enricher should not
+    // record anything (kind filter skips before metrics fire).
+    let m = std::sync::Arc::new(CollectingMetrics::default());
+    let e =
+        Box::new(template_enricher("det", EnricherKind::Detection, "x", "y")) as Box<dyn Enricher>;
+    let pipeline = EnrichmentPipeline::new(vec![e], 1)
+        .with_metrics(m.clone() as std::sync::Arc<dyn crate::MetricsHook>);
+    let mut results = vec![correlation_result()];
+    pipeline.run(&mut results).await;
+    assert!(m.completed.lock().unwrap().is_empty());
+    assert!(m.queue_changes.lock().unwrap().is_empty());
+}
+
 #[test]
 fn lookup_builtin_returns_registered_factory() {
     let _guard = registry_test_lock().lock().unwrap();

@@ -11,9 +11,11 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use rsigma_eval::{CorrelationConfig, Pipeline, ProcessResult};
 use rsigma_runtime::{
-    AckToken, EnrichmentPipeline, FileSink, InputFormat, LogProcessor, MetricsHook, RawEvent,
-    RuntimeEngine, Sink, StdinSource, StdoutSink, spawn_source,
+    AckToken, FileSink, InputFormat, LogProcessor, MetricsHook, RawEvent, RuntimeEngine, Sink,
+    StdinSource, StdoutSink, spawn_source,
 };
+
+use super::enrichment::EnrichersFile;
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tower_http::trace::TraceLayer;
@@ -104,16 +106,34 @@ pub struct DaemonConfig {
     /// Cargo feature.
     #[cfg(feature = "daachorse-index")]
     pub cross_rule_ac: bool,
-    /// Optional post-evaluation enrichment pipeline. When `Some`, every
-    /// `EvaluationResult` flows through the pipeline before being sent to
-    /// the sink; the pipeline itself decides per-result whether each
-    /// enricher fires (kind / scope filtering inside the pipeline).
-    pub enrichment: Option<Arc<EnrichmentPipeline>>,
+    /// Optional parsed enrichers config (from `--enrichers`). The
+    /// daemon constructs the `EnrichmentPipeline` from this once its
+    /// `Metrics` struct exists, so per-call counters can be wired into
+    /// Prometheus.
+    pub enrichers_file: Option<EnrichersFile>,
 }
 
-pub async fn run_daemon(config: DaemonConfig) {
+pub async fn run_daemon(mut config: DaemonConfig) {
     let metrics = Arc::new(Metrics::new());
     let health = HealthState::new();
+
+    // Build the post-evaluation enrichment pipeline now that the
+    // metrics struct (which owns the Prometheus registry) exists.
+    // Failures here exit cleanly because no I/O has started yet.
+    let enrichment_pipeline = match config.enrichers_file.take() {
+        Some(file) => match super::enrichment::build_enrichers_full(
+            file,
+            None,
+            metrics.clone() as Arc<dyn rsigma_runtime::MetricsHook>,
+        ) {
+            Ok(p) => Some(Arc::new(p)),
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to build enrichment pipeline");
+                std::process::exit(crate::exit_code::CONFIG_ERROR);
+            }
+        },
+        None => None,
+    };
 
     // Open SQLite state store if configured
     let state_store = config.state_db.as_ref().map(|path| {
@@ -734,7 +754,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     // enabled, routes the failed result to the DLQ.
     let sink_metrics = metrics.clone();
     let sink_dlq_tx = dlq_tx;
-    let enrichment = config.enrichment.clone();
+    let enrichment = enrichment_pipeline.clone();
     let sink_handle = tokio::spawn(async move {
         let mut sink = sink;
         while let Some((mut result, ack_tokens)) = sink_rx.recv().await {

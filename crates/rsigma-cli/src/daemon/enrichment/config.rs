@@ -14,10 +14,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
+#[cfg(test)]
+use rsigma_runtime::NoopMetrics;
 use rsigma_runtime::{
     CommandEnricher, EnricherKind, EnrichmentPipeline, HttpEnricher, HttpEnricherClient,
-    HttpResponseCache, LookupEnricher, OnError, OutputFormat, Scope, SourceCache, TemplateEnricher,
-    build_default_http_client, lookup_builtin, validate_template_namespace,
+    HttpResponseCache, LookupEnricher, MetricsHook, OnError, OutputFormat, Scope, SourceCache,
+    TemplateEnricher, build_default_http_client, lookup_builtin, validate_template_namespace,
 };
 use serde::Deserialize;
 
@@ -38,7 +40,7 @@ const DEFAULT_MAX_CONCURRENT_ENRICHMENTS: usize = 16;
 ///     template: "https://wiki/${detection.rule.id}"
 ///     inject_field: runbook_url
 /// ```
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct EnrichersFile {
     /// Global concurrency cap shared across both kinds. Defaults to 16
     /// if omitted; values of 0 are treated as the default to keep the
@@ -54,7 +56,7 @@ pub struct EnrichersFile {
 }
 
 /// One enricher's YAML config block.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct EnricherConfig {
     /// Stable identifier for this enricher instance. Required.
     pub id: String,
@@ -191,7 +193,7 @@ impl From<OutputFormatLabel> for OutputFormat {
 }
 
 /// `scope:` block.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ScopeConfig {
     #[serde(default)]
     pub rules: Vec<String>,
@@ -296,18 +298,19 @@ pub fn load_enrichers_file(path: &Path) -> Result<EnrichersFile, EnrichersConfig
 /// All HTTP enrichers in the resulting pipeline share a single
 /// `reqwest::Client` (wrapped in [`HttpEnricherClient`]) so connection
 /// pooling works at the daemon level.
+#[cfg(test)]
 pub fn build_enrichers(file: EnrichersFile) -> Result<EnrichmentPipeline, EnrichersConfigError> {
-    build_enrichers_with_cache(file, None)
+    build_enrichers_full(file, None, std::sync::Arc::new(NoopMetrics))
 }
 
 /// Like [`build_enrichers`] but accepts an optional shared
-/// [`SourceCache`] for `lookup` enrichers. The daemon path constructs
-/// this cache when at least one pipeline declares dynamic sources, and
-/// passes it through here so `lookup` enrichers can read pre-resolved
-/// source data without going through the network.
-pub fn build_enrichers_with_cache(
+/// [`SourceCache`] for `lookup` enrichers and a metrics hook the
+/// pipeline (and per-enricher cache lookups) report into. The daemon
+/// passes its Prometheus-backed `Metrics` here.
+pub fn build_enrichers_full(
     file: EnrichersFile,
     source_cache: Option<std::sync::Arc<SourceCache>>,
+    metrics: std::sync::Arc<dyn MetricsHook>,
 ) -> Result<EnrichmentPipeline, EnrichersConfigError> {
     let http_client =
         build_default_http_client().map_err(|message| EnrichersConfigError::BespokeFactory {
@@ -317,12 +320,17 @@ pub fn build_enrichers_with_cache(
     let mut enrichers: Vec<Box<dyn rsigma_runtime::Enricher>> =
         Vec::with_capacity(file.enrichers.len());
     for cfg in file.enrichers {
-        enrichers.push(build_one(cfg, http_client.clone(), source_cache.clone())?);
+        enrichers.push(build_one(
+            cfg,
+            http_client.clone(),
+            source_cache.clone(),
+            metrics.clone(),
+        )?);
     }
     let cap = file
         .max_concurrent_enrichments
         .unwrap_or(DEFAULT_MAX_CONCURRENT_ENRICHMENTS);
-    Ok(EnrichmentPipeline::new(enrichers, cap))
+    Ok(EnrichmentPipeline::new(enrichers, cap).with_metrics(metrics))
 }
 
 /// Build a single [`Enricher`](rsigma_runtime::Enricher) from one YAML
@@ -335,6 +343,7 @@ fn build_one(
     cfg: EnricherConfig,
     http_client: HttpEnricherClient,
     source_cache: Option<std::sync::Arc<SourceCache>>,
+    metrics: std::sync::Arc<dyn MetricsHook>,
 ) -> Result<Box<dyn rsigma_runtime::Enricher>, EnrichersConfigError> {
     let kind: EnricherKind = cfg.kind.into();
     let on_error: OnError = cfg.on_error.into();
@@ -392,21 +401,24 @@ fn build_one(
             let extract = build_extract_expr(&cfg)?;
             let cache_ttl = cfg.cache_ttl.unwrap_or_default();
             let cache = HttpResponseCache::new(cache_ttl);
-            Ok(Box::new(HttpEnricher::new(
-                cfg.id,
-                kind,
-                cfg.inject_field,
-                method,
-                url,
-                headers,
-                cfg.body.clone(),
-                timeout,
-                on_error,
-                scope,
-                extract,
-                http_client,
-                cache,
-            )))
+            Ok(Box::new(
+                HttpEnricher::new(
+                    cfg.id,
+                    kind,
+                    cfg.inject_field,
+                    method,
+                    url,
+                    headers,
+                    cfg.body.clone(),
+                    timeout,
+                    on_error,
+                    scope,
+                    extract,
+                    http_client,
+                    cache,
+                )
+                .with_metrics(metrics),
+            ))
         }
         "command" => {
             if cfg.command.is_empty() {
