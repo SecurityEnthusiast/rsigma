@@ -11,8 +11,8 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use rsigma_eval::{CorrelationConfig, Pipeline, ProcessResult};
 use rsigma_runtime::{
-    AckToken, FileSink, InputFormat, LogProcessor, MetricsHook, RawEvent, RuntimeEngine, Sink,
-    StdinSource, StdoutSink, spawn_source,
+    AckToken, EnrichmentPipeline, FileSink, InputFormat, LogProcessor, MetricsHook, RawEvent,
+    RuntimeEngine, Sink, StdinSource, StdoutSink, spawn_source,
 };
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -104,6 +104,11 @@ pub struct DaemonConfig {
     /// Cargo feature.
     #[cfg(feature = "daachorse-index")]
     pub cross_rule_ac: bool,
+    /// Optional post-evaluation enrichment pipeline. When `Some`, every
+    /// `EvaluationResult` flows through the pipeline before being sent to
+    /// the sink; the pipeline itself decides per-result whether each
+    /// enricher fires (kind / scope filtering inside the pipeline).
+    pub enrichment: Option<Arc<EnrichmentPipeline>>,
 }
 
 pub async fn run_daemon(config: DaemonConfig) {
@@ -723,15 +728,38 @@ pub async fn run_daemon(config: DaemonConfig) {
     };
     tracing::info!(output = ?output_specs, "Sink started");
 
-    // Sink task: reads (ProcessResult, Vec<AckToken>) from channel, writes via
-    // Sink dispatch, then forwards ack tokens to the ack task.
-    // On sink failure with DLQ enabled, routes the failed result to the DLQ.
+    // Sink task: reads (ProcessResult, Vec<AckToken>) from channel, runs
+    // any configured post-evaluation enrichment, writes via Sink dispatch,
+    // then forwards ack tokens to the ack task. On sink failure with DLQ
+    // enabled, routes the failed result to the DLQ.
     let sink_metrics = metrics.clone();
     let sink_dlq_tx = dlq_tx;
+    let enrichment = config.enrichment.clone();
     let sink_handle = tokio::spawn(async move {
         let mut sink = sink;
-        while let Some((result, ack_tokens)) = sink_rx.recv().await {
+        while let Some((mut result, ack_tokens)) = sink_rx.recv().await {
             sink_metrics.on_output_queue_depth_change(-1);
+
+            // Post-evaluation enrichment: one loop over the flat
+            // `Vec<EvaluationResult>`. The pipeline filters per-result by
+            // declared `kind` against the `body` variant and may
+            // suppress entries via `on_error: drop`. If every entry is
+            // dropped, skip sink delivery but still ack the events.
+            if let Some(pipeline) = enrichment.as_ref()
+                && !pipeline.is_empty()
+            {
+                pipeline.run(&mut result).await;
+                if result.is_empty() {
+                    for token in ack_tokens {
+                        if ack_tx.send(token).await.is_err() {
+                            tracing::debug!("Ack channel closed");
+                            return;
+                        }
+                    }
+                    continue;
+                }
+            }
+
             if let Err(e) = sink.send(&result).await {
                 tracing::warn!(error = %e, "Error writing to sink");
                 let serialized = serde_json::to_string(&result).unwrap_or_default();
