@@ -1,7 +1,7 @@
 mod helpers;
 
 use helpers::{corr_engine, corr_engine_with_config, process};
-use rsigma_eval::{CorrelationConfig, CorrelationEventMode, CorrelationSnapshot};
+use rsigma_eval::{CorrelationConfig, CorrelationEventMode, CorrelationSnapshot, ProcessResultExt};
 use serde_json::json;
 
 const EVENT_COUNT_YAML: &str = r#"
@@ -162,11 +162,20 @@ fn export_import_preserves_event_count_state() {
     // One more event should trigger the correlation (2 restored + 1 new = 3)
     let result = process(&mut engine2, login_event("admin"), 1002);
     assert_eq!(
-        result.correlations.len(),
+        result.correlation_count(),
         1,
         "correlation should fire with restored state + new event"
     );
-    assert_eq!(result.correlations[0].aggregated_value, 3.0);
+    assert_eq!(
+        result
+            .correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
+            .aggregated_value,
+        3.0
+    );
 }
 
 #[test]
@@ -181,8 +190,17 @@ fn export_import_preserves_value_count_state() {
 
     // Third distinct SourceIP should trigger value_count >= 3
     let result = process(&mut engine2, login_event_with_ip("admin", "10.0.0.3"), 1002);
-    assert_eq!(result.correlations.len(), 1);
-    assert_eq!(result.correlations[0].aggregated_value, 3.0);
+    assert_eq!(result.correlation_count(), 1);
+    assert_eq!(
+        result
+            .correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
+            .aggregated_value,
+        3.0
+    );
 }
 
 #[test]
@@ -205,7 +223,7 @@ fn export_import_preserves_temporal_state() {
         1010,
     );
     assert_eq!(
-        result.correlations.len(),
+        result.correlation_count(),
         1,
         "temporal correlation should fire with restored recon + new exploit"
     );
@@ -226,11 +244,11 @@ fn export_import_preserves_multiple_groups() {
 
     // admin: 2 restored + 1 = 3 → fires
     let r = process(&mut engine2, login_event("admin"), 1002);
-    assert_eq!(r.correlations.len(), 1);
+    assert_eq!(r.correlation_count(), 1);
 
     // bob: 1 restored + 1 = 2 → doesn't fire
     let r = process(&mut engine2, login_event("bob"), 1002);
-    assert!(r.correlations.is_empty());
+    assert!(r.correlation_count() == 0);
 }
 
 // =============================================================================
@@ -251,7 +269,7 @@ fn export_import_preserves_suppression_state() {
     }
     // Should be suppressed now
     let r = process(&mut engine, login_event("admin"), 1004);
-    assert!(r.correlations.is_empty(), "should be suppressed");
+    assert!(r.correlation_count() == 0, "should be suppressed");
 
     let snapshot = engine.export_state();
     assert!(
@@ -268,7 +286,7 @@ fn export_import_preserves_suppression_state() {
     }
     let r = process(&mut engine2, login_event("admin"), 1013);
     assert!(
-        r.correlations.is_empty(),
+        r.correlation_count() == 0,
         "suppression should survive restore"
     );
 }
@@ -304,9 +322,15 @@ fn export_import_preserves_event_buffers_full_mode() {
 
     // Third event triggers correlation with events from buffer
     let r = process(&mut engine2, login_event("admin"), 1002);
-    assert_eq!(r.correlations.len(), 1);
+    assert_eq!(r.correlation_count(), 1);
     assert!(
-        r.correlations[0].events.is_some(),
+        r.correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
+            .events
+            .is_some(),
         "events should be included from restored buffer"
     );
 }
@@ -336,9 +360,15 @@ fn export_import_preserves_event_ref_buffers() {
     engine2.import_state(restored);
 
     let r = process(&mut engine2, login_event("admin"), 1002);
-    assert_eq!(r.correlations.len(), 1);
+    assert_eq!(r.correlation_count(), 1);
     assert!(
-        r.correlations[0].event_refs.is_some(),
+        r.correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
+            .event_refs
+            .is_some(),
         "event_refs should be included from restored buffer"
     );
 }
@@ -408,7 +438,7 @@ fn expired_state_not_restored_after_window() {
     // The restored timestamps (1000, 1001) should be evicted
     let r = process(&mut engine2, login_event("admin"), 2000);
     assert!(
-        r.correlations.is_empty(),
+        r.correlation_count() == 0,
         "old restored events should be evicted by the time window"
     );
 }

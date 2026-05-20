@@ -667,10 +667,7 @@ pub async fn run_daemon(config: DaemonConfig) {
                         Some(&filter_fn),
                     );
                     let process_elapsed_ms = process_start.elapsed().as_millis() as u64;
-                    let match_count = results
-                        .iter()
-                        .filter(|r| !r.detections.is_empty() || !r.correlations.is_empty())
-                        .count();
+                    let match_count = results.iter().filter(|r| !r.is_empty()).count();
                     tracing::debug!(
                         batch_size = valid_payloads.len(),
                         matches = match_count,
@@ -679,7 +676,7 @@ pub async fn run_daemon(config: DaemonConfig) {
                     );
 
                     for (result, ack_token) in results.into_iter().zip(valid_tokens) {
-                        if result.detections.is_empty() && result.correlations.is_empty() {
+                        if result.is_empty() {
                             if engine_ack_tx.send(ack_token).await.is_err() {
                                 tracing::debug!("Ack channel closed, engine shutting down");
                                 return true;

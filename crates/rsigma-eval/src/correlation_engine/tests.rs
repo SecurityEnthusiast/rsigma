@@ -1,5 +1,6 @@
 use super::*;
 use crate::event::JsonEvent;
+use crate::result::ProcessResultExt;
 use rsigma_parser::parse_sigma_yaml;
 use serde_json::json;
 
@@ -133,18 +134,18 @@ level: high
     let event = JsonEvent::borrow(&v);
 
     let r1 = engine.process_event(&event);
-    assert!(!r1.detections.is_empty(), "detection should still fire");
+    assert!(r1.detection_count() > 0, "detection should still fire");
 
     let r2 = engine.process_event(&event);
-    assert!(!r2.detections.is_empty(), "detection should still fire");
+    assert!(r2.detection_count() > 0, "detection should still fire");
 
     let r3 = engine.process_event(&event);
-    assert!(!r3.detections.is_empty(), "detection should still fire");
+    assert!(r3.detection_count() > 0, "detection should still fire");
 
     // No correlations should fire because events were skipped
-    assert!(r1.correlations.is_empty());
-    assert!(r2.correlations.is_empty());
-    assert!(r3.correlations.is_empty());
+    assert!(r1.correlation_count() == 0);
+    assert!(r2.correlation_count() == 0);
+    assert!(r3.correlation_count() == 0);
 }
 
 #[test]
@@ -188,7 +189,7 @@ level: high
 
     // With WallClock, all events get near-identical timestamps and should correlate
     assert!(
-        !r3.correlations.is_empty(),
+        r3.correlation_count() > 0,
         "WallClock fallback should allow correlation"
     );
 }
@@ -240,16 +241,28 @@ level: high
         let result = engine.process_event_at(&event, base_ts + i * 10);
 
         // Each event should match the detection rule
-        assert_eq!(result.detections.len(), 1);
+        assert_eq!(result.detection_count(), 1);
 
         if i < 2 {
             // Not enough events yet
-            assert!(result.correlations.is_empty());
+            assert!(result.correlation_count() == 0);
         } else {
             // 3rd event triggers the correlation
-            assert_eq!(result.correlations.len(), 1);
-            assert_eq!(result.correlations[0].rule_title, "Multiple Whoami");
-            assert_eq!(result.correlations[0].aggregated_value, 3.0);
+            assert_eq!(result.correlation_count(), 1);
+            assert_eq!(
+                result.correlations().next().unwrap().header.rule_title,
+                "Multiple Whoami"
+            );
+            assert_eq!(
+                result
+                    .correlations()
+                    .next()
+                    .unwrap()
+                    .as_correlation()
+                    .unwrap()
+                    .aggregated_value,
+                3.0
+            );
         }
     }
 }
@@ -290,16 +303,21 @@ level: high
         let v = json!({"EventType": "login", "User": "alice"});
         let event = JsonEvent::borrow(&v);
         let r = engine.process_event_at(&event, ts + i);
-        assert!(r.correlations.is_empty());
+        assert!(r.correlation_count() == 0);
     }
     for i in 0..3 {
         let v = json!({"EventType": "login", "User": "bob"});
         let event = JsonEvent::borrow(&v);
         let r = engine.process_event_at(&event, ts + i);
         if i == 2 {
-            assert_eq!(r.correlations.len(), 1);
+            assert_eq!(r.correlation_count(), 1);
             assert_eq!(
-                r.correlations[0].group_key,
+                r.correlations()
+                    .next()
+                    .unwrap()
+                    .as_correlation()
+                    .unwrap()
+                    .group_key,
                 vec![("User".to_string(), "bob".to_string())]
             );
         }
@@ -342,7 +360,7 @@ level: medium
     engine.process_event_at(&event, 1);
     let r = engine.process_event_at(&event, 15);
     // Only 1 event in window [5, 15], not enough
-    assert!(r.correlations.is_empty());
+    assert!(r.correlation_count() == 0);
 }
 
 // =========================================================================
@@ -387,8 +405,16 @@ level: high
         let event = JsonEvent::borrow(&v);
         let r = engine.process_event_at(&event, ts + i as i64);
         if i == 2 {
-            assert_eq!(r.correlations.len(), 1);
-            assert_eq!(r.correlations[0].aggregated_value, 3.0);
+            assert_eq!(r.correlation_count(), 1);
+            assert_eq!(
+                r.correlations()
+                    .next()
+                    .unwrap()
+                    .as_correlation()
+                    .unwrap()
+                    .aggregated_value,
+                3.0
+            );
         }
     }
 }
@@ -443,14 +469,17 @@ level: high
     let v1 = json!({"CommandLine": "whoami", "User": "admin"});
     let ev1 = JsonEvent::borrow(&v1);
     let r1 = engine.process_event_at(&ev1, ts);
-    assert!(r1.correlations.is_empty());
+    assert!(r1.correlation_count() == 0);
 
     // Now recon B fires — both rules have fired within window
     let v2 = json!({"CommandLine": "ipconfig /all", "User": "admin"});
     let ev2 = JsonEvent::borrow(&v2);
     let r2 = engine.process_event_at(&ev2, ts + 10);
-    assert_eq!(r2.correlations.len(), 1);
-    assert_eq!(r2.correlations[0].rule_title, "Recon Combo");
+    assert_eq!(r2.correlation_count(), 1);
+    assert_eq!(
+        r2.correlations().next().unwrap().header.rule_title,
+        "Recon Combo"
+    );
 }
 
 // =========================================================================
@@ -503,13 +532,13 @@ level: critical
     let v1 = json!({"EventType": "failed_login", "User": "admin"});
     let ev1 = JsonEvent::borrow(&v1);
     let r1 = engine.process_event_at(&ev1, ts);
-    assert!(r1.correlations.is_empty());
+    assert!(r1.correlation_count() == 0);
 
     // Then successful login — correct order!
     let v2 = json!({"EventType": "success_login", "User": "admin"});
     let ev2 = JsonEvent::borrow(&v2);
     let r2 = engine.process_event_at(&ev2, ts + 10);
-    assert_eq!(r2.correlations.len(), 1);
+    assert_eq!(r2.correlation_count(), 1);
 }
 
 #[test]
@@ -560,7 +589,7 @@ level: high
     let v2 = json!({"type": "a", "User": "admin"});
     let ev2 = JsonEvent::borrow(&v2);
     let r2 = engine.process_event_at(&ev2, ts + 10);
-    assert!(r2.correlations.is_empty());
+    assert!(r2.correlation_count() == 0);
 }
 
 // =========================================================================
@@ -601,13 +630,23 @@ level: high
     let v1 = json!({"action": "upload", "User": "alice", "bytes_sent": 600});
     let ev1 = JsonEvent::borrow(&v1);
     let r1 = engine.process_event_at(&ev1, ts);
-    assert!(r1.correlations.is_empty());
+    assert!(r1.correlation_count() == 0);
 
     let v2 = json!({"action": "upload", "User": "alice", "bytes_sent": 500});
     let ev2 = JsonEvent::borrow(&v2);
     let r2 = engine.process_event_at(&ev2, ts + 5);
-    assert_eq!(r2.correlations.len(), 1);
-    assert!((r2.correlations[0].aggregated_value - 1100.0).abs() < f64::EPSILON);
+    assert_eq!(r2.correlation_count(), 1);
+    assert!(
+        (r2.correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
+            .aggregated_value
+            - 1100.0)
+            .abs()
+            < f64::EPSILON
+    );
 }
 
 #[test]
@@ -647,8 +686,18 @@ level: medium
         let event = JsonEvent::borrow(&v);
         let r = engine.process_event_at(&event, ts + i as i64);
         if i == 2 {
-            assert_eq!(r.correlations.len(), 1);
-            assert!((r.correlations[0].aggregated_value - 600.0).abs() < f64::EPSILON);
+            assert_eq!(r.correlation_count(), 1);
+            assert!(
+                (r.correlations()
+                    .next()
+                    .unwrap()
+                    .as_correlation()
+                    .unwrap()
+                    .aggregated_value
+                    - 600.0)
+                    .abs()
+                    < f64::EPSILON
+            );
         }
     }
 }
@@ -739,8 +788,8 @@ level: high
     let v = json!({"action": "test", "User": "alice"});
     let event = JsonEvent::borrow(&v);
     let r = engine.process_event_at(&event, 1000);
-    assert_eq!(r.detections.len(), 1);
-    assert_eq!(r.correlations.len(), 1);
+    assert_eq!(r.detection_count(), 1);
+    assert_eq!(r.correlation_count(), 1);
 }
 
 // =========================================================================
@@ -790,12 +839,20 @@ level: high
         let event = JsonEvent::borrow(&v);
         let r = engine.process_event_at(&event, base_ts + i * 60);
         if i == 4 {
-            assert_eq!(r.correlations.len(), 1);
+            assert_eq!(r.correlation_count(), 1);
             assert_eq!(
-                r.correlations[0].rule_title,
+                r.correlations().next().unwrap().header.rule_title,
                 "Multiple AWS bucket enumerations"
             );
-            assert_eq!(r.correlations[0].aggregated_value, 5.0);
+            assert_eq!(
+                r.correlations()
+                    .next()
+                    .unwrap()
+                    .as_correlation()
+                    .unwrap()
+                    .aggregated_value,
+                5.0
+            );
         }
     }
 }
@@ -874,9 +931,8 @@ level: critical
         if i == 2 {
             // The event_count correlation should fire
             assert!(
-                r.correlations
-                    .iter()
-                    .any(|c| c.rule_title == "Multiple failed logins"),
+                r.correlations()
+                    .any(|c| c.header.rule_title == "Multiple failed logins"),
                 "Expected event_count correlation to fire"
             );
         }
@@ -893,8 +949,11 @@ level: critical
     let r = engine.process_event_at(&event, ts + 30);
 
     // The detection should match
-    assert_eq!(r.detections.len(), 1);
-    assert_eq!(r.detections[0].rule_title, "Successful login");
+    assert_eq!(r.detection_count(), 1);
+    assert_eq!(
+        r.detections().next().unwrap().header.rule_title,
+        "Successful login"
+    );
 }
 
 // =========================================================================
@@ -955,8 +1014,8 @@ level: high
     });
     let ev1 = JsonEvent::borrow(&v1);
     let r1 = engine.process_event_at(&ev1, ts);
-    assert_eq!(r1.detections.len(), 1);
-    assert!(r1.correlations.is_empty());
+    assert_eq!(r1.detection_count(), 1);
+    assert!(r1.correlation_count() == 0);
 
     // New connection with source.ip = 10.0.0.5 (same IP, aliased)
     let v2 = json!({
@@ -965,13 +1024,20 @@ level: high
     });
     let ev2 = JsonEvent::borrow(&v2);
     let r2 = engine.process_event_at(&ev2, ts + 5);
-    assert_eq!(r2.detections.len(), 1);
+    assert_eq!(r2.detection_count(), 1);
     // Both rules fired for the same internal_ip group → temporal should fire
-    assert_eq!(r2.correlations.len(), 1);
-    assert_eq!(r2.correlations[0].rule_title, "Error Then Connection");
+    assert_eq!(r2.correlation_count(), 1);
+    assert_eq!(
+        r2.correlations().next().unwrap().header.rule_title,
+        "Error Then Connection"
+    );
     // Check group key contains the aliased field
     assert!(
-        r2.correlations[0]
+        r2.correlations()
+            .next()
+            .unwrap()
+            .as_correlation()
+            .unwrap()
             .group_key
             .iter()
             .any(|(k, v)| k == "internal_ip" && v == "10.0.0.5")
@@ -1070,17 +1136,20 @@ level: high
     // Login failure by alice
     let ev1 = json!({"EventType": "login_failure", "User": "alice"});
     let r1 = engine.process_event_at(&JsonEvent::borrow(&ev1), ts);
-    assert!(r1.correlations.is_empty(), "only one rule fired so far");
+    assert!(r1.correlation_count() == 0, "only one rule fired so far");
 
     // Password change by alice — both rules have now fired
     let ev2 = json!({"EventType": "password_change", "User": "alice"});
     let r2 = engine.process_event_at(&JsonEvent::borrow(&ev2), ts + 10);
     assert_eq!(
-        r2.correlations.len(),
+        r2.correlation_count(),
         1,
         "temporal correlation should fire: both rules matched"
     );
-    assert_eq!(r2.correlations[0].rule_title, "Credential Attack");
+    assert_eq!(
+        r2.correlations().next().unwrap().header.rule_title,
+        "Credential Attack"
+    );
 }
 
 #[test]
@@ -1124,8 +1193,11 @@ level: medium
     // Only SSH login by bob — "or" means this suffices
     let ev = json!({"EventType": "ssh_login", "User": "bob"});
     let r = engine.process_event_at(&JsonEvent::borrow(&ev), 1000);
-    assert_eq!(r.correlations.len(), 1);
-    assert_eq!(r.correlations[0].rule_title, "Any Remote Access");
+    assert_eq!(r.correlation_count(), 1);
+    assert_eq!(
+        r.correlations().next().unwrap().header.rule_title,
+        "Any Remote Access"
+    );
 }
 
 #[test]
@@ -1169,13 +1241,19 @@ level: high
     // Only whoami (recon-1) — should not fire
     let ev = json!({"CommandLine": "whoami", "Host": "srv01"});
     let r = engine.process_event_at(&JsonEvent::borrow(&ev), 1000);
-    assert!(r.correlations.is_empty(), "only one of two AND rules fired");
+    assert!(
+        r.correlation_count() == 0,
+        "only one of two AND rules fired"
+    );
 
     // Now ipconfig (recon-2) — should fire
     let ev2 = json!({"CommandLine": "ipconfig /all", "Host": "srv01"});
     let r2 = engine.process_event_at(&JsonEvent::borrow(&ev2), 1010);
-    assert_eq!(r2.correlations.len(), 1);
-    assert_eq!(r2.correlations[0].rule_title, "Full Recon");
+    assert_eq!(r2.correlation_count(), 1);
+    assert_eq!(
+        r2.correlations().next().unwrap().header.rule_title,
+        "Full Recon"
+    );
 }
 
 // =========================================================================
@@ -1226,7 +1304,7 @@ level: critical
         let ev = json!({"EventType": "auth_failure", "User": "svc_backup"});
         let r = engine.process_event_at(&JsonEvent::borrow(&ev), ts + i);
         assert!(
-            r.correlations.is_empty(),
+            r.correlation_count() == 0,
             "service account should be filtered, no correlation"
         );
     }
@@ -1235,14 +1313,17 @@ level: critical
     for i in 0..2 {
         let ev = json!({"EventType": "auth_failure", "User": "alice"});
         let r = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 10 + i);
-        assert!(r.correlations.is_empty(), "not yet 3 events");
+        assert!(r.correlation_count() == 0, "not yet 3 events");
     }
 
     // Third failure triggers correlation
     let ev = json!({"EventType": "auth_failure", "User": "alice"});
     let r = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 12);
-    assert_eq!(r.correlations.len(), 1);
-    assert_eq!(r.correlations[0].rule_title, "Brute Force");
+    assert_eq!(r.correlation_count(), 1);
+    assert_eq!(
+        r.correlations().next().unwrap().header.rule_title,
+        "Brute Force"
+    );
 }
 
 // =========================================================================
@@ -1298,8 +1379,11 @@ level: high
     let ev3 = json!({"FileName": "notes.docx", "User": "bob"});
     let r = engine.process_event_at(&JsonEvent::borrow(&ev3), ts + 2);
 
-    assert_eq!(r.correlations.len(), 1);
-    assert_eq!(r.correlations[0].rule_title, "Mass File Access");
+    assert_eq!(r.correlation_count(), 1);
+    assert_eq!(
+        r.correlations().next().unwrap().header.rule_title,
+        "Mass File Access"
+    );
 }
 
 // =========================================================================
@@ -1338,18 +1422,21 @@ level: medium
     // Event where User field matches the placeholder
     let ev1 = json!({"FilePath": "C:\\Users\\alice\\Temp", "User": "alice"});
     let r1 = engine.process_event_at(&JsonEvent::borrow(&ev1), ts);
-    assert!(r1.correlations.is_empty());
+    assert!(r1.correlation_count() == 0);
 
     let ev2 = json!({"FilePath": "C:\\Users\\alice\\Temp", "User": "alice"});
     let r2 = engine.process_event_at(&JsonEvent::borrow(&ev2), ts + 1);
-    assert_eq!(r2.correlations.len(), 1);
-    assert_eq!(r2.correlations[0].rule_title, "Excessive Temp Access");
+    assert_eq!(r2.correlation_count(), 1);
+    assert_eq!(
+        r2.correlations().next().unwrap().header.rule_title,
+        "Excessive Temp Access"
+    );
 
     // Different user — should NOT match (path says alice, user is bob)
     let ev3 = json!({"FilePath": "C:\\Users\\alice\\Temp", "User": "bob"});
     let r3 = engine.process_event_at(&JsonEvent::borrow(&ev3), ts + 2);
     // Detection doesn't fire for this event since expand resolves to C:\Users\bob\Temp
-    assert_eq!(r3.detections.len(), 0);
+    assert_eq!(r3.detection_count(), 0);
 }
 
 // =========================================================================
@@ -1390,19 +1477,22 @@ level: high
     // Login at 3AM
     let ev1 = json!({"EventType": "login", "User": "alice", "Timestamp": "2024-01-15T03:10:00Z"});
     let r1 = engine.process_event_at(&JsonEvent::borrow(&ev1), ts);
-    assert_eq!(r1.detections.len(), 1);
-    assert!(r1.correlations.is_empty());
+    assert_eq!(r1.detection_count(), 1);
+    assert!(r1.correlation_count() == 0);
 
     let ev2 = json!({"EventType": "login", "User": "alice", "Timestamp": "2024-01-15T03:45:00Z"});
     let r2 = engine.process_event_at(&JsonEvent::borrow(&ev2), ts + 1);
-    assert_eq!(r2.correlations.len(), 1);
-    assert_eq!(r2.correlations[0].rule_title, "Frequent Night Logins");
+    assert_eq!(r2.correlation_count(), 1);
+    assert_eq!(
+        r2.correlations().next().unwrap().header.rule_title,
+        "Frequent Night Logins"
+    );
 
     // Login at noon — should NOT count
     let ev3 = json!({"EventType": "login", "User": "bob", "Timestamp": "2024-01-15T12:00:00Z"});
     let r3 = engine.process_event_at(&JsonEvent::borrow(&ev3), ts + 2);
     assert!(
-        r3.detections.is_empty(),
+        r3.detection_count() == 0,
         "noon login should not match night rule"
     );
 }
@@ -1449,26 +1539,29 @@ level: high
     for i in 0..2 {
         let ev = json!({"EventType": "login", "User": "alice"});
         let r = engine.process_event_at(&JsonEvent::borrow(&ev), ts + i);
-        assert!(r.correlations.is_empty(), "2 events should not fire (gt:2)");
+        assert!(
+            r.correlation_count() == 0,
+            "2 events should not fire (gt:2)"
+        );
     }
 
     // 3rd event — gt:2 is true, lte:5 is true → fires
     let ev3 = json!({"EventType": "login", "User": "alice"});
     let r3 = engine.process_event_at(&JsonEvent::borrow(&ev3), ts + 3);
-    assert_eq!(r3.correlations.len(), 1, "3 events: gt:2 AND lte:5");
+    assert_eq!(r3.correlation_count(), 1, "3 events: gt:2 AND lte:5");
 
     // Send events 4, 5 — still in range
     for i in 4..=5 {
         let ev = json!({"EventType": "login", "User": "alice"});
         let r = engine.process_event_at(&JsonEvent::borrow(&ev), ts + i);
-        assert_eq!(r.correlations.len(), 1, "{i} events still in range");
+        assert_eq!(r.correlation_count(), 1, "{i} events still in range");
     }
 
     // 6th event — lte:5 is false → no fire
     let ev6 = json!({"EventType": "login", "User": "alice"});
     let r6 = engine.process_event_at(&JsonEvent::borrow(&ev6), ts + 6);
     assert!(
-        r6.correlations.is_empty(),
+        r6.correlation_count() == 0,
         "6 events exceeds lte:5, should not fire"
     );
 }
@@ -1519,26 +1612,26 @@ fn test_suppression_window() {
     engine.process_event_at(&JsonEvent::borrow(&ev), ts);
     engine.process_event_at(&JsonEvent::borrow(&ev), ts + 1);
     let r3 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 2);
-    assert_eq!(r3.correlations.len(), 1, "should fire on 3rd event");
+    assert_eq!(r3.correlation_count(), 1, "should fire on 3rd event");
 
     // 4th event within suppress window → suppressed
     let r4 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 3);
     assert!(
-        r4.correlations.is_empty(),
+        r4.correlation_count() == 0,
         "should be suppressed within 10s window"
     );
 
     // 5th event still within suppress window → suppressed
     let r5 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 9);
     assert!(
-        r5.correlations.is_empty(),
+        r5.correlation_count() == 0,
         "should be suppressed at ts+9 (< ts+2+10)"
     );
 
     // Event after suppress window expires → fires again
     let r6 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 13);
     assert_eq!(
-        r6.correlations.len(),
+        r6.correlation_count(),
         1,
         "should fire again after suppress window expires"
     );
@@ -1561,18 +1654,18 @@ fn test_suppression_per_group_key() {
     engine.process_event_at(&JsonEvent::borrow(&ev_a), ts);
     engine.process_event_at(&JsonEvent::borrow(&ev_a), ts + 1);
     let r = engine.process_event_at(&JsonEvent::borrow(&ev_a), ts + 2);
-    assert_eq!(r.correlations.len(), 1, "alice should fire");
+    assert_eq!(r.correlation_count(), 1, "alice should fire");
 
     // Bob hits threshold — different group key, not suppressed
     let ev_b = json!({"EventType": "login", "User": "bob"});
     engine.process_event_at(&JsonEvent::borrow(&ev_b), ts + 3);
     engine.process_event_at(&JsonEvent::borrow(&ev_b), ts + 4);
     let r = engine.process_event_at(&JsonEvent::borrow(&ev_b), ts + 5);
-    assert_eq!(r.correlations.len(), 1, "bob should fire independently");
+    assert_eq!(r.correlation_count(), 1, "bob should fire independently");
 
     // Alice is still suppressed
     let r = engine.process_event_at(&JsonEvent::borrow(&ev_a), ts + 6);
-    assert!(r.correlations.is_empty(), "alice still suppressed");
+    assert!(r.correlation_count() == 0, "alice still suppressed");
 }
 
 // =========================================================================
@@ -1596,19 +1689,19 @@ fn test_action_reset() {
     engine.process_event_at(&JsonEvent::borrow(&ev), ts);
     engine.process_event_at(&JsonEvent::borrow(&ev), ts + 1);
     let r3 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 2);
-    assert_eq!(r3.correlations.len(), 1, "should fire on 3rd event");
+    assert_eq!(r3.correlation_count(), 1, "should fire on 3rd event");
 
     // State was reset, so 4th and 5th events should NOT fire
     let r4 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 3);
-    assert!(r4.correlations.is_empty(), "reset: need 3 more events");
+    assert!(r4.correlation_count() == 0, "reset: need 3 more events");
 
     let r5 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 4);
-    assert!(r5.correlations.is_empty(), "reset: still only 2");
+    assert!(r5.correlation_count() == 0, "reset: still only 2");
 
     // 6th event (3rd after reset) should fire again
     let r6 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 5);
     assert_eq!(
-        r6.correlations.len(),
+        r6.correlation_count(),
         1,
         "should fire again after 3 events post-reset"
     );
@@ -1626,7 +1719,7 @@ fn test_emit_detections_true_by_default() {
 
     let ev = json!({"EventType": "login", "User": "alice"});
     let r = engine.process_event_at(&JsonEvent::borrow(&ev), 1000);
-    assert_eq!(r.detections.len(), 1, "by default detections are emitted");
+    assert_eq!(r.detection_count(), 1, "by default detections are emitted");
 }
 
 #[test]
@@ -1642,7 +1735,7 @@ fn test_emit_detections_false_suppresses() {
     let ev = json!({"EventType": "login", "User": "alice"});
     let r = engine.process_event_at(&JsonEvent::borrow(&ev), 1000);
     assert!(
-        r.detections.is_empty(),
+        r.detection_count() == 0,
         "detection matches should be suppressed when emit_detections=false"
     );
 }
@@ -1685,7 +1778,7 @@ level: high
     let r = engine.process_event_at(&JsonEvent::borrow(&ev), 1000);
     // generate: true means this rule is NOT correlation-only
     assert_eq!(
-        r.detections.len(),
+        r.detection_count(),
         1,
         "generate:true keeps detection output"
     );
@@ -1713,7 +1806,7 @@ fn test_suppress_and_reset_combined() {
     engine.process_event_at(&JsonEvent::borrow(&ev), ts);
     engine.process_event_at(&JsonEvent::borrow(&ev), ts + 1);
     let r3 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 2);
-    assert_eq!(r3.correlations.len(), 1, "fires on 3rd event");
+    assert_eq!(r3.correlation_count(), 1, "fires on 3rd event");
 
     // Push 3 more events quickly (state was reset, so new count → 3)
     // but suppress window hasn't expired (ts+2 + 5 = ts+7)
@@ -1721,7 +1814,7 @@ fn test_suppress_and_reset_combined() {
     engine.process_event_at(&JsonEvent::borrow(&ev), ts + 4);
     let r = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 5);
     assert!(
-        r.correlations.is_empty(),
+        r.correlation_count() == 0,
         "threshold met again but still suppressed"
     );
 
@@ -1730,7 +1823,7 @@ fn test_suppress_and_reset_combined() {
     // so the first event after expiry fires immediately and resets.
     let r = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 8);
     assert_eq!(
-        r.correlations.len(),
+        r.correlation_count(),
         1,
         "fires after suppress expires (accumulated events + new one)"
     );
@@ -1741,7 +1834,7 @@ fn test_suppress_and_reset_combined() {
     engine.process_event_at(&JsonEvent::borrow(&ev), ts + 10);
     let r = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 11);
     assert!(
-        r.correlations.is_empty(),
+        r.correlation_count() == 0,
         "threshold met but suppress window hasn't expired (ts+11 - ts+8 = 3 < 5)"
     );
 }
@@ -1762,18 +1855,18 @@ fn test_no_suppression_fires_every_event() {
     engine.process_event_at(&JsonEvent::borrow(&ev), ts);
     engine.process_event_at(&JsonEvent::borrow(&ev), ts + 1);
     let r3 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 2);
-    assert_eq!(r3.correlations.len(), 1);
+    assert_eq!(r3.correlation_count(), 1);
 
     // Without suppression, 4th event should also fire
     let r4 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 3);
     assert_eq!(
-        r4.correlations.len(),
+        r4.correlation_count(),
         1,
         "no suppression: fires on every event after threshold"
     );
 
     let r5 = engine.process_event_at(&JsonEvent::borrow(&ev), ts + 4);
-    assert_eq!(r5.correlations.len(), 1, "still fires");
+    assert_eq!(r5.correlation_count(), 1, "still fires");
 }
 
 // =========================================================================
@@ -1902,7 +1995,7 @@ fn test_custom_attr_timestamp_field_used_for_extraction() {
     let result = engine.process_event(&JsonEvent::borrow(&ev));
 
     // The detection should match, and timestamp should be ~1739275200 (2026-02-11)
-    assert!(!result.detections.is_empty() || result.correlations.is_empty());
+    assert!(result.detection_count() > 0 || result.correlation_count() == 0);
     // The key test: ensure the engine extracted the event timestamp, not Utc::now.
     // If it used Utc::now, the test would still pass but the timestamp would be
     // wildly different. We verify by checking the extracted value directly.
@@ -2157,9 +2250,18 @@ level: high
         let event = JsonEvent::borrow(&v);
         let result = engine.process_event_at(&event, 1000 + i);
         if i == 2 {
-            assert_eq!(result.correlations.len(), 1);
+            assert_eq!(result.correlation_count(), 1);
             // Events should NOT be included by default
-            assert!(result.correlations[0].events.is_none());
+            assert!(
+                result
+                    .correlations()
+                    .next()
+                    .unwrap()
+                    .as_correlation()
+                    .unwrap()
+                    .events
+                    .is_none()
+            );
         }
     }
 }
@@ -2205,13 +2307,14 @@ level: high
     for (i, ev) in events_sent.iter().enumerate() {
         let event = JsonEvent::borrow(ev);
         let result = engine.process_event_at(&event, 1000 + i as i64);
-        if !result.correlations.is_empty() {
+        if result.correlation_count() > 0 {
             corr_result = Some(result);
         }
     }
 
     let result = corr_result.expect("correlation should have fired");
-    let corr = &result.correlations[0];
+    let corr_result_ref = result.correlations().next().unwrap();
+    let corr = corr_result_ref.as_correlation().unwrap();
 
     // Events should be included
     let events = corr.events.as_ref().expect("events should be present");
@@ -2267,13 +2370,18 @@ level: high
         let v = json!({"EventType": "login", "User": "admin", "idx": i});
         let event = JsonEvent::borrow(&v);
         let result = engine.process_event_at(&event, 1000 + i);
-        if !result.correlations.is_empty() {
+        if result.correlation_count() > 0 {
             corr_result = Some(result);
         }
     }
 
     let result = corr_result.expect("correlation should have fired");
-    let events = result.correlations[0]
+    let events = result
+        .correlations()
+        .next()
+        .unwrap()
+        .as_correlation()
+        .unwrap()
         .events
         .as_ref()
         .expect("events should be present");
@@ -2324,8 +2432,16 @@ level: high
         let event = JsonEvent::borrow(&v);
         let result = engine.process_event_at(&event, 1000 + i);
         if i == 1 {
-            assert_eq!(result.correlations.len(), 1);
-            let events = result.correlations[0].events.as_ref().unwrap();
+            assert_eq!(result.correlation_count(), 1);
+            let events = result
+                .correlations()
+                .next()
+                .unwrap()
+                .as_correlation()
+                .unwrap()
+                .events
+                .as_ref()
+                .unwrap();
             assert_eq!(events.len(), 2);
         }
     }
@@ -2336,15 +2452,23 @@ level: high
     let event = JsonEvent::borrow(&v);
     let result = engine.process_event_at(&event, 1010);
     assert!(
-        result.correlations.is_empty(),
+        result.correlation_count() == 0,
         "should not fire with only 1 event after reset"
     );
 
     let v = json!({"EventType": "login", "User": "admin", "round": 2, "idx": 1});
     let event = JsonEvent::borrow(&v);
     let result = engine.process_event_at(&event, 1011);
-    assert_eq!(result.correlations.len(), 1);
-    let events = result.correlations[0].events.as_ref().unwrap();
+    assert_eq!(result.correlation_count(), 1);
+    let events = result
+        .correlations()
+        .next()
+        .unwrap()
+        .as_correlation()
+        .unwrap()
+        .events
+        .as_ref()
+        .unwrap();
     assert_eq!(events.len(), 2);
     // Should only have round 2 events
     assert_eq!(events[0]["round"], 2);
@@ -2387,9 +2511,30 @@ level: high
         let event = JsonEvent::borrow(&v);
         let result = engine.process_event_at(&event, 1000 + i);
         if i == 1 {
-            assert_eq!(result.correlations.len(), 1);
-            assert!(result.correlations[0].events.is_some());
-            assert_eq!(result.correlations[0].events.as_ref().unwrap().len(), 2);
+            assert_eq!(result.correlation_count(), 1);
+            assert!(
+                result
+                    .correlations()
+                    .next()
+                    .unwrap()
+                    .as_correlation()
+                    .unwrap()
+                    .events
+                    .is_some()
+            );
+            assert_eq!(
+                result
+                    .correlations()
+                    .next()
+                    .unwrap()
+                    .as_correlation()
+                    .unwrap()
+                    .events
+                    .as_ref()
+                    .unwrap()
+                    .len(),
+                2
+            );
         }
     }
 }
@@ -2441,7 +2586,7 @@ level: high
     let result = engine.process_event_at(&event, 1015);
     // Should NOT fire: only 1 event in window (the one at ts=1015)
     assert!(
-        result.correlations.is_empty(),
+        result.correlation_count() == 0,
         "should not fire — old events evicted"
     );
 
@@ -2451,8 +2596,16 @@ level: high
         let event = JsonEvent::borrow(&v);
         let result = engine.process_event_at(&event, 1016 + i - 3);
         if i == 4 {
-            assert_eq!(result.correlations.len(), 1);
-            let events = result.correlations[0].events.as_ref().unwrap();
+            assert_eq!(result.correlation_count(), 1);
+            let events = result
+                .correlations()
+                .next()
+                .unwrap()
+                .as_correlation()
+                .unwrap()
+                .events
+                .as_ref()
+                .unwrap();
             // Should have events from ts=1015,1016,1017 — not the old ones
             assert_eq!(events.len(), 3);
             for ev in events {
@@ -2546,19 +2699,21 @@ level: high
         let v = json!({"EventType": "login", "User": "admin", "id": format!("evt-{i}"), "@timestamp": 1000 + i});
         let event = JsonEvent::borrow(&v);
         let result = engine.process_event_at(&event, 1000 + i);
-        if !result.correlations.is_empty() {
-            corr_result = Some(result.correlations[0].clone());
+        if result.correlation_count() > 0 {
+            corr_result = Some(result.correlations().next().unwrap().clone());
         }
     }
 
     let result = corr_result.expect("correlation should have fired");
+    let result_body = result.as_correlation().unwrap();
     // In refs mode: events should be None, event_refs should be Some
     assert!(
-        result.events.is_none(),
+        result_body.events.is_none(),
         "Full events should not be included in refs mode"
     );
-    let refs = result
+    let refs = result_body
         .event_refs
+        .as_ref()
         .expect("event_refs should be present in refs mode");
     assert_eq!(refs.len(), 3);
     assert_eq!(refs[0].timestamp, 1000);
@@ -2604,15 +2759,20 @@ level: high
         let v = json!({"EventType": "login", "User": "admin"});
         let event = JsonEvent::borrow(&v);
         let result = engine.process_event_at(&event, 1000 + i);
-        if !result.correlations.is_empty() {
-            corr_result = Some(result.correlations[0].clone());
+        if result.correlation_count() > 0 {
+            corr_result = Some(result.correlations().next().unwrap().clone());
         }
     }
 
     let result = corr_result.expect("correlation should have fired");
-    let refs = result.event_refs.expect("event_refs should be present");
+    let refs = result
+        .as_correlation()
+        .unwrap()
+        .event_refs
+        .as_ref()
+        .expect("event_refs should be present");
     // No ID field in events → id should be None
-    for r in &refs {
+    for r in refs {
         assert_eq!(r.id, None);
     }
 }
@@ -2655,16 +2815,18 @@ level: high
         let v = json!({"EventType": "login", "User": "admin", "id": format!("e{i}")});
         let event = JsonEvent::borrow(&v);
         let result = engine.process_event_at(&event, 1000 + i);
-        if !result.correlations.is_empty() {
-            corr_result = Some(result.correlations[0].clone());
+        if result.correlation_count() > 0 {
+            corr_result = Some(result.correlations().next().unwrap().clone());
         }
     }
 
     let result = corr_result.expect("correlation should fire with per-correlation refs mode");
+    let result_body = result.as_correlation().unwrap();
     // Per-correlation override should enable refs mode even though engine default is None
-    assert!(result.events.is_none());
-    let refs = result
+    assert!(result_body.events.is_none());
+    let refs = result_body
         .event_refs
+        .as_ref()
         .expect("event_refs via per-correlation override");
     assert_eq!(refs.len(), 3);
     assert_eq!(refs[0].id, Some("e0".to_string()));
@@ -2769,8 +2931,8 @@ level: high
     // Same number of results
     assert_eq!(results1.len(), results2.len());
     for (r1, r2) in results1.iter().zip(results2.iter()) {
-        assert_eq!(r1.detections.len(), r2.detections.len());
-        assert_eq!(r1.correlations.len(), r2.correlations.len());
+        assert_eq!(r1.detection_count(), r2.detection_count());
+        assert_eq!(r1.correlation_count(), r2.correlation_count());
     }
 }
 
@@ -2825,8 +2987,8 @@ level: high
 
     assert_eq!(sequential.len(), batch.len());
     for (seq, bat) in sequential.iter().zip(batch.iter()) {
-        assert_eq!(seq.detections.len(), bat.detections.len());
-        assert_eq!(seq.correlations.len(), bat.correlations.len());
+        assert_eq!(seq.detection_count(), bat.detection_count());
+        assert_eq!(seq.correlation_count(), bat.correlation_count());
     }
 }
 
@@ -2870,23 +3032,23 @@ level: high
         let result = engine.process_event_at(&event, base_ts + i * 10);
 
         if i == 1 {
-            assert_eq!(result.correlations.len(), 1);
-            let corr = &result.correlations[0];
-            assert_eq!(corr.rule_title, "Many Logins");
+            assert_eq!(result.correlation_count(), 1);
+            let corr = &result.correlations().next().unwrap();
+            assert_eq!(corr.header.rule_title, "Many Logins");
             assert_eq!(
-                corr.custom_attributes.get("my_custom_field"),
+                corr.header.custom_attributes.get("my_custom_field"),
                 Some(&serde_json::Value::String("hello".to_string()))
             );
             assert_eq!(
-                corr.custom_attributes.get("priority"),
+                corr.header.custom_attributes.get("priority"),
                 Some(&serde_json::json!(9))
             );
-            let nested = corr.custom_attributes.get("nested").unwrap();
+            let nested = corr.header.custom_attributes.get("nested").unwrap();
             assert_eq!(nested.get("key"), Some(&serde_json::json!("value")));
 
-            assert!(!corr.custom_attributes.contains_key("title"));
-            assert!(!corr.custom_attributes.contains_key("correlation"));
-            assert!(!corr.custom_attributes.contains_key("level"));
+            assert!(!corr.header.custom_attributes.contains_key("title"));
+            assert!(!corr.header.custom_attributes.contains_key("correlation"));
+            assert!(!corr.header.custom_attributes.contains_key("level"));
         }
     }
 }
@@ -2913,15 +3075,15 @@ score: 42
     let event = JsonEvent::borrow(&v);
     let result = engine.process_event(&event);
 
-    assert_eq!(result.detections.len(), 1);
-    let det = &result.detections[0];
+    assert_eq!(result.detection_count(), 1);
+    let det = &result.detections().next().unwrap();
     assert_eq!(
-        det.custom_attributes.get("my_detection_tag"),
+        det.header.custom_attributes.get("my_detection_tag"),
         Some(&serde_json::Value::String("important".to_string()))
     );
     assert_eq!(
-        det.custom_attributes.get("score"),
+        det.header.custom_attributes.get("score"),
         Some(&serde_json::json!(42))
     );
-    assert!(!det.custom_attributes.contains_key("title"));
+    assert!(!det.header.custom_attributes.contains_key("title"));
 }

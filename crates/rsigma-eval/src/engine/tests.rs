@@ -30,7 +30,7 @@ level: medium
     let event = JsonEvent::borrow(&ev);
     let matches = engine.evaluate(&event);
     assert_eq!(matches.len(), 1);
-    assert_eq!(matches[0].rule_title, "Detect Whoami");
+    assert_eq!(matches[0].header.rule_title, "Detect Whoami");
 }
 
 #[test]
@@ -277,7 +277,7 @@ level: low
     let event = JsonEvent::borrow(&ev);
     let matches = engine.evaluate(&event);
     assert_eq!(matches.len(), 1);
-    assert_eq!(matches[0].rule_title, "Rule A");
+    assert_eq!(matches[0].header.rule_title, "Rule A");
 }
 
 // =========================================================================
@@ -583,13 +583,13 @@ detection:
     let ev1 = json!({"CommandLine": "whoami /all"});
     let matches1 = engine.evaluate(&JsonEvent::borrow(&ev1));
     assert_eq!(matches1.len(), 1);
-    assert_eq!(matches1[0].rule_title, "Detect Whoami");
+    assert_eq!(matches1[0].header.rule_title, "Detect Whoami");
 
     // Second rule matches ipconfig (inherited logsource/level)
     let ev2 = json!({"CommandLine": "ipconfig /all"});
     let matches2 = engine.evaluate(&JsonEvent::borrow(&ev2));
     assert_eq!(matches2.len(), 1);
-    assert_eq!(matches2[0].rule_title, "Detect Ipconfig");
+    assert_eq!(matches2[0].header.rule_title, "Detect Ipconfig");
 
     // Neither matches dir
     let ev3 = json!({"CommandLine": "dir"});
@@ -629,12 +629,12 @@ detection:
     let ev1 = json!({"CommandLine": "net user admin"});
     let m1 = engine.evaluate(&JsonEvent::borrow(&ev1));
     assert_eq!(m1.len(), 1);
-    assert_eq!(m1[0].rule_title, "Detect Net User");
+    assert_eq!(m1[0].header.rule_title, "Detect Net User");
 
     let ev2 = json!({"CommandLine": "net group admins"});
     let m2 = engine.evaluate(&JsonEvent::borrow(&ev2));
     assert_eq!(m2.len(), 1);
-    assert_eq!(m2[0].rule_title, "Detect Net Group");
+    assert_eq!(m2[0].header.rule_title, "Detect Net Group");
 }
 
 // =========================================================================
@@ -1043,13 +1043,13 @@ level: low
     let ev_win = json!({"win.CommandLine": "whoami"});
     let m = engine.evaluate(&JsonEvent::borrow(&ev_win));
     assert_eq!(m.len(), 1);
-    assert_eq!(m[0].rule_title, "Windows Rule");
+    assert_eq!(m[0].header.rule_title, "Windows Rule");
 
     // Linux rule: field was NOT prefixed (still CommandLine)
     let ev_linux = json!({"CommandLine": "whoami"});
     let m2 = engine.evaluate(&JsonEvent::borrow(&ev_linux));
     assert_eq!(m2.len(), 1);
-    assert_eq!(m2[0].rule_title, "Linux Rule");
+    assert_eq!(m2[0].header.rule_title, "Linux Rule");
 }
 
 #[test]
@@ -1233,12 +1233,12 @@ detection:
         let a: Vec<_> = per_rule
             .evaluate(&event)
             .into_iter()
-            .map(|m| m.rule_title)
+            .map(|m| m.header.rule_title)
             .collect();
         let b: Vec<_> = batched
             .evaluate(&event)
             .into_iter()
-            .map(|m| m.rule_title)
+            .map(|m| m.header.rule_title)
             .collect();
         assert_eq!(a, b, "verdicts diverge for event {v}");
     }
@@ -1408,7 +1408,7 @@ detection:
     for (seq, bat) in sequential.iter().zip(batch.iter()) {
         assert_eq!(seq.len(), bat.len());
         for (s, b) in seq.iter().zip(bat.iter()) {
-            assert_eq!(s.rule_title, b.rule_title);
+            assert_eq!(s.header.rule_title, b.header.rule_title);
         }
     }
 }

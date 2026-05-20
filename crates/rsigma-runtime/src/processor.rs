@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use std::time::Instant;
 
 use arc_swap::ArcSwap;
-use rsigma_eval::{Event, JsonEvent, ProcessResult};
+use rsigma_eval::{Event, JsonEvent, ProcessResult, ProcessResultExt};
 
 use crate::engine::RuntimeEngine;
 use crate::input::{EventInputDecoded, InputFormat, parse_line};
@@ -121,28 +121,28 @@ impl LogProcessor {
             self.metrics.on_events_processed(1);
             self.metrics.observe_processing_latency(per_event_latency);
             self.metrics
-                .on_detection_matches(result.detections.len() as u64);
+                .on_detection_matches(result.detection_count() as u64);
             self.metrics
-                .on_correlation_matches(result.correlations.len() as u64);
+                .on_correlation_matches(result.correlation_count() as u64);
 
-            for det in &result.detections {
-                let level_str = det.level.as_ref().map_or("unknown", |l| l.as_str());
-                self.metrics
-                    .on_detection_match_detail(&det.rule_title, level_str);
-            }
-            for cor in &result.correlations {
-                let level_str = cor.level.as_ref().map_or("unknown", |l| l.as_str());
-                self.metrics.on_correlation_match_detail(
-                    &cor.rule_title,
-                    level_str,
-                    cor.correlation_type.as_str(),
-                );
+            for r in &result {
+                let level_str = r.header.level.as_ref().map_or("unknown", |l| l.as_str());
+                let title = &r.header.rule_title;
+                match &r.body {
+                    rsigma_eval::ResultBody::Detection(_) => {
+                        self.metrics.on_detection_match_detail(title, level_str);
+                    }
+                    rsigma_eval::ResultBody::Correlation(body) => {
+                        self.metrics.on_correlation_match_detail(
+                            title,
+                            level_str,
+                            body.correlation_type.as_str(),
+                        );
+                    }
+                }
             }
 
-            line_results[*line_idx].detections.extend(result.detections);
-            line_results[*line_idx]
-                .correlations
-                .extend(result.correlations);
+            line_results[*line_idx].extend(result);
         }
 
         line_results
@@ -219,28 +219,28 @@ impl LogProcessor {
             self.metrics.on_events_processed(1);
             self.metrics.observe_processing_latency(per_event_latency);
             self.metrics
-                .on_detection_matches(result.detections.len() as u64);
+                .on_detection_matches(result.detection_count() as u64);
             self.metrics
-                .on_correlation_matches(result.correlations.len() as u64);
+                .on_correlation_matches(result.correlation_count() as u64);
 
-            for det in &result.detections {
-                let level_str = det.level.as_ref().map_or("unknown", |l| l.as_str());
-                self.metrics
-                    .on_detection_match_detail(&det.rule_title, level_str);
-            }
-            for cor in &result.correlations {
-                let level_str = cor.level.as_ref().map_or("unknown", |l| l.as_str());
-                self.metrics.on_correlation_match_detail(
-                    &cor.rule_title,
-                    level_str,
-                    cor.correlation_type.as_str(),
-                );
+            for r in &result {
+                let level_str = r.header.level.as_ref().map_or("unknown", |l| l.as_str());
+                let title = &r.header.rule_title;
+                match &r.body {
+                    rsigma_eval::ResultBody::Detection(_) => {
+                        self.metrics.on_detection_match_detail(title, level_str);
+                    }
+                    rsigma_eval::ResultBody::Correlation(body) => {
+                        self.metrics.on_correlation_match_detail(
+                            title,
+                            level_str,
+                            body.correlation_type.as_str(),
+                        );
+                    }
+                }
             }
 
-            line_results[*line_idx].detections.extend(result.detections);
-            line_results[*line_idx]
-                .correlations
-                .extend(result.correlations);
+            line_results[*line_idx].extend(result);
         }
 
         line_results
@@ -336,12 +336,7 @@ impl LogProcessor {
 
 /// Produce a vec of empty `ProcessResult`, one per input line.
 fn empty_results(count: usize) -> Vec<ProcessResult> {
-    (0..count)
-        .map(|_| ProcessResult {
-            detections: vec![],
-            correlations: vec![],
-        })
-        .collect()
+    (0..count).map(|_| ProcessResult::new()).collect()
 }
 
 #[cfg(test)]
@@ -387,9 +382,9 @@ detection:
         ];
         let results = proc.process_batch_lines(&batch, &identity_filter);
         assert_eq!(results.len(), 2);
-        assert!(!results[0].detections.is_empty(), "EventID=1 should match");
+        assert!(results[0].detection_count() > 0, "EventID=1 should match");
         assert!(
-            results[1].detections.is_empty(),
+            results[1].detection_count() == 0,
             "EventID=2 should not match"
         );
     }
@@ -413,13 +408,10 @@ detection:
         let results = proc.process_batch_lines(&batch, &identity_filter);
         assert_eq!(results.len(), 2);
         assert!(
-            results[0].detections.is_empty(),
+            results[0].detection_count() == 0,
             "invalid JSON produces empty result"
         );
-        assert!(
-            !results[1].detections.is_empty(),
-            "valid line still matches"
-        );
+        assert!(results[1].detection_count() > 0, "valid line still matches");
     }
 
     #[test]
@@ -451,11 +443,7 @@ detection:
         let proc = LogProcessor::new(engine, Arc::new(NoopMetrics));
 
         let batch = vec![r#"{"EventID": 1}"#.to_string()];
-        assert!(
-            !proc.process_batch_lines(&batch, &identity_filter)[0]
-                .detections
-                .is_empty()
-        );
+        assert!(proc.process_batch_lines(&batch, &identity_filter)[0].detection_count() > 0);
 
         // Swap to a rule that matches EventID: 99
         std::fs::write(
@@ -478,18 +466,10 @@ detection:
         new_engine.load_rules().unwrap();
         proc.swap_engine(new_engine);
 
-        assert!(
-            proc.process_batch_lines(&batch, &identity_filter)[0]
-                .detections
-                .is_empty()
-        );
+        assert!(proc.process_batch_lines(&batch, &identity_filter)[0].detection_count() == 0);
 
         let batch2 = vec![r#"{"EventID": 99}"#.to_string()];
-        assert!(
-            !proc.process_batch_lines(&batch2, &identity_filter)[0]
-                .detections
-                .is_empty()
-        );
+        assert!(proc.process_batch_lines(&batch2, &identity_filter)[0].detection_count() > 0);
 
         std::mem::forget(dir);
     }
@@ -523,11 +503,7 @@ detection:
         let proc = LogProcessor::new(engine, Arc::new(NoopMetrics));
 
         let batch = vec![r#"{"EventID": 1}"#.to_string()];
-        assert!(
-            !proc.process_batch_lines(&batch, &identity_filter)[0]
-                .detections
-                .is_empty()
-        );
+        assert!(proc.process_batch_lines(&batch, &identity_filter)[0].detection_count() > 0);
 
         // Update the rule file and reload
         std::fs::write(
@@ -549,18 +525,10 @@ detection:
         assert_eq!(stats.detection_rules, 1);
 
         // Old rule should no longer match
-        assert!(
-            proc.process_batch_lines(&batch, &identity_filter)[0]
-                .detections
-                .is_empty()
-        );
+        assert!(proc.process_batch_lines(&batch, &identity_filter)[0].detection_count() == 0);
         // New rule should match
         let batch2 = vec![r#"{"EventID": 42}"#.to_string()];
-        assert!(
-            !proc.process_batch_lines(&batch2, &identity_filter)[0]
-                .detections
-                .is_empty()
-        );
+        assert!(proc.process_batch_lines(&batch2, &identity_filter)[0].detection_count() > 0);
 
         std::mem::forget(dir);
     }
@@ -617,9 +585,7 @@ transformations:
         // Event uses "src_ip" which the pipeline mapped from SourceIP
         let batch = vec![r#"{"src_ip": "10.0.0.1"}"#.to_string()];
         assert!(
-            !proc.process_batch_lines(&batch, &identity_filter)[0]
-                .detections
-                .is_empty(),
+            proc.process_batch_lines(&batch, &identity_filter)[0].detection_count() > 0,
             "src_ip should match because pipeline mapped SourceIP -> src_ip"
         );
 
@@ -642,18 +608,14 @@ transformations:
 
         // src_ip no longer the target, should not match
         assert!(
-            proc.process_batch_lines(&batch, &identity_filter)[0]
-                .detections
-                .is_empty(),
+            proc.process_batch_lines(&batch, &identity_filter)[0].detection_count() == 0,
             "after pipeline reload, src_ip should no longer match"
         );
 
         // source.ip is now the mapped name, should match
         let batch2 = vec![r#"{"source.ip": "10.0.0.1"}"#.to_string()];
         assert!(
-            !proc.process_batch_lines(&batch2, &identity_filter)[0]
-                .detections
-                .is_empty(),
+            proc.process_batch_lines(&batch2, &identity_filter)[0].detection_count() > 0,
             "after pipeline reload, source.ip should match"
         );
 
@@ -707,11 +669,7 @@ transformations:
 
         // Verify initial state works (SourceIP mapped to src_ip)
         let batch = vec![r#"{"src_ip": "10.0.0.1"}"#.to_string()];
-        assert!(
-            !proc.process_batch_lines(&batch, &identity_filter)[0]
-                .detections
-                .is_empty()
-        );
+        assert!(proc.process_batch_lines(&batch, &identity_filter)[0].detection_count() > 0);
 
         // Write broken YAML to the pipeline file
         std::fs::write(&pipeline_path, "{{{{ invalid yaml !!!!").unwrap();
@@ -722,9 +680,7 @@ transformations:
 
         // Old engine should still be active and working
         assert!(
-            !proc.process_batch_lines(&batch, &identity_filter)[0]
-                .detections
-                .is_empty(),
+            proc.process_batch_lines(&batch, &identity_filter)[0].detection_count() > 0,
             "old engine should still work after failed reload"
         );
 
@@ -759,7 +715,7 @@ detection:
         let results = proc.process_batch_lines(&batch, &filter);
         assert_eq!(results.len(), 1);
         assert_eq!(
-            results[0].detections.len(),
+            results[0].detection_count(),
             1,
             "only EventID=1 from records array should match"
         );
@@ -938,7 +894,7 @@ detection:
         let results = proc.process_batch_with_format(&batch, &InputFormat::Json, None);
         assert_eq!(results.len(), 1);
         assert!(
-            !results[0].detections.is_empty(),
+            results[0].detection_count() > 0,
             "JSON EventID=1 should match"
         );
     }
@@ -966,7 +922,7 @@ detection:
         );
         assert_eq!(results.len(), 1);
         assert!(
-            !results[0].detections.is_empty(),
+            results[0].detection_count() > 0,
             "syslog hostname=mymachine should match"
         );
     }
@@ -990,7 +946,7 @@ detection:
         let results = proc.process_batch_with_format(&batch, &InputFormat::Plain, None);
         assert_eq!(results.len(), 1);
         assert!(
-            !results[0].detections.is_empty(),
+            results[0].detection_count() > 0,
             "plain keyword 'disk full' should match"
         );
     }
@@ -1013,7 +969,7 @@ detection:
         let batch = vec![r#"{"EventID": 1}"#.to_string()];
         let results = proc.process_batch_with_format(&batch, &InputFormat::default(), None);
         assert_eq!(results.len(), 1);
-        assert!(!results[0].detections.is_empty());
+        assert!(results[0].detection_count() > 0);
     }
 
     #[test]
@@ -1043,7 +999,7 @@ detection:
         let results = proc.process_batch_with_format(&batch, &InputFormat::Json, Some(&filter));
         assert_eq!(results.len(), 1);
         assert_eq!(
-            results[0].detections.len(),
+            results[0].detection_count(),
             1,
             "only EventID=1 from records array should match"
         );
@@ -1071,9 +1027,9 @@ detection:
         ];
         let results = proc.process_batch_with_format(&batch, &InputFormat::Json, None);
         assert_eq!(results.len(), 3);
-        assert!(results[0].detections.is_empty());
-        assert!(results[1].detections.is_empty());
-        assert!(!results[2].detections.is_empty());
+        assert!(results[0].detection_count() == 0);
+        assert!(results[1].detection_count() == 0);
+        assert!(results[2].detection_count() > 0);
     }
 
     #[cfg(feature = "logfmt")]
@@ -1096,7 +1052,7 @@ detection:
         let results = proc.process_batch_with_format(&batch, &InputFormat::Logfmt, None);
         assert_eq!(results.len(), 1);
         assert!(
-            !results[0].detections.is_empty(),
+            results[0].detection_count() > 0,
             "logfmt level=error should match"
         );
     }
@@ -1121,7 +1077,7 @@ detection:
         let results = proc.process_batch_with_format(&batch, &InputFormat::Cef, None);
         assert_eq!(results.len(), 1);
         assert!(
-            !results[0].detections.is_empty(),
+            results[0].detection_count() > 0,
             "CEF deviceVendor=Security should match"
         );
     }

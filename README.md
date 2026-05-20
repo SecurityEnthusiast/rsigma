@@ -378,7 +378,7 @@ When running as a streaming detection engine, `rsigma-eval` feeds into `rsigma-r
 - **Input:** Format adapters parse raw log lines (JSON, syslog, logfmt\*, CEF\*, plain text, with auto-detection) into `EventInputDecoded`. EVTX\* files are parsed directly from binary via `EvtxFileReader`. Sources include stdin, HTTP POST, NATS JetStream, and OTLP\* (HTTP protobuf/JSON and gRPC).
 - **Dynamic sources:** `SourceResolver` fetches data from files, commands, HTTP APIs, and NATS subjects. Resolved values are injected into pipelines via `TemplateExpander`. A `SourceCache` (in-memory + optional SQLite) provides fallback data. `RefreshScheduler` manages auto-refresh (interval, file watch, NATS push, on-demand). Extraction supports jq, JSONPath, and CEL.
 - **Processing:** `LogProcessor` runs batch evaluation with parallel detection and sequential correlation. `RuntimeEngine` wraps `Engine` and `CorrelationEngine` with rule loading and `ArcSwap` hot-reload.
-- **Output:** Sinks write detection results to stdout, files, or NATS. Multiple sinks can run in fan-out. The output is `MatchResult` and `CorrelationResult`, containing rule title, id, level, tags, matched selections, field matches, aggregated values, and optionally the triggering events.
+- **Output:** Sinks write evaluation results to stdout, files, or NATS as one flat JSON object per result. Multiple sinks can run in fan-out. The output type is `EvaluationResult` (a composition of `RuleHeader` + `ResultBody::Detection|Correlation`), carrying rule title, id, level, tags, matched selections, field matches, aggregated values, and optionally the triggering events.
 
 Feature-gated items are marked with \* in the diagram.
 
@@ -489,10 +489,13 @@ Feature-gated items are marked with \* in the diagram.
               │       (*  = feature-gated)
               │       (** = requires daachorse-index feature)
               ▼
-     ┌────────────────────┐
-     │  MatchResult       │──> rule title, id, level, tags,
-     │  CorrelationResult │   matched selections, field matches,
-     └────────────────────┘   aggregated values, optional events
+     ┌────────────────────────┐
+     │  EvaluationResult      │──> rule title, id, level, tags,
+     │  = RuleHeader +        │    matched selections, field matches,
+     │    ResultBody::        │    aggregated values, optional events,
+     │      Detection /       │    optional enrichments (#34)
+     │      Correlation       │
+     └────────────────────────┘
 ```
 
 </details>

@@ -38,8 +38,11 @@ serde_json = "1"   # only if you use the JsonEvent shim
 | `Pipeline` | Parsed processing pipeline. Applied to rules at `add_collection` time, in priority order. |
 | `pipeline::parse_pipeline(&str) -> Result<Pipeline>` | Parse a pipeline YAML string. |
 | `Event` trait + `JsonEvent`, `KvEvent`, `MapEvent`, `PlainEvent` | The event shapes the engine consumes. |
-| `MatchResult` | One detection match. Includes rule title, id, level, tags, matched selections, matched fields, and the optional embedded event. |
-| `ProcessResult` | The `CorrelationEngine::process_event` return: detection matches plus correlation matches. |
+| `EvaluationResult` | One detection match or correlation firing. Composes a `RuleHeader` (rule metadata, custom attributes, optional enrichments) and a `ResultBody::Detection(DetectionBody)` / `ResultBody::Correlation(CorrelationBody)` payload. Serializes to one flat JSON object per result. |
+| `RuleHeader`, `DetectionBody`, `CorrelationBody` | The three composable structs behind `EvaluationResult`. `RuleHeader` carries the fields shared between kinds (`rule_title`, `rule_id`, `level`, `tags`, `custom_attributes`, `enrichments`); the body variants carry the kind-specific fields. |
+| `ResultBody` | `#[serde(untagged)]` enum that picks the kind-specific payload. Use `EvaluationResult::as_detection() / as_correlation()` accessors or pattern match on `result.body` to read its fields. |
+| `ProcessResult` | Alias for `Vec<EvaluationResult>`. The `CorrelationEngine::process_event` return: every result for an event, detections first then correlations, in evaluation order. |
+| `ProcessResultExt` | Extension trait on `[EvaluationResult]` exposing `detections()` / `correlations()` iterators and `detection_count()` / `correlation_count()`. Bring this into scope when you want kind-filtered iteration without pattern matching. |
 | `CompiledMatcher`, `CompiledRule` | Internal matcher tree types; consume via the AST conversion or build them yourself for an alternative front-end. |
 
 The full enum of modifiers, the matcher-optimizer constants, the `rsigma.*` custom-attribute table, and the bloom/cross-rule prefilters live in [the crate README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-eval/README.md).
@@ -70,7 +73,7 @@ let event = json!({ "CommandLine": "cmd /c whoami" });
 let matches = engine.evaluate(&JsonEvent::borrow(&event));
 
 assert_eq!(matches.len(), 1);
-assert_eq!(matches[0].rule_title.as_deref(), Some("Whoami"));
+assert_eq!(matches[0].header.rule_title, "Whoami");
 ```
 
 ## With a pipeline
@@ -109,7 +112,7 @@ After this, the rule sees ECS field names; an event with `process.command_line` 
 For stateful detections, use `CorrelationEngine` instead of the bare `Engine`. It owns both the rule set and the sliding-window state:
 
 ```rust
-use rsigma_eval::{CorrelationConfig, CorrelationEngine, JsonEvent};
+use rsigma_eval::{CorrelationConfig, CorrelationEngine, JsonEvent, ProcessResultExt};
 use rsigma_parser::parse_sigma_yaml;
 
 let collection = parse_sigma_yaml(yaml)?;
@@ -120,12 +123,12 @@ correlator.add_collection(&collection)?;
 for raw in events {
     let evt = JsonEvent::borrow(&raw);
     let result = correlator.process_event(&evt);
-    for m in &result.matches { /* detection match */ }
-    for c in &result.correlations { /* correlation match */ }
+    for m in result.detections() { /* detection match */ }
+    for c in result.correlations() { /* correlation firing */ }
 }
 ```
 
-`process_with_detections(event, &mut Vec<MatchResult>)` is the lower-overhead variant for hot loops. `CorrelationConfig` enforces `max_state_entries` (default 100,000) and the 10-deep correlation-chain limit; see [Security Hardening](../reference/security.md#input-size-and-depth-caps).
+`process_with_detections(event, Vec<EvaluationResult>)` is the lower-overhead variant for hot loops (pre-compute detections in parallel, feed sequentially to correlation). `CorrelationConfig` enforces `max_state_entries` (default 100,000) and the 10-deep correlation-chain limit; see [Security Hardening](../reference/security.md#input-size-and-depth-caps).
 
 ## Custom attributes
 

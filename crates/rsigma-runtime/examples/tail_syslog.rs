@@ -93,16 +93,15 @@ fn flush_batch(
 
     for (i, result) in results.iter().enumerate() {
         let line_no = line_offset + i + 1;
-        for det in &result.detections {
+        for r in result {
+            let kind = if r.is_detection() {
+                "DETECTION"
+            } else {
+                "CORRELATION"
+            };
             println!(
-                "DETECTION line={line_no} rule=\"{}\" level={:?} id={:?}",
-                det.rule_title, det.level, det.rule_id,
-            );
-        }
-        for corr in &result.correlations {
-            println!(
-                "CORRELATION line={line_no} rule=\"{}\" level={:?} id={:?}",
-                corr.rule_title, corr.level, corr.rule_id,
+                "{kind} line={line_no} rule=\"{}\" level={:?} id={:?}",
+                r.header.rule_title, r.header.level, r.header.rule_id,
             );
         }
     }

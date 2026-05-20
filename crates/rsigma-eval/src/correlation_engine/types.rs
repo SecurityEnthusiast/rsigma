@@ -1,13 +1,10 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use serde::Serialize;
 
-use rsigma_parser::{CorrelationType, Level};
-
 use crate::correlation::EventBuffer;
-use crate::correlation::{EventRef, EventRefBuffer, GroupKey, WindowState};
-use crate::result::MatchResult;
+use crate::correlation::{EventRefBuffer, GroupKey, WindowState};
+use crate::result::EvaluationResult;
 
 // =============================================================================
 // Configuration
@@ -183,51 +180,14 @@ impl Default for CorrelationConfig {
 // Result types
 // =============================================================================
 
-/// Combined result from processing a single event.
-#[derive(Debug, Clone, Serialize)]
-pub struct ProcessResult {
-    /// Detection rule matches (stateless, immediate).
-    pub detections: Vec<MatchResult>,
-    /// Correlation rule matches (stateful, accumulated).
-    pub correlations: Vec<CorrelationResult>,
-}
-
-/// The result of a correlation rule firing.
-#[derive(Debug, Clone, Serialize)]
-pub struct CorrelationResult {
-    /// Title of the correlation rule.
-    pub rule_title: String,
-    /// ID of the correlation rule (if present).
-    pub rule_id: Option<String>,
-    /// Severity level.
-    pub level: Option<Level>,
-    /// Tags from the correlation rule.
-    pub tags: Vec<String>,
-    /// Type of correlation.
-    pub correlation_type: CorrelationType,
-    /// Group-by field names and their values for this match.
-    pub group_key: Vec<(String, String)>,
-    /// The aggregated value that triggered the condition (count, sum, avg, etc.).
-    pub aggregated_value: f64,
-    /// The time window in seconds.
-    pub timespan_secs: u64,
-    /// Full event bodies, included when `correlation_event_mode` is `Full`.
-    ///
-    /// Contains up to `max_correlation_events` recently stored window events.
-    /// Events are decompressed from deflate storage on output.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub events: Option<Vec<serde_json::Value>>,
-    /// Lightweight event references, included when `correlation_event_mode` is `Refs`.
-    ///
-    /// Contains up to `max_correlation_events` timestamp + optional ID pairs.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub event_refs: Option<Vec<EventRef>>,
-    /// Custom attributes from the original Sigma correlation rule (merged
-    /// view of arbitrary top-level keys, the `custom_attributes:` block, and
-    /// any pipeline-applied overrides).
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub custom_attributes: Arc<HashMap<String, serde_json::Value>>,
-}
+/// All [`EvaluationResult`]s produced for a single input event.
+///
+/// Detection results come first (in evaluation order), followed by any
+/// correlation results that fired on this event. Iterate the vec to
+/// process every result uniformly; use [`EvaluationResult::is_detection`]
+/// / [`EvaluationResult::is_correlation`] (or `as_detection` /
+/// `as_correlation`) to dispatch on the body kind when needed.
+pub type ProcessResult = Vec<EvaluationResult>;
 
 /// Serializable snapshot of all mutable correlation state.
 ///

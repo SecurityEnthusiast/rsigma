@@ -305,15 +305,11 @@ fn cmd_eval_with_correlations(
                 let event = JsonEvent::borrow(&payload);
                 let result = engine.process_event(&event);
 
-                let total = result.detections.len() + result.correlations.len();
-                if total == 0 {
+                if result.is_empty() {
                     eprintln!("No matches.");
                 } else {
                     had_matches = true;
-                    for m in &result.detections {
-                        crate::print_json(m, pretty);
-                    }
-                    for m in &result.correlations {
+                    for m in &result {
                         crate::print_json(m, pretty);
                     }
                 }
@@ -449,24 +445,24 @@ fn eval_line_corr(
             for payload in crate::apply_event_filter(&json_value, event_filter) {
                 let event = JsonEvent::borrow(&payload);
                 let result = engine.process_event(&event);
-                for m in &result.detections {
-                    *det_count += 1;
-                    crate::print_json(m, pretty);
-                }
-                for m in &result.correlations {
-                    *corr_count += 1;
+                for m in &result {
+                    if m.is_detection() {
+                        *det_count += 1;
+                    } else {
+                        *corr_count += 1;
+                    }
                     crate::print_json(m, pretty);
                 }
             }
         } else {
             // Non-JSON events: evaluate directly (no event filter).
             let result = engine.process_event(&decoded);
-            for m in &result.detections {
-                *det_count += 1;
-                crate::print_json(m, pretty);
-            }
-            for m in &result.correlations {
-                *corr_count += 1;
+            for m in &result {
+                if m.is_detection() {
+                    *det_count += 1;
+                } else {
+                    *corr_count += 1;
+                }
                 crate::print_json(m, pretty);
             }
         }
@@ -494,12 +490,12 @@ fn eval_line_corr_json(
     for payload in crate::apply_event_filter(&value, event_filter) {
         let event = JsonEvent::borrow(&payload);
         let result = engine.process_event(&event);
-        for m in &result.detections {
-            *det_count += 1;
-            crate::print_json(m, pretty);
-        }
-        for m in &result.correlations {
-            *corr_count += 1;
+        for m in &result {
+            if m.is_detection() {
+                *det_count += 1;
+            } else {
+                *corr_count += 1;
+            }
             crate::print_json(m, pretty);
         }
     }
@@ -764,12 +760,12 @@ fn eval_evtx_corr(
         for payload in crate::apply_event_filter(&value, event_filter) {
             let event = JsonEvent::borrow(&payload);
             let result = engine.process_event(&event);
-            for m in &result.detections {
-                det_count += 1;
-                crate::print_json(m, pretty);
-            }
-            for m in &result.correlations {
-                corr_count += 1;
+            for m in &result {
+                if m.is_detection() {
+                    det_count += 1;
+                } else {
+                    corr_count += 1;
+                }
                 crate::print_json(m, pretty);
             }
         }

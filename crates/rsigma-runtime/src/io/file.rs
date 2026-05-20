@@ -22,16 +22,11 @@ impl FileSink {
 
     /// Serialize and append a ProcessResult to the file.
     pub fn send(&mut self, result: &ProcessResult) -> Result<(), RuntimeError> {
-        if result.detections.is_empty() && result.correlations.is_empty() {
+        if result.is_empty() {
             return Ok(());
         }
 
-        for m in &result.detections {
-            let json = serde_json::to_string(m)?;
-            writeln!(self.writer, "{json}")?;
-        }
-
-        for m in &result.correlations {
+        for m in result {
             let json = serde_json::to_string(m)?;
             writeln!(self.writer, "{json}")?;
         }

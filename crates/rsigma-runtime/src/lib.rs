@@ -36,8 +36,8 @@
 //! let batch = vec![r#"{"EventID": 1}"#.to_string()];
 //! let results = processor.process_batch_lines(&batch, &|v| vec![v.clone()]);
 //! for result in &results {
-//!     for det in &result.detections {
-//!         println!("Detection: {}", det.rule_title);
+//!     for r in result.iter().filter(|r| r.is_detection()) {
+//!         println!("Detection: {}", r.header.rule_title);
 //!     }
 //! }
 //! ```
@@ -60,7 +60,7 @@ pub use io::{
 pub use metrics::{MetricsHook, NoopMetrics};
 pub use processor::{EventFilter, LogProcessor};
 
-pub use rsigma_eval::ProcessResult;
+pub use rsigma_eval::{ProcessResult, ProcessResultExt};
 pub use sources::refresh::{RefreshResult, RefreshScheduler, RefreshTrigger};
 pub use sources::{
     DefaultSourceResolver, ResolvedValue, SourceCache, SourceError, SourceErrorKind,

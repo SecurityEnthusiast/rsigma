@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use rsigma_eval::CorrelationConfig;
+use rsigma_eval::{CorrelationConfig, ProcessResultExt};
 use rsigma_runtime::input::SyslogConfig;
 use rsigma_runtime::io::{EventSource, NatsConnectConfig, NatsSink, NatsSource, ReplayPolicy};
 use rsigma_runtime::{InputFormat, LogProcessor, NoopMetrics, RuntimeEngine};
@@ -205,7 +205,7 @@ async fn e2e_single_detection_through_nats() {
         let raw = source.recv().await.expect("event from source");
         let results = processor.process_batch_with_format(&[raw.payload], &InputFormat::Json, None);
         for result in &results {
-            if !result.detections.is_empty() || !result.correlations.is_empty() {
+            if !result.is_empty() {
                 let json = serde_json::to_string(result).unwrap();
                 output_sink.send_raw(&json).await.unwrap();
             }
@@ -219,9 +219,10 @@ async fn e2e_single_detection_through_nats() {
         .unwrap();
     let detection_raw = output_source.recv().await.expect("detection on output");
     let v: serde_json::Value = serde_json::from_str(&detection_raw.payload).unwrap();
+    // EvaluationResults are serialized as a flat array; each element is a
+    // result object with rule_title at the top level.
     assert!(
-        v["detections"]
-            .as_array()
+        v.as_array()
             .unwrap()
             .iter()
             .any(|d| d["rule_title"].as_str().unwrap() == "Detect Whoami Execution")
@@ -268,7 +269,7 @@ async fn e2e_no_detection_for_benign_events() {
         let raw = source.recv().await.expect("event from source");
         let results = processor.process_batch_with_format(&[raw.payload], &InputFormat::Json, None);
         for result in &results {
-            detection_count += result.detections.len() + result.correlations.len();
+            detection_count += result.len();
         }
         raw.ack_token.ack().await;
     }
@@ -323,9 +324,9 @@ async fn e2e_okta_cross_tenant_impersonation_correlation() {
         let raw = source.recv().await.expect("event from source");
         let results = processor.process_batch_with_format(&[raw.payload], &InputFormat::Json, None);
         for result in &results {
-            total_detections += result.detections.len();
-            total_correlations += result.correlations.len();
-            if !result.detections.is_empty() || !result.correlations.is_empty() {
+            total_detections += result.detection_count();
+            total_correlations += result.correlation_count();
+            if !result.is_empty() {
                 let json = serde_json::to_string(result).unwrap();
                 output_sink.send_raw(&json).await.unwrap();
                 output_messages += 1;
@@ -357,9 +358,13 @@ async fn e2e_okta_cross_tenant_impersonation_correlation() {
     for _ in 0..output_messages {
         let raw = output_source.recv().await.expect("output message");
         let v: serde_json::Value = serde_json::from_str(&raw.payload).unwrap();
-        if let Some(corrs) = v["correlations"].as_array() {
-            for c in corrs {
-                if c["rule_title"].as_str() == Some("Okta Cross-Tenant Impersonation Sequence") {
+        // EvaluationResults serialize as a flat JSON array. Correlations are
+        // identified by presence of the `correlation_type` field.
+        if let Some(items) = v.as_array() {
+            for c in items {
+                if c.get("correlation_type").is_some()
+                    && c["rule_title"].as_str() == Some("Okta Cross-Tenant Impersonation Sequence")
+                {
                     assert_eq!(c["level"].as_str(), Some("critical"));
                     found_correlation = true;
                 }
@@ -405,7 +410,7 @@ async fn e2e_fanout_to_multiple_nats_sinks() {
     let raw = source.recv().await.expect("event");
     let results = processor.process_batch_with_format(&[raw.payload], &InputFormat::Json, None);
     for result in &results {
-        if !result.detections.is_empty() {
+        if result.detection_count() > 0 {
             let json = serde_json::to_string(result).unwrap();
             sink_a.send_raw(&json).await.unwrap();
             sink_b.send_raw(&json).await.unwrap();
@@ -477,7 +482,7 @@ level: low
         &InputFormat::Syslog(SyslogConfig::default()),
         None,
     );
-    let det_count: usize = results.iter().map(|r| r.detections.len()).sum();
+    let det_count: usize = results.iter().map(|r| r.detection_count()).sum();
     assert_eq!(det_count, 1, "syslog message should trigger sudo detection");
     raw.ack_token.ack().await;
 }
@@ -555,8 +560,8 @@ level: high
         let raw = source.recv().await.expect("event");
         let results = processor.process_batch_with_format(&[raw.payload], &InputFormat::Json, None);
         for result in &results {
-            total_detections += result.detections.len();
-            total_correlations += result.correlations.len();
+            total_detections += result.detection_count();
+            total_correlations += result.correlation_count();
         }
         raw.ack_token.ack().await;
     }

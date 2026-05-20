@@ -42,3 +42,7 @@ harness = false
 [[bench]]
 name = "correlation"
 harness = false
+
+[[bench]]
+name = "result_serialize"
+harness = false

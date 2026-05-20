@@ -3,6 +3,38 @@
 All notable changes to RSigma are documented in this file.
 Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma/releases).
 
+## [Unreleased]
+
+### Unified evaluation result type (#PR No.)
+
+`MatchResult` and `CorrelationResult` are collapsed into a single `EvaluationResult` via composition. The five fields shared between detection and correlation today (`rule_title`, `rule_id`, `level`, `tags`, `custom_attributes`) move into a new `RuleHeader` struct along with a new optional `enrichments` map reserved for post-evaluation enrichment work (#34). Kind-specific fields live in `DetectionBody` and `CorrelationBody`, behind a `#[serde(untagged)]` `ResultBody` enum.
+
+**Wire shape is preserved exactly.** Both the header and the body flatten into the parent JSON object via `#[serde(flatten)]`, so each NDJSON line remains a flat object identical to today's serialization. No `result_kind` discriminator is added. Downstream consumers continue to distinguish detection from correlation by presence of `correlation_type` (correlation-only).
+
+**Library API is breaking but pre-1.0.** The old `MatchResult`, `CorrelationResult`, and the struct shape of `ProcessResult { detections, correlations }` are replaced by:
+
+- `EvaluationResult` (the single result type)
+- `RuleHeader`, `DetectionBody`, `CorrelationBody`, `ResultBody` (the composable parts)
+- `ProcessResult` (now a type alias for `Vec<EvaluationResult>`; detections come first, correlations after, in evaluation order)
+- `ProcessResultExt` extension trait on `[EvaluationResult]` exposing `detections()` / `correlations()` iterators and `detection_count()` / `correlation_count()`
+
+Migration on the consumer side:
+
+| Before | After |
+|--------|-------|
+| `m.rule_title`, `m.tags`, etc. | `m.header.rule_title`, `m.header.tags`, ... |
+| `m.matched_fields`, `m.event` | `m.as_detection().unwrap().matched_fields`, `m.as_detection().unwrap().event` |
+| `m.correlation_type`, `m.group_key`, ... | `m.as_correlation().unwrap().correlation_type`, ... |
+| `result.detections.len()` | `result.detection_count()` |
+| `result.correlations.iter()` | `result.correlations()` |
+| `result.detections[0]` | `result.detections().next().unwrap()` |
+
+Internally, the three duplicated `for m in &result.detections / for m in &result.correlations` loops in the file, stdout, and NATS sinks collapse to one `for m in result` loop.
+
+**Phase 0 bench gate** (`crates/rsigma-eval/benches/result_serialize.rs`) compared the new design's serialize throughput against a byte-for-byte copy of the old types across four representative inputs. The derived `#[serde(flatten)]` path landed within ±4% of the baseline on every sample, so the hand-written `Serialize` fallback documented in the plan was not needed.
+
+The post-evaluation enrichment plan (#34) is rewritten in lockstep to consume the unified types: one `Enricher` trait taking `&mut EvaluationResult`, no separate context structs, four single-type primitives (`TemplateEnricher`, `HttpEnricher`, `CommandEnricher`, `LookupEnricher`) instead of eight, and a single daemon loop with a runtime `kind`-vs-`body` filter. Estimated effort for #34 drops from ~12 days to ~9.5 days.
+
 ## [0.12.0] - 2026-05-20
 
 **TL;DR**

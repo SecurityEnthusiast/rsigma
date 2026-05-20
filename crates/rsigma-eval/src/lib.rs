@@ -84,7 +84,8 @@
 //!     let event = JsonEvent::borrow(&v);
 //!     let result = engine.process_event_at(&event, 1000 + i);
 //!     if i == 2 {
-//!         assert_eq!(result.correlations.len(), 1);
+//!         let correlations = result.iter().filter(|r| r.is_correlation()).count();
+//!         assert_eq!(correlations, 1);
 //!     }
 //! }
 //! ```
@@ -110,7 +111,7 @@ pub use correlation::{
 };
 pub use correlation_engine::{
     CorrelationAction, CorrelationConfig, CorrelationEngine, CorrelationEventMode,
-    CorrelationResult, CorrelationSnapshot, ProcessResult, TimestampFallback,
+    CorrelationSnapshot, ProcessResult, TimestampFallback,
 };
 pub use engine::Engine;
 pub use error::{EvalError, Result};
@@ -123,4 +124,7 @@ pub use pipeline::{
     },
     merge_pipelines, parse_pipeline, parse_pipeline_file, parse_transformation_items,
 };
-pub use result::{FieldMatch, MatchResult};
+pub use result::{
+    CorrelationBody, DetectionBody, EvaluationResult, FieldMatch, ProcessResultExt, ResultBody,
+    RuleHeader,
+};

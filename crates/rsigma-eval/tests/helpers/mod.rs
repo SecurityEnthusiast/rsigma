@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
 use rsigma_eval::{
-    CorrelationConfig, CorrelationEngine, Engine, JsonEvent, MatchResult, ProcessResult,
+    CorrelationConfig, CorrelationEngine, Engine, EvaluationResult, JsonEvent, ProcessResult,
 };
 use rsigma_parser::parse_sigma_yaml;
 use serde_json::Value;
 
-pub fn eval(yaml: &str, event_json: Value) -> Vec<MatchResult> {
+pub fn eval(yaml: &str, event_json: Value) -> Vec<EvaluationResult> {
     let collection = parse_sigma_yaml(yaml).unwrap();
     let mut engine = Engine::new();
     engine.add_collection(&collection).unwrap();
