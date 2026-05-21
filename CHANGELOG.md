@@ -73,6 +73,17 @@ Internally, the three duplicated `for m in &result.detections / for m in &result
 
 A new Criterion bench (`crates/rsigma-eval/benches/result_serialize.rs`) pins serialize throughput of the new design against a byte-for-byte copy of the old types across four representative inputs; the derived `#[serde(flatten)]` path is within ±4% of the baseline on every sample.
 
+### Drop reserved `attack` subcommand
+
+The empty `attack` command group that v0.12.0 reserved as a forward declaration for MITRE ATT&CK tooling is removed. The corresponding `Commands::Attack` clap variant, the `AttackCommands` enum, the dispatcher branch, the help-text test assertion, and the "reserved; populated by the upcoming MITRE ATT&CK contributor PR" README line are gone. The CLI now exposes four groups instead of five (`engine`, `rule`, `backend`, `pipeline`); the `attack` namespace remains available for a future contributor PR to populate but is no longer reserved ahead of time.
+
+### Other changes
+
+* **Documentation (PR #131):** version references no longer hardcode the current release in the docs site -- `rsigma.version` now reads from `Cargo.toml` at build time via the macros plugin, so the docs auto-bump on every release rather than drifting behind. `docs/guide/performance-tuning.md` gains a "Rule loading at scale" section covering the v0.12.0 single-rebuild batched loaders and amortized O(1) `add_rule` with verified Criterion numbers at 1K / 10K / 100K rules. The `rsigma-parser` README intro paragraph's stale lint count (65) was bumped to 66 to match every other authoritative location.
+* **Enrichment wording:** the `lookup` enricher's startup error message and `docs/guide/enrichers.md` describe sources as "configured on the daemon" rather than "declared in your pipeline `sources:` block" so the copy stays accurate after a forthcoming release lets sources be declared independently of pipelines.
+* **README and home page:** [Detection Engineering Weekly #157](https://www.detectionengineering.net/p/dew-157-shai-hulud-goes-open-source) added to the "featured in" list (`README.md` and `docs/index.md`) with a quote calling out RSigma's dynamic-pipelines model.
+* **Contributing guidelines:** the `docs/` MkDocs site is now listed as a release deliverable in `CONTRIBUTING.md` alongside the crate READMEs, with a page-to-change matrix that maps each kind of change (new CLI flag, new daemon config key, new library API, new metric, new feature flag) to the page that must stay in sync.
+
 ## [0.12.0] - 2026-05-20
 
 **TL;DR**
