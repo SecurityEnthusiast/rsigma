@@ -4,8 +4,10 @@ mod daemon;
 pub(crate) mod exit_code;
 mod fix;
 
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::process;
+use std::sync::{Mutex, OnceLock};
 
 use clap::{Parser, Subcommand};
 use commands::{
@@ -403,6 +405,9 @@ pub(crate) fn load_pipelines(paths: &[PathBuf]) -> Vec<Pipeline> {
                             p.sources.iter().map(|s| s.id.as_str()).collect();
                         eprintln!("  dynamic source(s): {}", source_ids.join(", "));
                     }
+                    if !p.sources.is_empty() {
+                        warn_pipeline_inline_sources(path, &p.name);
+                    }
                     pipelines.push(p);
                 }
                 Err(e) => {
@@ -414,6 +419,57 @@ pub(crate) fn load_pipelines(paths: &[PathBuf]) -> Vec<Pipeline> {
     }
     pipelines.sort_by_key(|p| p.priority);
     pipelines
+}
+
+// Deduplication set for the pipeline-embedded `sources:` deprecation warning.
+//
+// The process-wide set guards against re-emitting the same warning on every
+// daemon hot-reload (a single pipeline file would otherwise spam stderr on
+// each `SIGHUP` / file-watcher event / `POST /api/v1/reload`). Paths are
+// canonicalised before insertion so equivalent spellings (`./pipeline.yml`
+// vs `pipeline.yml`) collapse to one entry; a canonicalisation failure
+// falls back to the raw path so we still get one-per-spelling dedup.
+//
+// One-shot commands (`eval`, `validate`, `fields`, `convert`, `resolve`)
+// only call `load_pipelines` once, so each pipeline file is warned about
+// exactly once per process regardless of the dedup set.
+static SEEN_INLINE_SOURCES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+
+/// Emit the pipeline-embedded `sources:` deprecation notice. The warning is
+/// surfaced via both `tracing::warn!` (for structured log aggregation) and
+/// `eprintln!` (for direct operator visibility on stderr). Calls are
+/// deduplicated by canonical pipeline path.
+///
+/// The warning gets louder over the deprecation cycle:
+/// - v0.13: `tracing::warn!` only (Phase 1, shipped in #135).
+/// - v0.14: `tracing::warn!` + `eprintln!` (Phase 3, this issue / #136).
+/// - v1.0:  hard parse error (Phase 4, #137).
+pub(crate) fn warn_pipeline_inline_sources(path: &Path, pipeline_name: &str) {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let seen = SEEN_INLINE_SOURCES.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut guard = seen.lock().expect("inline-sources warn mutex poisoned");
+    if !guard.insert(canonical) {
+        return;
+    }
+    drop(guard);
+
+    tracing::warn!(
+        pipeline = %pipeline_name,
+        path = %path.display(),
+        "pipeline declares inline 'sources:' block, which is deprecated; \
+         use '--source <file>' instead. Run 'rsigma rule migrate-sources' \
+         to extract sources into a standalone file. Pipeline-embedded \
+         sources will be removed in v1.0."
+    );
+    eprintln!(
+        "warning: pipeline '{}' ({}) declares an inline 'sources:' block, \
+         which is deprecated and will be removed in v1.0. Migrate with \
+         `rsigma rule migrate-sources -p {} -o sources.yml` and load via \
+         `--source sources.yml` on `rsigma engine daemon`.",
+        pipeline_name,
+        path.display(),
+        path.display(),
+    );
 }
 
 pub(crate) fn load_collection(path: &std::path::Path) -> SigmaCollection {
