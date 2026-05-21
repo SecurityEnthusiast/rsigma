@@ -26,6 +26,44 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 // ---------------------------------------------------------------------------
+// Platform-portable shell helpers
+// ---------------------------------------------------------------------------
+
+/// Wrap a shell command body in the right `argv` for the host platform.
+/// On Unix the body is passed to `/bin/sh -c <body>`; on Windows it is
+/// passed to `cmd.exe /C <body>`. Quoting differs slightly between the
+/// two shells so callers should keep the body simple (single-line, no
+/// embedded quotes) or use a static fixture file plus `cat` / `type`.
+fn shell_argv(body: &str) -> Vec<String> {
+    #[cfg(unix)]
+    {
+        vec!["/bin/sh".to_string(), "-c".to_string(), body.to_string()]
+    }
+    #[cfg(windows)]
+    {
+        vec!["cmd.exe".to_string(), "/C".to_string(), body.to_string()]
+    }
+}
+
+/// `cat` (Unix) / `type` (Windows) the given file. Used in tests that
+/// need a deterministic JSON payload from a command without dealing
+/// with cross-shell quote escaping.
+fn cat_argv(path: &str) -> Vec<String> {
+    #[cfg(unix)]
+    {
+        vec!["/bin/cat".to_string(), path.to_string()]
+    }
+    #[cfg(windows)]
+    {
+        vec![
+            "cmd.exe".to_string(),
+            "/C".to_string(),
+            format!("type \"{path}\""),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
@@ -352,15 +390,18 @@ async fn http_extract_jq_filters_response() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn command_json_output_parses_into_object() {
+    // Cross-shell quoting of `echo '{"k":"v"}'` is a tarpit; stage the
+    // payload as a fixture file and have the command read it back. The
+    // `cat_argv` helper picks `cat` on Unix and `type` on Windows.
+    let payload = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(payload.path(), r#"{"score": 12, "category": "internal"}"#).unwrap();
+    let argv = cat_argv(payload.path().to_str().unwrap());
+
     let enricher = Box::new(CommandEnricher::new(
         "echo_json".to_string(),
         EnricherKind::Detection,
         "ip_rep".to_string(),
-        vec![
-            "/bin/sh".to_string(),
-            "-c".to_string(),
-            r#"echo '{"score": 12, "category": "internal"}'"#.to_string(),
-        ],
+        argv,
         HashMap::new(),
         Duration::from_secs(5),
         OnError::Skip,
@@ -385,11 +426,7 @@ async fn command_raw_output_strips_trailing_newline() {
         "raw".to_string(),
         EnricherKind::Detection,
         "out".to_string(),
-        vec![
-            "/bin/sh".to_string(),
-            "-c".to_string(),
-            "echo hello".to_string(),
-        ],
+        shell_argv("echo hello"),
         HashMap::new(),
         Duration::from_secs(5),
         OnError::Skip,
@@ -418,11 +455,7 @@ async fn command_nonzero_exit_triggers_on_error_policy() {
         "false_cmd".to_string(),
         EnricherKind::Detection,
         "out".to_string(),
-        vec![
-            "/bin/sh".to_string(),
-            "-c".to_string(),
-            "exit 7".to_string(),
-        ],
+        shell_argv("exit 7"),
         HashMap::new(),
         Duration::from_secs(5),
         OnError::Null,
@@ -447,16 +480,15 @@ async fn command_nonzero_exit_triggers_on_error_policy() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn command_template_expansion_for_correlation_kind() {
+    // The template engine renders `${correlation.*}` in the argv before
+    // it ever reaches the OS, so by the time `cmd.exe` / `sh` sees the
+    // body it is just `echo agg=73 ip=203.0.113.4`. That `echo` form
+    // works identically under both shells.
     let enricher = Box::new(CommandEnricher::new(
         "summary".to_string(),
         EnricherKind::Correlation,
         "summary".to_string(),
-        vec![
-            "/bin/sh".to_string(),
-            "-c".to_string(),
-            "echo agg=${correlation.aggregated_value} ip=${correlation.group_key.SourceIP}"
-                .to_string(),
-        ],
+        shell_argv("echo agg=${correlation.aggregated_value} ip=${correlation.group_key.SourceIP}"),
         HashMap::new(),
         Duration::from_secs(5),
         OnError::Skip,

@@ -62,8 +62,30 @@ const EMPLOYEES_JSON: &str = r#"{
   "10.0.0.7": {"user": "bob", "team": "IT-Ops"}
 }"#;
 
+/// Build the platform-portable `command:` argv for the test's `command`
+/// enricher. On Unix, runs `cat <fixture>`; on Windows, runs
+/// `cmd.exe /C type "<fixture>"`. Returns a YAML inline list literal
+/// ready to splice into the config.
+///
+/// The fixture file holds the JSON body the enricher should produce,
+/// avoiding cross-shell quote-escaping headaches.
+fn command_argv_yaml(probe_path: &str) -> String {
+    #[cfg(unix)]
+    {
+        format!(r#"["/bin/cat", "{probe_path}"]"#)
+    }
+    #[cfg(windows)]
+    {
+        // Forward slashes work fine inside `type "..."` on cmd.exe and
+        // make the YAML escaping simple. The JSON-like quoting around
+        // the YAML element handles spaces in temp paths.
+        let win_path = probe_path.replace('\\', "/");
+        format!(r#"["cmd.exe", "/C", "type \"{win_path}\""]"#)
+    }
+}
+
 /// Enrichers config covering all four primitives.
-fn enrichers_yaml(http_base: &str) -> String {
+fn enrichers_yaml(http_base: &str, command_argv: &str) -> String {
     format!(
         r#"
 max_concurrent_enrichments: 4
@@ -97,7 +119,7 @@ enrichers:
     kind: detection
     type: command
     inject_field: probe_output
-    command: ["/bin/sh", "-c", "echo '{{\"who\": \"daemon\"}}'"]
+    command: {command_argv}
     output: json
 "#
     )
@@ -149,11 +171,21 @@ fn enrichers_inject_into_detection_output_via_all_four_primitives() {
         s
     });
 
-    // Pipeline + employees + enrichers config files.
+    // Pipeline + employees + enrichers config files. The `command`
+    // enricher reads its JSON body from a fixture file via `cat`
+    // (Unix) / `type` (Windows) so the test doesn't have to deal with
+    // cross-shell quote escaping.
     let employees = temp_file(".json", EMPLOYEES_JSON);
+    let probe_payload = temp_file(".json", r#"{"who": "daemon"}"#);
     let pipeline = temp_file(".yml", &pipeline_yaml(employees.path().to_str().unwrap()));
     let rule = temp_file(".yml", ENRICH_RULE);
-    let enrichers = temp_file(".yml", &enrichers_yaml(server.uri().as_str()));
+    let enrichers = temp_file(
+        ".yml",
+        &enrichers_yaml(
+            server.uri().as_str(),
+            &command_argv_yaml(probe_payload.path().to_str().unwrap()),
+        ),
+    );
 
     // File sink for reading enriched detections back.
     let output_file = tempfile::NamedTempFile::new().unwrap();
