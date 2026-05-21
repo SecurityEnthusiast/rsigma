@@ -48,6 +48,16 @@ fn shell_argv(body: &str) -> Vec<String> {
 /// `cat` (Unix) / `type` (Windows) the given file. Used in tests that
 /// need a deterministic JSON payload from a command without dealing
 /// with cross-shell quote escaping.
+///
+/// On Windows, `type` and the path go in their own argv elements
+/// rather than being baked into a `type "..."` blob. That avoids
+/// cmd.exe's `/C` quote-stripping pathology: Rust's CreateProcess
+/// quoting wraps a single string with embedded `"`s in outer quotes
+/// and escapes the inner ones, which cmd's `/C` parser then
+/// outer-strips, leaving `type \"...\"` -- a path that does not
+/// exist. With separate args, Rust quotes only the path element and
+/// cmd's `type` reads the file cleanly. `/D` disables AutoRun for
+/// hermeticity.
 fn cat_argv(path: &str) -> Vec<String> {
     #[cfg(unix)]
     {
@@ -57,8 +67,10 @@ fn cat_argv(path: &str) -> Vec<String> {
     {
         vec![
             "cmd.exe".to_string(),
+            "/D".to_string(),
             "/C".to_string(),
-            format!("type \"{path}\""),
+            "type".to_string(),
+            path.to_string(),
         ]
     }
 }
