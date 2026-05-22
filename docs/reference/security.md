@@ -115,7 +115,7 @@ rsigma engine daemon -r rules/ \
 
 Use `--tls-min-version 1.2` only when a legacy agent cannot negotiate TLS 1.3. The provider is `aws-lc-rs`, matching the NATS client TLS path and inheriting upstream FIPS-mode work.
 
-Hot-reload: `SIGHUP` re-reads the certificate and key from disk and atomically swaps the rustls `ServerConfig` for new handshakes via `Arc<ArcSwap<…>>`. Inflight TLS connections are not dropped. Failed reloads keep the previous certificate active and log an error so a typo in the cert path cannot black-hole the listener. The same SIGHUP also reloads rules, pipelines, and enrichers, so cert rotation typically piggy-backs on a routine reload.
+Hot-reload: cert rotation funnels through the daemon's central debounced reload task, which is triggered by `POST /api/v1/reload` (works on every platform, including Windows), `SIGHUP` (Unix), or a YAML change picked up by the file watcher. All three paths re-read the certificate and key from disk and atomically swap the rustls `ServerConfig` via `Arc<ArcSwap<…>>`. Inflight TLS connections are not dropped. Failed reloads keep the previous certificate active, bump `rsigma_reloads_failed_total`, and log an error so a typo in the cert path cannot black-hole the listener. The same trigger also reloads rules, pipelines, and enrichers, so cert rotation typically piggy-backs on a routine reload.
 
 Observability: `/metrics` exposes `rsigma_tls_certificate_expiry_seconds` (signed; negative once expired) and `rsigma_tls_active_connections`. A single WARN is logged at startup (and on every successful reload) when the active cert expires within 30 days; wire that line into the existing log-based alerting.
 

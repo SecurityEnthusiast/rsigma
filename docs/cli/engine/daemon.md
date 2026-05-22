@@ -78,7 +78,7 @@ When TLS is configured, the daemon terminates TLS in-process for every protocol 
 | `--tls-min-version <1.2\|1.3>` | unset | `1.3` | Minimum TLS protocol version. Drop to `1.2` only for legacy agents that cannot negotiate TLS 1.3. |
 | `--allow-plaintext` | unset | off | Permit plaintext on a non-loopback `--api-addr`. Without this flag (and without `--tls-cert`/`--tls-key`) the daemon refuses to start on any public address. Loopback (`127.0.0.0/8`, `::1`) always allows plaintext for local development. |
 
-Hot-reload: `SIGHUP` re-reads the certificate and key from disk and atomically swaps the active `rustls::ServerConfig` for new handshakes; inflight TLS connections are unaffected. Failed reloads keep the previous certificate active and log an error. The hot-reload path piggy-backs on the existing rules-reload signal, so a single `kill -HUP <pid>` rotates rules, pipelines, and TLS material together.
+Hot-reload: every reload trigger funnels through the daemon's central debounced reload task, so a single `POST /api/v1/reload` (cross-platform, including Windows), `kill -HUP <pid>` (Unix), or a YAML file change picked up by the file watcher rotates rules, pipelines, enrichers, and the TLS certificate in one pass. The active `rustls::ServerConfig` is swapped atomically via `Arc<ArcSwap<…>>`, so new handshakes pick up the rotated material without dropping inflight TLS connections. Failed reloads keep the previous certificate active, bump `rsigma_reloads_failed_total`, and log an error so a typo in the cert path cannot black-hole the listener.
 
 Observability: the `/metrics` endpoint exposes `rsigma_tls_certificate_expiry_seconds` (signed; negative once the cert has expired) and `rsigma_tls_active_connections`. A single WARN is logged at startup (and after every reload) if the active certificate expires within 30 days.
 
@@ -197,7 +197,7 @@ rsigma engine daemon -r rules/ \
     --tls-client-ca /etc/rsigma/tls/clients-ca.crt
 ```
 
-Clients connecting to `https://daemon:9090/v1/logs` (OTLP/HTTP) or `https://daemon:9090/api/v1/events` (REST) must present a certificate signed by `clients-ca.crt` or the handshake is rejected. Rotate the server cert with `cp new.crt /etc/rsigma/tls/server.crt && kill -HUP $(pidof rsigma)`.
+Clients connecting to `https://daemon:9090/v1/logs` (OTLP/HTTP) or `https://daemon:9090/api/v1/events` (REST) must present a certificate signed by `clients-ca.crt` or the handshake is rejected. Rotate the server cert with `cp new.crt /etc/rsigma/tls/server.crt && kill -HUP $(pidof rsigma)` on Unix, or `cp new.crt … && curl -X POST https://daemon:9090/api/v1/reload` on any platform (including Windows, where SIGHUP does not exist).
 
 ### Forensic replay from a NATS sequence
 
