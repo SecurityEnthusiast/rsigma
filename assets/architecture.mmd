@@ -2,7 +2,7 @@ flowchart TD
     YAML["YAML input"]
     SERDE["yaml_serde"]
     EVENTS["Log events"]
-    OUTPUT["EvaluationResult\nRuleHeader: title · id · level · tags\nResultBody: Detection (matched fields/selections) ·\nCorrelation (correlation_type · group_key · aggregated_value)"]
+    OUTPUT["EvaluationResult\nRuleHeader: title · id · level · tags · enrichments\nResultBody: Detection (matched fields/selections) ·\nCorrelation (correlation_type · group_key · aggregated_value)"]
     QUERIES["SQL · SPL · KQL · Lucene"]
     EDITOR["Editor diagnostics + code actions"]
     LEGEND["* = feature-gated\n** = requires daachorse-index feature"]
@@ -45,8 +45,9 @@ flowchart TD
         RINPUT["input/ format adapters:\nJSON · syslog · logfmt* · CEF* · EVTX*\nplain text · auto-detect\nraw line → EventInputDecoded"]
         RINPUT --> RPROC["LogProcessor\nbatch evaluation\nArcSwap hot-reload (rules + pipelines)\nMetricsHook · EventFilter"]
         RPROC --> RENG["RuntimeEngine\nwraps Engine + CorrelationEngine\nwith rule loading"]
-        RENG --> RIO["io/\nEventSource (stdin · HTTP · NATS)\nOTLP* (HTTP + gRPC)\nSink (stdout · file · NATS) · DLQ"]
-        RSRC["sources/ (dynamic pipelines)\nSourceResolver: HTTP · command · file · NATS\nTemplateExpander · SourceCache (SQLite TTL)\nRefreshScheduler: interval · watch · push\nSIGHUP · NATS control · includes\nextract: jq · JSONPath · CEL"]
+        RENG --> RENRICH["enrichment/ post-eval pipeline\nprimitives: template · lookup · http · command\nkind-aware: ${detection.*} · ${correlation.*}\nscope filter · HTTP response cache · on_error\nwrites RuleHeader.enrichments"]
+        RENRICH --> RIO["io/\nEventSource (stdin · HTTP · NATS)\nOTLP* (HTTP + gRPC)\nTLS* termination (mTLS · cert hot-reload)\non shared API listener\nSink (stdout · file · NATS) · DLQ"]
+        RSRC["sources/ (dynamic pipelines)\nDaemonSourceRegistry: external (--source) +\npipeline-embedded (deprecated) · collision-error\nSourceResolver: HTTP · command · file · NATS\nTemplateExpander · SourceCache (SQLite TTL)\nRefreshScheduler: interval · watch · push\nSIGHUP · NATS control · includes\nextract: jq · JSONPath · CEL"]
     end
 
     YAML -->|"Raw YAML Value"| SERDE

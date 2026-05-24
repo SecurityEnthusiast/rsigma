@@ -402,7 +402,8 @@ When running as a streaming detection engine, `rsigma-eval` feeds into `rsigma-r
 - **Input:** Format adapters parse raw log lines (JSON, syslog, logfmt\*, CEF\*, plain text, with auto-detection) into `EventInputDecoded`. EVTX\* files are parsed directly from binary via `EvtxFileReader`. Sources include stdin, HTTP POST, NATS JetStream, and OTLP\* (HTTP protobuf/JSON and gRPC).
 - **Dynamic sources:** `SourceResolver` fetches data from files, commands, HTTP APIs, and NATS subjects. Resolved values are injected into pipelines via `TemplateExpander`. A `SourceCache` (in-memory + optional SQLite) provides fallback data. `RefreshScheduler` manages auto-refresh (interval, file watch, NATS push, on-demand). Extraction supports jq, JSONPath, and CEL. `DaemonSourceRegistry` unifies sources from external files (`--source`) and pipeline-embedded declarations with collision-error semantics.
 - **Processing:** `LogProcessor` runs batch evaluation with parallel detection and sequential correlation. `RuntimeEngine` wraps `Engine` and `CorrelationEngine` with rule loading and `ArcSwap` hot-reload.
-- **Output:** Sinks write evaluation results to stdout, files, or NATS as one flat JSON object per result. Multiple sinks can run in fan-out. The output type is `EvaluationResult` (a composition of `RuleHeader` + `ResultBody::Detection|Correlation`), carrying rule title, id, level, tags, matched selections, field matches, aggregated values, and optionally the triggering events.
+- **Enrichment:** `EnrichmentPipeline` runs between the engine and the sinks, injecting context (asset info, IP reputation, identity, GeoIP, KEV flags, runbook URLs, ...) into each result's `RuleHeader.enrichments` map. Four primitives (`template`, `lookup`, `http`, `command`) compose into recipes. Kind-aware template namespaces (`${detection.*}` for detection-kind enrichers, `${correlation.*}` for correlation-kind) are validated at config-load time. Optional HTTP response cache, scope filtering by rule glob, tag set, and severity, and `on_error` policies (`skip`, `null`, `drop`).
+- **Output:** Sinks write evaluation results to stdout, files, or NATS as one flat JSON object per result. Multiple sinks can run in fan-out. The output type is `EvaluationResult` (a composition of `RuleHeader` + `ResultBody::Detection|Correlation`), carrying rule title, id, level, tags, the `enrichments` map written by the enrichment pipeline, matched selections, field matches, aggregated values, and optionally the triggering events.
 
 Feature-gated items are marked with \* in the diagram.
 
@@ -485,6 +486,9 @@ Feature-gated items are marked with \* in the diagram.
     │    ↓ raw line → EventInputDecoded        │
     │                                          │
     │  sources/ ──> dynamic pipelines:         │
+    │    DaemonSourceRegistry: external        │
+    │      (--source) + pipeline-embedded      │
+    │      (deprecated), collision-error       │
     │    SourceResolver (HTTP, command,        │
     │      file, NATS subjects)                │
     │    TemplateExpander (${source.*})        │
@@ -505,8 +509,21 @@ Feature-gated items are marked with \* in the diagram.
     │  RuntimeEngine ──> wraps Engine +        │
     │    CorrelationEngine with rule loading   │
     │                                          │
+    │  enrichment/ ──> post-eval pipeline:     │
+    │    primitives: template, lookup,         │
+    │      http, command                       │
+    │    kind-aware namespaces:                │
+    │      ${detection.*}, ${correlation.*}    │
+    │    scope filter (rules, tags, levels)    │
+    │    HTTP response cache, on_error policy  │
+    │    └──> writes RuleHeader.enrichments    │
+    │         between engine and sinks         │
+    │                                          │
     │  io/ ──> EventSource (stdin, HTTP, NATS) │
     │          OTLP* (HTTP + gRPC)             │
+    │          TLS* termination (mTLS, cert    │
+    │            hot-reload) on shared API     │
+    │            listener                      │
     │          Sink (stdout, file, NATS)       │
     │          DLQ (failed events)             │
     └──────────────────────────────────────────┘
@@ -515,9 +532,10 @@ Feature-gated items are marked with \* in the diagram.
               ▼
      ┌────────────────────────┐
      │  EvaluationResult      │──> rule title, id, level, tags,
-     │  = RuleHeader +        │    matched selections, field matches,
-     │    ResultBody::        │    aggregated values, optional events
-     │      Detection /       │
+     │  = RuleHeader (incl.   │    enrichments map, matched
+     │    enrichments) +      │    selections, field matches,
+     │    ResultBody::        │    aggregated values, optional
+     │      Detection /       │    events
      │      Correlation       │
      └────────────────────────┘
 ```
