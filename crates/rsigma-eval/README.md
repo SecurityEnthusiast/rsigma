@@ -99,6 +99,7 @@ Opt-in counter that records every observed field name and surfaces gap and broke
 | `FieldObserver::new(max_keys)` | Construct an observer with a hard cap on distinct keys (overflow drops are counted, existing keys keep updating) |
 | `FieldObserver::observe(event: &impl Event)` | Walk `event.field_keys()` and bump per-field counters; `&self` so callers can share an `Arc` |
 | `FieldObserver::snapshot()` | `FieldObservation { entries, events_observed, unique_keys, overflow_dropped, lifetime_events_observed, lifetime_overflow_dropped, max_keys, uptime_seconds }`. Entries sorted by descending count then name. Keys held as `Arc<str>` so the snapshot is refcount-cheap |
+| `FieldObservation::coverage(&RuleFieldSet)` | Partition a snapshot into `FieldCoverage { unknown, intersection_count, missing }` against a rule field set in one pass. Both the daemon HTTP handlers and the eval report consume this, so the partition semantics cannot drift |
 | `FieldObserver::reset()` | Clear counters; lifetime totals survive so Prometheus counter bridges stay monotonic |
 
 ## Detection Engine
