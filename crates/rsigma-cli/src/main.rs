@@ -403,6 +403,9 @@ pub(crate) fn load_pipelines(paths: &[PathBuf]) -> Vec<Pipeline> {
                             p.sources.iter().map(|s| s.id.as_str()).collect();
                         eprintln!("  dynamic source(s): {}", source_ids.join(", "));
                     }
+                    if !p.sources.is_empty() {
+                        rsigma_runtime::warn_pipeline_inline_sources(path, &p.name);
+                    }
                     pipelines.push(p);
                 }
                 Err(e) => {

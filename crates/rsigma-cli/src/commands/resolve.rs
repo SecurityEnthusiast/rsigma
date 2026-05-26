@@ -92,6 +92,10 @@ async fn resolve_async(
             }
         };
 
+        if !pipeline.sources.is_empty() {
+            rsigma_runtime::warn_pipeline_inline_sources(path, &pipeline.name);
+        }
+
         if !pipeline.is_dynamic() && source_files.is_empty() {
             eprintln!(
                 "Pipeline '{}' has no dynamic sources, skipping.",

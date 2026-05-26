@@ -665,18 +665,9 @@ fn run_daemon(
         })
         .collect();
 
-    if !pipeline_sources.is_empty() {
-        for p in &pipelines {
-            if !p.sources.is_empty() {
-                tracing::warn!(
-                    pipeline = %p.name,
-                    "pipeline declares inline 'sources:' block, which is deprecated; \
-                     use '--source <file>' instead. Run 'rsigma rule migrate-sources' \
-                     to extract sources into a standalone file."
-                );
-            }
-        }
-    }
+    // The pipeline-embedded `sources:` deprecation warning is emitted from
+    // `load_pipelines` (called above), which de-duplicates across hot-reloads
+    // and covers every CLI entry point that loads a pipeline file.
 
     let source_registry = rsigma_runtime::sources::registry::DaemonSourceRegistry::new(
         external_sources,
