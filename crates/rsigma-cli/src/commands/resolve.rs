@@ -93,7 +93,7 @@ async fn resolve_async(
         };
 
         if !pipeline.sources.is_empty() {
-            crate::warn_pipeline_inline_sources(path, &pipeline.name);
+            rsigma_runtime::warn_pipeline_inline_sources(path, &pipeline.name);
         }
 
         if !pipeline.is_dynamic() && source_files.is_empty() {

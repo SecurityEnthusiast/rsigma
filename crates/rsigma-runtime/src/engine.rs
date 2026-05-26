@@ -400,11 +400,22 @@ fn load_collection(path: &Path) -> Result<SigmaCollection, String> {
 }
 
 /// Re-read and parse all pipeline files from disk, sorted by priority.
+///
+/// Every pipeline file that still declares an inline `sources:` block
+/// triggers the [`warn_pipeline_inline_sources`](crate::warn_pipeline_inline_sources)
+/// deprecation notice. The helper deduplicates by canonical path across the
+/// whole process, so the warning surfaces on the first daemon hot-reload that
+/// observes a deprecated pipeline and is silent on subsequent reloads of the
+/// same file (every SIGHUP, file-watcher event, or `POST /api/v1/reload`
+/// thereafter is a noop for the dedup set).
 fn reload_pipelines(paths: &[PathBuf]) -> Result<Vec<Pipeline>, String> {
     let mut pipelines = Vec::with_capacity(paths.len());
     for path in paths {
         let pipeline = parse_pipeline_file(path)
             .map_err(|e| format!("Error reloading pipeline {}: {e}", path.display()))?;
+        if !pipeline.sources.is_empty() {
+            crate::warn_pipeline_inline_sources(path, &pipeline.name);
+        }
         pipelines.push(pipeline);
     }
     pipelines.sort_by_key(|p| p.priority);
@@ -436,4 +447,157 @@ async fn resolve_pipelines_async(
         }
     }
     Ok(resolved_pipelines)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pipeline_deprecation::reset_inline_sources_dedup_for_tests;
+    use std::sync::Mutex;
+
+    // The pipeline-embedded `sources:` dedup set is process-wide, so tests
+    // that read it need to serialize. cargo test runs tests in a binary
+    // concurrently; this guard turns those into sequential probes of the
+    // shared set.
+    static DEDUP_TEST_GUARD: Mutex<()> = Mutex::new(());
+
+    const RULE_YAML: &str = r#"
+title: TestRule
+id: 11111111-1111-1111-1111-111111111111
+status: experimental
+logsource:
+    product: test
+detection:
+    selection:
+        EventID: 1
+    condition: selection
+"#;
+
+    const PIPELINE_WITH_SOURCES: &str = r#"
+name: legacy_pipeline_with_inline_sources
+priority: 50
+sources:
+  - id: threat_feed
+    type: file
+    path: /tmp/does-not-matter.json
+    format: json
+transformations:
+  - type: value_placeholders
+"#;
+
+    const PIPELINE_NO_SOURCES: &str = r#"
+name: simple_pipeline
+priority: 10
+transformations:
+  - id: rename
+    type: field_name_mapping
+    mapping:
+      EventID: event.id
+"#;
+
+    fn dedup_set_contains(path: &Path) -> bool {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        crate::pipeline_deprecation::tests_only_snapshot().contains(&canonical)
+    }
+
+    #[test]
+    fn load_rules_surfaces_inline_sources_deprecation_through_runtime() {
+        let _guard = DEDUP_TEST_GUARD.lock().unwrap();
+        reset_inline_sources_dedup_for_tests();
+
+        let dir = tempfile::tempdir().unwrap();
+        let rule_path = dir.path().join("rule.yml");
+        std::fs::write(&rule_path, RULE_YAML).unwrap();
+
+        let pipeline_path = dir.path().join("pipeline.yml");
+        std::fs::write(&pipeline_path, PIPELINE_WITH_SOURCES).unwrap();
+        let pipeline = parse_pipeline_file(&pipeline_path).unwrap();
+
+        let mut engine = RuntimeEngine::new(
+            rule_path,
+            vec![pipeline],
+            CorrelationConfig::default(),
+            false,
+        );
+        engine.set_pipeline_paths(vec![pipeline_path.clone()]);
+        engine.load_rules().unwrap();
+
+        assert!(
+            dedup_set_contains(&pipeline_path),
+            "RuntimeEngine::load_rules should route inline sources through \
+             warn_pipeline_inline_sources so the daemon hot-reload path \
+             covers the deprecation; the canonical pipeline path was not \
+             recorded in the dedup set."
+        );
+    }
+
+    #[test]
+    fn load_rules_does_not_warn_when_pipeline_has_no_inline_sources() {
+        let _guard = DEDUP_TEST_GUARD.lock().unwrap();
+        reset_inline_sources_dedup_for_tests();
+
+        let dir = tempfile::tempdir().unwrap();
+        let rule_path = dir.path().join("rule.yml");
+        std::fs::write(&rule_path, RULE_YAML).unwrap();
+
+        let pipeline_path = dir.path().join("clean.yml");
+        std::fs::write(&pipeline_path, PIPELINE_NO_SOURCES).unwrap();
+        let pipeline = parse_pipeline_file(&pipeline_path).unwrap();
+
+        let mut engine = RuntimeEngine::new(
+            rule_path,
+            vec![pipeline],
+            CorrelationConfig::default(),
+            false,
+        );
+        engine.set_pipeline_paths(vec![pipeline_path.clone()]);
+        engine.load_rules().unwrap();
+
+        assert!(
+            !dedup_set_contains(&pipeline_path),
+            "a pipeline without inline sources must not register in the \
+             deprecation dedup set."
+        );
+    }
+
+    #[test]
+    fn hot_reload_dedups_inline_sources_warning_for_same_pipeline_path() {
+        let _guard = DEDUP_TEST_GUARD.lock().unwrap();
+        reset_inline_sources_dedup_for_tests();
+
+        let dir = tempfile::tempdir().unwrap();
+        let rule_path = dir.path().join("rule.yml");
+        std::fs::write(&rule_path, RULE_YAML).unwrap();
+
+        let pipeline_path = dir.path().join("pipeline.yml");
+        std::fs::write(&pipeline_path, PIPELINE_WITH_SOURCES).unwrap();
+        let pipeline = parse_pipeline_file(&pipeline_path).unwrap();
+
+        let mut engine = RuntimeEngine::new(
+            rule_path,
+            vec![pipeline],
+            CorrelationConfig::default(),
+            false,
+        );
+        engine.set_pipeline_paths(vec![pipeline_path.clone()]);
+
+        // Initial daemon startup loads the pipeline once.
+        engine.load_rules().unwrap();
+        assert!(dedup_set_contains(&pipeline_path));
+
+        // A hot-reload (SIGHUP, file-watcher event, POST /api/v1/reload)
+        // re-enters reload_pipelines; the dedup set must already contain
+        // the canonical path so the warning does not re-fire. The proof is
+        // that the set state is unchanged after the second reload.
+        let canonical = pipeline_path.canonicalize().unwrap();
+        let before = crate::pipeline_deprecation::tests_only_snapshot();
+        engine.load_rules().unwrap();
+        let after = crate::pipeline_deprecation::tests_only_snapshot();
+
+        assert_eq!(
+            before, after,
+            "second load_rules should not change the dedup set",
+        );
+        assert!(after.contains(&canonical));
+    }
 }
