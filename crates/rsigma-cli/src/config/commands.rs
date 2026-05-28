@@ -5,13 +5,17 @@
 //! diagnostics and human messages go to stderr. `validate` supports
 //! `--format json` so agents can branch on a structured envelope.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process;
 
 use clap::{Args, Subcommand};
+use serde_json::{Value, json};
 
 use crate::exit_code;
 
+use super::defaults::defaults_partial;
+use super::resolve::{Source, env_partial, resolve_layers, to_value, value_at};
 use super::{discover, inactive_sections, load_layered};
 
 /// The committed, commented template emitted by `rsigma config init`.
@@ -24,6 +28,9 @@ pub(crate) enum ConfigCommands {
 
     /// Load config files and report unknown keys, inactive sections, and errors
     Validate(ValidateArgs),
+
+    /// Print the effective config with the source of each value
+    Show(ShowArgs),
 
     /// Print the JSON Schema for the config file
     Schema,
@@ -59,6 +66,21 @@ pub(crate) struct ValidateArgs {
 }
 
 #[derive(Args, Debug)]
+pub(crate) struct ShowArgs {
+    /// Explicit config file (otherwise the discovery chain is used)
+    #[arg(short, long)]
+    pub config: Option<PathBuf>,
+
+    /// Restrict output to one section
+    #[arg(long = "for", value_parser = ["global", "daemon", "eval"])]
+    pub section: Option<String>,
+
+    /// Output format: text (default), json, or yaml
+    #[arg(long, default_value = "text", value_parser = ["text", "json", "yaml"])]
+    pub format: String,
+}
+
+#[derive(Args, Debug)]
 pub(crate) struct PathArgs {
     /// Explicit config file (otherwise the discovery chain is used)
     #[arg(short, long)]
@@ -70,6 +92,7 @@ pub(crate) fn dispatch(cmd: ConfigCommands) {
     match cmd {
         ConfigCommands::Init(args) => cmd_init(args),
         ConfigCommands::Validate(args) => cmd_validate(args),
+        ConfigCommands::Show(args) => cmd_show(args),
         ConfigCommands::Schema => cmd_schema(),
         ConfigCommands::Path(args) => cmd_path(args),
     }
@@ -154,6 +177,82 @@ fn cmd_validate(args: ValidateArgs) {
             }
             process::exit(exit_code::CONFIG_ERROR);
         }
+    }
+}
+
+fn cmd_show(args: ShowArgs) {
+    let loaded = match load_layered(args.config.as_deref()) {
+        Ok(loaded) => loaded,
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(exit_code::CONFIG_ERROR);
+        }
+    };
+
+    let default_v = to_value(&defaults_partial());
+    let file_v = to_value(&loaded.config);
+    let env_v = to_value(&env_partial());
+    // No flag layer for `config show`; that only applies to a live command.
+    let resolved = resolve_layers(default_v, file_v, env_v, Value::Null);
+
+    let filter = args.section.as_deref();
+    let merged = filter_section(&resolved.merged, filter);
+
+    match args.format.as_str() {
+        "json" => {
+            let sources: BTreeMap<&String, Source> = resolved
+                .sources
+                .iter()
+                .filter(|(path, _)| section_matches(path, filter))
+                .map(|(path, source)| (path, *source))
+                .collect();
+            let envelope = json!({ "config": merged, "sources": sources });
+            println!("{}", serde_json::to_string_pretty(&envelope).unwrap());
+        }
+        "yaml" => {
+            println!("{}", yaml_serde::to_string(&merged).unwrap_or_default());
+        }
+        _ => {
+            for (path, source) in &resolved.sources {
+                if !section_matches(path, filter) {
+                    continue;
+                }
+                let value = value_at(&resolved.merged, path)
+                    .map(render_scalar)
+                    .unwrap_or_default();
+                println!("{path} = {value}  ({source})");
+            }
+        }
+    }
+}
+
+/// Keep only the requested top-level section, or everything when `None`.
+fn filter_section(merged: &Value, section: Option<&str>) -> Value {
+    match (section, merged) {
+        (Some(name), Value::Object(map)) => {
+            let mut out = serde_json::Map::new();
+            if let Some(v) = map.get(name) {
+                out.insert(name.to_string(), v.clone());
+            }
+            Value::Object(out)
+        }
+        _ => merged.clone(),
+    }
+}
+
+/// Whether a dotted leaf path belongs to the requested section.
+fn section_matches(path: &str, section: Option<&str>) -> bool {
+    match section {
+        None => true,
+        Some(name) => path == name || path.starts_with(&format!("{name}.")),
+    }
+}
+
+/// Render a JSON value for the text view (bare strings, JSON for the rest).
+fn render_scalar(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
     }
 }
 

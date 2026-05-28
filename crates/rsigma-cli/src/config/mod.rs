@@ -12,6 +12,8 @@
 //! `resolve` (added alongside the per-command wiring).
 
 pub(crate) mod commands;
+mod defaults;
+mod resolve;
 mod schema;
 
 use std::fmt;
