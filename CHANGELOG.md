@@ -53,6 +53,10 @@ Canonical-path deduplication via a process-wide `OnceLock<Mutex<HashSet<PathBuf>
 
 **Tests.** A new `cli_sources_deprecation.rs` integration suite pins the stderr emission across `rule validate`, `engine eval`, and `pipeline resolve`, plus the dedup invariant when the same pipeline is passed twice via `-p`, the negative case (pipelines without inline sources do not warn), and the migration-command suggestion (the warning embeds the actual pipeline path so the suggested `rsigma rule migrate-sources` invocation is copy-pasteable). Three new unit tests in `crates/rsigma-runtime/src/engine.rs` exercise the runtime path directly: a `RuntimeEngine::load_rules` call records the canonical pipeline path in the dedup set, a clean pipeline does not, and a hot-reload (second `load_rules` call) leaves the dedup set unchanged. Two more in `crates/rsigma-runtime/src/pipeline_deprecation.rs` cover the dedup primitive in isolation.
 
+### Dependency bumps (#156)
+
+Rolls up four open Dependabot PRs into a single merge. Rust: `serde_json` 1.0.149 to 1.0.150 and `tower-http` 0.6.10 to 0.6.11 in the workspace `Cargo.lock` (#154), with the same `serde_json` bump applied to `fuzz/Cargo.lock` alongside a resync of that stale lockfile to the current workspace state (the jaq 3.0 migration to `jaq-core` / `jaq-json` / `jaq-std` and the internal crate versions catching up from 0.11.0 to 0.13.0) (#153). CI: `taiki-e/install-action` 2.78.0 to 2.79.3, `docker/build-push-action` 7.1.0 to 7.2.0, `github/codeql-action` 4.35.4 to 4.35.5, and `zizmorcore/zizmor-action` 0.5.5 to 0.5.6, all repinned by commit SHA (#155). VS Code extension: the `tmp` dev dependency bumps 0.2.5 to 0.2.7, picking up the upstream security fix that rejects non-string and relative `prefix` / `postfix` / `template` values.
+
 ## [0.13.0] - 2026-05-26
 
 **TL;DR**
