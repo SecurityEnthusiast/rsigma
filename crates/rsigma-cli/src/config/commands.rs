@@ -14,9 +14,9 @@ use serde_json::{Value, json};
 
 use crate::exit_code;
 
-use super::defaults::defaults_partial;
+use super::defaults::{self, defaults_partial};
 use super::resolve::{Source, env_partial, resolve_layers, to_value, value_at};
-use super::{discover, inactive_sections, load_layered};
+use super::{discover, inactive_sections, load_and_merge, load_layered};
 
 /// The committed, commented template emitted by `rsigma config init`.
 const TEMPLATE: &str = include_str!("template.yaml");
@@ -37,6 +37,9 @@ pub(crate) enum ConfigCommands {
 
     /// Print the config file path(s) that would be loaded
     Path(PathArgs),
+
+    /// Ask a running daemon to hot-reload (POST /api/v1/reload)
+    Reload(ReloadArgs),
 }
 
 #[derive(Args, Debug)]
@@ -87,6 +90,18 @@ pub(crate) struct PathArgs {
     pub config: Option<PathBuf>,
 }
 
+#[derive(Args, Debug)]
+pub(crate) struct ReloadArgs {
+    /// Daemon API address as `host:port` or a full URL.
+    /// Defaults to `daemon.api.addr` from the resolved config.
+    #[arg(long)]
+    pub addr: Option<String>,
+
+    /// Explicit config file used to resolve the daemon address
+    #[arg(short, long)]
+    pub config: Option<PathBuf>,
+}
+
 /// Dispatch a `rsigma config` subcommand.
 pub(crate) fn dispatch(cmd: ConfigCommands) {
     match cmd {
@@ -95,6 +110,7 @@ pub(crate) fn dispatch(cmd: ConfigCommands) {
         ConfigCommands::Show(args) => cmd_show(args),
         ConfigCommands::Schema => cmd_schema(),
         ConfigCommands::Path(args) => cmd_path(args),
+        ConfigCommands::Reload(args) => cmd_reload(args),
     }
 }
 
@@ -275,5 +291,69 @@ fn cmd_path(args: PathArgs) {
         for path in paths {
             println!("{}", path.display());
         }
+    }
+}
+
+fn cmd_reload(args: ReloadArgs) {
+    let addr = args.addr.unwrap_or_else(|| {
+        let base = load_and_merge(args.config.as_deref());
+        base.daemon
+            .and_then(|d| d.api)
+            .and_then(|a| a.addr)
+            .unwrap_or_else(|| defaults::API_ADDR.to_string())
+    });
+    let url = reload_url(&addr);
+
+    match ureq::post(&url).send_empty() {
+        Ok(resp) if resp.status().is_success() => {
+            eprintln!("reload requested: {url}");
+        }
+        Ok(resp) => {
+            eprintln!("reload failed: {url} returned HTTP {}", resp.status());
+            process::exit(exit_code::CONFIG_ERROR);
+        }
+        Err(e) => {
+            eprintln!("reload failed: could not reach {url}: {e}");
+            eprintln!("(is the daemon running? on unix you can also `kill -HUP <pid>`)");
+            process::exit(exit_code::CONFIG_ERROR);
+        }
+    }
+}
+
+/// Build the reload endpoint URL from a `host:port` or full URL. Wildcard bind
+/// addresses are mapped to loopback so the client can actually connect.
+fn reload_url(addr: &str) -> String {
+    if addr.starts_with("http://") || addr.starts_with("https://") {
+        format!("{}/api/v1/reload", addr.trim_end_matches('/'))
+    } else {
+        let host_port = addr
+            .replace("0.0.0.0", "127.0.0.1")
+            .replace("[::]", "[::1]");
+        format!("http://{host_port}/api/v1/reload")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reload_url;
+
+    #[test]
+    fn reload_url_maps_wildcard_to_loopback() {
+        assert_eq!(
+            reload_url("0.0.0.0:9090"),
+            "http://127.0.0.1:9090/api/v1/reload"
+        );
+        assert_eq!(
+            reload_url("10.0.0.1:9090"),
+            "http://10.0.0.1:9090/api/v1/reload"
+        );
+    }
+
+    #[test]
+    fn reload_url_accepts_full_url() {
+        assert_eq!(
+            reload_url("https://daemon.internal:9443/"),
+            "https://daemon.internal:9443/api/v1/reload"
+        );
     }
 }
