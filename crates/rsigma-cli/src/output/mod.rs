@@ -243,8 +243,6 @@ pub(crate) fn render_json<T: Serialize>(value: &T, pretty: bool) {
 
 /// Render `value` as a single NDJSON line on stdout. Same error semantics as
 /// [`render_json`].
-// Used by the lint machine renderer, which lands in a follow-up commit.
-#[allow(dead_code)]
 pub(crate) fn render_ndjson<T: Serialize>(value: &T) {
     render_json(value, false);
 }

@@ -6,7 +6,7 @@ use clap::Args;
 use rsigma_parser::lint::{self, FileLintResult, LintConfig};
 use serde::Deserialize;
 
-use crate::output::{OutputCtx, Painter};
+use crate::output::{OutputCtx, OutputFormat, Painter};
 
 /// Counts returned by `cmd_lint` so the caller can decide the exit code.
 pub(crate) struct LintCounts {
@@ -105,22 +105,88 @@ pub(crate) fn cmd_lint(args: LintArgs, ctx: OutputCtx) -> LintCounts {
         merge_schema_results(&mut all_results, sr);
     }
 
-    // 4. Render results
+    // 4. Tally findings. The numeric summary is needed by both the human
+    // and machine renderers.
     let mut total_files = 0usize;
     let mut failed_files = 0usize;
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
     let mut total_infos = 0usize;
-
     for result in &all_results {
         total_files += 1;
-        let errors = result.error_count();
-        let warnings = result.warning_count();
-        let infos = result.info_count();
-        total_errors += errors;
-        total_warnings += warnings;
-        total_infos += infos;
+        total_errors += result.error_count();
+        total_warnings += result.warning_count();
+        total_infos += result.info_count();
+        let has_failures = result
+            .warnings
+            .iter()
+            .any(|w| matches!(w.severity, lint::Severity::Error | lint::Severity::Warning));
+        if has_failures {
+            failed_files += 1;
+        }
+    }
 
+    // 5. Machine renderers (`json`, `ndjson`, `csv`, `tsv`) bypass the
+    //    coloured human view entirely; the human renderer is the default
+    //    when the operator did not explicitly set `--output-format` (the
+    //    TTY-aware NDJSON fallback would regress the existing UX).
+    let effective_format = if ctx.explicit_format {
+        ctx.format
+    } else {
+        OutputFormat::Table
+    };
+    match effective_format {
+        OutputFormat::Json => {
+            crate::output::render_json(
+                &lint_envelope(
+                    &all_results,
+                    total_files,
+                    failed_files,
+                    total_errors,
+                    total_warnings,
+                    total_infos,
+                ),
+                true,
+            );
+            return LintCounts {
+                errors: total_errors,
+                warnings: total_warnings,
+                infos: total_infos,
+            };
+        }
+        OutputFormat::Ndjson => {
+            for entry in lint_finding_rows(&all_results) {
+                crate::output::render_ndjson(&entry);
+            }
+            return LintCounts {
+                errors: total_errors,
+                warnings: total_warnings,
+                infos: total_infos,
+            };
+        }
+        OutputFormat::Csv => {
+            render_lint_findings_delimited(&all_results, ',');
+            return LintCounts {
+                errors: total_errors,
+                warnings: total_warnings,
+                infos: total_infos,
+            };
+        }
+        OutputFormat::Tsv => {
+            render_lint_findings_delimited(&all_results, '\t');
+            return LintCounts {
+                errors: total_errors,
+                warnings: total_warnings,
+                infos: total_infos,
+            };
+        }
+        OutputFormat::Table => {
+            // Fall through to the existing human-friendly renderer below.
+        }
+    }
+
+    // 6. Per-file rendering (the human view).
+    for result in &all_results {
         let has_failures = result
             .warnings
             .iter()
@@ -135,7 +201,6 @@ pub(crate) fn cmd_lint(args: LintArgs, ctx: OutputCtx) -> LintCounts {
                 );
             }
         } else if has_failures {
-            failed_files += 1;
             // File header
             println!("{}", p.bold(&result.path.display().to_string()));
             for w in &result.warnings {
@@ -154,7 +219,7 @@ pub(crate) fn cmd_lint(args: LintArgs, ctx: OutputCtx) -> LintCounts {
         }
     }
 
-    // 5. Summary
+    // 7. Summary
     let passed = total_files - failed_files;
     let separator = "─".repeat(60);
     println!("{}", p.dim(&separator));
@@ -544,11 +609,102 @@ fn build_lint_config(
     config
 }
 
-// ---------------------------------------------------------------------------
-// Terminal color support
-// ---------------------------------------------------------------------------
-//
 // The `Painter` previously defined here moved to `crate::output` so other
-// commands (`engine eval`, `rule fields`, …) can share its
-// `--color`/`NO_COLOR`/TTY resolution. The local definition is gone; the
-// import at the top of this module brings the shared one in.
+// commands (`engine eval`, `rule validate`) can share its
+// `--color`/`NO_COLOR`/TTY resolution. This module imports it at the top.
+
+// ---------------------------------------------------------------------------
+// Machine renderers (--output-format json|ndjson|csv|tsv)
+// ---------------------------------------------------------------------------
+
+/// One row per finding, suitable for `ndjson`/`csv`/`tsv`. The CSV/TSV
+/// projection is column-oriented and only carries the columns a spreadsheet
+/// reader can use; the full finding object lives in the `Finding` struct
+/// behind it.
+#[derive(serde::Serialize)]
+struct Finding {
+    path: String,
+    severity: &'static str,
+    rule: String,
+    message: String,
+    line: Option<u32>,
+}
+
+impl Finding {
+    fn from_lint(path: &std::path::Path, w: &lint::LintWarning) -> Self {
+        Self {
+            path: path.display().to_string(),
+            severity: severity_label(w.severity),
+            rule: format!("{}", w.rule),
+            message: w.message.clone(),
+            line: w.span.as_ref().map(|s| s.start_line + 1),
+        }
+    }
+}
+
+impl crate::output::Tabular for Finding {
+    fn headers() -> &'static [&'static str] {
+        &["PATH", "SEVERITY", "RULE", "LINE", "MESSAGE"]
+    }
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.path.clone(),
+            self.severity.to_string(),
+            self.rule.clone(),
+            self.line.map(|n| n.to_string()).unwrap_or_default(),
+            self.message.clone(),
+        ]
+    }
+}
+
+fn severity_label(s: lint::Severity) -> &'static str {
+    match s {
+        lint::Severity::Error => "error",
+        lint::Severity::Warning => "warning",
+        lint::Severity::Info => "info",
+        lint::Severity::Hint => "hint",
+    }
+}
+
+/// Flatten the per-file lint results into a stream of [`Finding`] rows.
+fn lint_finding_rows(results: &[FileLintResult]) -> Vec<Finding> {
+    results
+        .iter()
+        .flat_map(|r| {
+            r.warnings
+                .iter()
+                .map(move |w| Finding::from_lint(&r.path, w))
+        })
+        .collect()
+}
+
+/// JSON envelope mirroring `config validate --format json`: a top-level
+/// summary plus the full findings array.
+fn lint_envelope(
+    results: &[FileLintResult],
+    total_files: usize,
+    failed_files: usize,
+    total_errors: usize,
+    total_warnings: usize,
+    total_infos: usize,
+) -> serde_json::Value {
+    let findings = lint_finding_rows(results);
+    serde_json::json!({
+        "summary": {
+            "files_checked": total_files,
+            "files_failed": failed_files,
+            "errors": total_errors,
+            "warnings": total_warnings,
+            "infos": total_infos,
+        },
+        "findings": findings,
+    })
+}
+
+fn render_lint_findings_delimited(results: &[FileLintResult], sep: char) {
+    use crate::output::Tabular;
+    let mut writer = crate::output::DelimitedWriter::new(sep, Finding::headers());
+    for f in lint_finding_rows(results) {
+        writer.push(&f.row());
+    }
+}

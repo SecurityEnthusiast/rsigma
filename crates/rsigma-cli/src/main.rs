@@ -572,13 +572,6 @@ pub(crate) fn print_warnings(errors: &[String]) {
     }
 }
 
-/// Backwards-compatible JSON renderer kept while per-command renderers are
-/// migrated to the new `crate::output` API. Each subsequent commit retires
-/// one set of call sites; the function is removed once the last one is gone.
-pub(crate) fn print_json(value: &impl serde::Serialize, pretty: bool) {
-    output::render_json(value, pretty);
-}
-
 // ---------------------------------------------------------------------------
 // Event filtering (jq / JSONPath)
 // ---------------------------------------------------------------------------
