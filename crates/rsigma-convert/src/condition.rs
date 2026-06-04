@@ -60,7 +60,15 @@ pub fn convert_condition_expr(
             let parts: Vec<String> = names
                 .iter()
                 .map(|name| {
-                    let det = detections.get(*name).unwrap();
+                    // The name came from `detections.keys()` immediately
+                    // above, so this lookup will normally succeed; surface a
+                    // clear error rather than panic if the invariant is ever
+                    // broken (defensive: no unwrap on shared dispatch paths).
+                    let det = detections.get(*name).ok_or_else(|| {
+                        ConvertError::RuleConversion(format!(
+                            "selector matched detection '{name}' but it disappeared before lookup"
+                        ))
+                    })?;
                     backend.convert_detection(det, state)
                 })
                 .collect::<Result<Vec<_>>>()?;
