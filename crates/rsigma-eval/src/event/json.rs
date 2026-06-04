@@ -63,8 +63,7 @@ impl<'a> Event for JsonEvent<'a> {
         }
 
         if path.contains('.') {
-            let parts: Vec<&str> = path.split('.').collect();
-            return traverse_json(value, &parts).map(EventValue::from);
+            return traverse_json(value, path).map(EventValue::from);
         }
 
         None
@@ -112,23 +111,44 @@ impl<'a> Event for JsonEvent<'a> {
 
 /// Recursively traverse a JSON value following dot-notation path segments.
 ///
-/// When a segment resolves to an array, each element is tried and the first
-/// match for the remaining path is returned.
-fn traverse_json<'a>(current: &'a Value, parts: &[&str]) -> Option<&'a Value> {
-    if parts.is_empty() {
-        return Some(current);
-    }
-
-    let (head, rest) = (parts[0], &parts[1..]);
-
+/// `path` is the remaining dot-joined path (e.g. `"actor.id.value"`); the
+/// function splits the leading segment on each recursion via
+/// [`str::split_once`] so no `Vec<&str>` is allocated. Each lookup was a
+/// hot path under `get_field`, called once per detection item per event;
+/// the previous `path.split('.').collect::<Vec<_>>()` allocated on every
+/// nested lookup.
+///
+/// When a segment resolves to an array, each element is tried with the
+/// same (unconsumed) `path`, matching the OR semantics of the prior
+/// implementation: the array does not consume a path segment.
+fn traverse_json<'a>(current: &'a Value, path: &str) -> Option<&'a Value> {
     match current {
         Value::Object(map) => {
+            // `split_once` consumes a single segment per recursion; the
+            // `has_more` flag distinguishes "the last segment, return the
+            // looked-up value" from "more segments to walk into". Treating
+            // an `is_empty()` path as terminal would change the
+            // pathological "trailing dot" case (`"a.b."`) from a miss to
+            // a hit, because consuming `b` would leave an empty rest that
+            // the old `Vec<&str>` walker tried to apply to the leaf
+            // value and bailed on; preserve that miss semantics here.
+            let (head, rest, has_more) = match path.split_once('.') {
+                Some((h, r)) => (h, r, true),
+                None => (path, "", false),
+            };
             let next = map.get(head)?;
-            traverse_json(next, rest)
+            if has_more {
+                traverse_json(next, rest)
+            } else {
+                Some(next)
+            }
         }
         Value::Array(arr) => {
+            // Arrays do not consume a path segment; each element is
+            // tried with the full remaining path, matching the OR
+            // semantics of the prior `traverse_json(item, parts)` call.
             for item in arr {
-                if let Some(v) = traverse_json(item, parts) {
+                if let Some(v) = traverse_json(item, path) {
                     return Some(v);
                 }
             }
@@ -388,5 +408,29 @@ mod tests {
         let v = json!("just a string");
         let event = JsonEvent::owned(v);
         assert!(event.field_keys().is_empty());
+    }
+
+    #[test]
+    fn json_traversal_with_consecutive_dots_does_not_panic() {
+        // Pathological input -- a path like `a..b` used to be tokenised
+        // by `split('.')` into `["a", "", "b"]` and then walked head-by-
+        // head; the new `split_once('.')` recursion produces the same
+        // `("a", ".b")` -> `("", "b")` -> ... sequence with no
+        // allocation. Verify the lookup falls back to `None` rather
+        // than panicking or accidentally matching.
+        let v = json!({"a": {"b": "x"}});
+        let event = JsonEvent::borrow(&v);
+        assert_eq!(event.get_field("a..b"), None);
+    }
+
+    #[test]
+    fn json_traversal_with_trailing_dot_does_not_panic() {
+        // A trailing dot used to leave an empty trailing segment in the
+        // `Vec<&str>` path which the object branch tried to look up
+        // against the map; the iterator-based walker preserves that
+        // miss without allocating.
+        let v = json!({"a": {"b": "x"}});
+        let event = JsonEvent::borrow(&v);
+        assert_eq!(event.get_field("a.b."), None);
     }
 }
