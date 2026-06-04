@@ -147,6 +147,27 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  doc:
+    name: Doc
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # Fail the build on broken intra-doc links and any other rustdoc
+      # warning. `--no-deps` keeps the work bounded to first-party
+      # crates so this job does not chase a transitive dep's doc
+      # comment.
+      - env:
+          RUSTDOCFLAGS: "-D warnings -D rustdoc::broken-intra-doc-links"
+        run: cargo doc --workspace --all-features --locked --no-deps
+
   sigma-corpus:
     name: Sigma Corpus Regression
     runs-on: ubuntu-latest
