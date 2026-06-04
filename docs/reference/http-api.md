@@ -25,7 +25,7 @@ All bodies are JSON unless otherwise noted. All responses include a `Content-Typ
 | `/v1/logs` | POST | none | OTLP/HTTP log ingestion (`application/x-protobuf` or `application/json`, optionally gzip-encoded). Requires `daemon-otlp`. |
 | OTLP/gRPC `LogsService/Export` | gRPC | none | OTLP over gRPC on the same `--api-addr`. Requires `daemon-otlp`. |
 
-The daemon does not implement authentication today; deploy it behind a reverse proxy or restrict the bind address to a trusted network. TLS termination is on the [roadmap](https://github.com/timescale/rsigma/issues/128).
+The daemon does not implement authentication today; deploy it behind a reverse proxy or restrict the bind address to a trusted network. In-process TLS termination is available via the optional `daemon-tls` build feature: pass `--tls-cert` / `--tls-key` to terminate TLS for the HTTP REST, OTLP/HTTP, and OTLP/gRPC surfaces on the same `--api-addr`, and `--tls-client-ca` to require mTLS. See [TLS termination for the API listener](security.md#tls-termination-for-the-api-listener) for the full flag set.
 
 ## Probes
 
@@ -357,4 +357,4 @@ See [OTLP Integration](../guide/otlp-integration.md) for full agent recipes (Gra
 - [Prometheus Metrics](metrics.md) for `/metrics` definitions and alert recipes.
 - [Observability](../guide/observability.md) for the broader `tracing` and metrics story.
 - [Processing Pipelines: dynamic pipelines](../guide/processing-pipelines.md#dynamic-pipelines) for the source declarations exposed by `/api/v1/sources`.
-- [Issue #128 (TLS for daemon API + OTLP)](https://github.com/timescale/rsigma/issues/128) for the planned TLS termination.
+- [Security: TLS termination for the API listener](security.md#tls-termination-for-the-api-listener) for the optional `daemon-tls` build feature and the `--tls-*` flag set.
