@@ -5,7 +5,7 @@ Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma
 
 ## [Unreleased]
 
-### Eval and convert internals: modifier validation, dot-path perf, golden routing
+### Eval and convert internals: modifier validation, dot-path perf, golden routing (#180)
 
 Three independent quality fixes for the evaluator and converter that all surface bugs the previous code silently swallowed or paid an avoidable allocation for.
 
