@@ -38,14 +38,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Rust target
-        run: |
-          rustup update
-          rustup target add "${TARGET}"
-        env:
-          TARGET: ${{ matrix.target }}
-        shell: bash
+      # Pin the toolchain to `stable` rather than `rustup update`-ing to
+      # whatever channel the runner image happens to have cached. The
+      # cross-compile target is installed in the same step so the build
+      # step does not need a separate `rustup target add`.
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
 
+      # No build cache here: rust-cache on a release workflow opens a
+      # cache-poisoning vector against the signed artifacts. Release
+      # builds run once per tag, so a cold build is acceptable.
       - name: Build release
         run: cargo build --release --all-features --locked --target "${TARGET}" -p rsigma -p rsigma-lsp
         env:
@@ -91,6 +95,16 @@ jobs:
 
       - name: List artifacts
         run: ls -l distrib/
+
+      # Generate a SHA256SUMS manifest that downstream consumers can
+      # verify against the SLSA build-provenance attestation. The
+      # manifest is uploaded as a separate release asset alongside the
+      # archives.
+      - name: Generate SHA256SUMS
+        working-directory: distrib
+        run: |
+          shasum -a 256 ./* > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
