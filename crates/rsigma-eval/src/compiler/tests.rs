@@ -998,9 +998,6 @@ mod modifier_validation_tests {
 
     #[test]
     fn accepts_single_timestamp_part() {
-        assert_accepts(
-            &[Modifier::Hour],
-            vec![SigmaValue::Integer(3)],
-        );
+        assert_accepts(&[Modifier::Hour], vec![SigmaValue::Integer(3)]);
     }
 }
