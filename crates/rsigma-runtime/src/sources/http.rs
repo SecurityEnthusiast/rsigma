@@ -23,14 +23,23 @@ const DEFAULT_SOURCE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Return the process-wide HTTP client used by source resolution.
 ///
 /// The first call constructs the client; subsequent calls return the same
-/// `Arc<reqwest::Client>`. Errors building the client are surfaced as
-/// `SourceError` rather than panicking so callers can fail-soft on broken
-/// TLS setups instead of crashing the daemon.
+/// `Arc<reqwest::Client>`. The client is wired to the
+/// [`default_egress_policy`](crate::egress::default_egress_policy) via a
+/// custom DNS resolver so a Sigma rule that points the daemon at a cloud
+/// metadata endpoint cannot exfiltrate IAM credentials.
+///
+/// Errors building the client are surfaced as `SourceError` rather than
+/// panicking so callers can fail-soft on broken TLS setups instead of
+/// crashing the daemon.
 pub fn shared_http_source_client() -> Result<Arc<reqwest::Client>, SourceError> {
     if let Some(client) = DEFAULT_HTTP_SOURCE_CLIENT.get() {
         return Ok(client.clone());
     }
+    let resolver =
+        crate::egress::EgressFilteredResolver::new(crate::egress::default_egress_policy())
+            .into_dns_resolver();
     let built = reqwest::Client::builder()
+        .dns_resolver(resolver)
         .build()
         .map(Arc::new)
         .map_err(|e| SourceError {

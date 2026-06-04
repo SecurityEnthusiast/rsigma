@@ -89,8 +89,18 @@ impl HttpEnricherClient {
 /// Build the default shared HTTP client used by the daemon's enrichment
 /// pipeline. All HTTP enrichers in the same daemon process share one
 /// client to amortize TLS handshakes and DNS resolution.
+///
+/// The client is wired to the
+/// [`default_egress_policy`](crate::egress::default_egress_policy) via a
+/// custom DNS resolver so an enrichment URL that resolves to a denied
+/// address (cloud metadata, link-local) fails fast at connect time
+/// rather than completing a request to a sensitive endpoint.
 pub fn build_default_http_client() -> Result<HttpEnricherClient, String> {
+    let resolver =
+        crate::egress::EgressFilteredResolver::new(crate::egress::default_egress_policy())
+            .into_dns_resolver();
     reqwest::Client::builder()
+        .dns_resolver(resolver)
         .build()
         .map(|c| HttpEnricherClient(Arc::new(c)))
         .map_err(|e| format!("reqwest client build failed: {e}"))
