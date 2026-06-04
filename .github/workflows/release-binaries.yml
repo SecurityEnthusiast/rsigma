@@ -38,14 +38,19 @@ jobs:
         with:
           persist-credentials: false
 
-      # Pin the toolchain to `stable` rather than `rustup update`-ing to
-      # whatever channel the runner image happens to have cached. The
-      # cross-compile target is installed in the same step so the build
-      # step does not need a separate `rustup target add`.
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
+      # Install stable inline; the cross-compile target installs in the
+      # same step so the build step does not need a separate `rustup
+      # target add`. `rustup override set` makes stable take precedence
+      # over the workspace's `rust-toolchain.toml` (MSRV) pin for this
+      # release build.
+      - name: Install Rust stable and target
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup override set stable
+          rustup target add "${TARGET}"
+        env:
+          TARGET: ${{ matrix.target }}
 
       # No build cache here: rust-cache on a release workflow opens a
       # cache-poisoning vector against the signed artifacts. Release
