@@ -5,7 +5,7 @@ Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma
 
 ## [Unreleased]
 
-### Parser and CLI diagnostics: invalid metadata, output controls, panic-free migrate
+### Parser and CLI diagnostics: invalid metadata, output controls, panic-free migrate (#179)
 
 Tightens five small but visible cracks in the parser and CLI surface that all silently swallowed problems an operator was almost certainly trying to catch.
 
