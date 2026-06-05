@@ -39,17 +39,19 @@ jobs:
       # that lands earlier could seed a tampered build cache). Publishing
       # happens once per release, so the cache miss is acceptable.
 
-      # Pre-flight: dry-run every crate in dependency order before any
-      # side-effecting publish. Catches authentication, dep-version, and
-      # manifest issues up front so a half-released set of crates cannot
-      # leave the workspace in an inconsistent state on crates.io.
-      - name: Pre-flight dry-run
-        run: |
-          for crate in rsigma-parser rsigma-eval rsigma-convert rsigma-runtime rsigma rsigma-lsp; do
-            echo "::group::cargo publish --dry-run -p ${crate}"
-            cargo publish --dry-run --locked -p "${crate}"
-            echo "::endgroup::"
-          done
+      # Pre-flight: dry-run only the crate that has no unpublished
+      # workspace dependencies. `cargo publish --dry-run` resolves every
+      # path dependency's version against the live crates.io index, so a
+      # dependent crate (e.g. rsigma-eval, which requires
+      # `rsigma-parser = "0.14.0"`) cannot be dry-run until its sibling's
+      # new version already exists on the registry. Dry-running
+      # rsigma-parser still smoke-tests packaging, the manifest, and
+      # lockfile state before any side-effecting upload; the dependent
+      # crates are validated by the sequential `--locked` publish below,
+      # each of which runs only after the crate it depends on has landed
+      # in the index.
+      - name: Pre-flight dry-run (rsigma-parser)
+        run: cargo publish --dry-run --locked -p rsigma-parser
 
       - uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1.0.4
         id: auth
