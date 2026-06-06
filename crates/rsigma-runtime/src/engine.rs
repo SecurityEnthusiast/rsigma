@@ -4,8 +4,8 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use rsigma_eval::event::Event;
 use rsigma_eval::{
-    CorrelationConfig, CorrelationEngine, CorrelationSnapshot, Engine, Pipeline, ProcessResult,
-    RuleFieldSet, parse_pipeline_file,
+    CorrelationConfig, CorrelationEngine, CorrelationSnapshot, Engine, MatchDetailLevel, Pipeline,
+    ProcessResult, RuleFieldSet, parse_pipeline_file,
 };
 use rsigma_parser::SigmaCollection;
 
@@ -28,6 +28,9 @@ pub struct RuntimeEngine {
     /// Optional override for the bloom memory budget in bytes. `None`
     /// means use the eval crate default.
     bloom_max_bytes: Option<usize>,
+    /// Match-detail verbosity forwarded to the inner detection engine on
+    /// every rule reload. `Off` by default (historical wire shape).
+    match_detail: MatchDetailLevel,
     /// Opt-in cross-rule Aho-Corasick pre-filter. Forwarded to the inner
     /// detection engine on every rule reload. Available behind the
     /// `daachorse-index` Cargo feature.
@@ -71,6 +74,7 @@ impl RuntimeEngine {
             allow_remote_include: false,
             bloom_prefilter: false,
             bloom_max_bytes: None,
+            match_detail: MatchDetailLevel::Off,
             #[cfg(feature = "daachorse-index")]
             cross_rule_ac: false,
             rule_field_set: Arc::new(ArcSwap::from_pointee(RuleFieldSet::default())),
@@ -112,6 +116,19 @@ impl RuntimeEngine {
     /// Return the configured bloom memory budget, if one was set.
     pub fn bloom_max_bytes(&self) -> Option<usize> {
         self.bloom_max_bytes
+    }
+
+    /// Set the match-detail verbosity on the inner detection engine.
+    /// `Off` by default. Applies on the next `load_rules()`; pre-load
+    /// callers should set this before calling `load_rules()`.
+    pub fn set_match_detail(&mut self, level: MatchDetailLevel) {
+        self.match_detail = level;
+    }
+
+    /// Return the current match-detail verbosity. Used by hot-reload to
+    /// carry the setting across a `RuntimeEngine` swap.
+    pub fn match_detail(&self) -> MatchDetailLevel {
+        self.match_detail
     }
 
     /// Enable or disable the cross-rule Aho-Corasick pre-filter on the
@@ -269,6 +286,7 @@ impl RuntimeEngine {
         if has_correlations {
             let mut engine = CorrelationEngine::new(self.corr_config.clone());
             engine.set_include_event(self.include_event);
+            engine.set_match_detail(self.match_detail);
             if let Some(budget) = self.bloom_max_bytes {
                 engine.set_bloom_max_bytes(budget);
             }
@@ -303,6 +321,7 @@ impl RuntimeEngine {
         } else {
             let mut engine = Engine::new();
             engine.set_include_event(self.include_event);
+            engine.set_match_detail(self.match_detail);
             if let Some(budget) = self.bloom_max_bytes {
                 engine.set_bloom_max_bytes(budget);
             }
