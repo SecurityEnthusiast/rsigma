@@ -5,6 +5,17 @@ on:
     types:
       - published
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref (tag, branch, or SHA) to build. Defaults to the branch the run is dispatched from."
+        required: false
+        type: string
+        default: ""
+      version:
+        description: "Semver to publish on a manual run, e.g. 0.14.0. Tags {{version}}, {{major}}.{{minor}}, and latest. Leave empty for release-triggered runs."
+        required: false
+        type: string
+        default: ""
 
 permissions: {}
 
@@ -37,6 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -111,6 +123,10 @@ jobs:
           fail-build: true
           severity-cutoff: critical
           output-format: sarif
+        env:
+          # Each digest is a single-platform OCI index; the scan runner is amd64,
+          # so pin grype to the matrix arch instead of the host default.
+          GRYPE_PLATFORM: linux/${{ matrix.arch }}
 
       - uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         if: always()
@@ -145,14 +161,24 @@ jobs:
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      - name: Derive minor tag for manual run
+        id: manual
+        if: inputs.version != ''
+        run: echo "minor=${INPUT_VERSION%.*}" >> "${GITHUB_OUTPUT}"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+
       - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         id: meta
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # semver tags cover release events; raw tags cover manual workflow_dispatch runs.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=${{ steps.manual.outputs.minor }},enable=${{ inputs.version != '' }}
           labels: |
             org.opencontainers.image.title=rsigma
             org.opencontainers.image.description=Sigma detection toolkit: parser, evaluator, converter, streaming daemon
