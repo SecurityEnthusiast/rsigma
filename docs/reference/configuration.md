@@ -61,6 +61,7 @@ daemon:
     save_interval: 30
   engine:
     bloom_prefilter: false
+    match_detail: off
     observe_fields: false
     egress_policy: default
 

@@ -3,6 +3,18 @@
 All notable changes to RSigma are documented in this file.
 Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma/releases).
 
+## [Unreleased]
+
+### Gated match-detail enrichment for detection results
+
+`matched_fields` entries can now explain *why* each field matched, gated behind a new opt-in verbosity level so the default wire shape is byte-for-byte unchanged.
+
+- **New `MatchDetailLevel { Off, Summary, Full }`** on `rsigma-eval`, configured via `Engine::set_match_detail` (and the `CorrelationEngine` passthrough). `Off` is the default and preserves the historical `{field, value}` shape exactly; all new keys are `Option`/skipped on serialization, so existing sinks, the daemon NDJSON wire format, and the golden tests are unaffected unless a caller opts in.
+- **`Summary`** adds `selection` (the originating named detection), `matcher` (a new `MatcherKind` enum: `exact`, `contains`, `startswith`, `endswith`, `regex`, `one_of`, `cidr`, `numeric`, `exists`, `fieldref`, `null`, `bool`, `expand`, `timestamp`, `keyword`), and `case_sensitive`. **`Full`** additionally records `pattern`, the value the matcher tested against (truncated for very long pattern sets). Negated matchers set `negated: true`.
+- **Closed two long-standing reporting gaps** (visible only at `Summary`/`Full`, so `Off` is untouched): keyword detections, which previously contributed nothing to `matched_fields`, are now reported under the sentinel field `"keyword"`; and `null`-on-absent matches, previously invisible because the field had no value, are now reported with `value: null`.
+- **New `CompiledMatcher::describe()`** (returning `MatchDescriptor`) produces the structural description used to populate these fields. It runs only when a rule matches and only above `Off`, so the non-matching hot path is unchanged.
+- **CLI/runtime plumbing**: `rsigma engine eval --match-detail <off|summary|full>`, `rsigma engine daemon --match-detail <…>` plus the `daemon.engine.match_detail` config key, and `RuntimeEngine::set_match_detail` (carried across hot reloads).
+
 ## [0.14.0] - 2026-06-05
 
 **TL;DR**

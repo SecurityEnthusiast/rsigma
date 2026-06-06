@@ -48,6 +48,7 @@ For narrative coverage see [Streaming Detection](../../guide/streaming-detection
 | `--output <URL>` | `stdout` | Detection sink. Schemes: `stdout`, `file://<path>`, `nats://<host>:<port>/<subject>`. Repeatable for fan-out. |
 | `--dlq <URL>` | unset | Dead-letter queue for events that fail parsing or sink delivery. Same schemes as `--output`. When unset, failed events are logged and discarded. |
 | `--include-event` | off | Embed the full event JSON in every detection match. |
+| `--match-detail <LEVEL>` | `off` | Match-detail verbosity: `off` (field + value only), `summary` (adds matcher kind, selection, case sensitivity, and reports keyword/absence matches), or `full` (also records the matched pattern). Also settable via `daemon.engine.match_detail`. See [Evaluating Rules](../../guide/evaluating-rules.md#match-detail). |
 | `--pretty` | off | Pretty-print JSON output. |
 
 ### Pipelines and dynamic sources
