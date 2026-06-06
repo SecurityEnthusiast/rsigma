@@ -275,10 +275,21 @@ Accessors: `is_detection()` / `is_correlation()`, `as_detection() -> Option<&Det
 
 ### FieldMatch
 
-| Field | Type |
-|-------|------|
-| `field` | `String` |
-| `value` | `serde_json::Value` |
+| Field | Type | Description |
+|-------|------|-------------|
+| `field` | `String` | Field name that matched (`"keyword"` for keyword matches) |
+| `value` | `serde_json::Value` | Event value that triggered the match (`null` for absence matches) |
+| `selection` | `Option<String>` | Originating selection; populated above `MatchDetailLevel::Off` |
+| `matcher` | `Option<MatcherKind>` | Matcher kind that fired (e.g. `contains`, `regex`, `one_of`) |
+| `pattern` | `Option<String>` | Pattern the matcher tested against; `Full` level only, truncated |
+| `case_sensitive` | `Option<bool>` | Whether matching was case-sensitive, when meaningful |
+| `negated` | `bool` | `true` when the matcher was negated; omitted otherwise |
+
+The last five fields are populated by [`Engine::set_match_detail`]. The default
+`MatchDetailLevel::Off` records only `{field, value}` and skips the rest on
+serialization, so the wire shape is unchanged unless detail is enabled.
+`Summary` adds the descriptor fields and reports keyword and absence matches
+that `Off` omits; `Full` additionally records `pattern`.
 
 ### EventRef
 

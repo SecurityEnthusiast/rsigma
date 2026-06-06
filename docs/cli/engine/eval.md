@@ -56,6 +56,7 @@ The global `--output-format` / `--color` / `--quiet` / `--no-stats` flags apply 
 | `--pretty` | off | Pretty-print JSON output. Kept for backwards compatibility; equivalent to `--output-format json` with pretty-printing on. |
 | `--no-detections` | off | Suppress detection output for rules that exist only to feed correlations (`generate: false`). |
 | `--include-event` | off | Embed the full event JSON in every `MatchResult`. Equivalent to setting `rsigma.include_event: "true"` per-rule. |
+| `--match-detail <LEVEL>` | `off` | Match-detail verbosity: `off` (field + value only), `summary` (adds matcher kind, selection, case sensitivity, and reports keyword/absence matches), or `full` (also records the matched pattern). See [Evaluating Rules](../../guide/evaluating-rules.md#match-detail). |
 
 ### Correlation behavior
 

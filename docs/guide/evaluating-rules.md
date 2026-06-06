@@ -134,6 +134,37 @@ rsigma engine eval -r rules/ --include-event -e @events.ndjson
 
 For per-rule control, set the `rsigma.include_event` custom attribute on the rule (`"true"`/`"false"`). See [Custom Attributes](../reference/custom-attributes.md).
 
+## Match detail
+
+By default each entry in `matched_fields` is just `{field, value}`. Pass `--match-detail` to record why each field matched, which is useful when triaging a noisy rule or building a downstream UI:
+
+```bash
+rsigma engine eval -r rules/ --match-detail full -e '{"CommandLine": "cmd /c whoami"}'
+```
+
+There are three levels:
+
+| Level | What you get |
+|-------|--------------|
+| `off` (default) | `{field, value}` only. Byte-for-byte the historical shape. |
+| `summary` | Adds `selection` (the named detection it came from), `matcher` (the matcher kind, for example `contains` or `endswith`), and `case_sensitive`. Also reports matches that `off` drops entirely: keyword matches (under the sentinel field `"keyword"`) and absence matches (`value: null`). |
+| `full` | Everything in `summary` plus `pattern`, the value the matcher tested against (truncated for very long pattern sets). |
+
+A `full` entry looks like:
+
+```json
+{
+  "field": "CommandLine",
+  "value": "cmd /c whoami",
+  "selection": "selection",
+  "matcher": "contains",
+  "pattern": "whoami",
+  "case_sensitive": false
+}
+```
+
+Negated matchers add `"negated": true`. Higher levels enlarge each detection line and only run when a rule matches, so they cost nothing on the non-matching hot path. The daemon exposes the same control via `--match-detail` or the `daemon.engine.match_detail` config key.
+
 ## Input formats other than JSON
 
 `--input-format` accepts `auto` (the default), `json`, `syslog`, `plain`, and the feature-gated `logfmt`, `cef`. Auto-detect tries JSON, then syslog, then plain text:
