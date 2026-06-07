@@ -5,6 +5,15 @@ Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma
 
 ## [Unreleased]
 
+### `rstix`: STIX 2.1 + TAXII 2.1 library crate, Phase 1 core foundation (#185)
+
+Introduces `rstix`, a new workspace library crate for native STIX 2.1 and TAXII 2.1 support. This first phase lands the core foundation only; the object model, serialization dispatch, pattern engine, validation pipeline, and graph/marking/store/TAXII runtime behaviours are deferred to later phases.
+
+- **Core primitives** (`rstix::core`): a validated `StixId` in `{type}--{uuid}` form with 42 typed-ID wrappers and SDO/SCO/SRO/Meta kind discriminants; `StixTimestamp` and `TaxiiTimestamp`, where `StixTimestamp` preserves fractional-second precision for round-tripping but compares and hashes by instant so the same moment with different digit widths is treated as equal; `Confidence` plus six interchange scales (None/Low/Medium/High, Admiralty, 0-10, WEP, DNI, MISP); `SpecVersion`; `LanguageTag`; and the `QueryableStixObject` / `QueryValue` query traits.
+- **Deterministic SCO IDs** (`rstix::id`): `generate_sco_id` derives UUIDv5 identifiers from RFC 8785 (JCS) canonicalized contributing properties under the STIX namespace. Per-type property selection follows STIX 2.1, including single-hash selection by preference order, the spec-mandated UUIDv4 fallback for `process` and for objects with no contributing properties present, and a first-available-hash fallback for non-preferred algorithms. The generated IDs are pinned against python-stix2 golden vectors.
+- **Vocabulary tables** (`rstix::vocab`): open and closed STIX controlled vocabularies and the ordered `OpinionValue` enum, backed by compile-time `phf` sets.
+- **Surface**: `#![forbid(unsafe_code)]`, a single default `serde` feature, and `parse_bundle` reserved as a `NotImplemented` entry point for the next phase. The workspace crate map, architecture page, and feature-flags reference are updated for the new crate.
+
 ### Gated match-detail enrichment for detection results (#186)
 
 `matched_fields` entries can now explain *why* each field matched, gated behind a new opt-in verbosity level so the default wire shape is byte-for-byte unchanged.
