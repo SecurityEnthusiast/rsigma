@@ -777,6 +777,10 @@ mod config_default_drift {
             Some(defaults::SYSLOG_TZ)
         );
         assert_eq!(
+            daemon_default("syslog_strip_bom"),
+            Some(defaults::SYSLOG_STRIP_BOM.to_string())
+        );
+        assert_eq!(
             daemon_default("correlation_event_mode").as_deref(),
             Some(defaults::CORRELATION_EVENT_MODE)
         );

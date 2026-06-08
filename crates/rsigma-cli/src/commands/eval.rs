@@ -121,6 +121,13 @@ pub(crate) struct EvalArgs {
     #[arg(long = "syslog-tz", default_value = "+00:00")]
     pub syslog_tz: String,
 
+    /// Strip a leading UTF-8 BOM from RFC 5424 syslog messages. On by
+    /// default (RFC 5424 treats the BOM as an encoding marker, not content);
+    /// pass `--syslog-strip-bom false` to keep it. Only relevant for
+    /// syslog/auto input.
+    #[arg(long = "syslog-strip-bom", default_value_t = true, action = clap::ArgAction::Set)]
+    pub syslog_strip_bom: bool,
+
     /// Exit with code 1 when any detection or correlation fires.
     /// Useful in CI/CD pipelines to fail a build on detection.
     #[arg(long = "fail-on-detection")]
@@ -268,6 +275,11 @@ fn overlay_eval_config(
         {
             args.syslog_tz = v;
         }
+        if !explicit("syslog_strip_bom")
+            && let Some(v) = eval.syslog_strip_bom
+        {
+            args.syslog_strip_bom = v;
+        }
         if !explicit("fail_on_detection")
             && let Some(v) = eval.fail_on_detection
         {
@@ -297,6 +309,7 @@ pub(crate) fn cmd_eval(args: EvalArgs, ctx: OutputCtx) -> bool {
         timestamp_fields,
         input_format,
         syslog_tz,
+        syslog_strip_bom,
         fail_on_detection: _,
         bloom_prefilter,
         bloom_max_bytes,
@@ -379,6 +392,7 @@ pub(crate) fn cmd_eval(args: EvalArgs, ctx: OutputCtx) -> bool {
             match_detail,
             &input_format,
             &syslog_tz,
+            syslog_strip_bom,
             bloom_prefilter,
             bloom_max_bytes,
             #[cfg(feature = "daachorse-index")]
@@ -397,6 +411,7 @@ pub(crate) fn cmd_eval(args: EvalArgs, ctx: OutputCtx) -> bool {
             match_detail,
             &input_format,
             &syslog_tz,
+            syslog_strip_bom,
             bloom_prefilter,
             bloom_max_bytes,
             #[cfg(feature = "daachorse-index")]
@@ -428,6 +443,7 @@ fn cmd_eval_with_correlations(
     match_detail: MatchDetailLevel,
     input_format_str: &str,
     syslog_tz_str: &str,
+    syslog_strip_bom: bool,
     bloom_prefilter: bool,
     bloom_max_bytes: Option<usize>,
     #[cfg(feature = "daachorse-index")] cross_rule_ac: bool,
@@ -507,6 +523,7 @@ fn cmd_eval_with_correlations(
                 renderer,
                 input_format_str,
                 syslog_tz_str,
+                syslog_strip_bom,
                 observe,
             );
             if renderer.ctx().show_stats() {
@@ -536,6 +553,7 @@ fn cmd_eval_with_correlations(
                 renderer,
                 input_format_str,
                 syslog_tz_str,
+                syslog_strip_bom,
                 observe,
             );
             if renderer.ctx().show_stats() {
@@ -558,6 +576,7 @@ fn eval_stream_corr(
     renderer: &mut MatchRenderer,
     input_format_str: &str,
     syslog_tz_str: &str,
+    syslog_strip_bom: bool,
     observe: Option<&ObserveContext>,
 ) -> (u64, u64, u64) {
     let mut line_num = 0u64;
@@ -565,9 +584,10 @@ fn eval_stream_corr(
     let mut corr_count = 0u64;
 
     #[cfg(feature = "daemon")]
-    let format = crate::commands::parse_input_format(input_format_str, syslog_tz_str);
+    let format =
+        crate::commands::parse_input_format(input_format_str, syslog_tz_str, syslog_strip_bom);
     #[cfg(not(feature = "daemon"))]
-    let _ = (input_format_str, syslog_tz_str);
+    let _ = (input_format_str, syslog_tz_str, syslog_strip_bom);
 
     for line in reader.lines() {
         line_num += 1;
@@ -708,6 +728,7 @@ fn cmd_eval_detection_only(
     match_detail: MatchDetailLevel,
     input_format_str: &str,
     syslog_tz_str: &str,
+    syslog_strip_bom: bool,
     bloom_prefilter: bool,
     bloom_max_bytes: Option<usize>,
     #[cfg(feature = "daachorse-index")] cross_rule_ac: bool,
@@ -793,6 +814,7 @@ fn cmd_eval_detection_only(
                 renderer,
                 input_format_str,
                 syslog_tz_str,
+                syslog_strip_bom,
                 observe,
             );
             if renderer.ctx().show_stats() {
@@ -818,6 +840,7 @@ fn cmd_eval_detection_only(
                 renderer,
                 input_format_str,
                 syslog_tz_str,
+                syslog_strip_bom,
                 observe,
             );
             if renderer.ctx().show_stats() {
@@ -838,15 +861,17 @@ fn eval_stream_detect(
     renderer: &mut MatchRenderer,
     input_format_str: &str,
     syslog_tz_str: &str,
+    syslog_strip_bom: bool,
     observe: Option<&ObserveContext>,
 ) -> (u64, u64) {
     let mut line_num = 0u64;
     let mut match_count = 0u64;
 
     #[cfg(feature = "daemon")]
-    let format = crate::commands::parse_input_format(input_format_str, syslog_tz_str);
+    let format =
+        crate::commands::parse_input_format(input_format_str, syslog_tz_str, syslog_strip_bom);
     #[cfg(not(feature = "daemon"))]
-    let _ = (input_format_str, syslog_tz_str);
+    let _ = (input_format_str, syslog_tz_str, syslog_strip_bom);
 
     for line in reader.lines() {
         line_num += 1;
@@ -1375,5 +1400,24 @@ mod tests {
         let base = partial("eval:\n  rules: /file/rules\n");
         overlay_eval_config(&mut args, &matches, base);
         assert_eq!(args.rules.as_deref(), Some(Path::new("/file/rules")));
+    }
+
+    #[test]
+    fn syslog_strip_bom_default_on_config_off_flag_wins() {
+        // Default: stripping is on.
+        let (args, _) = parse(&["eval", "--rules", "/r"]);
+        assert!(args.syslog_strip_bom);
+
+        // File disables it and the flag is unset: file applies.
+        let (mut args, matches) = parse(&["eval", "--rules", "/r"]);
+        let base = partial("eval:\n  syslog_strip_bom: false\n");
+        overlay_eval_config(&mut args, &matches, base);
+        assert!(!args.syslog_strip_bom);
+
+        // Explicit CLI flag wins over the file.
+        let (mut args, matches) = parse(&["eval", "--rules", "/r", "--syslog-strip-bom", "true"]);
+        let base = partial("eval:\n  syslog_strip_bom: false\n");
+        overlay_eval_config(&mut args, &matches, base);
+        assert!(args.syslog_strip_bom);
     }
 }

@@ -134,6 +134,13 @@ pub(crate) struct DaemonArgs {
     #[arg(long = "syslog-tz", default_value = config::defaults::SYSLOG_TZ)]
     pub syslog_tz: String,
 
+    /// Strip a leading UTF-8 BOM from RFC 5424 syslog messages. On by
+    /// default (RFC 5424 treats the BOM as an encoding marker, not content);
+    /// pass `--syslog-strip-bom false` to keep it. Only relevant for
+    /// syslog/auto input.
+    #[arg(long = "syslog-strip-bom", default_value_t = true, action = clap::ArgAction::Set)]
+    pub syslog_strip_bom: bool,
+
     /// NATS credentials file (.creds) for JWT + NKey authentication.
     /// Also reads from NATS_CREDS environment variable.
     #[cfg(feature = "daemon-nats")]
@@ -454,6 +461,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         dlq,
         input_format,
         syslog_tz,
+        syslog_strip_bom,
         #[cfg(feature = "daemon-nats")]
         nats_creds,
         #[cfg(feature = "daemon-nats")]
@@ -582,6 +590,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         dlq,
         input_format,
         syslog_tz,
+        syslog_strip_bom,
         state_restore_mode,
         #[cfg(feature = "daemon-nats")]
         nats_auth,
@@ -699,6 +708,11 @@ fn apply_daemon_config(
             && let Some(v) = input.syslog_tz
         {
             args.syslog_tz = v;
+        }
+        if !explicit("syslog_strip_bom")
+            && let Some(v) = input.syslog_strip_bom
+        {
+            args.syslog_strip_bom = v;
         }
         if !explicit("buffer_size")
             && let Some(v) = input.buffer_size
@@ -891,6 +905,7 @@ fn run_daemon(
     dlq: Option<String>,
     input_format: String,
     syslog_tz: String,
+    syslog_strip_bom: bool,
     state_restore_mode: daemon::server::StateRestoreMode,
     #[cfg(feature = "daemon-nats")] nats_auth: NatsAuthArgs,
     #[cfg(feature = "daemon-nats")] replay_policy: rsigma_runtime::ReplayPolicy,
@@ -939,7 +954,7 @@ fn run_daemon(
 
     let pipelines = crate::load_pipelines(&pipeline_paths);
     let event_filter = std::sync::Arc::new(crate::build_event_filter(jq, jsonpath));
-    let parsed_input_format = parse_input_format(&input_format, &syslog_tz);
+    let parsed_input_format = parse_input_format(&input_format, &syslog_tz, syslog_strip_bom);
 
     let corr_config = crate::build_correlation_config(
         suppress,
@@ -1066,7 +1081,11 @@ fn run_daemon(
 // Input format parsing
 // ---------------------------------------------------------------------------
 
-pub(crate) fn parse_input_format(format_str: &str, syslog_tz: &str) -> rsigma_runtime::InputFormat {
+pub(crate) fn parse_input_format(
+    format_str: &str,
+    syslog_tz: &str,
+    strip_bom: bool,
+) -> rsigma_runtime::InputFormat {
     use rsigma_runtime::InputFormat;
     use rsigma_runtime::input::SyslogConfig;
 
@@ -1075,10 +1094,12 @@ pub(crate) fn parse_input_format(format_str: &str, syslog_tz: &str) -> rsigma_ru
     match format_str {
         "auto" => InputFormat::Auto(SyslogConfig {
             default_tz_offset_secs: tz_secs,
+            strip_bom,
         }),
         "json" => InputFormat::Json,
         "syslog" => InputFormat::Syslog(SyslogConfig {
             default_tz_offset_secs: tz_secs,
+            strip_bom,
         }),
         "plain" => InputFormat::Plain,
         #[cfg(feature = "logfmt")]
@@ -1214,5 +1235,45 @@ mod tests {
         let base = partial("daemon:\n  rules: /file/rules\n");
         apply_daemon_config(&mut args, &matches, base);
         assert_eq!(args.rules.as_deref(), Some(Path::new("/file/rules")));
+    }
+
+    #[test]
+    fn parse_input_format_threads_strip_bom() {
+        use rsigma_runtime::InputFormat;
+        use rsigma_runtime::input::SyslogConfig;
+
+        assert_eq!(
+            parse_input_format("syslog", "+00:00", false),
+            InputFormat::Syslog(SyslogConfig {
+                default_tz_offset_secs: 0,
+                strip_bom: false,
+            })
+        );
+        assert_eq!(
+            parse_input_format("auto", "+00:00", true),
+            InputFormat::Auto(SyslogConfig {
+                default_tz_offset_secs: 0,
+                strip_bom: true,
+            })
+        );
+    }
+
+    #[test]
+    fn syslog_strip_bom_default_on_config_off_flag_wins() {
+        // Default (no flag, no file): stripping is on.
+        let (args, _) = parse(&["daemon", "--rules", "/r"]);
+        assert!(args.syslog_strip_bom);
+
+        // File disables it and the operator did not set the flag: file applies.
+        let (mut args, matches) = parse(&["daemon", "--rules", "/r"]);
+        let base = partial("daemon:\n  input:\n    syslog_strip_bom: false\n");
+        apply_daemon_config(&mut args, &matches, base);
+        assert!(!args.syslog_strip_bom);
+
+        // Explicit CLI flag wins over the file.
+        let (mut args, matches) = parse(&["daemon", "--rules", "/r", "--syslog-strip-bom", "true"]);
+        let base = partial("daemon:\n  input:\n    syslog_strip_bom: false\n");
+        apply_daemon_config(&mut args, &matches, base);
+        assert!(args.syslog_strip_bom);
     }
 }
