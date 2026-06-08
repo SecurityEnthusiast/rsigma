@@ -40,6 +40,7 @@ For a narrative tutorial see [Evaluating Rules](../../guide/evaluating-rules.md)
 | `--jsonpath <JSONPATH>` | unset | JSONPath ([RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)) query to extract the event payload. Example: `--jsonpath '$.event'`, `--jsonpath '$.records[*]'`. |
 | `--input-format <FORMAT>` | `auto` | Input log format: `auto`, `json`, `syslog`, `plain`. With the `logfmt` and `cef` features: also `logfmt`, `cef`. |
 | `--syslog-tz <OFFSET>` | `+00:00` | Timezone offset for RFC 3164 syslog parsing. Format: `+HH:MM` or `-HH:MM`. |
+| `--syslog-strip-bom <BOOL>` | `true` | Strip a leading UTF-8 BOM (`U+FEFF`) from RFC 5424 syslog messages. RFC 5424 treats the BOM as an encoding marker, not content. Pass `--syslog-strip-bom false` to keep it byte-for-byte. |
 
 ### Pipeline
 

@@ -207,6 +207,7 @@ Unlike `engine eval`, the daemon stays alive after stdin reaches EOF and support
 | `--output` | repeatable | `["stdout"]` | Detection output sink (fan-out): `stdout`, `file://<path>`, `nats://<host>:<port>/<subject>` |
 | `--input-format` | string | `"auto"` | Input log format: `auto`, `json`, `syslog`, `plain`, `logfmt`\*, `cef`\* |
 | `--syslog-tz` | string | `"+00:00"` | Default timezone for RFC 3164 syslog (e.g. `+05:00`, `-08:00`) |
+| `--syslog-strip-bom` | bool | `true` | Strip a leading UTF-8 BOM from RFC 5424 syslog messages. Pass `false` to keep it byte-for-byte |
 | `--jq` | string | none | jq filter to extract event payload (conflicts with `--jsonpath`) |
 | `--jsonpath` | string | none | JSONPath (RFC 9535) query (conflicts with `--jq`) |
 | `--include-event` | flag | `false` | Include full event JSON in each detection match |
@@ -491,6 +492,7 @@ Evaluate JSON events against Sigma detection and correlation rules.
 | `--timestamp-field` | repeatable | `[]` | Event field(s) for timestamp extraction (prepended to the default list) |
 | `--input-format` | string | `"auto"` | Input log format: `auto`, `json`, `syslog`, `plain`, `logfmt`\*, `cef`\* |
 | `--syslog-tz` | string | `"+00:00"` | Default timezone for RFC 3164 syslog (e.g. `+05:00`, `-08:00`) |
+| `--syslog-strip-bom` | bool | `true` | Strip a leading UTF-8 BOM from RFC 5424 syslog messages. Pass `false` to keep it byte-for-byte |
 | `--fail-on-detection` | flag | `false` | Exit with code 1 when any detection or correlation fires. Useful for CI/CD pipelines |
 | `--bloom-prefilter` | flag | `false` | Enable bloom-filter pre-filtering of positive substring matchers (see `crates/rsigma-eval/README.md` for the trade-off) |
 | `--bloom-max-bytes` | integer | **1048576** | Memory budget for the bloom index (no effect without `--bloom-prefilter`) |

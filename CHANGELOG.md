@@ -5,6 +5,13 @@ Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma
 
 ## [Unreleased]
 
+### Strip the UTF-8 BOM from RFC 5424 syslog messages
+
+RFC 5424 section 6.4 mandates that a UTF-8 `MSG` begin with a byte order mark (`U+FEFF`, bytes `EF BB BF`) as an encoding marker, not as content. `syslog_loose` preserves it verbatim, and `str::trim()` does not remove it (`U+FEFF` is not Unicode `White_Space`), so the BOM previously leaked into the parsed event: it corrupted the `_raw` field and anchored matchers (`startswith`, exact equality), and it blocked embedded-JSON detection because `serde_json` errors on a leading BOM, silently degrading a BOM-prefixed JSON payload to a key/value event.
+
+- **The syslog adapter now strips a single leading BOM from the message body by default**, gated by a new `SyslogConfig.strip_bom` field (defaults to `true`).
+- **Opt out** with `rsigma engine eval --syslog-strip-bom false` / `rsigma engine daemon --syslog-strip-bom false`, or the `input.syslog_strip_bom` / `eval.syslog_strip_bom` config keys, to keep the message byte-for-byte.
+
 ### `rstix`: STIX 2.1 + TAXII 2.1 library crate, Phase 1 core foundation (#185)
 
 Introduces `rstix`, a new workspace library crate for native STIX 2.1 and TAXII 2.1 support. This first phase lands the core foundation only; the object model, serialization dispatch, pattern engine, validation pipeline, and graph/marking/store/TAXII runtime behaviours are deferred to later phases.
