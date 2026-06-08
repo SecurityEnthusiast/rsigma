@@ -39,7 +39,7 @@ The crate has no rsigma dependencies and pulls in `yaml_serde` 0.10 (the maintai
 | `parse_condition(&str) -> Result<ConditionExpr, SigmaParserError>` | Standalone condition-expression parser. |
 | `Detection`, `DetectionItem`, `FieldSpec`, `SigmaValue`, `Modifier` | Detection-block building blocks. |
 | `LogSource` | The `logsource:` block (`product`, `category`, `service`). |
-| Linter (`lint::*`) | 68 spec-conformance checks. See [Lint Rules reference](../reference/lint-rules.md). |
+| Linter (`lint::*`) | {{ rsigma.lint.rules }} spec-conformance checks (including cross-document reference checks over a directory). See [Lint Rules reference](../reference/lint-rules.md). |
 
 The full enumeration of modifiers (30+), correlation types (8), and condition operators lives in [the crate README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-parser/README.md).
 
@@ -68,7 +68,7 @@ assert_eq!(collection.rules[0].title.as_deref(), Some("Whoami"));
 
 ## Linting
 
-The linter runs the 68 spec-conformance checks against parsed (or partially parsed) rules and returns `LintWarning`s:
+The linter runs the {{ rsigma.lint.rules }} spec-conformance checks against parsed (or partially parsed) rules and returns `LintWarning`s:
 
 ```rust
 use rsigma_parser::lint::{lint_yaml_directory, LintConfig};
@@ -106,6 +106,6 @@ Bounds: `MAX_CONDITION_LEN = 64 KiB`, `MAX_CONDITION_DEPTH = 64`. See [Security 
 
 - [`rsigma-eval`](eval.md) for the next layer: compile and evaluate.
 - [`rsigma-convert`](convert.md) for generating backend queries from the AST.
-- [Lint Rules reference](../reference/lint-rules.md) for the 68 lint checks the crate ships.
+- [Lint Rules reference](../reference/lint-rules.md) for the {{ rsigma.lint.rules }} lint checks the crate ships.
 - [`rsigma-parser` README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-parser/README.md) for the full AST reference and modifier matrix.
 - [docs.rs/rsigma-parser](https://docs.rs/rsigma-parser) for the generated API documentation.
