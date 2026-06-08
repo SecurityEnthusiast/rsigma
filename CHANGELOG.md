@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### `sigma-version`: gate breaking spec changes by the declared specification major
+### `sigma-version`: gate breaking spec changes by the declared specification major (#188)
 
 rsigma now reads an optional top-level `sigma-version` attribute on a Sigma document: the Sigma specification MAJOR version the document targets (for example `sigma-version: 3`). It is the reference implementation of the rule-level spec-version mechanism proposed as [SEP #213](https://github.com/SigmaHQ/sigma-specification/issues/213), split out of array matching so that every future breaking spec change is gated by one declared version rather than a per-feature escape.
 
