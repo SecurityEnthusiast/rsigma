@@ -57,6 +57,16 @@ tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --s
 
 The value is a fixed offset (`+0530`, `-0800`). For ambiguity-free parsing, prefer RFC 5424 sources that carry the offset inline.
 
+### UTF-8 BOM handling
+
+RFC 5424 section 6.4 says a UTF-8 `MSG` should begin with a byte order mark (`U+FEFF`, bytes `EF BB BF`) as an encoding marker, not as content. RSigma strips a single leading BOM from the message body by default, so it does not leak into the `_raw` field, break anchored matchers (`startswith`, exact equality), or block embedded-JSON detection (a BOM-prefixed JSON payload is parsed as JSON rather than degrading to a raw string).
+
+To keep the message byte-for-byte instead, pass `--syslog-strip-bom false` (or set `input.syslog_strip_bom: false` / `eval.syslog_strip_bom: false` in the config file).
+
+```bash
+tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --syslog-strip-bom false
+```
+
 ### Auto-detect validation
 
 When `--input-format auto`, RSigma's syslog detection requires the line to parse cleanly with a facility, severity, and hostname before accepting. Random text that happens to begin with a number does not get misparsed.

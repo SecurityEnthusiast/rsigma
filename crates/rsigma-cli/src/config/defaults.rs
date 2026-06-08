@@ -16,6 +16,7 @@ pub(crate) const API_ADDR: &str = "0.0.0.0:9090";
 pub(crate) const INPUT_SOURCE: &str = "stdin";
 pub(crate) const INPUT_FORMAT: &str = "auto";
 pub(crate) const SYSLOG_TZ: &str = "+00:00";
+pub(crate) const SYSLOG_STRIP_BOM: bool = true;
 pub(crate) const BUFFER_SIZE: usize = 10_000;
 pub(crate) const BATCH_SIZE: usize = 1;
 pub(crate) const DRAIN_TIMEOUT: u64 = 5;
@@ -65,6 +66,7 @@ pub(crate) fn defaults_partial() -> RsigmaConfigPartial {
                 source: Some(INPUT_SOURCE.to_string()),
                 format: Some(INPUT_FORMAT.to_string()),
                 syslog_tz: Some(SYSLOG_TZ.to_string()),
+                syslog_strip_bom: Some(SYSLOG_STRIP_BOM),
                 buffer_size: Some(BUFFER_SIZE),
                 batch_size: Some(BATCH_SIZE),
                 jq: None,
@@ -107,6 +109,7 @@ pub(crate) fn defaults_partial() -> RsigmaConfigPartial {
             pipelines: Some(Vec::new()),
             input_format: Some(INPUT_FORMAT.to_string()),
             syslog_tz: Some(SYSLOG_TZ.to_string()),
+            syslog_strip_bom: Some(SYSLOG_STRIP_BOM),
             fail_on_detection: Some(false),
         }),
     }

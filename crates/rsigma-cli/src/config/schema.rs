@@ -190,6 +190,9 @@ pub(crate) struct InputPartial {
     /// Default timezone offset for RFC 3164 syslog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub syslog_tz: Option<String>,
+    /// Strip a leading UTF-8 BOM from RFC 5424 syslog messages (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub syslog_strip_bom: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub buffer_size: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -208,6 +211,7 @@ impl Merge for InputPartial {
             source: over.source.or(self.source),
             format: over.format.or(self.format),
             syslog_tz: over.syslog_tz.or(self.syslog_tz),
+            syslog_strip_bom: over.syslog_strip_bom.or(self.syslog_strip_bom),
             buffer_size: over.buffer_size.or(self.buffer_size),
             batch_size: over.batch_size.or(self.batch_size),
             jq: over.jq.or(self.jq),
@@ -376,6 +380,9 @@ pub(crate) struct EvalPartial {
     pub input_format: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub syslog_tz: Option<String>,
+    /// Strip a leading UTF-8 BOM from RFC 5424 syslog messages (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub syslog_strip_bom: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fail_on_detection: Option<bool>,
 }
@@ -387,6 +394,7 @@ impl Merge for EvalPartial {
             pipelines: over.pipelines.or(self.pipelines),
             input_format: over.input_format.or(self.input_format),
             syslog_tz: over.syslog_tz.or(self.syslog_tz),
+            syslog_strip_bom: over.syslog_strip_bom.or(self.syslog_strip_bom),
             fail_on_detection: over.fail_on_detection.or(self.fail_on_detection),
         }
     }

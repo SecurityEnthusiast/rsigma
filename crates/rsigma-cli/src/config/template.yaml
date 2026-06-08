@@ -48,6 +48,9 @@ daemon:
     format: auto
     # Default timezone offset for RFC 3164 syslog.
     syslog_tz: "+00:00"
+    # Strip a leading UTF-8 BOM from RFC 5424 syslog messages (RFC 5424 treats
+    # it as an encoding marker, not content). Set false to keep it byte-for-byte.
+    syslog_strip_bom: true
     # Channel capacity for source->engine and engine->sink queues.
     buffer_size: 10000
     # Max events processed per engine lock acquisition.
@@ -124,4 +127,6 @@ eval:
   # pipelines: [sysmon]
   input_format: auto
   syslog_tz: "+00:00"
+  # Strip a leading UTF-8 BOM from RFC 5424 syslog messages. Set false to keep it.
+  syslog_strip_bom: true
   fail_on_detection: false
