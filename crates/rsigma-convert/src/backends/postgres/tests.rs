@@ -2386,3 +2386,217 @@ detection:
     let err = backend.convert_rule(&collection.rules[0], "default", &PipelineState::default());
     assert!(matches!(err, Err(ConvertError::UnsupportedArrayMatching)));
 }
+
+// --- Correlation window modes (tumbling / session) ---
+
+fn convert_corr(yaml: &str, format: &str) -> Vec<String> {
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    let backend = PostgresBackend::new();
+    backend
+        .convert_correlation_rule(
+            &collection.correlations[0],
+            format,
+            &PipelineState::default(),
+        )
+        .unwrap()
+}
+
+#[test]
+fn test_tumbling_event_count_default_uses_date_bin() {
+    let q = &convert_corr(
+        r#"
+title: Hourly clicks
+correlation:
+    type: event_count
+    rules:
+        - base
+    group-by:
+        - User
+    timespan: 10m
+    window: tumbling
+    condition:
+        gte: 100
+"#,
+        "default",
+    )[0];
+    assert!(
+        q.contains("date_bin('600 seconds'"),
+        "tumbling default should bucket via date_bin: {q}"
+    );
+    assert!(q.contains("AS correlation_bucket"), "{q}");
+    assert!(q.contains("COUNT(*) AS event_count"), "{q}");
+    assert!(q.contains("HAVING COUNT(*) >= 100"), "{q}");
+}
+
+#[test]
+fn test_tumbling_event_count_timescaledb_uses_time_bucket_with_timespan() {
+    let q = &convert_corr(
+        r#"
+title: Hourly clicks
+correlation:
+    type: event_count
+    rules:
+        - base
+    group-by:
+        - User
+    timespan: 10m
+    window: tumbling
+    condition:
+        gte: 100
+"#,
+        "timescaledb",
+    )[0];
+    // Buckets by the rule's timespan, not the legacy hardcoded '1 hour'.
+    assert!(
+        q.contains("time_bucket('600 seconds'"),
+        "tumbling timescaledb should bucket by the rule timespan: {q}"
+    );
+    assert!(!q.contains("time_bucket('1 hour'"), "{q}");
+}
+
+#[test]
+fn test_session_event_count_gaps_and_islands() {
+    let q = &convert_corr(
+        r#"
+title: Login session
+correlation:
+    type: event_count
+    rules:
+        - base
+    group-by:
+        - User
+    window: session
+    gap: 30s
+    timespan: 1h
+    condition:
+        gte: 3
+"#,
+        "default",
+    )[0];
+    assert!(q.contains("LAG("), "session should use LAG: {q}");
+    assert!(
+        q.contains("INTERVAL '30 seconds'"),
+        "session gap should be 30s: {q}"
+    );
+    assert!(q.contains("AS session_id"), "{q}");
+    assert!(q.contains("AS is_new_session"), "{q}");
+    assert!(q.contains("HAVING COUNT(*) >= 3"), "{q}");
+    // The timespan cap is approximated as a post-aggregation filter.
+    assert!(
+        q.contains("<= INTERVAL '3600 seconds'"),
+        "session should cap total span at the timespan: {q}"
+    );
+}
+
+#[test]
+fn test_session_emits_cap_warning() {
+    let collection = parse_sigma_yaml(
+        r#"
+title: Login session
+correlation:
+    type: event_count
+    rules:
+        - base
+    group-by:
+        - User
+    window: session
+    gap: 30s
+    timespan: 1h
+    condition:
+        gte: 3
+"#,
+    )
+    .unwrap();
+    let backend = PostgresBackend::new();
+    let mut warnings = Vec::new();
+    let queries = backend
+        .convert_correlation_rule_with_warnings(
+            &collection.correlations[0],
+            "default",
+            &PipelineState::default(),
+            &mut warnings,
+        )
+        .unwrap();
+    assert_eq!(queries.len(), 1);
+    assert!(
+        warnings.iter().any(|w| w.contains("session")),
+        "expected a session degrade warning, got: {warnings:?}"
+    );
+}
+
+#[test]
+fn test_tumbling_temporal_is_unsupported() {
+    let collection = parse_sigma_yaml(
+        r#"
+title: Temporal tumbling
+correlation:
+    type: temporal
+    rules:
+        - a
+        - b
+    group-by:
+        - User
+    timespan: 10m
+    window: tumbling
+"#,
+    )
+    .unwrap();
+    let backend = PostgresBackend::new();
+    let err = backend.convert_correlation_rule(
+        &collection.correlations[0],
+        "default",
+        &PipelineState::default(),
+    );
+    assert!(matches!(err, Err(ConvertError::UnsupportedCorrelation(_))));
+}
+
+#[test]
+fn test_session_temporal_is_unsupported() {
+    let collection = parse_sigma_yaml(
+        r#"
+title: Temporal session
+correlation:
+    type: temporal_ordered
+    rules:
+        - a
+        - b
+    group-by:
+        - User
+    window: session
+    gap: 10m
+    timespan: 6h
+"#,
+    )
+    .unwrap();
+    let backend = PostgresBackend::new();
+    let err = backend.convert_correlation_rule(
+        &collection.correlations[0],
+        "default",
+        &PipelineState::default(),
+    );
+    assert!(matches!(err, Err(ConvertError::UnsupportedCorrelation(_))));
+}
+
+#[test]
+fn test_absent_window_keeps_legacy_aggregate() {
+    // No `window` attribute: output must be unchanged from before the feature
+    // (relative-filter aggregate, no date_bin/session machinery).
+    let q = &convert_corr(
+        r#"
+title: Brute force
+correlation:
+    type: event_count
+    rules:
+        - base
+    group-by:
+        - User
+    timespan: 5m
+    condition:
+        gte: 10
+"#,
+        "default",
+    )[0];
+    assert!(q.contains("NOW() - INTERVAL '300 seconds'"), "{q}");
+    assert!(!q.contains("date_bin("), "{q}");
+    assert!(!q.contains("session_id"), "{q}");
+}

@@ -963,11 +963,12 @@ impl Backend for PostgresBackend {
         true
     }
 
-    fn convert_correlation_rule(
+    fn convert_correlation_rule_with_warnings(
         &self,
         rule: &CorrelationRule,
         output_format: &str,
         pipeline_state: &PipelineState,
+        warnings: &mut Vec<String>,
     ) -> Result<Vec<String>> {
         let table = self.resolve_table(&rule.custom_attributes, &pipeline_state.state)?;
         let ts = &self.timestamp_field;
@@ -1024,6 +1025,57 @@ impl Backend for PostgresBackend {
 
         let (cte_prefix, source_table, time_filter) =
             self.build_correlation_source(&rule.rules, &rule_queries, &table, ts, window_secs);
+
+        // `window` (sliding/tumbling/session) selects the windowing strategy.
+        // `sliding` (the default, also what an absent `window` resolves to)
+        // preserves the existing per-output_format behavior, so existing rules
+        // are unaffected. `tumbling` and `session` are opt-in.
+        let temporal = matches!(
+            rule.correlation_type,
+            CorrelationType::Temporal | CorrelationType::TemporalOrdered
+        );
+        if matches!(rule.window, WindowMode::Tumbling) {
+            if temporal {
+                return Err(ConvertError::UnsupportedCorrelation(
+                    "tumbling window is not supported for temporal correlations by the \
+                     PostgreSQL backend; use the default (sliding) window"
+                        .into(),
+                ));
+            }
+            let query = self.build_tumbling_correlation(
+                rule,
+                &cte_prefix,
+                &source_table,
+                ts,
+                window_secs,
+                value_field,
+                use_time_bucket,
+            )?;
+            return Ok(vec![query]);
+        }
+        if matches!(rule.window, WindowMode::Session) {
+            if temporal {
+                return Err(ConvertError::UnsupportedCorrelation(
+                    "session window is not supported for temporal correlations by the \
+                     PostgreSQL backend; use an event_count or value_count rule"
+                        .into(),
+                ));
+            }
+            let gap_secs = rule.gap.as_ref().map(|g| g.seconds).ok_or_else(|| {
+                ConvertError::UnsupportedCorrelation("session window requires a 'gap'".into())
+            })?;
+            let query = self.build_session_correlation(
+                rule,
+                &cte_prefix,
+                &source_table,
+                ts,
+                window_secs,
+                gap_secs,
+                value_field,
+                warnings,
+            )?;
+            return Ok(vec![query]);
+        }
 
         let query = match rule.correlation_type {
             CorrelationType::EventCount if output_format == "sliding_window" => self

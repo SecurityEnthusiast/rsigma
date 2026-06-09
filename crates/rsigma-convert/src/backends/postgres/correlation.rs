@@ -171,6 +171,186 @@ impl super::PostgresBackend {
         }
     }
 
+    /// Aggregate SELECT expression and its column alias for a correlation type.
+    ///
+    /// Shared by the tumbling and session builders. Temporal types are handled
+    /// by [`build_temporal_query`](Self::build_temporal_query) and are rejected
+    /// here.
+    pub(super) fn correlation_aggregate(
+        &self,
+        rule: &CorrelationRule,
+        value_field: Option<&str>,
+    ) -> Result<(String, &'static str)> {
+        let field = match value_field {
+            Some(f) => self.field_expr(f)?,
+            None => "'unknown_field'".to_string(),
+        };
+        Ok(match rule.correlation_type {
+            CorrelationType::EventCount => ("COUNT(*)".to_string(), "event_count"),
+            CorrelationType::ValueCount => (format!("COUNT(DISTINCT {field})"), "value_count"),
+            CorrelationType::ValueSum => (format!("SUM({field})"), "value_sum"),
+            CorrelationType::ValueAvg => (format!("AVG({field})"), "value_avg"),
+            CorrelationType::ValuePercentile | CorrelationType::ValueMedian => {
+                let percentile = if rule.correlation_type == CorrelationType::ValueMedian {
+                    0.5
+                } else {
+                    match &rule.condition {
+                        CorrelationCondition::Threshold { percentile, .. } => {
+                            percentile.map(|p| p as f64 / 100.0).unwrap_or(0.95)
+                        }
+                        _ => 0.95,
+                    }
+                };
+                (
+                    format!("PERCENTILE_CONT({percentile}) WITHIN GROUP (ORDER BY {field})"),
+                    "pct_value",
+                )
+            }
+            CorrelationType::Temporal | CorrelationType::TemporalOrdered => {
+                return Err(ConvertError::UnsupportedCorrelation(
+                    "temporal correlations are handled by a dedicated builder".into(),
+                ));
+            }
+        })
+    }
+
+    /// Build a tumbling-window correlation query for the non-temporal aggregate
+    /// types: events are grouped into fixed, boundary-aligned buckets of size
+    /// `window_secs` (via `time_bucket` on TimescaleDB, or `date_bin` aligned to
+    /// the epoch on plain PostgreSQL) plus the rule's group-by columns.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn build_tumbling_correlation(
+        &self,
+        rule: &CorrelationRule,
+        cte_prefix: &str,
+        source_table: &str,
+        ts: &str,
+        window_secs: u64,
+        value_field: Option<&str>,
+        use_time_bucket: bool,
+    ) -> Result<String> {
+        let (agg, alias) = self.correlation_aggregate(rule, value_field)?;
+        let bucket_expr = if use_time_bucket {
+            format!("time_bucket('{window_secs} seconds', {ts})")
+        } else {
+            format!("date_bin('{window_secs} seconds', {ts}, TIMESTAMPTZ 'epoch')")
+        };
+        let group_exprs: Vec<String> = rule
+            .group_by
+            .iter()
+            .map(|g| self.field_expr(g))
+            .collect::<Result<_>>()?;
+        let group_by_select = if group_exprs.is_empty() {
+            String::new()
+        } else {
+            format!("{}, ", group_exprs.join(", "))
+        };
+        let mut gb = vec![bucket_expr.clone()];
+        gb.extend(group_exprs);
+        let group_by_clause = format!(" GROUP BY {}", gb.join(", "));
+        let having = self
+            .build_having_clause(&rule.condition)?
+            .replace("{agg}", &agg);
+
+        Ok(format!(
+            "{cte_prefix}SELECT {bucket_expr} AS correlation_bucket, \
+             {group_by_select}{agg} AS {alias} \
+             FROM {source_table}\
+             {group_by_clause} \
+             HAVING {having}"
+        ))
+    }
+
+    /// Build a session-window correlation query for the non-temporal aggregate
+    /// types using the gaps-and-islands pattern: `LAG` flags the first event of
+    /// each session (a gap larger than `gap_secs`), a running `SUM` assigns a
+    /// per-group session id, and the aggregate is computed per session.
+    ///
+    /// The `gap` is honored exactly. The `timespan` cap can only be enforced as
+    /// a post-aggregation filter (sessions longer than the cap are dropped, not
+    /// split mid-session as the runtime does), which is recorded in `warnings`.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn build_session_correlation(
+        &self,
+        rule: &CorrelationRule,
+        cte_prefix: &str,
+        source_table: &str,
+        ts: &str,
+        window_secs: u64,
+        gap_secs: u64,
+        value_field: Option<&str>,
+        warnings: &mut Vec<String>,
+    ) -> Result<String> {
+        let (agg, alias) = self.correlation_aggregate(rule, value_field)?;
+        let group_exprs: Vec<String> = rule
+            .group_by
+            .iter()
+            .map(|g| self.field_expr(g))
+            .collect::<Result<_>>()?;
+
+        let partition = if group_exprs.is_empty() {
+            String::new()
+        } else {
+            format!("PARTITION BY {} ", group_exprs.join(", "))
+        };
+        let group_by_select = if group_exprs.is_empty() {
+            String::new()
+        } else {
+            format!("{}, ", group_exprs.join(", "))
+        };
+        let mut final_group = group_exprs;
+        final_group.push("session_id".to_string());
+        let final_group_clause = final_group.join(", ");
+
+        let having = self
+            .build_having_clause(&rule.condition)?
+            .replace("{agg}", &agg);
+
+        warnings.push(format!(
+            "PostgreSQL session window: the {gap_secs}s gap is exact, but the {window_secs}s \
+             'timespan' cap is enforced as a post-aggregation filter (sessions exceeding it are \
+             dropped, not split)"
+        ));
+        let cap_clause =
+            format!(" AND (MAX({ts}) - MIN({ts})) <= INTERVAL '{window_secs} seconds'");
+
+        // Chain onto an existing combined_events CTE when present, otherwise
+        // open the WITH chain with a plain source CTE.
+        let (head, src) = if cte_prefix.is_empty() {
+            (
+                format!("WITH source AS (SELECT * FROM {source_table}), "),
+                "source".to_string(),
+            )
+        } else {
+            (
+                format!("{}, ", cte_prefix.trim_end()),
+                source_table.to_string(),
+            )
+        };
+
+        Ok(format!(
+            "{head}\
+             marked AS (\
+             SELECT *, \
+             CASE WHEN LAG({ts}) OVER ({partition}ORDER BY {ts}) IS NULL \
+             OR {ts} - LAG({ts}) OVER ({partition}ORDER BY {ts}) > INTERVAL '{gap_secs} seconds' \
+             THEN 1 ELSE 0 END AS is_new_session \
+             FROM {src}\
+             ), \
+             sessions AS (\
+             SELECT *, SUM(is_new_session) OVER (\
+             {partition}ORDER BY {ts} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\
+             ) AS session_id \
+             FROM marked\
+             ) \
+             SELECT {group_by_select}session_id, {agg} AS {alias}, \
+             MIN({ts}) AS first_seen, MAX({ts}) AS last_seen \
+             FROM sessions \
+             GROUP BY {final_group_clause} \
+             HAVING {having}{cap_clause}"
+        ))
+    }
+
     /// Build HAVING clause from correlation condition predicates.
     /// Uses `{agg}` as placeholder for the aggregate expression.
     pub(super) fn build_having_clause(&self, cond: &CorrelationCondition) -> Result<String> {

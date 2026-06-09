@@ -124,6 +124,9 @@ pub(crate) fn cmd_convert(args: ConvertArgs, ctx: OutputCtx) {
                     eprintln!("Error: rule '{rule_title}' failed: {error}");
                 }
             }
+            for (rule_title, warning) in output_data.warnings() {
+                eprintln!("Warning: rule '{rule_title}': {warning}");
+            }
             if !skip_unsupported && !output_data.errors.is_empty() {
                 process::exit(crate::exit_code::RULE_ERROR);
             }
