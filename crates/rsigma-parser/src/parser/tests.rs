@@ -322,6 +322,62 @@ rsigma.window: tumbling
 }
 
 #[test]
+fn test_correlation_non_string_gap_is_typed_error() {
+    // An unquoted numeric gap must error with a type hint, not be silently
+    // treated as absent (which would surface as a misleading "missing gap").
+    let yaml = r#"
+title: Corr
+correlation:
+    type: temporal
+    rules:
+        - a
+        - b
+    group-by:
+        - User
+    window: session
+    gap: 300
+    timespan: 2h
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    assert!(collection.correlations.is_empty());
+    assert!(
+        collection
+            .errors
+            .iter()
+            .any(|e| e.contains("must be a string")),
+        "{:?}",
+        collection.errors
+    );
+}
+
+#[test]
+fn test_correlation_non_string_rsigma_window_is_typed_error() {
+    let yaml = r#"
+title: Corr
+correlation:
+    type: event_count
+    rules:
+        - base-1
+    group-by:
+        - User
+    timespan: 1h
+    condition:
+        gte: 10
+rsigma.window: 5
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    assert!(collection.correlations.is_empty());
+    assert!(
+        collection
+            .errors
+            .iter()
+            .any(|e| e.contains("rsigma.window") && e.contains("must be a string")),
+        "{:?}",
+        collection.errors
+    );
+}
+
+#[test]
 fn test_correlation_rsigma_session_requires_gap() {
     let yaml = r#"
 title: Corr
