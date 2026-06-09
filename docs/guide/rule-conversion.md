@@ -213,6 +213,14 @@ rsigma backend convert -t postgres -O correlation_method=session rules/
 
 The PostgreSQL backend offers `sliding` (default), `tumbling`, and `session`. The option overrides a rule's own `window` for that conversion; an unknown method is rejected up front. When no option is given, each rule's own `window` (default `sliding`) is used.
 
+Because most rules declare no `gap`, batch conversions with `correlation_method=session` take a conversion-time default:
+
+```bash
+rsigma backend convert -t postgres -O correlation_method=session -O gap=5m rules/
+```
+
+A rule's own `gap` always wins over the option; a session window with no gap from either source is an error.
+
 ### Multi-table temporal correlations
 
 When a `temporal` correlation references detection rules that target different tables (via per-logsource pipeline routing or the `postgres.table` custom attribute), the backend automatically generates a `UNION ALL` CTE:

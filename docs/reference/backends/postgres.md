@@ -16,6 +16,8 @@ Pass options via `-O key=value` on the command line. Unknown keys are silently i
 | `timestamp_field` | `time` | Column used for time-windowed queries (correlation `timespan`, `time_bucket` in TimescaleDB mode). |
 | `json_field` | unset | When set, fields are accessed via JSONB extraction. See [JSONB mode](#jsonb-mode). |
 | `case_sensitive_re` | `false` | Use `~` instead of `~*` for regex. Setting to `true` makes regex matches case-sensitive globally. |
+| `correlation_method` | unset | Windowing strategy for correlation rules (`sliding`/`tumbling`/`session`), overriding each rule's own `window`. See [Window modes](#window-modes). |
+| `gap` | unset | Default session gap (e.g. `5m`) used when a session window is requested and the rule declares no `gap`. A rule's own `gap` wins. |
 
 Pipeline `set_state` with keys `table`, `schema`, `database` overrides the corresponding `-O` option for the duration of one rule's conversion. Per-rule `custom_attributes` of `postgres.table`, `postgres.schema`, `postgres.database` override pipeline state. The full precedence chain is documented in [Custom Attributes](../custom-attributes.md#postgres-attributes).
 
@@ -215,7 +217,9 @@ Tumbling and session apply to every correlation type. For the aggregate types (`
 
 For session windows the `gap` is honored exactly, but the `timespan` cap is enforced as a `HAVING (MAX(<ts>) - MIN(<ts>)) <= INTERVAL '<timespan> seconds'` filter, which drops sessions longer than the cap rather than splitting them mid-session as the runtime engine does. `rsigma backend convert` emits a stderr warning noting this approximation.
 
-The strategy can also be chosen at conversion time with `-O correlation_method=NAME`, following pySigma's `correlation_methods` model. The backend advertises `sliding` (default), `tumbling`, and `session` (run `rsigma backend formats postgres` to list them); the option overrides a rule's own `window` for that conversion and is rejected if it is not one of the advertised methods. With no option, the rule's own `window` is used.
+The strategy can also be chosen at conversion time with `-O correlation_method=NAME`, following pySigma's `correlation_methods` model. The backend advertises `sliding` (default), `tumbling`, and `session` (run `rsigma backend formats postgres` to list them); the option overrides a rule's own `window` for that conversion and is rejected if it is not one of the advertised methods. With no option, the rule's own `window` is used. For `correlation_method=session` over rules that declare no `gap`, pass `-O gap=5m` as the conversion default; a rule's own `gap` always wins over the option.
+
+Unlike the sliding queries, tumbling and session queries carry no `NOW() - INTERVAL` bound (their windows derive from the data, and a session may extend arbitrarily far back), so they scan the whole table or view they run against. Schedule them against time-partitioned tables (hypertables) or bound the source with a view to keep scan costs predictable.
 
 ## Custom attributes
 

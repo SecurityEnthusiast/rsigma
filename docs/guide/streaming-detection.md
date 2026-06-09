@@ -107,7 +107,7 @@ correlation:
 
 The `rsigma.*` spelling wins if both appear. The engine reads the resolved value either way.
 
-Window decisions follow arrival order, the same contract as the existing sliding window: the engine reasons about the events currently retained per group, not a global watermark. Window bookkeeping is derived from the per-group timestamps already tracked, so persisted state (`--state-db`) stays compatible and survives upgrades.
+Window decisions follow arrival order, the same contract as the existing sliding window: the engine reasons about the events currently retained per group, not a global watermark. One asymmetry is deliberate: a tumbling window discards a late event that belongs to an earlier, already-passed bucket rather than letting it reset the active bucket, so out-of-order stragglers cannot wipe an accumulating count. Window bookkeeping is derived from the per-group timestamps already tracked, so persisted state (`--state-db`) stays compatible and survives upgrades.
 
 ## Output sinks
 
