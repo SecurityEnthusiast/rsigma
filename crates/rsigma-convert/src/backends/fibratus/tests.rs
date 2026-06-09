@@ -793,15 +793,25 @@ detection:
     assert_eq!(q.len(), 1);
     let out = &q[0];
     assert!(out.contains("spawn_process"), "got: {out}");
-    // The Sigma source `'\cmd.exe'` parses as the literal `\cmd.exe`;
-    // Fibratus single-quoted strings need `\\` for a literal `\`, so
-    // the rendered value carries the double-escape.
-    assert!(out.contains(r"ps.exe iendswith '\\cmd.exe'"), "got: {out}");
+    // On a Fibratus `CreateProcess` event the spawned process lives
+    // under `ps.sibling.*` (Sigma `Image` -> `ps.sibling.exe`,
+    // Sigma `CommandLine` -> `ps.sibling.cmdline`) and the parent
+    // (event generator) is `ps.exe`. The Sigma source `'\cmd.exe'`
+    // parses as the literal `\cmd.exe`; Fibratus single-quoted
+    // strings need `\\` for a literal `\`, so the rendered value
+    // carries the double-escape.
     assert!(
-        out.contains(r"ps.parent.exe iendswith '\\explorer.exe'"),
+        out.contains(r"ps.sibling.exe iendswith '\\cmd.exe'"),
         "got: {out}",
     );
-    assert!(out.contains("ps.cmdline icontains 'whoami'"), "got: {out}");
+    assert!(
+        out.contains(r"ps.exe iendswith '\\explorer.exe'"),
+        "got: {out}"
+    );
+    assert!(
+        out.contains("ps.sibling.cmdline icontains 'whoami'"),
+        "got: {out}",
+    );
 }
 
 #[test]

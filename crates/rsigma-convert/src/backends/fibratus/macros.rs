@@ -24,8 +24,8 @@ use std::sync::LazyLock;
 /// Macro source entries: `(macro_name, upstream_canonical_expression)`.
 ///
 /// Kept as documentation of the original Fibratus macro library; the
-/// recognition pass works off the rendered output forms in
-/// [`MACRO_CLAUSES`] (derived from these at startup).
+/// recognition pass works off the rendered output forms in the
+/// private `MACRO_CLAUSES` table (derived from these at startup).
 pub const EXPRESSION_MACROS: &[(&str, &str)] = &[
     ("spawn_process", "evt.name = 'CreateProcess'"),
     ("create_thread", "evt.name = 'CreateThread'"),

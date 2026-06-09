@@ -65,7 +65,7 @@ The pipeline maps logsource categories to `evt.name` discriminators and renames 
 
 | Sigma logsource | Fibratus `evt.name` | Representative field renames |
 |-----------------|---------------------|-------------------------------|
-| `process_creation` | `CreateProcess` | `Image -> ps.exe`, `CommandLine -> ps.cmdline`, `ParentImage -> ps.parent.exe`, `User -> ps.username` |
+| `process_creation` | `CreateProcess` | `Image -> ps.sibling.exe`, `CommandLine -> ps.sibling.cmdline`, `User -> ps.sibling.username` (Sigma's `process_creation.Image` is the *spawned* child process, which Fibratus exposes via the `ps.sibling.*` namespace on a `CreateProcess` event); `ParentImage -> ps.exe`, `ParentCommandLine -> ps.cmdline`, `ParentProcessId -> ps.pid` (the *generator* of a `CreateProcess` event is the parent) |
 | `process_termination` | `TerminateProcess` | `Image -> ps.exe`, `ProcessId -> ps.pid` |
 | `file_event` | `CreateFile` | `TargetFilename -> file.path`, `Image -> ps.exe` |
 | `file_delete` | `DeleteFile` | `TargetFilename -> file.path` |
@@ -76,9 +76,9 @@ The pipeline maps logsource categories to `evt.name` discriminators and renames 
 | `registry_add` | `RegCreateKey` | `TargetObject -> registry.path` |
 | `registry_delete` | `RegDeleteKey` | `TargetObject -> registry.path` |
 | `pipe_created` | `CreateFile` + `file.type = 'Pipe'` | `PipeName -> file.name` |
-| `create_remote_thread` | `CreateThread` | `SourceImage -> ps.exe`, `SourceProcessId -> ps.pid`, `TargetProcessId -> thread.pid`, `StartAddress -> thread.start_address`, `StartModule -> thread.start_address.module`, `StartFunction -> thread.start_address.symbol` (no `thread.image` field exists; Sigma `TargetImage` rules fail conversion) |
+| `create_remote_thread` | `CreateThread` | `SourceImage -> ps.exe`, `SourceProcessId -> ps.pid`, `TargetProcessId -> thread.pid`, `StartAddress -> thread.start_address`, `StartModule -> thread.start_address.module`, `StartFunction -> thread.start_address.symbol` (no `thread.image` field exists on `CreateThread` events; Sigma `TargetImage` rules fail conversion under this logsource) |
 | `driver_load` | `LoadModule` | `ImageLoaded -> image.path`, `Signed -> image.signature.exists` |
-| `process_access` | `OpenProcess` | `SourceImage -> ps.exe`, `SourceProcessId -> ps.pid` only; the target-process fields (`TargetImage`, `TargetProcessId`, `GrantedAccess`) are not currently mapped because the Fibratus `ps.access.*` subfield names are not documented (Sigma rules using those fields fail conversion) |
+| `process_access` | `OpenProcess` | `SourceImage -> ps.exe`, `SourceProcessId -> ps.pid`, `TargetImage -> ps.sibling.exe`, `TargetProcessId -> ps.sibling.pid`, `GrantedAccess -> ps.access.mask.names` (named slice; the upstream LSASS-dump rule pairs `open_process` with `ps.sibling.name ~= 'lsass.exe'`) |
 
 A final `change_logsource` transformation tags every matched rule with `product: windows`, `service: fibratus` so downstream tooling can re-route by service.
 
@@ -186,7 +186,7 @@ min-engine-version: 3.0.0
 
 ## Caveats and follow-ups
 
-- **Cross-process target fields.** The `create_remote_thread` and `process_access` field mappings cover the source-process side and (for create_remote_thread) the start-address triple, but they do not rename Sigma's `TargetImage` field for either category. Fibratus exposes `thread.pid` for the target process on a `CreateThread` event and `ps.access.status` on `OpenProcess`, but no documented `thread.image` or `ps.access.image` field for the target executable. Rules that reference `TargetImage`/`TargetProcessId`/`GrantedAccess` will fail conversion with an unsupported-field error rather than emit an invented field name; pair them with a custom pipeline if your Fibratus build exposes these fields under different names.
+- **`create_remote_thread.TargetImage`.** The `process_access` logsource's target-process fields now map to Fibratus's `ps.sibling.*` namespace (see the field-mapping table), but Fibratus does not expose `ps.sibling.exe` on a bare `CreateThread` event the way it does for `CreateProcess`/`OpenProcess`. Sigma rules under `create_remote_thread` that reference `TargetImage` still fail conversion with an unsupported-field error; pair with a custom pipeline if your Fibratus build exposes it under another name.
 
 ## Related material
 

@@ -21,20 +21,24 @@ priority: 20
 
 transformations:
   # --- Process creation ---
+  #
+  # On a Fibratus `CreateProcess` event the *generating* process is
+  # the parent that called the syscall; the new/child process lives
+  # under the `ps.sibling.*` namespace. That inverts the Sigma
+  # mapping every other category uses: Sigma `process_creation.Image`
+  # is the *spawned* (child) process, not the parent that spawned
+  # it.
   - id: fibratus_process_creation_fields
     type: field_name_mapping
     mapping:
-      Image: ps.exe
-      OriginalFileName: ps.exe
-      CommandLine: ps.cmdline
-      CurrentDirectory: ps.cwd
-      ProcessId: ps.pid
-      ParentImage: ps.parent.exe
-      ParentProcessId: ps.ppid
-      ParentCommandLine: ps.parent.cmdline
-      User: ps.username
-      IntegrityLevel: ps.integrity_level
-      LogonId: ps.sessionid
+      Image: ps.sibling.exe
+      CommandLine: ps.sibling.cmdline
+      ProcessId: ps.sibling.pid
+      User: ps.sibling.username
+      LogonId: ps.sibling.sessionid
+      ParentImage: ps.exe
+      ParentCommandLine: ps.cmdline
+      ParentProcessId: ps.pid
     rule_conditions:
       - type: logsource
         category: process_creation
@@ -345,20 +349,22 @@ transformations:
 
   # --- Process access ---
   #
-  # Only the source-process fields are renamed here. The
-  # `ps.access.*` namespace is real (the `open_process` macro uses
-  # `ps.access.status = 'Success'`), but the specific subfields a
-  # Sigma `TargetImage`/`TargetProcessId`/`GrantedAccess` would map
-  # to are not documented in the Fibratus filter-field reference at
-  # the time of writing. Drop them rather than emit field names
-  # Fibratus does not know; Sigma rules that reference those fields
-  # will fail conversion with an unsupported field, which is more
-  # honest than silently emitting incorrect mappings.
+  # On an `OpenProcess` event the *generator* is the caller and the
+  # target process being opened lives under the `ps.sibling.*`
+  # namespace (the upstream `open_process` macro pairs with
+  # `ps.sibling.name ~= 'lsass.exe'` in the documented LSASS-dump
+  # rule). `GrantedAccess` maps to `ps.access.mask.names`, the
+  # human-readable slice of access-right names that Sigma rules
+  # typically test against (`ps.access.mask` exposes the raw mask
+  # value if needed).
   - id: fibratus_process_access_fields
     type: field_name_mapping
     mapping:
       SourceImage: ps.exe
       SourceProcessId: ps.pid
+      TargetImage: ps.sibling.exe
+      TargetProcessId: ps.sibling.pid
+      GrantedAccess: ps.access.mask.names
     rule_conditions:
       - type: logsource
         category: process_access
