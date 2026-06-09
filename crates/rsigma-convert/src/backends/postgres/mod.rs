@@ -169,6 +169,10 @@ pub struct PostgresBackend {
     pub database: Option<String>,
     /// Enable TimescaleDB-specific features.
     pub timescaledb: bool,
+    /// Correlation method selected via the `correlation_method` option
+    /// (`sliding`/`tumbling`/`session`), mirroring pySigma's
+    /// `correlation_methods`. `None` falls back to each rule's own `window`.
+    pub correlation_method: Option<String>,
 }
 
 impl PostgresBackend {
@@ -182,6 +186,7 @@ impl PostgresBackend {
             schema: None,
             database: None,
             timescaledb: false,
+            correlation_method: None,
         }
     }
 
@@ -211,7 +216,40 @@ impl PostgresBackend {
         if let Some(v) = options.get("case_sensitive_re") {
             backend.case_sensitive_re = v == "true";
         }
+        if let Some(v) = options.get("correlation_method") {
+            backend.correlation_method = Some(v.clone());
+        }
         backend
+    }
+
+    /// Resolve the effective window mode for a correlation conversion.
+    ///
+    /// The `correlation_method` backend option, when set, is the converting
+    /// user's explicit choice and overrides the rule's own `window` hint;
+    /// otherwise the rule's `window` (default `sliding`) is used. An option that
+    /// is not one of [`Self::correlation_methods`] is rejected.
+    fn resolve_window_mode(&self, rule: &CorrelationRule) -> Result<WindowMode> {
+        match self.correlation_method.as_deref() {
+            None => Ok(rule.window),
+            Some(method) => {
+                if !self.correlation_methods().iter().any(|(n, _)| *n == method) {
+                    let available = self
+                        .correlation_methods()
+                        .iter()
+                        .map(|(n, _)| *n)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(ConvertError::UnsupportedCorrelation(format!(
+                        "unknown correlation_method '{method}'; available: {available}"
+                    )));
+                }
+                method.parse::<WindowMode>().map_err(|_| {
+                    ConvertError::UnsupportedCorrelation(format!(
+                        "correlation_method '{method}' has no window mapping"
+                    ))
+                })
+            }
+        }
     }
 
     /// Resolve the fully qualified table name `[schema.]table` using this
@@ -420,6 +458,7 @@ impl PostgresBackend {
             schema: self.schema.clone(),
             database: self.database.clone(),
             timescaledb: self.timescaledb,
+            correlation_method: self.correlation_method.clone(),
         }
     }
 
@@ -963,6 +1002,27 @@ impl Backend for PostgresBackend {
         true
     }
 
+    fn correlation_methods(&self) -> &[(&str, &str)] {
+        &[
+            (
+                "sliding",
+                "Trailing per-event window (default; preserves existing SQL)",
+            ),
+            (
+                "tumbling",
+                "Fixed boundary-aligned buckets (time_bucket/date_bin)",
+            ),
+            (
+                "session",
+                "Gaps-and-islands sessionization (requires a gap)",
+            ),
+        ]
+    }
+
+    fn default_correlation_method(&self) -> &str {
+        "sliding"
+    }
+
     fn convert_correlation_rule_with_warnings(
         &self,
         rule: &CorrelationRule,
@@ -1026,15 +1086,19 @@ impl Backend for PostgresBackend {
         let (cte_prefix, source_table, time_filter) =
             self.build_correlation_source(&rule.rules, &rule_queries, &table, ts, window_secs);
 
-        // `window` (sliding/tumbling/session) selects the windowing strategy.
-        // `sliding` (the default, also what an absent `window` resolves to)
-        // preserves the existing per-output_format behavior, so existing rules
-        // are unaffected. `tumbling` and `session` are opt-in.
+        // The windowing strategy (sliding/tumbling/session). The
+        // `correlation_method` option is the converting user's explicit choice
+        // (pySigma-style) and overrides the rule's own `window` hint; otherwise
+        // the rule's `window` is used. `sliding` (the default, also what an
+        // absent `window` resolves to) preserves the existing per-output_format
+        // behavior, so existing rules are unaffected. `tumbling` and `session`
+        // are opt-in.
+        let window = self.resolve_window_mode(rule)?;
         let temporal = matches!(
             rule.correlation_type,
             CorrelationType::Temporal | CorrelationType::TemporalOrdered
         );
-        if matches!(rule.window, WindowMode::Tumbling) {
+        if matches!(window, WindowMode::Tumbling) {
             let query = if temporal {
                 self.build_temporal_tumbling(
                     rule,
@@ -1059,7 +1123,7 @@ impl Backend for PostgresBackend {
             };
             return Ok(vec![query]);
         }
-        if matches!(rule.window, WindowMode::Session) {
+        if matches!(window, WindowMode::Session) {
             let gap_secs = rule.gap.as_ref().map(|g| g.seconds).ok_or_else(|| {
                 ConvertError::UnsupportedCorrelation("session window requires a 'gap'".into())
             })?;

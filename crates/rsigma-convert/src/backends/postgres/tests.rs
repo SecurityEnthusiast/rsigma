@@ -2590,6 +2590,79 @@ correlation:
 }
 
 #[test]
+fn test_correlation_methods_listed() {
+    let backend = PostgresBackend::new();
+    let names: Vec<&str> = backend
+        .correlation_methods()
+        .iter()
+        .map(|(n, _)| *n)
+        .collect();
+    assert_eq!(names, ["sliding", "tumbling", "session"]);
+    assert_eq!(backend.default_correlation_method(), "sliding");
+}
+
+#[test]
+fn test_correlation_method_option_overrides_rule_window() {
+    // A sliding rule converted with `-O correlation_method=tumbling` renders as
+    // a tumbling bucket, regardless of the rule's own window.
+    let yaml = r#"
+title: Method override
+correlation:
+    type: event_count
+    rules:
+        - a
+    group-by:
+        - User
+    timespan: 10m
+    window: sliding
+    condition:
+        gte: 5
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    let opts = std::collections::HashMap::from([(
+        "correlation_method".to_string(),
+        "tumbling".to_string(),
+    )]);
+    let backend = PostgresBackend::from_options(&opts);
+    let q = &backend
+        .convert_correlation_rule(
+            &collection.correlations[0],
+            "default",
+            &PipelineState::default(),
+        )
+        .unwrap()[0];
+    assert!(q.contains("date_bin('600 seconds'"), "{q}");
+}
+
+#[test]
+fn test_unknown_correlation_method_errors() {
+    let yaml = r#"
+title: Bad method
+correlation:
+    type: event_count
+    rules:
+        - a
+    group-by:
+        - User
+    timespan: 10m
+    condition:
+        gte: 5
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    let opts = std::collections::HashMap::from([(
+        "correlation_method".to_string(),
+        "rolling".to_string(),
+    )]);
+    let backend = PostgresBackend::from_options(&opts);
+    let err = backend.convert_correlation_rule(
+        &collection.correlations[0],
+        "default",
+        &PipelineState::default(),
+    );
+    assert!(matches!(err, Err(ConvertError::UnsupportedCorrelation(_))));
+}
+
+#[test]
 fn test_absent_window_keeps_legacy_aggregate() {
     // No `window` attribute: output must be unchanged from before the feature
     // (relative-filter aggregate, no date_bin/session machinery).

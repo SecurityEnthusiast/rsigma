@@ -246,6 +246,22 @@ pub trait Backend: Send + Sync {
         false
     }
 
+    /// Correlation generation methods this backend offers, as
+    /// `(name, description)` pairs, mirroring pySigma's `correlation_methods`.
+    ///
+    /// The converting user selects one with the `correlation_method` backend
+    /// option, which overrides a rule's own `window` hint for that conversion.
+    /// An empty slice (the default) means the backend exposes no per-conversion
+    /// choice.
+    fn correlation_methods(&self) -> &[(&str, &str)] {
+        &[]
+    }
+
+    /// The correlation method used when the converting user selects none.
+    fn default_correlation_method(&self) -> &str {
+        "default"
+    }
+
     /// Convert a correlation rule, discarding any non-fatal warnings.
     ///
     /// Convenience wrapper over [`convert_correlation_rule_with_warnings`]; the
