@@ -289,12 +289,18 @@ transformations:
         product: windows
 
   # --- Create remote thread ---
+  #
+  # Fibratus does not expose a `thread.image` field for the target
+  # process's executable on a CreateThread event, only `thread.pid`
+  # (the cross-process pointer that `create_remote_thread` macro
+  # already uses: `evt.pid != thread.pid`). Sigma rules that
+  # reference `TargetImage` will fail conversion with an unsupported
+  # field rather than emit a renamed field Fibratus does not know.
   - id: fibratus_create_remote_thread_fields
     type: field_name_mapping
     mapping:
       SourceImage: ps.exe
       SourceProcessId: ps.pid
-      TargetImage: thread.image
       TargetProcessId: thread.pid
       StartAddress: thread.start_address
       StartModule: thread.start_address.module
@@ -338,14 +344,21 @@ transformations:
         product: windows
 
   # --- Process access ---
+  #
+  # Only the source-process fields are renamed here. The
+  # `ps.access.*` namespace is real (the `open_process` macro uses
+  # `ps.access.status = 'Success'`), but the specific subfields a
+  # Sigma `TargetImage`/`TargetProcessId`/`GrantedAccess` would map
+  # to are not documented in the Fibratus filter-field reference at
+  # the time of writing. Drop them rather than emit field names
+  # Fibratus does not know; Sigma rules that reference those fields
+  # will fail conversion with an unsupported field, which is more
+  # honest than silently emitting incorrect mappings.
   - id: fibratus_process_access_fields
     type: field_name_mapping
     mapping:
       SourceImage: ps.exe
       SourceProcessId: ps.pid
-      TargetImage: ps.access.image
-      TargetProcessId: ps.access.pid
-      GrantedAccess: ps.access.mask
     rule_conditions:
       - type: logsource
         category: process_access

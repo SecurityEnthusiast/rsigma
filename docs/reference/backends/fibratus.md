@@ -76,9 +76,9 @@ The pipeline maps logsource categories to `evt.name` discriminators and renames 
 | `registry_add` | `RegCreateKey` | `TargetObject -> registry.path` |
 | `registry_delete` | `RegDeleteKey` | `TargetObject -> registry.path` |
 | `pipe_created` | `CreateFile` + `file.type = 'Pipe'` | `PipeName -> file.name` |
-| `create_remote_thread` | `CreateThread` | `SourceImage -> ps.exe`, `TargetImage -> thread.image`, `StartAddress -> thread.start_address` |
+| `create_remote_thread` | `CreateThread` | `SourceImage -> ps.exe`, `SourceProcessId -> ps.pid`, `TargetProcessId -> thread.pid`, `StartAddress -> thread.start_address`, `StartModule -> thread.start_address.module`, `StartFunction -> thread.start_address.symbol` (no `thread.image` field exists; Sigma `TargetImage` rules fail conversion) |
 | `driver_load` | `LoadModule` | `ImageLoaded -> image.path`, `Signed -> image.signature.exists` |
-| `process_access` | `OpenProcess` | `SourceImage -> ps.exe`, `TargetImage -> ps.access.image`, `GrantedAccess -> ps.access.mask` |
+| `process_access` | `OpenProcess` | `SourceImage -> ps.exe`, `SourceProcessId -> ps.pid` only; the target-process fields (`TargetImage`, `TargetProcessId`, `GrantedAccess`) are not currently mapped because the Fibratus `ps.access.*` subfield names are not documented (Sigma rules using those fields fail conversion) |
 
 A final `change_logsource` transformation tags every matched rule with `product: windows`, `service: fibratus` so downstream tooling can re-route by service.
 
@@ -186,7 +186,8 @@ min-engine-version: 3.0.0
 
 - **Multi-value CIDR / regex.** The shared `default_convert_detection_item` dispatch only reads the first value when the field carries `|cidr` or `|re`. This affects every text backend in the workspace; the Fibratus backend inherits the gap. Workaround: emit one rule per CIDR/regex value, or split with `|` alternation inside a single regex pattern.
 - **`temporal_permute`.** The CLI option is reserved; the backend currently falls back to the ordered form for `temporal` correlations even with the flag set. Permutation emission is a follow-up.
-- **Macro recognition (`use_macros`).** The macro library is loaded at backend init, but the AST-level recognition pass that rewrites recognized sub-trees into idiomatic macro calls (`spawn_process`, `open_file`, ...) is not wired yet. The flag has no effect today; the rendered output uses the raw `evt.name = '...'` forms instead of macros.
+- **Macro recognition (`use_macros`).** The macro library is loaded at backend init, but the AST-level recognition pass that rewrites recognized sub-trees into idiomatic macro calls (`spawn_process`, `open_file`, ...) is not wired yet. The flag has no effect today; the rendered output uses the raw `evt.name imatches '...'` forms instead of macros.
+- **Cross-process target fields.** The `create_remote_thread` and `process_access` field mappings cover the source-process side and (for create_remote_thread) the start-address triple, but they do not rename Sigma's `TargetImage` field for either category. Fibratus exposes `thread.pid` for the target process on a `CreateThread` event and `ps.access.status` on `OpenProcess`, but no documented `thread.image` or `ps.access.image` field for the target executable. Rules that reference `TargetImage`/`TargetProcessId`/`GrantedAccess` will fail conversion with an unsupported-field error rather than emit an invented field name; pair them with a custom pipeline if your Fibratus build exposes these fields under different names.
 
 ## Related material
 
