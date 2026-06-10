@@ -353,6 +353,7 @@ pub(super) fn add_conditions(
     rule: &mut SigmaRule,
     conditions: &HashMap<String, SigmaValue>,
     negated: bool,
+    prepend: bool,
 ) {
     let items: Vec<DetectionItem> = conditions
         .iter()
@@ -379,7 +380,18 @@ pub(super) fn add_conditions(
         .detection
         .conditions
         .iter()
-        .map(|existing| ConditionExpr::And(vec![existing.clone(), cond_expr.clone()]))
+        .map(|existing| {
+            // `prepend` puts the added condition first (`new AND
+            // existing`) so left-to-right short-circuiting engines
+            // evaluate the cheap discriminator before the rule body;
+            // the default appends (`existing AND new`).
+            let parts = if prepend {
+                vec![cond_expr.clone(), existing.clone()]
+            } else {
+                vec![existing.clone(), cond_expr.clone()]
+            };
+            ConditionExpr::And(parts)
+        })
         .collect();
 }
 

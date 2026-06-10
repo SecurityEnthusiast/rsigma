@@ -51,6 +51,10 @@ transformations:
 
   - id: fibratus_process_creation_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: CreateProcess
     rule_conditions:
@@ -71,6 +75,10 @@ transformations:
 
   - id: fibratus_process_termination_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: TerminateProcess
     rule_conditions:
@@ -93,6 +101,10 @@ transformations:
 
   - id: fibratus_file_event_condition
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: CreateFile
     rule_conditions:
@@ -114,6 +126,10 @@ transformations:
 
   - id: fibratus_file_delete_condition
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: DeleteFile
     rule_conditions:
@@ -129,13 +145,11 @@ transformations:
       ProcessId: ps.pid
       User: ps.username
       DestinationIp: net.dip
-      DestinationHostname: net.host
       DestinationPort: net.dport
-      DestinationPortName: net.dport_name
+      DestinationPortName: net.dport.name
       SourceIp: net.sip
       SourcePort: net.sport
-      Protocol: net.l4_proto
-      Initiated: net.is_outbound
+      Protocol: net.l4.proto
     rule_conditions:
       - type: logsource
         category: network_connection
@@ -143,6 +157,10 @@ transformations:
 
   - id: fibratus_network_connection_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: Connect
     rule_conditions:
@@ -154,9 +172,9 @@ transformations:
   - id: fibratus_dns_query_fields
     type: field_name_mapping
     mapping:
-      QueryName: net.dns.name
-      QueryStatus: net.dns.rcode
-      QueryResults: net.dns.answers
+      QueryName: dns.name
+      QueryStatus: dns.rcode
+      QueryResults: dns.answers
       Image: ps.exe
       ProcessId: ps.pid
     rule_conditions:
@@ -166,6 +184,10 @@ transformations:
 
   - id: fibratus_dns_query_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: QueryDns
     rule_conditions:
@@ -174,18 +196,22 @@ transformations:
         product: windows
 
   # --- Image / DLL load ---
+  #
+  # Fibratus 3.0.0 deprecated the `image.*` namespace in favor of
+  # `module.*` for loaded executables/DLLs. `SignatureStatus`, `Hashes`,
+  # and `Imphash` have no `module.*` field and are dropped (Sigma rules
+  # using them under this logsource fail conversion rather than emit a
+  # field the loader rejects); `OriginalFileName` maps to the PE
+  # metadata field `pe.file.name`.
   - id: fibratus_image_load_fields
     type: field_name_mapping
     mapping:
-      ImageLoaded: image.path
-      OriginalFileName: image.path
+      ImageLoaded: module.path
+      OriginalFileName: pe.file.name
       Image: ps.exe
       ProcessId: ps.pid
-      Signed: image.signature.exists
-      SignatureStatus: image.signature.status
-      Signature: image.signature.subject
-      Hashes: image.hashes
-      Imphash: image.imphash
+      Signed: module.signature.exists
+      Signature: module.signature.subject
     rule_conditions:
       - type: logsource
         category: image_load
@@ -193,6 +219,10 @@ transformations:
 
   - id: fibratus_image_load_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: LoadModule
     rule_conditions:
@@ -206,7 +236,6 @@ transformations:
     mapping:
       TargetObject: registry.path
       Details: registry.value
-      EventType: registry.operation
       Image: ps.exe
       ProcessId: ps.pid
     rule_conditions:
@@ -228,6 +257,10 @@ transformations:
 
   - id: fibratus_registry_set_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: RegSetValue
     rule_conditions:
@@ -248,6 +281,10 @@ transformations:
 
   - id: fibratus_registry_add_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: RegCreateKey
     rule_conditions:
@@ -268,6 +305,10 @@ transformations:
 
   - id: fibratus_registry_delete_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: RegDeleteKey
     rule_conditions:
@@ -289,6 +330,10 @@ transformations:
 
   - id: fibratus_pipe_created_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: CreateFile
       file.type: Pipe
@@ -321,6 +366,10 @@ transformations:
 
   - id: fibratus_create_remote_thread_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: CreateThread
     rule_conditions:
@@ -329,15 +378,17 @@ transformations:
         product: windows
 
   # --- Driver load ---
+  #
+  # Same `image.*` -> `module.*` migration as image_load; the loaded
+  # driver is a module (`module.is_driver` is true). `SignatureStatus`
+  # and `Hashes` have no `module.*` equivalent and are dropped.
   - id: fibratus_driver_load_fields
     type: field_name_mapping
     mapping:
-      ImageLoaded: image.path
-      Image: image.path
-      Signed: image.signature.exists
-      SignatureStatus: image.signature.status
-      Signature: image.signature.subject
-      Hashes: image.hashes
+      ImageLoaded: module.path
+      Image: module.path
+      Signed: module.signature.exists
+      Signature: module.signature.subject
     rule_conditions:
       - type: logsource
         category: driver_load
@@ -345,6 +396,10 @@ transformations:
 
   - id: fibratus_driver_load_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: LoadModule
     rule_conditions:
@@ -377,6 +432,10 @@ transformations:
 
   - id: fibratus_process_access_event
     type: add_condition
+    # Put the event-name discriminator first so Fibratus's
+    # left-to-right evaluation short-circuits on the cheapest, most
+    # selective predicate before the rule body.
+    prepend: true
     conditions:
       evt.name: OpenProcess
     rule_conditions:

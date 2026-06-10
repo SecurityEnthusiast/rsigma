@@ -225,9 +225,14 @@ fn parse_transformation(obj: &yaml_serde::Mapping) -> Result<Transformation> {
                 .get(ykey("negated"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            let prepend = obj
+                .get(ykey("prepend"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             Ok(Transformation::AddCondition {
                 conditions,
                 negated,
+                prepend,
             })
         }
 

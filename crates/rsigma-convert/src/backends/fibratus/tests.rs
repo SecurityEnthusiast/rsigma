@@ -822,6 +822,12 @@ detection:
     assert_eq!(q.len(), 1);
     let out = &q[0];
     assert!(out.contains("spawn_process"), "got: {out}");
+    // The event predicate is emitted first (the pipeline prepends it)
+    // so Fibratus short-circuits on the cheapest discriminator.
+    assert!(
+        out.starts_with("spawn_process"),
+        "event predicate must come first, got: {out}",
+    );
     // On a Fibratus 3.0.0 `CreateProcess` event `ps.*` is the created
     // (child) process (Sigma `Image` -> `ps.exe`, Sigma `CommandLine`
     // -> `ps.cmdline`) and the spawning process is `ps.parent.*`. The
@@ -863,6 +869,67 @@ detection:
     assert!(out.contains("connect_socket"), "got: {out}");
     assert!(
         out.contains("cidr_contains(net.dip, '10.0.0.0/8')"),
+        "got: {out}",
+    );
+}
+
+#[test]
+fn pipeline_routes_dns_query_with_dns_namespace() {
+    use rsigma_eval::pipeline::{apply_pipelines_with_state, builtin::resolve_builtin};
+
+    let yaml = r#"
+title: Suspicious DNS
+logsource:
+  category: dns_query
+  product: windows
+detection:
+  selection:
+    QueryName|endswith: '.evil.test'
+  condition: selection
+"#;
+    let mut collection = rsigma_parser::parse_sigma_yaml(yaml).unwrap();
+    let pipeline = resolve_builtin("fibratus_windows").unwrap().unwrap();
+    let backend = FibratusBackend::new();
+    let rule = &mut collection.rules[0];
+    let state = apply_pipelines_with_state(&[pipeline], rule).unwrap();
+    let q = backend.convert_rule(rule, "expr", &state).unwrap();
+
+    let out = &q[0];
+    // `QueryName` maps to the `dns.name` field (not the invalid
+    // `net.dns.*`), and the `QueryDns` event is recognized as the
+    // `query_dns` macro and emitted first.
+    assert!(out.starts_with("query_dns"), "got: {out}");
+    assert!(
+        out.contains("dns.name iendswith '.evil.test'"),
+        "got: {out}"
+    );
+}
+
+#[test]
+fn pipeline_routes_image_load_with_module_namespace() {
+    use rsigma_eval::pipeline::{apply_pipelines_with_state, builtin::resolve_builtin};
+
+    let yaml = r#"
+title: Unsigned module load
+logsource:
+  category: image_load
+  product: windows
+detection:
+  selection:
+    ImageLoaded|endswith: '\evil.dll'
+  condition: selection
+"#;
+    let mut collection = rsigma_parser::parse_sigma_yaml(yaml).unwrap();
+    let pipeline = resolve_builtin("fibratus_windows").unwrap().unwrap();
+    let backend = FibratusBackend::new();
+    let rule = &mut collection.rules[0];
+    let state = apply_pipelines_with_state(&[pipeline], rule).unwrap();
+    let q = backend.convert_rule(rule, "expr", &state).unwrap();
+
+    let out = &q[0];
+    // `image.*` is deprecated; `ImageLoaded` maps to `module.path`.
+    assert!(
+        out.contains(r"module.path iendswith '\\evil.dll'"),
         "got: {out}",
     );
 }

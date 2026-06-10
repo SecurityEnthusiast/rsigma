@@ -72,16 +72,20 @@ The pipeline maps logsource categories to `evt.name` discriminators and renames 
 | `process_termination` | `TerminateProcess` | `Image -> ps.exe`, `ProcessId -> ps.pid` |
 | `file_event` | `CreateFile` | `TargetFilename -> file.path`, `Image -> ps.exe` |
 | `file_delete` | `DeleteFile` | `TargetFilename -> file.path` |
-| `network_connection` | `Connect` | `DestinationIp -> net.dip`, `DestinationPort -> net.dport`, `SourceIp -> net.sip`, `Initiated -> net.is_outbound` |
-| `dns_query` | `QueryDns` | `QueryName -> net.dns.name`, `QueryStatus -> net.dns.rcode`, `QueryResults -> net.dns.answers` |
-| `image_load` | `LoadModule` | `ImageLoaded -> image.path`, `Signed -> image.signature.exists`, `Hashes -> image.hashes` |
+| `network_connection` | `Connect` | `DestinationIp -> net.dip`, `DestinationPort -> net.dport`, `DestinationPortName -> net.dport.name`, `SourceIp -> net.sip`, `Protocol -> net.l4.proto` |
+| `dns_query` | `QueryDns` | `QueryName -> dns.name`, `QueryStatus -> dns.rcode`, `QueryResults -> dns.answers` |
+| `image_load` | `LoadModule` | `ImageLoaded -> module.path`, `OriginalFileName -> pe.file.name`, `Signed -> module.signature.exists`, `Signature -> module.signature.subject` |
 | `registry_set` | `RegSetValue` | `TargetObject -> registry.path`, `Details -> registry.value` |
 | `registry_add` | `RegCreateKey` | `TargetObject -> registry.path` |
 | `registry_delete` | `RegDeleteKey` | `TargetObject -> registry.path` |
 | `pipe_created` | `CreateFile` + `file.type = 'Pipe'` | `PipeName -> file.name` |
 | `create_remote_thread` | `CreateThread` | `SourceImage -> ps.exe`, `SourceProcessId -> ps.pid`, `TargetProcessId -> thread.pid`, `StartAddress -> thread.start_address`, `StartModule -> thread.start_address.module`, `StartFunction -> thread.start_address.symbol` (no `thread.image` field exists on `CreateThread` events; Sigma `TargetImage` rules fail conversion under this logsource) |
-| `driver_load` | `LoadModule` | `ImageLoaded -> image.path`, `Signed -> image.signature.exists` |
+| `driver_load` | `LoadModule` | `ImageLoaded -> module.path`, `Signed -> module.signature.exists`, `Signature -> module.signature.subject` |
 | `process_access` | `OpenProcess` | `SourceImage -> ps.exe`, `SourceProcessId -> ps.pid` (the caller); `TargetImage -> evt.arg[exe]`, `TargetProcessId -> evt.arg[pid]` (the opened process, exposed as event arguments; the upstream 3.0.0 LSASS-access rule tests `evt.arg[exe] imatches '?:\Windows\System32\lsass.exe'`); `GrantedAccess -> ps.access.mask.names` (named access-right slice) |
+
+Field names target the Fibratus 3.0.0 registry. The legacy `image.*` namespace is deprecated in favor of `module.*` for loaded executables/DLLs, and DNS fields live under `dns.*` (not `net.dns.*`). Sigma fields with no 3.0.0 equivalent (`SignatureStatus`, `Hashes`, `Imphash` under `image_load`/`driver_load`; `DestinationHostname`, `Initiated` under `network_connection`) are intentionally not mapped, so a rule that depends on one fails conversion rather than emitting a field the loader rejects.
+
+The pipeline injects the `evt.name` discriminator as the *first* condition (via `add_condition`'s `prepend: true`), so the emitted rule leads with the cheapest, most selective predicate (`spawn_process and ...`) and Fibratus short-circuits before evaluating the rest of the rule body.
 
 A final `change_logsource` transformation tags every matched rule with `product: windows`, `service: fibratus` so downstream tooling can re-route by service.
 
@@ -132,19 +136,19 @@ labels:
   tactic.name: Execution
   tactic.ref: 'https://attack.mitre.org/tactics/TA0002/'
 condition: >
-  ps.exe iendswith '\\cmd.exe' and ps.parent.exe iendswith '\\explorer.exe'
-  and ps.cmdline icontains 'whoami' and spawn_process
+  spawn_process and ps.exe iendswith '\\cmd.exe'
+  and ps.parent.exe iendswith '\\explorer.exe' and ps.cmdline icontains 'whoami'
 min-engine-version: 3.0.0
 ```
 
-The trailing `spawn_process` is the macro recognizer rewriting the raw `evt.name = 'CreateProcess'` clause injected by the pipeline; set `-O use_macros=false` to keep the raw form.
+The leading `spawn_process` is the macro recognizer rewriting the raw `evt.name = 'CreateProcess'` clause the pipeline injects first; set `-O use_macros=false` to keep the raw `evt.name = 'CreateProcess'` form.
 
 ### `expr`
 
 Filter expression only, no YAML envelope. Useful for piping into ad-hoc Fibratus run commands:
 
 ```text
-ps.exe iendswith '\\cmd.exe' and ps.parent.exe iendswith '\\explorer.exe' and ps.cmdline icontains 'whoami' and spawn_process
+spawn_process and ps.exe iendswith '\\cmd.exe' and ps.parent.exe iendswith '\\explorer.exe' and ps.cmdline icontains 'whoami'
 ```
 
 ## Correlation rules
