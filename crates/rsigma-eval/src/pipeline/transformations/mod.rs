@@ -59,6 +59,12 @@ pub enum Transformation {
         conditions: HashMap<String, SigmaValue>,
         /// If true, negate the added conditions.
         negated: bool,
+        /// If true, AND the added conditions *before* the existing
+        /// detection (`new AND existing`) instead of after. Backends
+        /// whose engines short-circuit left-to-right benefit from
+        /// putting a cheap, highly selective discriminator (e.g. an
+        /// event-name predicate) first.
+        prepend: bool,
     },
 
     /// Replace logsource fields.
@@ -259,8 +265,9 @@ impl Transformation {
             Transformation::AddCondition {
                 conditions,
                 negated,
+                prepend,
             } => {
-                helpers::add_conditions(rule, conditions, *negated);
+                helpers::add_conditions(rule, conditions, *negated, *prepend);
                 Ok(true)
             }
 

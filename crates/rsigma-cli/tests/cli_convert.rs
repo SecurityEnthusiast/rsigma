@@ -109,6 +109,101 @@ fn convert_with_format_timescaledb() {
 }
 
 #[test]
+fn convert_simple_rule_to_fibratus_expr_format() {
+    let rule = temp_file(".yml", SIMPLE_DETECTION);
+    let output = rsigma()
+        .args([
+            "backend",
+            "convert",
+            rule.path().to_str().unwrap(),
+            "--target",
+            "fibratus",
+            "--format",
+            "expr",
+            "-p",
+            "fibratus_windows",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // `evt.name: CreateProcess` injected by the `fibratus_windows`
+    // pipeline is recognized as the `spawn_process` macro under the
+    // default `-O use_macros=true`.
+    assert!(
+        stdout.contains("spawn_process"),
+        "stdout missing spawn_process: {stdout}",
+    );
+    // Sigma `process_creation.CommandLine` maps to `ps.cmdline` (the
+    // created process's command line; Fibratus 3.0.0 unified process
+    // attributes under the `ps.*` namespace).
+    assert!(
+        stdout.contains("ps.cmdline icontains 'whoami'"),
+        "stdout missing renamed field: {stdout}",
+    );
+}
+
+#[test]
+fn convert_simple_rule_to_fibratus_yaml_envelope() {
+    let rule = temp_file(".yml", SIMPLE_DETECTION);
+    let output = rsigma()
+        .args([
+            "backend",
+            "convert",
+            rule.path().to_str().unwrap(),
+            "--target",
+            "fibratus",
+            "-p",
+            "fibratus_windows",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.starts_with("name: Detect Whoami\n"));
+    assert!(stdout.contains("id: 00000000-0000-0000-0000-000000000100\n"));
+    assert!(stdout.contains("condition: "));
+    assert!(stdout.contains("min-engine-version: 3.0.0\n"));
+}
+
+#[test]
+fn convert_fibratus_action_option_appends_action_block() {
+    let rule = temp_file(".yml", SIMPLE_DETECTION);
+    let output = rsigma()
+        .args([
+            "backend",
+            "convert",
+            rule.path().to_str().unwrap(),
+            "--target",
+            "fibratus",
+            "-p",
+            "fibratus_windows",
+            "-O",
+            "action=kill",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("action:\n  - name: kill\n"),
+        "stdout missing action block: {stdout}",
+    );
+}
+
+#[test]
 fn convert_directory_of_rules() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("rule_a.yml"), SIMPLE_DETECTION).unwrap();
@@ -225,7 +320,7 @@ fn convert_invalid_target() {
     assert!(!output.status.success());
     assert_snapshot!(String::from_utf8_lossy(&output.stderr), @"
     Unknown target: nonexistent_backend
-    Available targets: postgres, lynxdb, test
+    Available targets: postgres, lynxdb, fibratus, test
     ");
 }
 
@@ -306,6 +401,7 @@ fn list_targets() {
     Available conversion targets:
       postgres  - PostgreSQL/TimescaleDB (aliases: postgresql, pg)
       lynxdb    - LynxDB log analytics engine
+      fibratus  - Fibratus kernel-event detection engine
       test      - Backend-neutral test backend
     ");
 }
@@ -341,6 +437,6 @@ fn list_formats_invalid_target() {
     assert!(!output.status.success());
     assert_snapshot!(String::from_utf8_lossy(&output.stderr), @"
     Unknown target: nonexistent
-    Available targets: postgres, lynxdb, test
+    Available targets: postgres, lynxdb, fibratus, test
     ");
 }

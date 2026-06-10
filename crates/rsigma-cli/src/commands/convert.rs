@@ -12,7 +12,7 @@ pub(crate) struct ConvertArgs {
     /// Path(s) to Sigma rule file(s) or directory
     pub rules: Vec<PathBuf>,
 
-    /// Target backend (e.g. test)
+    /// Target backend (e.g. postgres, lynxdb, fibratus, test)
     #[arg(short, long)]
     pub target: String,
 
@@ -50,13 +50,16 @@ fn get_backend(
             Box::new(rsigma_convert::backends::postgres::PostgresBackend::from_options(options))
         }
         "lynxdb" => Box::new(rsigma_convert::backends::lynxdb::LynxDbBackend::new()),
+        "fibratus" => {
+            Box::new(rsigma_convert::backends::fibratus::FibratusBackend::from_options(options))
+        }
         "test" => Box::new(rsigma_convert::backends::test::TextQueryTestBackend::new()),
         "test_mandatory_pipeline" => {
             Box::new(rsigma_convert::backends::test::MandatoryPipelineTestBackend::new())
         }
         _ => {
             eprintln!("Unknown target: {target}");
-            eprintln!("Available targets: postgres, lynxdb, test");
+            eprintln!("Available targets: postgres, lynxdb, fibratus, test");
             process::exit(crate::exit_code::CONFIG_ERROR);
         }
     }
@@ -194,12 +197,21 @@ pub(crate) fn cmd_convert(args: ConvertArgs, ctx: OutputCtx) {
                     ctx.format.as_str(),
                 );
             }
-            let all_queries: Vec<&str> = output_data
+            let all_queries: Vec<String> = output_data
                 .queries
                 .iter()
-                .flat_map(|r| r.queries.iter().map(|q| q.as_str()))
+                .flat_map(|r| r.queries.iter().cloned())
                 .collect();
-            let output_str = all_queries.join("\n");
+            // Defer to the backend so format-aware separators land in
+            // the joined output (e.g. `---\n` between YAML rule
+            // documents for the Fibratus backend, `;\n\n` between
+            // PostgreSQL `view`/`continuous_aggregate` statements).
+            let output_str = backend
+                .finalize_output(all_queries, &format)
+                .unwrap_or_else(|e| {
+                    eprintln!("Output finalization failed: {e}");
+                    process::exit(crate::exit_code::RULE_ERROR);
+                });
             write_output(&output_str, output.as_deref());
         }
         Err(e) => {
@@ -213,6 +225,7 @@ pub(crate) fn cmd_list_targets() {
     println!("Available conversion targets:");
     println!("  postgres  - PostgreSQL/TimescaleDB (aliases: postgresql, pg)");
     println!("  lynxdb    - LynxDB log analytics engine");
+    println!("  fibratus  - Fibratus kernel-event detection engine");
     println!("  test      - Backend-neutral test backend");
 }
 

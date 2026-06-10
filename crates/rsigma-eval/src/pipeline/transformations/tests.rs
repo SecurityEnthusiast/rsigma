@@ -347,6 +347,7 @@ fn test_add_condition() {
     let t = Transformation::AddCondition {
         conditions: conds,
         negated: false,
+        prepend: false,
     };
     t.apply(&mut rule, &mut state, &[], &[], false).unwrap();
 
@@ -357,10 +358,45 @@ fn test_add_condition() {
             .keys()
             .any(|k| k.starts_with("__pipeline_cond_"))
     );
-    // Check that conditions were wrapped
+    // Check that conditions were wrapped, with the original selection
+    // first and the added condition second (default append).
     assert_eq!(rule.detection.conditions.len(), 1);
     if let ConditionExpr::And(parts) = &rule.detection.conditions[0] {
         assert_eq!(parts.len(), 2);
+        assert!(
+            matches!(&parts[1], ConditionExpr::Identifier(id) if id.starts_with("__pipeline_cond_")),
+            "appended condition should be the second AND operand",
+        );
+    } else {
+        panic!("Expected And condition");
+    }
+}
+
+#[test]
+fn test_add_condition_prepend_puts_added_condition_first() {
+    let mut rule = make_test_rule();
+    let mut state = PipelineState::default();
+    let mut conds = HashMap::new();
+    conds.insert(
+        "evt.name".to_string(),
+        SigmaValue::String(SigmaString::new("CreateProcess")),
+    );
+    let t = Transformation::AddCondition {
+        conditions: conds,
+        negated: false,
+        prepend: true,
+    };
+    t.apply(&mut rule, &mut state, &[], &[], false).unwrap();
+
+    assert_eq!(rule.detection.conditions.len(), 1);
+    if let ConditionExpr::And(parts) = &rule.detection.conditions[0] {
+        assert_eq!(parts.len(), 2);
+        // prepend => the injected discriminator is the first operand.
+        assert!(
+            matches!(&parts[0], ConditionExpr::Identifier(id) if id.starts_with("__pipeline_cond_")),
+            "prepended condition should be the first AND operand, got: {:?}",
+            parts[0],
+        );
     } else {
         panic!("Expected And condition");
     }
@@ -1143,6 +1179,7 @@ fn test_add_condition_negated() {
     let t = Transformation::AddCondition {
         conditions: conds,
         negated: true,
+        prepend: false,
     };
     t.apply(&mut rule, &mut state, &[], &[], false).unwrap();
 
