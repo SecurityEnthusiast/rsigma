@@ -86,7 +86,7 @@ RSigma is the only Sigma toolkit that combines pySigma-style conversion with a r
 !!! quote "Detection Engineering Weekly #149 (March 2026)"
     "RSigma is essentially a SIEM. Building a tool like RSigma is challenging because the Sigma specification has evolved into a robust domain-specific language over the years."
 
-    Zack Allen, [DEW #149](https://www.detectionengineering.net/i/191079258/detection-engineering-gem)
+    [DEW #149](https://www.detectionengineering.net/i/191079258/detection-engineering-gem)
 
 !!! quote "tl;dr sec #320 (March 2026)"
     "Accurately evaluating the full spectrum of what Sigma rules can express is quite complex. It's pretty neat to read about how RSigma handles all of these conditional expressions, correlating across rules, etc."
