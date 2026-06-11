@@ -38,12 +38,21 @@ transformations:
     mapping:
       Image: ps.exe
       CommandLine: ps.cmdline
+      OriginalFileName: ps.pe.file.name
+      CurrentDirectory: ps.cwd
+      ProcessGuid: ps.uuid
       ProcessId: ps.pid
       User: ps.username
       LogonId: ps.sessionid
       ParentImage: ps.parent.exe
       ParentCommandLine: ps.parent.cmdline
       ParentProcessId: ps.parent.pid
+      ParentProcessGuid: ps.parent.uuid
+      IntegrityLevel: ps.token.integrity_level
+      Company: ps.pe.company
+      Description: ps.pe.description
+      Product: ps.pe.product
+      FileVersion: process.pe.file.version
     rule_conditions:
       - type: logsource
         category: process_creation
@@ -67,7 +76,22 @@ transformations:
     type: field_name_mapping
     mapping:
       Image: ps.exe
+      CommandLine: ps.cmdline
+      OriginalFileName: ps.pe.file.name
+      CurrentDirectory: ps.cwd
+      ProcessGuid: ps.uuid
       ProcessId: ps.pid
+      User: ps.username
+      LogonId: ps.sessionid
+      ParentImage: ps.parent.exe
+      ParentCommandLine: ps.parent.cmdline
+      ParentProcessId: ps.parent.pid
+      ParentProcessGuid: ps.parent.uuid
+      IntegrityLevel: ps.token.integrity_level
+      Company: ps.pe.company
+      Description: ps.pe.description
+      Product: ps.pe.product
+      FileVersion: process.pe.file.version
     rule_conditions:
       - type: logsource
         category: process_termination
