@@ -4,6 +4,14 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### `rstix`: Phase 2 slice 1 — model skeleton and common properties
+
+Phase 2 (Data Model + Serialization) begins with slice 1 of ~7. This slice is not releasable on its own.
+
+- **`model` module:** `ModelError` and `model::common` property containers — `SdoSroCommonProps` (required `spec_version`, `created`, `modified`; `confidence` as `Option<Confidence>`), `ScoCommonProps` (SCO-only fields), `ExternalReference` (STIX §2.5.2: non-empty `source_name` plus at least one of `description`, `url`, or `external_id` enforced on construction and deserialization), `GranularMarking` (`marking_ref` XOR `lang`; non-empty `selectors`), and `ExtensionMap` / `ExtensionType`.
+- **Leaf-type serde:** `serde_impls/` for `StixId`, timestamps, and `Confidence`; typed-ID serde in the `define_typed_id!` macro; inline `LanguageTag` serde.
+- **Tests:** fixture-backed integration tests in `tests/spec.rs` (`tests/fixtures/spec/common/`); core serde unit tests in `src/core/`.
+
 ### Configurable correlation state caps: `--max-state-entries` and a new per-group entry cap (#200)
 
 The correlation engine's memory bounds are now fully operator-configurable. Previously the global `(correlation, group-key)` entry cap (`max_state_entries`, default 100,000) was a library-only setting with no CLI surface, and nothing bounded the growth of a single group's window state, which grows with `timespan` x event rate on chatty groups.
