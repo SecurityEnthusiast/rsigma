@@ -1,7 +1,7 @@
 //! String-level auto-fix applier shared by the CLI, LSP, and MCP server.
 //!
 //! The linter attaches an optional [`Fix`](super::Fix) to each
-//! [`LintWarning`](super::LintWarning). This module turns those fixes into
+//! [`LintWarning`]. This module turns those fixes into
 //! concrete edits on a YAML source string using the `yamlpath`/`yamlpatch`
 //! crates, preserving comments and formatting outside the edited spans.
 //!
