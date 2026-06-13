@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### MCP server prerequisites: shared fix applier, reference data, and lint catalogue (#TBD)
+### MCP server prerequisites: shared fix applier, reference data, and lint catalogue (#207)
 
 Internal refactors that lift three pieces of lint and reference machinery into `rsigma-parser` so the CLI, the LSP, and the upcoming MCP server share one implementation. Behavior is unchanged for existing commands.
 
