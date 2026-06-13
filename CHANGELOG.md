@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### `backend convert`: per-rule file output when `--output` is a directory
+### `backend convert`: per-rule file output when `--output` is a directory (#205)
 
 `rsigma backend convert` can now write one file per converted rule instead of a single concatenated stream. When `--output` points at a directory (an existing directory, or a path with a trailing separator that is created on demand), each rule is written to its own file named after a snake_case slug of the rule title, with the backend's native extension. This was prompted by Fibratus rule-deployment ergonomics: the engine loads one YAML rule per file from its `Rules/` directory, so the split output drops straight in without hand-separating the `---`-joined stream.
 
