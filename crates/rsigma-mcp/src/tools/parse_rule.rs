@@ -40,3 +40,36 @@ impl RsigmaMcp {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{VALID_RULE, handler, src};
+
+    #[test]
+    fn parse_rule_happy_path() {
+        let v = handler().run_parse_rule(src(VALID_RULE)).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["rule_count"], 1);
+    }
+
+    #[test]
+    fn parse_rule_invalid_yaml_reports_error() {
+        let v = handler()
+            .run_parse_rule(src("title: [unterminated"))
+            .unwrap();
+        assert_eq!(v["ok"], false);
+        assert!(!v["parse_errors"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_rule_requires_input() {
+        let err = handler()
+            .run_parse_rule(SourceInput {
+                yaml: None,
+                path: None,
+            })
+            .unwrap_err();
+        assert!(format!("{err:?}").contains("required"));
+    }
+}

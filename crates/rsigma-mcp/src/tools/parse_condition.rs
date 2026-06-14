@@ -37,3 +37,20 @@ pub(crate) fn run_parse_condition(input: ConditionInput) -> Value {
         Err(e) => json!({ "ok": false, "error": e.to_string() }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_condition_happy_and_error() {
+        let ok = run_parse_condition(ConditionInput {
+            condition: "sel and not 1 of filter_*".to_string(),
+        });
+        assert_eq!(ok["ok"], true);
+        let bad = run_parse_condition(ConditionInput {
+            condition: "sel and and".to_string(),
+        });
+        assert_eq!(bad["ok"], false);
+    }
+}

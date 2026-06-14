@@ -33,3 +33,22 @@ pub(crate) fn run_list_builtin_pipelines() -> Value {
     }
     json!({ "ok": true, "pipelines": pipelines })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_builtin_pipelines_lists_three() {
+        let v = run_list_builtin_pipelines();
+        let names: Vec<&str> = v["pipelines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"ecs_windows"));
+        assert!(names.contains(&"fibratus_windows"));
+        assert!(names.contains(&"sysmon"));
+    }
+}

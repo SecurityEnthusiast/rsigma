@@ -86,3 +86,42 @@ impl RsigmaMcp {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tools::{VALID_RULE, handler, src};
+
+    #[test]
+    fn lint_rules_flags_invalid_status() {
+        // `expreimental` is within edit distance of `experimental`, so the
+        // finding carries a safe fix (fixable == true).
+        let yaml = "title: T\nstatus: expreimental\nlogsource:\n  category: test\ndetection:\n  sel:\n    a: b\n  condition: sel\nlevel: medium\n";
+        let v = handler().run_lint_rules(src(yaml)).unwrap();
+        assert_eq!(v["ok"], false);
+        let findings = v["files"][0]["findings"].as_array().unwrap();
+        assert!(
+            findings
+                .iter()
+                .any(|f| f["rule"] == "invalid_status" && f["fixable"] == true)
+        );
+    }
+
+    #[test]
+    fn lint_rules_clean_rule_ok() {
+        let v = handler().run_lint_rules(src(VALID_RULE)).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["summary"]["errors"], 0);
+    }
+
+    #[test]
+    fn golden_lint_rules() {
+        // A rule with a fixable typo and a missing field, for a stable finding set.
+        let yaml = "title: T\nStatus: test\nlogsource:\n  category: test\ndetection:\n  sel:\n    a: b\n  condition: sel\n";
+        let v = handler().run_lint_rules(src(yaml)).unwrap();
+        // `sort_maps` keeps the snapshot stable regardless of whether
+        // serde_json's `preserve_order` feature is unified in by the build.
+        insta::with_settings!({sort_maps => true}, {
+            insta::assert_json_snapshot!("lint_rules", v);
+        });
+    }
+}

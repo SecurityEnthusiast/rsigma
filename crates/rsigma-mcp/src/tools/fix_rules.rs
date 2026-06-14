@@ -103,3 +103,97 @@ impl RsigmaMcp {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::handler;
+
+    #[test]
+    fn fix_rules_applies_safe_fix() {
+        let yaml = "title: T\nStatus: test\nlogsource:\n  category: test\ndetection:\n  sel:\n    a: b\n  condition: sel\n";
+        let v = handler()
+            .run_fix_rules(FixInput {
+                yaml: Some(yaml.to_string()),
+                path: None,
+                lint_rules: vec![],
+                write: false,
+            })
+            .unwrap();
+        assert_eq!(v["ok"], true);
+        assert!(v["applied"].as_u64().unwrap() >= 1);
+        assert_eq!(v["skipped_unsafe"], 0);
+        assert_eq!(v["written"], false);
+        let fixed = v["fixed_yaml"].as_str().unwrap();
+        assert!(fixed.contains("status: test"));
+        assert!(!fixed.contains("Status: test"));
+    }
+
+    #[test]
+    fn fix_rules_lint_rule_filter() {
+        // Restrict to a lint rule that does not fire here, so nothing applies.
+        let yaml = "title: T\nStatus: test\nlogsource:\n  category: test\ndetection:\n  sel:\n    a: b\n  condition: sel\n";
+        let v = handler()
+            .run_fix_rules(FixInput {
+                yaml: Some(yaml.to_string()),
+                path: None,
+                lint_rules: vec!["duplicate_tags".to_string()],
+                write: false,
+            })
+            .unwrap();
+        assert_eq!(v["applied"], 0);
+        assert_eq!(v["changed"], false);
+    }
+
+    #[test]
+    fn fix_rules_write_without_path_is_error() {
+        let err = handler()
+            .run_fix_rules(FixInput {
+                yaml: Some("title: T\nStatus: test\n".to_string()),
+                path: None,
+                lint_rules: vec![],
+                write: true,
+            })
+            .unwrap_err();
+        assert!(format!("{err:?}").contains("write"));
+    }
+
+    #[test]
+    fn fix_rules_write_persists_to_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rule.yml");
+        std::fs::write(
+            &path,
+            "title: T\nStatus: test\nlogsource:\n  category: test\ndetection:\n  sel:\n    a: b\n  condition: sel\n",
+        )
+        .unwrap();
+
+        let v = handler()
+            .run_fix_rules(FixInput {
+                yaml: None,
+                path: Some(path.display().to_string()),
+                lint_rules: vec![],
+                write: true,
+            })
+            .unwrap();
+        assert_eq!(v["written"], true);
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert!(on_disk.contains("status: test"));
+    }
+
+    #[test]
+    fn golden_fix_rules() {
+        let yaml = "title: T\nStatus: test\ntags:\n  - attack.execution\n  - attack.execution\nlogsource:\n  category: test\ndetection:\n  sel:\n    a: b\n  condition: sel\n";
+        let v = handler()
+            .run_fix_rules(FixInput {
+                yaml: Some(yaml.to_string()),
+                path: None,
+                lint_rules: vec![],
+                write: false,
+            })
+            .unwrap();
+        insta::with_settings!({sort_maps => true}, {
+            insta::assert_json_snapshot!("fix_rules", v);
+        });
+    }
+}

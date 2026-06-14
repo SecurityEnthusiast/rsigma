@@ -64,3 +64,34 @@ impl RsigmaMcp {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::handler;
+
+    #[tokio::test]
+    async fn resolve_pipeline_builtin() {
+        let v = handler()
+            .run_resolve_pipeline(ResolvePipelineInput {
+                pipeline: "sysmon".to_string(),
+                resolve_sources: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(v["name"], "sysmon");
+        assert_eq!(v["is_dynamic"], false);
+    }
+
+    #[tokio::test]
+    async fn resolve_pipeline_unknown_is_error() {
+        let err = handler()
+            .run_resolve_pipeline(ResolvePipelineInput {
+                pipeline: "definitely_not_a_pipeline.yml".to_string(),
+                resolve_sources: false,
+            })
+            .await
+            .unwrap_err();
+        assert!(format!("{err:?}").contains("pipeline"));
+    }
+}

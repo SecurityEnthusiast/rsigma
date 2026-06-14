@@ -67,3 +67,28 @@ impl RsigmaMcp {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{VALID_RULE, handler};
+
+    #[test]
+    fn list_fields_reports_command_line() {
+        let v = handler()
+            .run_list_fields(FieldsInput {
+                yaml: Some(VALID_RULE.to_string()),
+                path: None,
+                pipelines: vec![],
+                include_filters: true,
+            })
+            .unwrap();
+        let names: Vec<&str> = v["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["field"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"CommandLine"));
+    }
+}

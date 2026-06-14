@@ -105,3 +105,57 @@ impl RsigmaMcp {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{GOLDEN_RULE, VALID_RULE, handler};
+
+    #[test]
+    fn convert_rules_postgres_and_unknown_target() {
+        let v = handler()
+            .run_convert_rules(ConvertInput {
+                yaml: Some(VALID_RULE.to_string()),
+                path: None,
+                target: "postgres".to_string(),
+                format: None,
+                pipelines: vec![],
+                options: HashMap::new(),
+                skip_unsupported: false,
+            })
+            .unwrap();
+        assert_eq!(v["ok"], true);
+        assert!(!v["queries"].as_array().unwrap().is_empty());
+
+        let err = handler()
+            .run_convert_rules(ConvertInput {
+                yaml: Some(VALID_RULE.to_string()),
+                path: None,
+                target: "nope".to_string(),
+                format: None,
+                pipelines: vec![],
+                options: HashMap::new(),
+                skip_unsupported: false,
+            })
+            .unwrap_err();
+        assert!(format!("{err:?}").contains("unknown target"));
+    }
+
+    #[test]
+    fn golden_convert_rules_postgres() {
+        let v = handler()
+            .run_convert_rules(ConvertInput {
+                yaml: Some(GOLDEN_RULE.to_string()),
+                path: None,
+                target: "postgres".to_string(),
+                format: None,
+                pipelines: vec![],
+                options: HashMap::new(),
+                skip_unsupported: false,
+            })
+            .unwrap();
+        insta::with_settings!({sort_maps => true}, {
+            insta::assert_json_snapshot!("convert_rules_postgres", v);
+        });
+    }
+}

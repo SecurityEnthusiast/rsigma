@@ -125,3 +125,36 @@ async fn resolve_pipeline_sources(
     }
     resolved_pipelines
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{VALID_RULE, handler};
+
+    #[tokio::test]
+    async fn validate_rules_ok_and_compile_error() {
+        let ok = handler()
+            .run_validate_rules(ValidateInput {
+                yaml: Some(VALID_RULE.to_string()),
+                path: None,
+                pipelines: vec![],
+                resolve_sources: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(ok["ok"], true);
+
+        let bad_yaml = "title: T\nlogsource:\n  category: test\ndetection:\n  sel:\n    a: b\n  condition: missing_ref\n";
+        let bad = handler()
+            .run_validate_rules(ValidateInput {
+                yaml: Some(bad_yaml.to_string()),
+                path: None,
+                pipelines: vec![],
+                resolve_sources: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(bad["ok"], false);
+        assert!(!bad["compile_errors"].as_array().unwrap().is_empty());
+    }
+}

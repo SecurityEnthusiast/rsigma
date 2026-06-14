@@ -40,3 +40,21 @@ pub(crate) fn run_list_backends() -> Result<Value, McpError> {
     }
     Ok(json!({ "ok": true, "backends": backends }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_backends_includes_postgres() {
+        let v = run_list_backends().unwrap();
+        let targets: Vec<&str> = v["backends"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["target"].as_str().unwrap())
+            .collect();
+        assert!(targets.contains(&"postgres"));
+        assert!(targets.contains(&"fibratus"));
+    }
+}

@@ -172,3 +172,132 @@ impl RsigmaMcp {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{GOLDEN_RULE, VALID_RULE, handler};
+
+    #[tokio::test]
+    async fn evaluate_events_detects_match() {
+        let v = handler()
+            .run_evaluate_events(EvaluateInput {
+                yaml: Some(VALID_RULE.to_string()),
+                path: None,
+                events: Some(vec![json!({ "CommandLine": "cmd /c whoami" })]),
+                events_path: None,
+                pipelines: vec![],
+                match_detail: Some("summary".to_string()),
+                timestamp_fields: vec![],
+                enrichers: None,
+                enrichers_path: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["summary"]["detection_matches"], 1);
+        assert_eq!(v["results"][0]["event_index"], 0);
+    }
+
+    #[tokio::test]
+    async fn evaluate_events_requires_events() {
+        let err = handler()
+            .run_evaluate_events(EvaluateInput {
+                yaml: Some(VALID_RULE.to_string()),
+                path: None,
+                events: None,
+                events_path: None,
+                pipelines: vec![],
+                match_detail: None,
+                timestamp_fields: vec![],
+                enrichers: None,
+                enrichers_path: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(format!("{err:?}").contains("events"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_events_with_template_enricher() {
+        let enrichers = r#"
+enrichers:
+  - id: runbook
+    kind: detection
+    type: template
+    inject_field: runbook_url
+    template: "https://wiki/${detection.rule.id}"
+"#;
+        let v = handler()
+            .run_evaluate_events(EvaluateInput {
+                yaml: Some(VALID_RULE.to_string()),
+                path: None,
+                events: Some(vec![json!({ "CommandLine": "cmd /c whoami" })]),
+                events_path: None,
+                pipelines: vec![],
+                match_detail: None,
+                timestamp_fields: vec![],
+                enrichers: Some(enrichers.to_string()),
+                enrichers_path: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(v["summary"]["enriched"], true);
+        let enrichments = &v["results"][0]["result"]["enrichments"];
+        assert_eq!(
+            enrichments["runbook_url"],
+            "https://wiki/8b1d8c97-5b3a-4d77-9b48-7c5f7c8b1a2a"
+        );
+    }
+
+    #[tokio::test]
+    async fn evaluate_events_invalid_enricher_config_errors() {
+        let enrichers = r#"
+enrichers:
+  - id: bad
+    kind: detection
+    type: template
+    inject_field: out
+    template: "https://wiki/${correlation.rule.id}"
+"#;
+        let err = handler()
+            .run_evaluate_events(EvaluateInput {
+                yaml: Some(VALID_RULE.to_string()),
+                path: None,
+                events: Some(vec![json!({ "CommandLine": "cmd /c whoami" })]),
+                events_path: None,
+                pipelines: vec![],
+                match_detail: None,
+                timestamp_fields: vec![],
+                enrichers: Some(enrichers.to_string()),
+                enrichers_path: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(format!("{err:?}").contains("namespace"));
+    }
+
+    #[tokio::test]
+    async fn golden_evaluate_events() {
+        let v = handler()
+            .run_evaluate_events(EvaluateInput {
+                yaml: Some(GOLDEN_RULE.to_string()),
+                path: None,
+                events: Some(vec![
+                    json!({ "CommandLine": "cmd /c whoami /priv" }),
+                    json!({ "CommandLine": "ipconfig /all" }),
+                ]),
+                events_path: None,
+                pipelines: vec![],
+                match_detail: Some("summary".to_string()),
+                timestamp_fields: vec![],
+                enrichers: None,
+                enrichers_path: None,
+            })
+            .await
+            .unwrap();
+        insta::with_settings!({sort_maps => true}, {
+            insta::assert_json_snapshot!("evaluate_events", v);
+        });
+    }
+}
