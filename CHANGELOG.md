@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### MCP server: `rsigma mcp serve` and the `rsigma-mcp` crate (#TBD)
+### MCP server: `rsigma mcp serve` and the `rsigma-mcp` crate (#208)
 
 A new [Model Context Protocol](https://modelcontextprotocol.io) server exposes the rsigma Sigma toolchain to AI agents (Cursor, Claude Code, ...) as structured tools. Instead of scraping CLI text, an agent calls typed tools and gets back JSON: ASTs, lint findings with spans and fix availability, evaluation matches, backend queries, and field inventories.
 
