@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### `rstix`: Phase 2 — STIX meta objects
+### `rstix`: Phase 2 — STIX meta objects (#213)
 
 Phase 2 adds STIX meta objects (not releasable on its own until `StixObject` dispatch and `Bundle` parsing land).
 
