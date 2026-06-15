@@ -912,7 +912,10 @@ detection:
         FibratusBackend::from_options(&[("use_macros".to_string(), "false".to_string())].into());
     let raw = raw_backend.convert_rule(rule, "expr", &state).unwrap();
     let raw_out = &raw[0];
-    assert!(raw_out.starts_with("evt.name = 'CreateFile'"), "got: {raw_out}");
+    assert!(
+        raw_out.starts_with("evt.name = 'CreateFile'"),
+        "got: {raw_out}"
+    );
     assert!(
         raw_out.contains("not (file.operation ~= 'OPEN')"),
         "expected OPEN disposition excluded, got: {raw_out}",

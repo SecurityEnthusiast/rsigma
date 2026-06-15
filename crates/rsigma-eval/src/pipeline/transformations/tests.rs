@@ -1278,7 +1278,10 @@ transformations:
     };
     assert!(*negated);
     assert!(*prepend);
-    assert_eq!(field_refs.get("evt.pid").map(String::as_str), Some("thread.pid"));
+    assert_eq!(
+        field_refs.get("evt.pid").map(String::as_str),
+        Some("thread.pid")
+    );
 }
 
 // =========================================================================
