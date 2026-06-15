@@ -958,6 +958,58 @@ detection:
 }
 
 #[test]
+fn pipeline_routes_create_remote_thread_to_macro() {
+    use rsigma_eval::pipeline::{apply_pipelines_with_state, builtin::resolve_builtin};
+
+    let yaml = r#"
+title: Remote Thread Created In KeePass.EXE
+logsource:
+  product: windows
+  category: create_remote_thread
+detection:
+  selection:
+    TargetImage|endswith: '\KeePass.exe'
+  condition: selection
+"#;
+    let mut collection = rsigma_parser::parse_sigma_yaml(yaml).unwrap();
+    let pipeline = resolve_builtin("fibratus_windows").unwrap().unwrap();
+    let rule = &mut collection.rules[0];
+    let state = apply_pipelines_with_state(&[pipeline], rule).unwrap();
+
+    // The CreateThread event plus the two cross-process guards collapse to
+    // the `create_remote_thread` macro (not the bare `create_thread`).
+    // `TargetImage` renames to the `evt.arg[exe]` event argument.
+    let backend = FibratusBackend::new();
+    let q = backend.convert_rule(rule, "expr", &state).unwrap();
+    let out = &q[0];
+    assert!(out.starts_with("create_remote_thread"), "got: {out}");
+    assert!(
+        !out.contains("create_thread and"),
+        "must not degrade to the bare create_thread macro, got: {out}",
+    );
+    assert!(
+        out.contains(r"evt.arg[exe] iendswith '\\KeePass.exe'"),
+        "got: {out}",
+    );
+
+    // With macros disabled the raw discriminator is emitted: the event
+    // name, the System-process guard, and the cross-process field guard.
+    let raw_backend =
+        FibratusBackend::from_options(&[("use_macros".to_string(), "false".to_string())].into());
+    let raw = raw_backend.convert_rule(rule, "expr", &state).unwrap();
+    let raw_out = &raw[0];
+    assert!(
+        raw_out.starts_with("evt.name = 'CreateThread'"),
+        "got: {raw_out}",
+    );
+    assert!(raw_out.contains("not (evt.pid = 4)"), "got: {raw_out}");
+    assert!(
+        raw_out.contains("not (evt.pid = thread.pid)"),
+        "got: {raw_out}",
+    );
+}
+
+#[test]
 fn pipeline_routes_dns_query_with_dns_namespace() {
     use rsigma_eval::pipeline::{apply_pipelines_with_state, builtin::resolve_builtin};
 

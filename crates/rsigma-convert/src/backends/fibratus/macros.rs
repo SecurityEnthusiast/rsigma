@@ -54,6 +54,18 @@ pub const EXPRESSION_MACROS: &[(&str, &str)] = &[
     ("query_dns", "evt.name = 'QueryDns'"),
     ("reply_dns", "evt.name = 'ReplyDns'"),
     // Multi-clause macros, matched as contiguous clause runs.
+    //
+    // `create_remote_thread` is `create_thread` plus the cross-process
+    // guards (`evt.pid != 4` excludes the System process; `evt.pid !=
+    // thread.pid` requires the target thread to live in a different
+    // process). Listed before the bare `create_thread` is irrelevant to
+    // matching (the recognizer tries longest clause runs first), but its
+    // inequality clauses are why the pipeline injects them as negated
+    // equalities.
+    (
+        "create_remote_thread",
+        "evt.name = 'CreateThread' and evt.pid != 4 and evt.pid != thread.pid",
+    ),
     (
         "open_file",
         "evt.name = 'CreateFile' and file.operation = 'OPEN' and file.status = 'Success'",
