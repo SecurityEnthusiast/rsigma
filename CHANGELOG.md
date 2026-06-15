@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Fibratus conversion: file and remote-thread macro fixes (#NNN)
+### Fibratus conversion: file and remote-thread macro fixes (#217)
 
 Three Fibratus conversion bugs reported by @rabbitstack are fixed, so the converted rules now use the idiomatic macros the upstream loader expects instead of raw or unmapped predicates.
 
