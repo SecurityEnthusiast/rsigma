@@ -167,52 +167,6 @@ Phase 2 validates STIX invariants at deserialize time (and via `new` / `validate
 | `ExtensionMap` | Public `insert()` mirrors `BTreeMap` semantics. | Programmatic extension assembly without reaching into the inner map. |
 | Round-trip helper (`tests/support/roundtrip.rs`) | Re-serialized JSON is compared to the fixture: **full equality** for standalone types; **subset equality** for common-property fixtures that carry extra SDO keys (`type`, `name`, …) the struct deliberately ignores until concrete SDO types land. | Catches dropped or renamed fields on types we own today without requiring full SDO structs for common-prop coverage. |
 
-### Pull request notes (meta objects)
-
-Copy the block below into the PR description when opening the meta-objects PR (`feat/rstix-phase2-meta-objects` → `main`):
-
-```markdown
-## Summary
-
-Phase 2 — STIX meta objects (`model::meta`):
-
-- `MarkingDefinition` (legacy TLP v1 + current TLP v2 encodings on STIX 2.1 objects, `is_non_versionable`, nine TLP UUID constants)
-- `ExtensionDefinition` (`created_by_ref` required per STIX §7.2.2)
-- `LanguageContent`
-- `MetaObject` enum (`#[non_exhaustive]`)
-
-Not releasable on its own until `StixObject` dispatch and `Bundle` parsing land.
-
-## Testing
-
-Two-layer layout (same as `model::common`):
-
-| Layer | Location | Purpose |
-| ----- | -------- | ------- |
-| Wire / JSON | `tests/spec.rs` + `tests/fixtures/spec/meta/` | Round-trip, reject fixtures, fixture subset compare |
-| Unit | `#[cfg(test)]` in `src/` | Invariants and normative pins without duplicating wire coverage |
-
-### TLP UUID constants
-
-Nine public `TLP1_*` / `TLP2_*` constants hold normative STIX `marking-definition` ids. Values are hardcoded because the spec assigns fixed UUIDs — same pattern as Phase 1 SCO ID golden vectors.
-
-| Check | What it validates |
-| ----- | ----------------- |
-| `constants_match_spec_ids` (unit, `marking_def.rs`) | All nine `pub const` values still equal spec literals (full-set regression pin). |
-| `marking_definition_round_trips_legacy_and_current_tlp_encodings` (`tests/spec.rs`) | Legacy TLP v1 + current TLP v2 fixtures (both STIX 2.1) parse, round-trip, ids match `TLP1_WHITE_ID` / `TLP2_CLEAR_ID`. |
-
-The unit pin does **not** replace wire tests: it covers ids without dedicated JSON fixtures yet. Wire tests prove serde and field mapping for representative TLP 1.x and 2.0 shapes. `constants_match_spec_ids` intentionally duplicates spec literals in the test body to catch const drift; that is acceptable because wire round-trips independently validate parsing for fixtures that exist.
-
-Full rationale: `crates/rstix/README.md` (Development Notes) and `docs/library/rstix.md` (Testing).
-
-## Test plan
-
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- [ ] `cargo test -p rstix --all-features`
-```
-
-
 ## License
 
 MIT License.

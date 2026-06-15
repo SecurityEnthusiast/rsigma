@@ -21,7 +21,7 @@ use crate::model::common::SdoSroCommonProps;
 ///   "modified": "2016-05-12T08:17:27.000Z",
 ///   "object_ref": "attack-pattern--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061",
 ///   "object_modified": false,
-///   "contents": { "de": { "name": "Speerphishing" } }
+///   "contents": { "de": { "name": "Spearphishing" } }
 /// }"#;
 /// let content: LanguageContent = serde_json::from_str(json)?;
 /// assert_eq!(content.object_ref.type_name(), "attack-pattern");
