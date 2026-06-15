@@ -21,4 +21,12 @@ pub enum ModelError {
     /// An `extension-definition` requires `created_by_ref` (STIX §7.2.2).
     #[error("extension definition requires created_by_ref")]
     ExtensionDefinitionMissingCreatedByRef,
+    /// JSON `type` does not match the struct being deserialized.
+    #[error("expected STIX type `{expected}`, got `{actual}`")]
+    UnexpectedObjectType {
+        /// Expected STIX `type` string.
+        expected: &'static str,
+        /// `type` value from the JSON document.
+        actual: String,
+    },
 }

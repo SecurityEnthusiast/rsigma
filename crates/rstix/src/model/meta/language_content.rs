@@ -1,6 +1,6 @@
 //! STIX `language-content` objects (STIX §7.2.4).
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::common::SdoSroCommonProps;
@@ -35,7 +35,11 @@ pub struct LanguageContent {
     /// STIX object type (`language-content`).
     #[cfg_attr(
         feature = "serde",
-        serde(rename = "type", default = "language_content_type")
+        serde(
+            rename = "type",
+            default = "language_content_type",
+            deserialize_with = "deserialize_language_content_type"
+        )
     )]
     object_type: String,
     /// SDO/SRO common properties.
@@ -46,7 +50,9 @@ pub struct LanguageContent {
     /// Whether `object_ref` points at the latest revision of the target object.
     pub object_modified: bool,
     /// Translations keyed by language tag, then by field name.
-    pub contents: HashMap<String, HashMap<String, serde_json::Value>>,
+    ///
+    /// Uses [`BTreeMap`] for stable JSON key order on serialization.
+    pub contents: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
 }
 
 impl LanguageContent {
@@ -57,6 +63,14 @@ impl LanguageContent {
 #[cfg(feature = "serde")]
 fn language_content_type() -> String {
     LanguageContent::TYPE_NAME.to_string()
+}
+
+#[cfg(feature = "serde")]
+fn deserialize_language_content_type<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    super::type_check::deserialize_stix_type_field(deserializer, LanguageContent::TYPE_NAME)
 }
 
 impl QueryableStixObject for LanguageContent {

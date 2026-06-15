@@ -81,7 +81,7 @@ Two layers, consistent across Phase 2:
 
 | Layer | Location | Purpose |
 | ----- | -------- | ------- |
-| **Wire / JSON** | `tests/spec.rs` + `tests/fixtures/spec/` | Deserialize → serialize → reparse; negative fixtures; compare re-serialized output against the fixture (subset compare when common-property fixtures carry extra SDO keys such as `type` or `name`). |
+| **Wire / JSON** | `tests/spec.rs` + `tests/fixtures/spec/` | Deserialize → serialize → reparse; negative fixtures; `roundtrip_strict` for complete types, subset `roundtrip` for common-property-only structs. |
 | **Unit** | `#[cfg(test)]` in `src/` | Invariants, normative constant pins, and parse smoke tests that do not need a dedicated fixture file (or that use `include_str!` for a single inline read). |
 
 Do not duplicate wire-format coverage in unit tests. Do not put fixture-backed integration tests under `src/test_support/`.
@@ -165,7 +165,7 @@ Phase 2 validates STIX invariants at deserialize time (and via `new` / `validate
 | `granular-marking` selectors | Field is **required** on deserialize (no `#[serde(default)]`); must be non-empty in `validate()`. | Empty or missing selectors are invalid; `with_marking_ref` / `with_lang` delegate to `new()` so the same rules apply programmatically. |
 | `ExtensionDefinition.created_by_ref` | Required on deserialize (`ExtensionDefinitionMissingCreatedByRef`). | STIX §7.2.2 requires the authoring identity reference for extension definitions. |
 | `ExtensionMap` | Public `insert()` mirrors `BTreeMap` semantics. | Programmatic extension assembly without reaching into the inner map. |
-| Round-trip helper (`tests/support/roundtrip.rs`) | Re-serialized JSON is compared to the fixture: **full equality** for standalone types; **subset equality** for common-property fixtures that carry extra SDO keys (`type`, `name`, …) the struct deliberately ignores until concrete SDO types land. | Catches dropped or renamed fields on types we own today without requiring full SDO structs for common-prop coverage. |
+| Round-trip helpers (`tests/support/roundtrip.rs`) | `roundtrip_strict`: re-serialized JSON must equal the fixture (complete types — meta objects, `ExternalReference`, `GranularMarking`, `ExtensionMap`). `roundtrip`: subset compare — every emitted field must match the fixture, extra fixture keys allowed, dropped fields not caught on object fixtures; use for `SdoSroCommonProps` / `ScoCommonProps` fixtures that carry unmodeled SDO keys until concrete SDO types land. | Strict mode catches dropped fields today; subset mode matches the Phase 2 common-prop testing contract from PR #201. |
 
 ## License
 

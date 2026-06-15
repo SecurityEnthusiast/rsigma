@@ -118,7 +118,11 @@ impl<'de> serde::Deserialize<'de> for ExtensionDefinition {
     {
         #[derive(serde::Deserialize)]
         struct Raw {
-            #[serde(rename = "type", default = "extension_definition_type")]
+            #[serde(
+                rename = "type",
+                default = "extension_definition_type",
+                deserialize_with = "deserialize_extension_definition_type"
+            )]
             object_type: String,
             #[serde(flatten)]
             common: SdoSroCommonProps,
@@ -175,9 +179,24 @@ mod tests {
             ModelError::ExtensionDefinitionMissingCreatedByRef
         );
     }
+
+    #[test]
+    fn rejects_wrong_type_field() {
+        let json = include_str!("../../../tests/fixtures/spec/meta/language-content.json");
+        let err = serde_json::from_str::<ExtensionDefinition>(json).unwrap_err();
+        assert!(err.to_string().contains("language-content"));
+    }
 }
 
 #[cfg(feature = "serde")]
 fn extension_definition_type() -> String {
     ExtensionDefinition::TYPE_NAME.to_string()
+}
+
+#[cfg(feature = "serde")]
+fn deserialize_extension_definition_type<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    super::type_check::deserialize_stix_type_field(deserializer, ExtensionDefinition::TYPE_NAME)
 }

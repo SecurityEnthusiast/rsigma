@@ -12,13 +12,17 @@
 //!   a bad edit to a `pub const` fails CI.
 //! - Wire round-trips in `tests/spec.rs`
 //!   (`meta/marking-definition-tlp-v1-white-stix21.json`,
-//!   `meta/marking-definition-tlp-v2-clear-stix21.json`): assert parsed ids match
-//!   [`TLP1_WHITE_ID`] and [`TLP2_CLEAR_ID`].
+//!   `meta/marking-definition-tlp-v2-clear-stix21.json`,
+//!   `meta/marking-definition-with-common-props-stix21.json`): TLP ids and §7.2.1
+//!   optional common properties.
 //!
 //! See `crates/rstix/README.md` (Development Notes) for the full testing rationale.
 
-use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
-use crate::model::common::ExtensionMap;
+use crate::core::{
+    IdentityId, MarkingDefinitionId, QueryValue, QueryableStixObject, SpecVersion, StixId,
+    StixTimestamp,
+};
+use crate::model::common::{ExtensionMap, ExternalReference, GranularMarking};
 
 /// TLP 1.x predefined marking-definition ids (legacy **encoding** on STIX 2.1 objects).
 ///
@@ -78,7 +82,14 @@ pub const TLP2_RED_ID: &str = "marking-definition--e828b379-4398-4577-93c8-9d3c7
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarkingDefinition {
     /// STIX object type (`marking-definition`).
-    #[cfg_attr(feature = "serde", serde(rename = "type", default = "default_type"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "type",
+            default = "default_type",
+            deserialize_with = "deserialize_marking_type"
+        )
+    )]
     object_type: String,
     /// Object identifier.
     pub id: StixId,
@@ -90,6 +101,12 @@ pub struct MarkingDefinition {
     pub spec_version: Option<SpecVersion>,
     /// Creation timestamp.
     pub created: StixTimestamp,
+    /// Identity that created the object (STIX §7.2.1 common property).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub created_by_ref: Option<IdentityId>,
     /// Legacy TLP 1.x / statement **encoding** (`definition_type` + `definition`).
     ///
     /// Deprecated for **new** markings in STIX 2.1 (prefer TLP 2.0 via [`Self::extensions`]).
@@ -113,6 +130,24 @@ pub struct MarkingDefinition {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub name: Option<String>,
+    /// External references (STIX §7.2.1 common property).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub external_references: Vec<ExternalReference>,
+    /// Object-level marking references (STIX §7.2.1 common property).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub object_marking_refs: Vec<MarkingDefinitionId>,
+    /// Granular markings (STIX §7.2.1 common property).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub granular_markings: Vec<GranularMarking>,
     /// TLP 2.0 and other extension payloads (current encoding for predefined TLP markings).
     #[cfg_attr(
         feature = "serde",
@@ -125,15 +160,26 @@ impl MarkingDefinition {
     /// STIX type name for marking definitions.
     pub const TYPE_NAME: &'static str = "marking-definition";
 
-    /// Marking definitions must not be updated after creation (STIX §7.2.1).
+    /// All marking definitions are non-versionable (STIX §7.2.1).
+    pub const IS_NON_VERSIONABLE: bool = true;
+
+    /// Returns [`Self::IS_NON_VERSIONABLE`] (invariant for every marking definition).
     pub const fn is_non_versionable(&self) -> bool {
-        true
+        Self::IS_NON_VERSIONABLE
     }
 }
 
 #[cfg(feature = "serde")]
 fn default_type() -> String {
     MarkingDefinition::TYPE_NAME.to_string()
+}
+
+#[cfg(feature = "serde")]
+fn deserialize_marking_type<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    super::type_check::deserialize_stix_type_field(deserializer, MarkingDefinition::TYPE_NAME)
 }
 
 impl QueryableStixObject for MarkingDefinition {
@@ -212,5 +258,12 @@ mod tests {
             TLP2_RED_ID,
             "marking-definition--e828b379-4398-4577-93c8-9d3c7c13d7b5"
         );
+    }
+
+    #[test]
+    fn rejects_wrong_type_field() {
+        let json = include_str!("../../../tests/fixtures/spec/meta/language-content.json");
+        let err = serde_json::from_str::<MarkingDefinition>(json).unwrap_err();
+        assert!(err.to_string().contains("marking-definition"));
     }
 }

@@ -25,7 +25,7 @@ Phase 2 (Data Model + Serialization) is **in progress**. The `model::common` and
 
 See [crate README — Development Notes](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#development-notes) for the full convention. Summary:
 
-- **Wire tests** (`tests/spec.rs`, `tests/fixtures/spec/`): JSON round-trip, reject fixtures, fixture subset comparison for common-property structs.
+- **Wire tests** (`tests/spec.rs`, `tests/fixtures/spec/`): JSON round-trip via `roundtrip_strict` (complete types) or subset `roundtrip` (common-property-only structs), plus reject fixtures.
 - **Unit tests** (`src/**` `#[cfg(test)]`): invariants and normative pins without duplicating wire coverage.
 
 ### STIX version vs TLP marking encoding
@@ -50,6 +50,8 @@ Nine public constants (`TLP1_*`, `TLP2_*`) hold the predefined STIX `marking-def
 | ----- | ----------------- |
 | `constants_match_spec_ids` (unit, `marking_def.rs`) | All nine `pub const` values still equal the spec literals (regression pin for the full set). |
 | `marking_definition_round_trips_legacy_and_current_tlp_encodings` (`tests/spec.rs`) | Legacy TLP v1 and current TLP v2 fixtures (both STIX 2.1) parse, round-trip; ids match `TLP1_WHITE_ID` / `TLP2_CLEAR_ID`. |
+| `marking_definition_round_trips_with_common_properties` (`tests/spec.rs`) | Rich fixture with `created_by_ref`, `object_marking_refs`, `external_references`, and `granular_markings` round-trips without field loss. |
+| `meta_types_reject_wrong_type_field` (`tests/spec.rs`) | Cross-type JSON rejected when `"type"` does not match the target meta struct. |
 
 The unit pin does not replace wire tests: it covers ids that do not yet have dedicated JSON fixtures. The wire tests prove serde and field mapping for representative TLP 1.x and 2.0 shapes.
 
@@ -61,7 +63,8 @@ rstix enforces STIX invariants at deserialize time (not deferred to a later vali
 - **`external-reference` §2.5.2:** non-empty `source_name` plus at least one detail field (`description`, `url`, or `external_id`).
 - **`granular-marking`:** required non-empty `selectors`; `marking_ref` xor `lang`.
 - **`ExtensionDefinition`:** required `created_by_ref` (STIX §7.2.2).
-- **Round-trip helper:** subset fixture compare for common-property structs that ignore extra SDO keys until concrete SDO types land.
+- **Meta object `type`:** deserialize rejects JSON whose `"type"` does not match the target struct.
+- **Round-trip helpers:** `roundtrip_strict` requires full fixture equality for complete types. Subset `roundtrip` — every emitted field must match the fixture, extra fixture keys allowed, dropped fields not caught on object fixtures; for common-property structs that ignore extra SDO keys until concrete SDO types land in a later Phase 2 milestone.
 
 ## Feature flags
 

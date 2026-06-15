@@ -6,10 +6,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ### `rstix`: Phase 2 — STIX meta objects
 
-Phase 2 adds STIX meta objects (not releasable on its own).
+Phase 2 adds STIX meta objects (not releasable on its own until `StixObject` dispatch and `Bundle` parsing land).
 
-- **`model::meta`:** `MarkingDefinition` (TLP 1.x and 2.0 formats, non-versionable, TLP UUID constants), `ExtensionDefinition` (`created_by_ref` required), `LanguageContent`, and the `MetaObject` enum.
-- **Tests:** fixture-backed round-trips in `tests/spec.rs` (`tests/fixtures/spec/meta/`); canonical legacy TLP v1 fixture (`marking-definition-tlp-v1-white-stix21.json`, `definition: {"tlp":"white"}`); unit pin for all nine TLP ids. STIX vs TLP encoding explained in `crates/rstix/README.md` and `docs/library/rstix.md`.
+- **`model::meta`:** `MarkingDefinition` (STIX §7.2.1 optional common properties — `created_by_ref`, `external_references`, `object_marking_refs`, `granular_markings`; legacy TLP 1.x and current TLP 2.0 encodings; `IS_NON_VERSIONABLE` / `is_non_versionable()`; nine TLP UUID constants), `ExtensionDefinition` (`created_by_ref` required per §7.2.2), `LanguageContent` (`contents` as nested `BTreeMap` for stable JSON key order), and the `MetaObject` enum (`#[non_exhaustive]`).
+- **Deserialize:** each meta type validates JSON `"type"` against `TYPE_NAME` in a single serde pass (`ModelError::UnexpectedObjectType`); no intermediate `serde_json::Value` parse.
+- **Tests:** `roundtrip_strict` for complete types (meta objects, `ExternalReference`, `GranularMarking`, `ExtensionMap`); subset `roundtrip` for `SdoSroCommonProps` / `ScoCommonProps` fixtures that carry unmodeled SDO keys. Fixtures under `tests/fixtures/spec/meta/` include minimal TLP markings, a rich marking-def with common properties, and cross-type reject coverage. Unit pins for all nine TLP ids.
+- **Docs:** STIX object model version vs TLP marking encoding in `crates/rstix/README.md` and `docs/library/rstix.md`.
 
 ## [0.16.0] - 2026-06-15
 
