@@ -2,6 +2,15 @@
 
 All notable changes to RSigma are documented in this file. Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma/releases).
 
+## [Unreleased]
+
+### `rstix`: Phase 2 — STIX meta objects
+
+Phase 2 adds STIX meta objects (not releasable on its own).
+
+- **`model::meta`:** `MarkingDefinition` (TLP 1.x and 2.0 formats, non-versionable, TLP UUID constants), `ExtensionDefinition` (`created_by_ref` required), `LanguageContent`, and the `MetaObject` enum.
+- **Tests:** fixture-backed round-trips in `tests/spec.rs` (`tests/fixtures/spec/meta/`); canonical legacy TLP v1 fixture (`marking-definition-tlp-v1-white-stix21.json`, `definition: {"tlp":"white"}`); unit pin for all nine TLP ids. STIX vs TLP encoding explained in `crates/rstix/README.md` and `docs/library/rstix.md`.
+
 ## [0.16.0] - 2026-06-15
 
 **TL;DR**
@@ -67,9 +76,9 @@ Three correctness fixes to the `fibratus_windows` pipeline shipped in #191, foun
 - **Thread events.** `create_remote_thread` maps `TargetImage` -> `evt.arg[exe]`, so a rule that scopes the injected-into process converts rather than dropping the field.
 - **Registry event scoping.** The `registry_event` logsource category now prepends an `evt.category = 'registry'` discriminator as its first condition, the same treatment the other categories already get. Fibratus rejects a rule at load time when it has no event-type scoping by name or category, so without this the converted `registry_event` rules would not load.
 
-### `rstix`: Phase 2 slice 1 — model skeleton and common properties (#201)
+### `rstix`: Phase 2 — model skeleton and common properties (#201)
 
-Phase 2 (Data Model + Serialization) begins with slice 1 of ~7. This slice is not releasable on its own.
+Phase 2 (Data Model + Serialization) adds the model skeleton and common property containers. This work is not releasable on its own.
 
 - **`model` module:** `ModelError` and `model::common` property containers — `SdoSroCommonProps` (required `spec_version`, `created`, `modified`; `confidence` as `Option<Confidence>`), `ScoCommonProps` (SCO-only fields), `ExternalReference` (STIX §2.5.2: non-empty `source_name` plus at least one of `description`, `url`, or `external_id` enforced on construction and deserialization), `GranularMarking` (`marking_ref` XOR `lang`; non-empty `selectors`), and `ExtensionMap` / `ExtensionType`.
 - **Leaf-type serde:** `serde_impls/` for `StixId`, timestamps, and `Confidence`; typed-ID serde in the `define_typed_id!` macro; inline `LanguageTag` serde.

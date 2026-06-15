@@ -18,4 +18,7 @@ pub enum ModelError {
     /// A `granular-marking` must name at least one selector.
     #[error("granular marking requires at least one selector")]
     GranularMarkingEmptySelectors,
+    /// An `extension-definition` requires `created_by_ref` (STIX §7.2.2).
+    #[error("extension definition requires created_by_ref")]
+    ExtensionDefinitionMissingCreatedByRef,
 }

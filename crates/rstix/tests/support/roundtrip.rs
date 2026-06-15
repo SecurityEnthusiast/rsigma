@@ -38,8 +38,8 @@ pub fn assert_fixture_rejects<T: DeserializeOwned>(relative_path: &str) {
 /// `name`, …) that the type deliberately ignores today; for those object
 /// fixtures every emitted field must match the fixture, but extra fixture keys
 /// are allowed. Standalone type fixtures (for example `ExternalReference`) use
-/// full value equality. Once concrete SDO/SRO types land in later slices, full
-/// fixture comparison will catch dropped fields for free.
+/// full value equality. Once concrete SDO/SRO types land in a later Phase 2
+/// milestone, full fixture comparison will catch dropped fields for free.
 fn assert_reserialized_matches_fixture(
     original: &serde_json::Value,
     reserialized: &serde_json::Value,

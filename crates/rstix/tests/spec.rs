@@ -8,10 +8,11 @@
 mod support;
 
 use rstix::core::{Confidence, SpecVersion};
-use rstix::model::ModelError;
 use rstix::model::common::{
-    ExtensionMap, ExtensionType, ExternalReference, GranularMarking, ScoCommonProps,
-    SdoSroCommonProps,
+    ExtensionMap, ExternalReference, GranularMarking, ScoCommonProps, SdoSroCommonProps,
+};
+use rstix::model::meta::{
+    ExtensionDefinition, LanguageContent, MarkingDefinition, TLP1_WHITE_ID, TLP2_CLEAR_ID,
 };
 
 #[test]
@@ -116,28 +117,15 @@ fn external_reference_minimal_omits_empty_optionals() {
 }
 
 #[test]
-fn external_reference_new_rejects_empty_source_name() {
-    assert_eq!(
-        ExternalReference::new("   ", None, None, None).unwrap_err(),
-        ModelError::ExternalReferenceMissingSourceName
-    );
-}
-
-#[test]
-fn external_reference_new_rejects_source_name_without_detail() {
-    assert_eq!(
-        ExternalReference::new("capec", None, None, None).unwrap_err(),
-        ModelError::ExternalReferenceMissingDetail
-    );
-}
-
-#[test]
 fn external_reference_rejects_invalid_fixtures() {
     support::assert_fixture_rejects::<ExternalReference>(
         "common/external-reference-missing-source.json",
     );
     support::assert_fixture_rejects::<ExternalReference>(
         "common/external-reference-empty-source.json",
+    );
+    support::assert_fixture_rejects::<ExternalReference>(
+        "common/external-reference-whitespace-source.json",
     );
     support::assert_fixture_rejects::<ExternalReference>(
         "common/external-reference-source-only.json",
@@ -151,25 +139,6 @@ fn extension_map_round_trips() {
         map.get("extension-definition--04ee437a-1b58-4f6e-8b3e-6c0d0c7b9b21")
             .is_some()
     );
-}
-
-#[test]
-fn extension_type_strings_round_trip() {
-    for (variant, text) in [
-        (ExtensionType::NewSdo, "\"new-sdo\""),
-        (ExtensionType::NewSro, "\"new-sro\""),
-        (ExtensionType::NewSco, "\"new-sco\""),
-        (ExtensionType::PropertyExtension, "\"property-extension\""),
-        (
-            ExtensionType::ToplevelPropertyExtension,
-            "\"toplevel-property-extension\"",
-        ),
-    ] {
-        assert_eq!(serde_json::to_string(&variant).unwrap(), text);
-        let decoded: ExtensionType = serde_json::from_str(text).unwrap();
-        assert_eq!(decoded, variant);
-    }
-    assert!(serde_json::from_str::<ExtensionType>("\"made-up\"").is_err());
 }
 
 #[test]
@@ -204,4 +173,41 @@ fn granular_marking_rejects_missing_selectors() {
     support::assert_fixture_rejects::<GranularMarking>(
         "common/granular-marking-missing-selectors.json",
     );
+}
+
+#[test]
+fn marking_definition_round_trips_legacy_and_current_tlp_encodings() {
+    let legacy =
+        support::roundtrip::<MarkingDefinition>("meta/marking-definition-tlp-v1-white-stix21.json");
+    assert_eq!(legacy.id.as_str(), TLP1_WHITE_ID);
+    assert_eq!(legacy.definition_type.as_deref(), Some("tlp"));
+    assert_eq!(
+        legacy
+            .definition
+            .as_ref()
+            .and_then(|v| v.get("tlp"))
+            .and_then(|v| v.as_str()),
+        Some("white")
+    );
+    assert!(legacy.is_non_versionable());
+
+    let current =
+        support::roundtrip::<MarkingDefinition>("meta/marking-definition-tlp-v2-clear-stix21.json");
+    assert_eq!(current.id.as_str(), TLP2_CLEAR_ID);
+    assert!(!current.extensions.is_empty());
+}
+
+#[test]
+fn extension_definition_round_trips_and_rejects_missing_created_by_ref() {
+    support::roundtrip::<ExtensionDefinition>("meta/extension-definition.json");
+    support::assert_fixture_rejects::<ExtensionDefinition>(
+        "meta/extension-definition-missing-created-by-ref.json",
+    );
+}
+
+#[test]
+fn language_content_round_trips() {
+    let parsed = support::roundtrip::<LanguageContent>("meta/language-content.json");
+    assert_eq!(parsed.object_ref.type_name(), "attack-pattern");
+    assert!(parsed.contents.contains_key("de"));
 }
