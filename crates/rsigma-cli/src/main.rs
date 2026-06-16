@@ -11,8 +11,8 @@ use std::process;
 
 use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
 use commands::{
-    BacktestArgs, ConditionArgs, ConvertArgs, EvalArgs, FieldsArgs, LintArgs, LintCounts,
-    ListFormatsArgs, MigrateSourcesArgs, ParseArgs, StdinArgs, ValidateArgs,
+    BacktestArgs, ConditionArgs, ConvertArgs, CoverageArgs, EvalArgs, FieldsArgs, LintArgs,
+    LintCounts, ListFormatsArgs, MigrateSourcesArgs, ParseArgs, StdinArgs, ValidateArgs,
 };
 // `pipeline resolve` resolves dynamic sources, which needs the async runtime
 // (tokio) and the source resolver from rsigma-runtime. Both ship with the
@@ -223,6 +223,9 @@ enum RuleCommands {
 
     /// Replay an event corpus and diff per-rule fires against expectations
     Backtest(BacktestArgs),
+
+    /// Map rules onto MITRE ATT&CK: Navigator layer export + coverage gaps
+    Coverage(CoverageArgs),
 
     /// Parse a condition expression and print the AST
     Condition(ConditionArgs),
@@ -446,6 +449,13 @@ fn dispatch_rule(cmd: RuleCommands, matches: &ArgMatches, ctx: output::OutputCtx
                 .expect("rule backtest submatches present");
             run_backtest(args, bm, ctx);
         }
+        RuleCommands::Coverage(args) => {
+            let cm = matches
+                .subcommand_matches("rule")
+                .and_then(|m| m.subcommand_matches("coverage"))
+                .expect("rule coverage submatches present");
+            run_coverage(args, cm, ctx);
+        }
         RuleCommands::Condition(args) => commands::cmd_condition(args, ctx),
         RuleCommands::Stdin(args) => commands::cmd_stdin(args, ctx),
         RuleCommands::MigrateSources(args) => commands::cmd_migrate_sources(args),
@@ -485,6 +495,15 @@ fn run_eval(mut args: EvalArgs, matches: &ArgMatches, ctx: output::OutputCtx) {
 fn run_backtest(mut args: BacktestArgs, matches: &ArgMatches, ctx: output::OutputCtx) {
     commands::apply_backtest_config(&mut args, matches);
     let code = commands::cmd_backtest(args, ctx);
+    process::exit(code);
+}
+
+/// Entry point for `rule coverage`. Applies config (CLI flag > env > file >
+/// default) before running, then exits with the report's house exit code
+/// (0 success, 1 gaps under --fail-on-gaps, 2 rule error, 3 config error).
+fn run_coverage(mut args: CoverageArgs, matches: &ArgMatches, ctx: output::OutputCtx) {
+    commands::apply_coverage_config(&mut args, matches);
+    let code = commands::cmd_coverage(args, ctx);
     process::exit(code);
 }
 
