@@ -609,6 +609,51 @@ pub(crate) fn load_collection(path: &std::path::Path) -> SigmaCollection {
     collection
 }
 
+/// Load and merge a Sigma collection from one or more file/directory paths.
+///
+/// Directories are parsed recursively; each path's rules, correlations, and
+/// filters are concatenated. Exits with `RULE_ERROR` if any path is missing or
+/// unreadable, or if no rules were found across all paths. Shared by
+/// `backend convert` and `rule coverage`.
+pub(crate) fn load_collection_multi(paths: &[PathBuf]) -> SigmaCollection {
+    let mut collection = SigmaCollection::new();
+    for path in paths {
+        if path.is_dir() {
+            match parse_sigma_directory(path) {
+                Ok(dir_collection) => {
+                    collection.rules.extend(dir_collection.rules);
+                    collection.correlations.extend(dir_collection.correlations);
+                    collection.filters.extend(dir_collection.filters);
+                }
+                Err(e) => {
+                    eprintln!("Error parsing directory {}: {e}", path.display());
+                    process::exit(exit_code::RULE_ERROR);
+                }
+            }
+        } else if path.is_file() {
+            match parse_sigma_file(path) {
+                Ok(file_collection) => {
+                    collection.rules.extend(file_collection.rules);
+                    collection.correlations.extend(file_collection.correlations);
+                    collection.filters.extend(file_collection.filters);
+                }
+                Err(e) => {
+                    eprintln!("Error parsing {}: {e}", path.display());
+                    process::exit(exit_code::RULE_ERROR);
+                }
+            }
+        } else {
+            eprintln!("Path not found: {}", path.display());
+            process::exit(exit_code::RULE_ERROR);
+        }
+    }
+    if collection.rules.is_empty() && collection.correlations.is_empty() {
+        eprintln!("No rules found in specified path(s)");
+        process::exit(exit_code::RULE_ERROR);
+    }
+    collection
+}
+
 pub(crate) fn print_warnings(errors: &[String]) {
     if !errors.is_empty() {
         eprintln!("Warnings:");
