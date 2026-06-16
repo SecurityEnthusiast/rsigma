@@ -179,7 +179,10 @@ fn deserialize_marking_type<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    super::type_check::deserialize_stix_type_field(deserializer, MarkingDefinition::TYPE_NAME)
+    crate::model::type_check::deserialize_stix_type_field(
+        deserializer,
+        MarkingDefinition::TYPE_NAME,
+    )
 }
 
 impl QueryableStixObject for MarkingDefinition {

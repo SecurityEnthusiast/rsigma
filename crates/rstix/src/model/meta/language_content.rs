@@ -70,7 +70,7 @@ fn deserialize_language_content_type<'de, D>(deserializer: D) -> Result<String, 
 where
     D: serde::Deserializer<'de>,
 {
-    super::type_check::deserialize_stix_type_field(deserializer, LanguageContent::TYPE_NAME)
+    crate::model::type_check::deserialize_stix_type_field(deserializer, LanguageContent::TYPE_NAME)
 }
 
 impl QueryableStixObject for LanguageContent {

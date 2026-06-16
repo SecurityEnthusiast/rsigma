@@ -3,8 +3,6 @@
 mod extension_def;
 mod language_content;
 mod marking_def;
-#[cfg(feature = "serde")]
-mod type_check;
 
 pub use extension_def::ExtensionDefinition;
 pub use language_content::LanguageContent;

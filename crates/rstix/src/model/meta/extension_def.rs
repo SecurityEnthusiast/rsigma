@@ -198,5 +198,8 @@ fn deserialize_extension_definition_type<'de, D>(deserializer: D) -> Result<Stri
 where
     D: serde::Deserializer<'de>,
 {
-    super::type_check::deserialize_stix_type_field(deserializer, ExtensionDefinition::TYPE_NAME)
+    crate::model::type_check::deserialize_stix_type_field(
+        deserializer,
+        ExtensionDefinition::TYPE_NAME,
+    )
 }

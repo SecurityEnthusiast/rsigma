@@ -4,6 +4,15 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### `rstix`: Phase 2 — STIX relationship and sighting objects
+
+Phase 2 adds typed STIX Relationship Objects (`relationship`, `sighting`). This work is not releasable on its own until `StixObject` dispatch and `Bundle` parsing land.
+
+- **`model::sro`:** `Relationship` (STIX §5.1 type-specific properties; `relationship_type` charset and `stop_time` later than `start_time` enforced at deserialize), `Sighting` (STIX §5.2 type-specific properties; `WhereSightedRef` for identity or location in `where_sighted_refs`; `count` range and `last_seen` ≥ `first_seen` enforced at deserialize), and the `SroObject` enum (`#[non_exhaustive]`). Reference-target rules for `source_ref`, `target_ref`, and `sighting_of_ref` are documented in rustdoc and deferred until bundle-level typed parsing.
+- **Deserialize:** `model::type_check` hoisted from `model::meta` for shared `"type"` validation; each SRO type rejects mismatched JSON `"type"` in a single serde pass (`ModelError::UnexpectedObjectType`).
+- **Tests:** `roundtrip_strict` minimal and rich fixtures under `tests/fixtures/spec/sro/`; negative fixtures for relationship type charset, time ordering, sighting count range, `where_sighted_refs` typing, and cross-type `"type"` rejects.
+- **Docs:** SRO invariant decisions in `crates/rstix/README.md` and `docs/library/rstix.md`.
+
 ### Fibratus conversion: file and remote-thread macro fixes (#217)
 
 Three Fibratus conversion bugs reported by @rabbitstack are fixed, so the converted rules now use the idiomatic macros the upstream loader expects instead of raw or unmapped predicates.
