@@ -127,6 +127,26 @@ pub(crate) struct DaemonArgs {
     #[arg(long = "drain-timeout", default_value_t = config::defaults::DRAIN_TIMEOUT)]
     pub drain_timeout: u64,
 
+    /// Max delivery retries per sink before a result is routed to the DLQ.
+    #[arg(long = "sink-retry-max", default_value_t = config::defaults::SINK_RETRY_MAX)]
+    pub retry_max: u32,
+
+    /// Base backoff in milliseconds for the first sink delivery retry.
+    #[arg(long = "sink-backoff-base-ms", default_value_t = config::defaults::SINK_BACKOFF_BASE_MS)]
+    pub backoff_base_ms: u64,
+
+    /// Backoff ceiling in milliseconds for sink delivery retries.
+    #[arg(long = "sink-backoff-max-ms", default_value_t = config::defaults::SINK_BACKOFF_MAX_MS)]
+    pub backoff_max_ms: u64,
+
+    /// Max results drained into one sink delivery batch.
+    #[arg(long = "sink-batch-max", default_value_t = config::defaults::SINK_BATCH_MAX)]
+    pub batch_max: usize,
+
+    /// Max time in milliseconds a partial sink batch waits before flushing.
+    #[arg(long = "sink-batch-flush-ms", default_value_t = config::defaults::SINK_BATCH_FLUSH_MS)]
+    pub batch_flush_ms: u64,
+
     /// Dead-letter queue target for events that fail processing.
     /// Accepts the same schemes as `--output`: `stdout`,
     /// `file://<path>`, `nats://<host>:<port>/<subject>`. When not
@@ -472,6 +492,11 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         buffer_size,
         batch_size,
         drain_timeout,
+        retry_max,
+        backoff_base_ms,
+        backoff_max_ms,
+        batch_max,
+        batch_flush_ms,
         dlq,
         input_format,
         syslog_tz,
@@ -579,6 +604,16 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         allow_plaintext,
     };
 
+    // queue_depth follows buffer_size; the rest come from the sink-* flags.
+    let delivery_config = rsigma_runtime::DeliveryConfig {
+        queue_depth: buffer_size,
+        batch_max,
+        batch_flush: std::time::Duration::from_millis(batch_flush_ms),
+        retry_max,
+        backoff_base: std::time::Duration::from_millis(backoff_base_ms),
+        backoff_max: std::time::Duration::from_millis(backoff_max_ms),
+    };
+
     run_daemon(
         rules_path,
         pipeline_paths,
@@ -603,6 +638,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         buffer_size,
         batch_size,
         drain_timeout,
+        delivery_config,
         dlq,
         input_format,
         syslog_tz,
@@ -773,6 +809,31 @@ fn apply_daemon_config(
         {
             args.include_event = v;
         }
+        if !explicit("retry_max")
+            && let Some(v) = output.retry_max
+        {
+            args.retry_max = v;
+        }
+        if !explicit("backoff_base_ms")
+            && let Some(v) = output.backoff_base_ms
+        {
+            args.backoff_base_ms = v;
+        }
+        if !explicit("backoff_max_ms")
+            && let Some(v) = output.backoff_max_ms
+        {
+            args.backoff_max_ms = v;
+        }
+        if !explicit("batch_max")
+            && let Some(v) = output.batch_max
+        {
+            args.batch_max = v;
+        }
+        if !explicit("batch_flush_ms")
+            && let Some(v) = output.batch_flush_ms
+        {
+            args.batch_flush_ms = v;
+        }
         if !explicit("pretty")
             && let Some(v) = output.pretty
         {
@@ -930,6 +991,7 @@ fn run_daemon(
     buffer_size: usize,
     batch_size: usize,
     drain_timeout: u64,
+    delivery_config: rsigma_runtime::DeliveryConfig,
     dlq: Option<String>,
     input_format: String,
     syslog_tz: String,
@@ -1074,6 +1136,7 @@ fn run_daemon(
         buffer_size,
         batch_size,
         drain_timeout,
+        delivery_config,
         dlq,
         input_format: parsed_input_format,
         #[cfg(feature = "daemon-nats")]

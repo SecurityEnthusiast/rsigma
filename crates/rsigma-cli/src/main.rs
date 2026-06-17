@@ -956,6 +956,26 @@ mod config_default_drift {
             Some(defaults::DRAIN_TIMEOUT.to_string())
         );
         assert_eq!(
+            daemon_default("retry_max"),
+            Some(defaults::SINK_RETRY_MAX.to_string())
+        );
+        assert_eq!(
+            daemon_default("backoff_base_ms"),
+            Some(defaults::SINK_BACKOFF_BASE_MS.to_string())
+        );
+        assert_eq!(
+            daemon_default("backoff_max_ms"),
+            Some(defaults::SINK_BACKOFF_MAX_MS.to_string())
+        );
+        assert_eq!(
+            daemon_default("batch_max"),
+            Some(defaults::SINK_BATCH_MAX.to_string())
+        );
+        assert_eq!(
+            daemon_default("batch_flush_ms"),
+            Some(defaults::SINK_BATCH_FLUSH_MS.to_string())
+        );
+        assert_eq!(
             daemon_default("max_correlation_events"),
             Some(defaults::MAX_CORRELATION_EVENTS.to_string())
         );

@@ -247,6 +247,21 @@ pub(crate) struct OutputPartial {
     pub include_event: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pretty: Option<bool>,
+    /// Max delivery retries per sink before a result is routed to the DLQ.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_max: Option<u32>,
+    /// Base backoff in milliseconds for the first sink delivery retry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backoff_base_ms: Option<u64>,
+    /// Backoff ceiling in milliseconds for sink delivery retries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backoff_max_ms: Option<u64>,
+    /// Max results drained into one sink delivery batch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_max: Option<usize>,
+    /// Max time in milliseconds a partial sink batch waits before flushing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_flush_ms: Option<u64>,
 }
 
 impl Merge for OutputPartial {
@@ -257,6 +272,11 @@ impl Merge for OutputPartial {
             drain_timeout: over.drain_timeout.or(self.drain_timeout),
             include_event: over.include_event.or(self.include_event),
             pretty: over.pretty.or(self.pretty),
+            retry_max: over.retry_max.or(self.retry_max),
+            backoff_base_ms: over.backoff_base_ms.or(self.backoff_base_ms),
+            backoff_max_ms: over.backoff_max_ms.or(self.backoff_max_ms),
+            batch_max: over.batch_max.or(self.batch_max),
+            batch_flush_ms: over.batch_flush_ms.or(self.batch_flush_ms),
         }
     }
 }

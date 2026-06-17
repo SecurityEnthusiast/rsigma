@@ -46,11 +46,20 @@ For narrative coverage see [Streaming Detection](../../guide/streaming-detection
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--output <URL>` | `stdout` | Detection sink. Schemes: `stdout`, `file://<path>`, `nats://<host>:<port>/<subject>`. Repeatable for fan-out. |
+| `--output <URL>` | `stdout` | Detection sink. Schemes: `stdout`, `file://<path>`, `nats://<host>:<port>/<subject>`. Repeatable for fan-out. Append `?on_full=drop` to drop results when the sink's queue is full instead of applying backpressure (best-effort delivery). |
 | `--dlq <URL>` | unset | Dead-letter queue for events that fail parsing or sink delivery. Same schemes as `--output`. When unset, failed events are logged and discarded. |
 | `--include-event` | off | Embed the full event JSON in every detection match. |
 | `--match-detail <LEVEL>` | `off` | Match-detail verbosity: `off` (field + value only), `summary` (adds matcher kind, selection, case sensitivity, and reports keyword/absence matches), or `full` (also records the matched pattern). Also settable via `daemon.engine.match_detail`. See [Evaluating Rules](../../guide/evaluating-rules.md#match-detail). |
 | `--pretty` | off | Pretty-print JSON output. |
+| `--sink-retry-max <N>` | `3` | Max delivery retries per sink before routing the result to the DLQ. |
+| `--sink-backoff-base-ms <MS>` | `100` | Base backoff for the first sink delivery retry. |
+| `--sink-backoff-max-ms <MS>` | `5000` | Backoff ceiling for sink delivery retries. |
+| `--sink-batch-max <N>` | `64` | Max results drained into one sink delivery batch. |
+| `--sink-batch-flush-ms <MS>` | `50` | Max time a partial sink batch waits before flushing. |
+
+Each `--output` sink runs its own bounded queue and worker: results are delivered with bounded exponential-backoff retry, and a result is sent to the DLQ only after retries are exhausted. Fan-out is isolated up to each sink's queue depth, so a slow sink does not immediately stall the others; a slow durable sink eventually applies backpressure, the cost of preserving at-least-once delivery. An acknowledgment is released to the source only once every sink has committed the result, and `?on_full=drop` opts a sink out of that contract in favor of never stalling.
+
+Acknowledgment guarantees differ by transport. NATS is durable at-least-once: results un-acked at shutdown are redelivered on restart. The HTTP and OTLP push receivers are at-most-once on ingest, since the request is accepted as soon as the event is queued.
 
 ### Pipelines and dynamic sources
 

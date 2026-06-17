@@ -20,13 +20,17 @@ These always show up. They cover ingest, matches, queue depth, back-pressure, re
 | `rsigma_reloads_total` | counter | — | Total reload attempts (file watcher, SIGHUP, `POST /api/v1/reload`). |
 | `rsigma_reloads_failed_total` | counter | — | Reload attempts that produced parse or compile errors. |
 | `rsigma_uptime_seconds` | gauge | — | Daemon uptime in seconds. |
-| `rsigma_input_queue_depth` | gauge | — | Events currently buffered in the source→engine channel. |
+| `rsigma_input_queue_depth` | gauge | — | Events currently buffered in the source→engine channel. Tracked for every input, including the HTTP and OTLP push receivers. |
 | `rsigma_output_queue_depth` | gauge | — | Results currently buffered in the engine→sink channel. |
 | `rsigma_back_pressure_events_total` | counter | — | Times a source was blocked on a full event channel. |
 | `rsigma_event_processing_seconds` | histogram | — | Per-event processing latency. |
 | `rsigma_pipeline_latency_seconds` | histogram | — | End-to-end latency from event dequeue to sink send. |
 | `rsigma_batch_size` | histogram | — | Number of events processed per batch. |
 | `rsigma_dlq_events_total` | counter | — | Events routed to the dead-letter queue. |
+| `rsigma_sink_queue_depth` | gauge | `sink` | Results buffered in each sink's delivery queue. |
+| `rsigma_sink_retries_total` | counter | `sink` | Sink delivery retries after a retryable failure. |
+| `rsigma_sink_dropped_total` | counter | `sink` | Results dropped because a lossy sink's queue was full (`?on_full=drop`). |
+| `rsigma_sink_delivery_failures_total` | counter | `sink` | Sink deliveries that exhausted retries and were routed to the DLQ. |
 
 ## Per-rule labels (2 metrics)
 
