@@ -89,6 +89,8 @@ pub struct DaemonConfig {
     pub output: Vec<String>,
     pub buffer_size: usize,
     pub batch_size: usize,
+    /// Shared async delivery tuning applied to every sink worker.
+    pub delivery_config: DeliveryConfig,
     pub dlq: Option<String>,
     #[cfg(feature = "daemon-nats")]
     pub nats_config: rsigma_runtime::NatsConnectConfig,
@@ -995,10 +997,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     let dispatch_ack_tx = ack_tx.clone();
     let empty_ack_tx = ack_tx.clone();
     drop(ack_tx);
-    let delivery_config = DeliveryConfig {
-        queue_depth: buffer_size,
-        ..Default::default()
-    };
+    let delivery_config = config.delivery_config;
     let sink_handle = tokio::spawn(async move {
         let dispatcher = Dispatcher::spawn(
             leaves,

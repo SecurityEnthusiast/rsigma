@@ -70,6 +70,17 @@ daemon:
     include_event: false
     # Pretty-print JSON output.
     pretty: false
+    # Async delivery tuning, shared by every sink. The per-sink queue depth
+    # follows input.buffer_size; append ?on_full=drop to a sink URL for
+    # best-effort (lossy) delivery instead of backpressure.
+    # Max delivery retries per sink before a result is routed to the DLQ.
+    retry_max: 3
+    # Base and ceiling backoff (milliseconds) for delivery retries.
+    backoff_base_ms: 100
+    backoff_max_ms: 5000
+    # Max results per delivery batch, and max ms a partial batch waits.
+    batch_max: 64
+    batch_flush_ms: 50
 
   correlation:
     # Suppression window for correlation alerts (e.g. 5m, 1h, 30s).

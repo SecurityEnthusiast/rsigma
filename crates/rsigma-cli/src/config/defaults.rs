@@ -31,6 +31,13 @@ pub(crate) const TIMESTAMP_FALLBACK: &str = "wallclock";
 pub(crate) const STATE_SAVE_INTERVAL: u64 = 30;
 pub(crate) const OBSERVE_FIELDS_MAX_KEYS: usize = 10_000;
 pub(crate) const STDOUT_SINK: &str = "stdout";
+/// Async delivery-layer tuning shared by every sink. `queue_depth` is not a
+/// separate key; it follows `buffer_size`.
+pub(crate) const SINK_RETRY_MAX: u32 = 3;
+pub(crate) const SINK_BACKOFF_BASE_MS: u64 = 100;
+pub(crate) const SINK_BACKOFF_MAX_MS: u64 = 5_000;
+pub(crate) const SINK_BATCH_MAX: usize = 64;
+pub(crate) const SINK_BATCH_FLUSH_MS: u64 = 50;
 /// Default HTTP egress policy applied to dynamic-source and enrichment HTTP
 /// clients. `default` blocks link-local and known cloud-metadata addresses
 /// (the classic SSRF targets) while leaving loopback and RFC1918 private
@@ -82,6 +89,11 @@ pub(crate) fn defaults_partial() -> RsigmaConfigPartial {
                 drain_timeout: Some(DRAIN_TIMEOUT),
                 include_event: Some(false),
                 pretty: Some(false),
+                retry_max: Some(SINK_RETRY_MAX),
+                backoff_base_ms: Some(SINK_BACKOFF_BASE_MS),
+                backoff_max_ms: Some(SINK_BACKOFF_MAX_MS),
+                batch_max: Some(SINK_BATCH_MAX),
+                batch_flush_ms: Some(SINK_BATCH_FLUSH_MS),
             }),
             correlation: Some(CorrelationPartial {
                 suppress: None,
