@@ -4,6 +4,16 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Async sink delivery layer: per-sink workers, retry/backoff, and isolation
+
+Detection output now flows through a per-sink delivery layer instead of a single inline sink writer. Each `--output` sink runs its own bounded queue and worker task, so a slow or flaky network sink no longer immediately head-of-line blocks the others, and transient failures are retried instead of being dropped to the dead-letter queue on the first error.
+
+- **Per-sink workers.** Each sink drains its own bounded queue, batches opportunistically, retries with capped exponential backoff, and routes a result to the DLQ only after exhausting retries. Fan-out across `--output` sinks is isolated up to each sink's queue depth; a slow durable sink eventually applies backpressure, the honest cost of at-least-once.
+- **At-least-once preserved.** An ack-join releases a source's acknowledgment only once every sink has committed the result (delivered or DLQ-parked), so the NATS at-least-once contract survives fan-out. Results still in a worker queue at shutdown are left unacked and redelivered on restart.
+- **Per-sink lossy mode.** Append `?on_full=drop` to an `--output` sink to drop results when its queue is full instead of applying backpressure, trading durability for never stalling. The default (`?on_full=block`) keeps at-least-once for durable sinks.
+- **New metrics.** `rsigma_sink_queue_depth`, `rsigma_sink_retries_total`, `rsigma_sink_dropped_total`, and `rsigma_sink_delivery_failures_total`, all labeled by `sink`.
+- **Input-source metric parity.** The HTTP (`POST /api/v1/events`) and OTLP (HTTP and gRPC) push receivers now feed `rsigma_input_queue_depth` and `rsigma_back_pressure_events_total`, which previously tracked only the stdin and NATS pull sources.
+
 ### `rule coverage`: ATT&CK Navigator export and coverage-gap analysis (#221)
 
 A new `rsigma rule coverage` subcommand maps a rule set onto MITRE ATT&CK. It reads the `attack.*` tags off every detection and correlation rule, exports an ATT&CK Navigator layer, and reports coverage gaps against external references, the companion to `rule backtest` in a detection-as-code pipeline.
