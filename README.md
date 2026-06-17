@@ -452,7 +452,7 @@ When running as a streaming detection engine, `rsigma-eval` feeds into `rsigma-r
 - **Dynamic sources:** `SourceResolver` fetches data from files, commands, HTTP APIs, and NATS subjects. Resolved values are injected into pipelines via `TemplateExpander`. A `SourceCache` (in-memory + optional SQLite) provides fallback data. `RefreshScheduler` manages auto-refresh (interval, file watch, NATS push, on-demand). Extraction supports jq, JSONPath, and CEL. `DaemonSourceRegistry` unifies sources from external files (`--source`) and pipeline-embedded declarations with collision-error semantics.
 - **Processing:** `LogProcessor` runs batch evaluation with parallel detection and sequential correlation. `RuntimeEngine` wraps `Engine` and `CorrelationEngine` with rule loading and `ArcSwap` hot-reload.
 - **Enrichment:** `EnrichmentPipeline` runs between the engine and the sinks, injecting context (asset info, IP reputation, identity, GeoIP, KEV flags, runbook URLs, ...) into each result's `RuleHeader.enrichments` map. Four primitives (`template`, `lookup`, `http`, `command`) compose into recipes. Kind-aware template namespaces (`${detection.*}` for detection-kind enrichers, `${correlation.*}` for correlation-kind) are validated at config-load time. Optional HTTP response cache, scope filtering by rule glob, tag set, and severity, and `on_error` policies (`skip`, `null`, `drop`).
-- **Output:** Sinks write evaluation results to stdout, files, or NATS as one flat JSON object per result. Multiple sinks can run in fan-out. The output type is `EvaluationResult` (a composition of `RuleHeader` + `ResultBody::Detection|Correlation`), carrying rule title, id, level, tags, the `enrichments` map written by the enrichment pipeline, matched selections, field matches, aggregated values, and optionally the triggering events.
+- **Output:** Sinks write evaluation results to stdout, files, NATS, or an OTLP\* collector as one flat JSON object per result; the webhook sink instead renders a templated HTTP request per result (Slack, Teams, Discord, PagerDuty, or any endpoint). Sinks fan out through a shared async delivery layer where each sink runs its own bounded queue and worker with bounded retry and backoff, routing a result to the DLQ only after retries are exhausted. The output type is `EvaluationResult` (a composition of `RuleHeader` + `ResultBody::Detection|Correlation`), carrying rule title, id, level, tags, the `enrichments` map written by the enrichment pipeline, matched selections, field matches, aggregated values, and optionally the triggering events.
 
 Feature-gated items are marked with \* in the diagram.
 
@@ -573,7 +573,10 @@ Feature-gated items are marked with \* in the diagram.
     │          TLS* termination (mTLS, cert    │
     │            hot-reload) on shared API     │
     │            listener                      │
-    │          Sink (stdout, file, NATS)       │
+    │          Sink (stdout, file, NATS,       │
+    │            OTLP*, webhook); async        │
+    │            delivery: per-sink workers,   │
+    │            retry/backoff                 │
     │          DLQ (failed events)             │
     └──────────────────────────────────────────┘
               │       (*  = feature-gated)
