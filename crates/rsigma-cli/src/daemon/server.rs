@@ -133,6 +133,10 @@ pub struct DaemonConfig {
     /// / `POST /api/v1/reload`); failures during reload are logged and
     /// the previous pipeline stays active.
     pub enrichers_path: Option<PathBuf>,
+    /// Webhook config file/dir paths (from `--webhook`). Loaded and validated
+    /// once at daemon startup, then built into lossy (`on_full=drop`) delivery
+    /// leaves. Hot reload is not supported in v1.
+    pub webhook_paths: Vec<PathBuf>,
     /// Daemon-scoped source registry built from `--source` flags and
     /// pipeline-embedded `sources:` blocks. Collision-checked at
     /// construction time.
@@ -967,6 +971,25 @@ pub async fn run_daemon(config: DaemonConfig) {
         let (sink, on_full) = build_sink(spec, pretty, &config).await;
         for leaf in sink.into_leaves() {
             leaves.push((leaf, on_full, config.delivery_config));
+        }
+    }
+
+    // Webhook sinks are built once at startup and run as lossy (on_full=drop)
+    // leaves so a third-party HTTP endpoint never blocks the at-least-once
+    // token release for the durable sinks; anything undeliverable lands in the
+    // DLQ via the shared worker.
+    if !config.webhook_paths.is_empty() {
+        let webhook_metrics = metrics.clone() as Arc<dyn MetricsHook>;
+        match super::webhook::load_and_build_webhooks(&config.webhook_paths, webhook_metrics) {
+            Ok(built) => {
+                for bw in built {
+                    leaves.push((Sink::Webhook(Box::new(bw.sink)), OnFull::Drop, bw.delivery));
+                }
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to load webhooks");
+                std::process::exit(crate::exit_code::CONFIG_ERROR);
+            }
         }
     }
     tracing::info!(output = ?output_specs, sinks = leaves.len(), "Sink started");

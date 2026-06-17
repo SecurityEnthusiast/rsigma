@@ -85,6 +85,10 @@ daemon:
     # Max results per delivery batch, and max ms a partial batch waits.
     batch_max: 64
     batch_flush_ms: 50
+    # Webhook config files or directories (repeatable; maps to --webhook).
+    # Each declares template-driven HTTP sinks; see the webhooks guide.
+    # webhooks:
+    #   - /etc/rsigma/webhooks/slack.yaml
 
   correlation:
     # Suppression window for correlation alerts (e.g. 5m, 1h, 30s).

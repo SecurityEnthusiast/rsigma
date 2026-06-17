@@ -82,6 +82,11 @@ impl TokenBucket {
 /// layer.
 pub struct WebhookSink {
     id: String,
+    /// `id` leaked to `&'static str` so it can serve as the shared per-sink
+    /// delivery label (queue depth, retries, DLQ), giving a one-to-one mapping
+    /// to the webhook-specific `rsigma_webhook_*` series. Bounded by the
+    /// configured webhook count, leaked once at startup.
+    label: &'static str,
     kind: WebhookKind,
     method: reqwest::Method,
     url: String,
@@ -109,8 +114,10 @@ impl WebhookSink {
         client: HttpEnricherClient,
         metrics: Arc<dyn MetricsHook>,
     ) -> Self {
+        let label: &'static str = Box::leak(id.clone().into_boxed_str());
         WebhookSink {
             id,
+            label,
             kind,
             method,
             url,
@@ -124,9 +131,16 @@ impl WebhookSink {
         }
     }
 
-    /// The webhook id, used as the per-sink delivery label and metric label.
+    /// The webhook id, used as the webhook-specific metric label.
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The webhook id as a `&'static str`, used as the shared per-sink
+    /// delivery label so its queue/retry/DLQ series map one-to-one to the
+    /// `rsigma_webhook_*` series.
+    pub fn label(&self) -> &'static str {
+        self.label
     }
 
     /// Deliver every matching result in `result`.

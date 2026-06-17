@@ -94,6 +94,7 @@ pub(crate) fn defaults_partial() -> RsigmaConfigPartial {
                 backoff_max_ms: Some(SINK_BACKOFF_MAX_MS),
                 batch_max: Some(SINK_BATCH_MAX),
                 batch_flush_ms: Some(SINK_BATCH_FLUSH_MS),
+                webhooks: Some(Vec::new()),
             }),
             correlation: Some(CorrelationPartial {
                 suppress: None,
