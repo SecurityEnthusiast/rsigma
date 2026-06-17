@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Async sink delivery layer: per-sink workers, retry/backoff, and isolation
+### Async sink delivery layer: per-sink workers, retry/backoff, and isolation (#222)
 
 Detection output now flows through a per-sink delivery layer instead of a single inline sink writer. Each `--output` sink runs its own bounded queue and worker task, so a slow or flaky network sink no longer immediately head-of-line blocks the others, and transient failures are retried instead of being dropped to the dead-letter queue on the first error.
 
