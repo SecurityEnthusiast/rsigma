@@ -40,6 +40,7 @@ For rule quality and editor integration, a built-in linter validates rules again
 * **TLS termination:** Use in-process TLS termination for the daemon API listener (HTTP REST, `/metrics`, OTLP/HTTP, OTLP/gRPC) with optional mutual TLS, `aws-lc-rs` crypto, and cross-platform certificate hot-reload
 * **NATS JetStream:** Use NATS JetStream support with authentication (credentials, mTLS), replay, consumer groups, and dead-letter queues
 * **OTLP ingestion:** Use OTLP support for any OpenTelemetry-compatible agent (Grafana Alloy, Vector, Fluent Bit, OTel Collector) via HTTP or gRPC
+* **Webhook alerts:** Deliver detections to Slack, Teams, Discord, PagerDuty, or any HTTP endpoint with a generic template-driven webhook sink (per-webhook retry, rate limiting, and DLQ)
 * **Built-in linter:** Validate rules with 70 checks, four severity levels, a full suppression system, configurable custom tag namespaces (`--tag-namespace`), and auto-fix (`--fix`) for 13 safe rules
 * **MCP server:** Expose the toolchain to AI agents (Cursor, Claude Code, ...) via `rsigma mcp serve`: parse, lint, validate, evaluate, convert, fields, and pipeline tools over the Model Context Protocol, with structured JSON results
 * **LSP server:** Use real-time diagnostics, completions, hover documentation, document symbols, and quick-fix code actions

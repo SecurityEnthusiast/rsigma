@@ -75,8 +75,11 @@ Acknowledgment guarantees differ by transport. NATS is durable at-least-once: re
 | Flag | Description |
 |------|-------------|
 | `--enrichers <PATH>` | YAML file declaring post-evaluation enrichers. Hot-reloaded on `SIGHUP`, file-watcher changes, and `POST /api/v1/reload`; failed reloads keep the previous pipeline active. See [Enrichers](../../guide/enrichers.md) for the schema, the four primitives, and the recipes catalog. |
+| `--webhook <FILE_OR_DIR>` | Webhook config file (or directory of `*.yml`/`*.yaml` files) declaring template-driven HTTP output sinks. Repeatable. Each detection or correlation matching a webhook's `kind` and `scope` renders a templated URL, headers, and JSON body and POSTs it. Webhooks are best-effort (at-most-once): undeliverable results land in the `--dlq` and never block the durable sinks. Validated at startup; not hot-reloaded. See [Webhooks](../../guide/webhooks.md). |
 
 The enrichers file accepts `max_concurrent_enrichments: <N>` at the top level (default `16`) plus a list of enricher entries, each declaring `kind: detection | correlation`, a primitive `type:` (`template` / `lookup` / `http` / `command`), an `inject_field`, and primitive-specific keys (`template`, `url` / `headers` / `cache_ttl`, `command`, `source` / `extract` / `default`, ...). Cross-namespace template references are rejected at startup with a clear error pointing at the offending field.
+
+The webhooks file (also settable as the `daemon.output.webhooks` path list) declares a list of `webhooks:` entries, each with an `id`, `kind: detection | correlation`, a `url`, optional `headers` / `body` templates, and optional `timeout`, `retry`, `rate_limit`, `scope`, and `queue_size`. Secrets are referenced via `${ENV_VAR}` rather than stored in the file. See [Webhooks](../../guide/webhooks.md) for the schema and the Slack/Teams/Discord/PagerDuty recipe catalog.
 
 ### API server
 
@@ -236,6 +239,12 @@ rsigma engine daemon -r rules/ --input http \
 # OTLP/HTTP over mutual TLS (client cert + key)
 rsigma engine daemon -r rules/ --input http \
     --output "otlphttps://otel-collector:4318?ca=/etc/rsigma/tls/ca.pem&client_cert=/etc/rsigma/tls/client.pem&client_key=/etc/rsigma/tls/client.key"
+
+# Post alerts to webhooks while keeping a durable NATS record
+rsigma engine daemon -r rules/ --input http \
+    --output "nats://nats.internal:4222/detections" \
+    --webhook /etc/rsigma/webhooks/ \
+    --dlq "file:///var/log/rsigma/dlq.ndjson"
 ```
 
 TLS uses the bundled public (webpki) roots by default; pass `?ca=` to verify against a private CA instead. Supplying both `?client_cert=` and `?client_key=` enables mutual TLS. Use `?tls_domain=` to override the verified server name when dialing by IP.

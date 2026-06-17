@@ -58,6 +58,8 @@ IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) inherit the IPv4 rules: a host tha
 
 The policy applies only to the daemon's outbound HTTP clients. Local sources (`file`, `command`) and NATS sources do not flow through the resolver and are governed by the include directive and process hygiene controls above.
 
+Webhook sinks (`--webhook`) use the same egress-filtered client, so the policy governs outbound webhook deliveries too: `strict` blocks RFC1918, so a webhook targeting an internal relay needs `default` or `permissive`. Keep webhook secrets in the environment and reference them with `${ENV_VAR}` in the URL or headers; do not store tokens or signing URLs in the webhook YAML.
+
 ## Parser robustness
 
 Every external parser rsigma ships uses panic-free libraries:
