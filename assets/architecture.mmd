@@ -48,7 +48,7 @@ flowchart TD
         RINPUT --> RPROC["LogProcessor\nbatch evaluation\nArcSwap hot-reload (rules + pipelines)\nMetricsHook · EventFilter"]
         RPROC --> RENG["RuntimeEngine\nwraps Engine + CorrelationEngine\nwith rule loading"]
         RENG --> RENRICH["enrichment/ post-eval pipeline\nprimitives: template · lookup · http · command\nkind-aware: ${detection.*} · ${correlation.*}\nscope filter · HTTP response cache · on_error\nwrites RuleHeader.enrichments"]
-        RENRICH --> RIO["io/\nEventSource (stdin · HTTP · NATS)\nOTLP* (HTTP + gRPC)\nTLS* termination (mTLS · cert hot-reload)\non shared API listener\nSink (stdout · file · NATS) · DLQ"]
+        RENRICH --> RIO["io/\nEventSource (stdin · HTTP · NATS)\nOTLP* (HTTP + gRPC)\nTLS* termination (mTLS · cert hot-reload)\non shared API listener\nSink (stdout · file · NATS · OTLP* · webhook)\nasync delivery: per-sink workers · retry/backoff · DLQ"]
         RSRC["sources/ (dynamic pipelines)\nDaemonSourceRegistry: external (--source) +\npipeline-embedded (deprecated) · collision-error\nSourceResolver: HTTP · command · file · NATS\nTemplateExpander · SourceCache (SQLite TTL)\nRefreshScheduler: interval · watch · push\nSIGHUP · NATS control · includes\nextract: jq · JSONPath · CEL"]
     end
 

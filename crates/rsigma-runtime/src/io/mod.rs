@@ -10,6 +10,7 @@ mod nats_source;
 pub mod otlp;
 mod stdin;
 mod stdout;
+pub mod webhook;
 
 pub use delivery::{DeliveryConfig, DeliveryFailure, DeliverySink, Dispatcher, OnFull};
 pub use file::FileSink;
@@ -110,6 +111,8 @@ pub enum Sink {
     /// Export results to an OpenTelemetry collector via OTLP.
     #[cfg(feature = "otlp")]
     Otlp(Box<otlp::OtlpSink>),
+    /// Render and POST a templated HTTP request per result.
+    Webhook(Box<webhook::WebhookSink>),
     /// Fan out to multiple sinks.
     FanOut(Vec<Sink>),
 }
@@ -141,6 +144,7 @@ impl Sink {
                 Sink::Nats(s) => s.send(result).await,
                 #[cfg(feature = "otlp")]
                 Sink::Otlp(s) => s.send(result).await,
+                Sink::Webhook(s) => s.send(result).await,
                 Sink::FanOut(sinks) => {
                     for (idx, sink) in sinks.iter_mut().enumerate() {
                         if let Err(e) = sink.send(result).await {
@@ -173,6 +177,11 @@ impl Sink {
                 Sink::Nats(s) => s.send_raw(json).await,
                 #[cfg(feature = "otlp")]
                 Sink::Otlp(s) => s.send_raw(json).await,
+                // A webhook renders from structured results, not a
+                // pre-serialized JSON line, so a raw send is a no-op. The
+                // delivery path always uses `send`, so this is never hit on
+                // the webhook hot path.
+                Sink::Webhook(_) => Ok(()),
                 Sink::FanOut(sinks) => {
                     for (idx, sink) in sinks.iter_mut().enumerate() {
                         if let Err(e) = sink.send_raw(json).await {
@@ -201,6 +210,9 @@ impl Sink {
             Sink::Nats(_) => "nats",
             #[cfg(feature = "otlp")]
             Sink::Otlp(_) => "otlp",
+            // The webhook id (leaked to `&'static`) so its shared per-sink
+            // series maps one-to-one to the `rsigma_webhook_*` series.
+            Sink::Webhook(s) => s.label(),
             Sink::FanOut(_) => "fanout",
         }
     }

@@ -8,6 +8,7 @@ nav:
   - MCP Server: mcp-server.md
   - Processing Pipelines: processing-pipelines.md
   - Enrichers: enrichers.md
+  - Webhooks: webhooks.md
   - Input Formats: input-formats.md
   - NATS Streaming: nats-streaming.md
   - OTLP Integration: otlp-integration.md

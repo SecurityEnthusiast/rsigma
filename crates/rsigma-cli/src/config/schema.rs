@@ -266,6 +266,10 @@ pub(crate) struct OutputPartial {
     /// Max time in milliseconds a partial sink batch waits before flushing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub batch_flush_ms: Option<u64>,
+    /// Webhook config files or directories declaring template-driven HTTP
+    /// sinks (`--webhook`). Each path is loaded and validated at startup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhooks: Option<Vec<String>>,
 }
 
 impl Merge for OutputPartial {
@@ -281,6 +285,7 @@ impl Merge for OutputPartial {
             backoff_max_ms: over.backoff_max_ms.or(self.backoff_max_ms),
             batch_max: over.batch_max.or(self.batch_max),
             batch_flush_ms: over.batch_flush_ms.or(self.batch_flush_ms),
+            webhooks: over.webhooks.or(self.webhooks),
         }
     }
 }

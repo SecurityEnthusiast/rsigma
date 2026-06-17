@@ -54,6 +54,7 @@ tokio = { version = "1", features = ["full"] }
 | `register_builtin(name, factory) -> Result<(), String>` | Process-global, append-only registry hook. External crates use it to ship a bespoke Rust-coded enricher type addressable via `type: <name>` in the daemon's enrichers config. Reserved names (`template` / `lookup` / `http` / `command`) and duplicate registrations are rejected. |
 | `enrichment::config::{load_enrichers_file, build_enrichers, build_enrichers_full, EnrichersFile}` | YAML loader for an enrichers config, shared by the daemon and the MCP server. Validates template namespaces, scopes, and bespoke `type:` values. |
 | `lookup_builtin(name)` | Read-only registry probe used by the daemon config loader. |
+| `io::webhook::{WebhooksFile, WebhookConfig, WebhookSink, build_webhooks, load_webhooks_file}` | YAML loader and template-driven HTTP output sink. Validates `kind`, template namespaces, and retry/rate-limit bounds; the daemon drives it as a lossy (`on_full=drop`) leaf on the async delivery layer. |
 
 The full pipeline architecture, source resolution flow, and dynamic-pipeline contract are in [the crate README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-runtime/README.md) and the [Architecture reference](../reference/architecture.md).
 

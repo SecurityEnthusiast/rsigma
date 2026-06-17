@@ -31,6 +31,8 @@ These always show up. They cover ingest, matches, queue depth, back-pressure, re
 | `rsigma_sink_retries_total` | counter | `sink` | Sink delivery retries after a retryable failure. |
 | `rsigma_sink_dropped_total` | counter | `sink` | Results dropped because a lossy sink's queue was full (`?on_full=drop`). |
 | `rsigma_sink_delivery_failures_total` | counter | `sink` | Sink deliveries that exhausted retries and were routed to the DLQ. |
+| `rsigma_webhook_requests_total` | counter | `webhook_id`, `outcome` (`success`, `permanent_failure`, `rate_limited_wait`) | Webhook requests by outcome. Queue depth, retries, drops, and DLQ routing are read from the shared per-sink series above, keyed by `sink=<webhook id>` (one-to-one with `webhook_id`). |
+| `rsigma_webhook_request_duration_seconds` | histogram | `webhook_id` | Per-webhook HTTP request latency. |
 
 ## Per-rule labels (2 metrics)
 

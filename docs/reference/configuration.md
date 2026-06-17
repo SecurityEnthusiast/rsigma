@@ -53,6 +53,7 @@ daemon:
   output:
     sinks: [stdout]
     drain_timeout: 5
+    # webhooks: [/etc/rsigma/webhooks/]   # template-driven HTTP sinks
   correlation:
     action: alert
     event_mode: none

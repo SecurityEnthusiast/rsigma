@@ -370,6 +370,21 @@ pub(crate) struct DaemonArgs {
     #[arg(long = "enrichers", value_name = "PATH")]
     pub enrichers: Option<PathBuf>,
 
+    /// Webhook config file(s) or directory of webhook config files.
+    ///
+    /// Repeatable. Declares template-driven HTTP output sinks: each
+    /// detection / correlation result that matches a webhook's `kind` and
+    /// `scope` renders a templated URL, headers, and JSON body and POSTs it.
+    /// A file path loads one YAML file with a top-level `webhooks:` block; a
+    /// directory loads all `*.yml`/`*.yaml` files in it, alphabetically.
+    ///
+    /// Webhooks are best-effort (at-most-once): undeliverable results land in
+    /// the `--dlq`, never blocking the durable sinks. The validator runs at
+    /// startup and rejects an unknown `kind`, a cross-namespace template, a
+    /// missing `url`, or a malformed retry/rate-limit setting.
+    #[arg(long = "webhook", value_name = "FILE_OR_DIR")]
+    pub webhooks: Vec<PathBuf>,
+
     /// External source file(s) or directory of source files.
     ///
     /// Repeatable. Loads dynamic source declarations independently of
@@ -542,6 +557,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         #[cfg(feature = "daachorse-index")]
         cross_rule_ac,
         enrichers,
+        webhooks,
         sources: source_paths,
         #[cfg(feature = "daemon-tls")]
         tls_cert,
@@ -664,6 +680,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         #[cfg(feature = "daachorse-index")]
         cross_rule_ac,
         enrichers,
+        webhooks,
         source_paths,
         #[cfg(feature = "daemon-tls")]
         tls_args,
@@ -843,6 +860,11 @@ fn apply_daemon_config(
         {
             args.pretty = v;
         }
+        if !explicit("webhooks")
+            && let Some(v) = output.webhooks
+        {
+            args.webhooks = v.into_iter().map(PathBuf::from).collect();
+        }
     }
 
     if let Some(correlation) = daemon.correlation {
@@ -1013,6 +1035,7 @@ fn run_daemon(
     observe_fields_max_keys: usize,
     #[cfg(feature = "daachorse-index")] cross_rule_ac: bool,
     enrichers_path: Option<PathBuf>,
+    webhook_paths: Vec<PathBuf>,
     source_paths: Vec<PathBuf>,
     #[cfg(feature = "daemon-tls")] tls_args: TlsCliArgs,
 ) {
@@ -1158,6 +1181,7 @@ fn run_daemon(
         #[cfg(feature = "daachorse-index")]
         cross_rule_ac,
         enrichers_path,
+        webhook_paths,
         source_registry,
         #[cfg(feature = "daemon-tls")]
         tls_state,

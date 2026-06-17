@@ -63,7 +63,7 @@ flowchart TD
         RINPUT["input/ format adapters:<br/>JSON · syslog · logfmt* · CEF* · EVTX*<br/>plain text · auto-detect<br/>raw line → EventInputDecoded"]
         RINPUT --> RPROC["LogProcessor<br/>batch evaluation<br/>ArcSwap hot-reload<br/>MetricsHook · EventFilter"]
         RPROC --> RENG["RuntimeEngine<br/>wraps Engine + CorrelationEngine"]
-        RENG --> RIO["io/<br/>EventSource (stdin · HTTP · NATS)<br/>OTLP* (HTTP + gRPC)<br/>Sink (stdout · file · NATS) · DLQ"]
+        RENG --> RIO["io/<br/>EventSource (stdin · HTTP · NATS)<br/>OTLP* (HTTP + gRPC)<br/>Sink (stdout · file · NATS · OTLP* · webhook)<br/>async delivery: per-sink workers · retry/backoff · DLQ"]
         RSRC["sources/ (dynamic pipelines)<br/>SourceResolver: HTTP · command · file · NATS<br/>TemplateExpander · SourceCache<br/>RefreshScheduler<br/>SIGHUP · NATS control · includes<br/>extract: jq · JSONPath · CEL"]
     end
 

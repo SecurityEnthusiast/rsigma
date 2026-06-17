@@ -7,5 +7,6 @@ pub(crate) mod server;
 mod store;
 #[cfg(feature = "daemon-tls")]
 pub(crate) mod tls;
+pub(crate) mod webhook;
 
 pub use server::run_daemon;

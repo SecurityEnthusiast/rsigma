@@ -28,6 +28,8 @@ pub struct Metrics {
     pub sink_retries_total: IntCounterVec,
     pub sink_dropped_total: IntCounterVec,
     pub sink_delivery_failures_total: IntCounterVec,
+    pub webhook_requests_total: IntCounterVec,
+    pub webhook_request_duration_seconds: prometheus::HistogramVec,
     pub detection_matches_by_rule: IntCounterVec,
     pub correlation_matches_by_rule: IntCounterVec,
     pub source_resolves_total: IntCounterVec,
@@ -189,6 +191,25 @@ impl Metrics {
             &["sink"],
         )
         .unwrap();
+        let webhook_requests_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_webhook_requests_total",
+                "Webhook requests by outcome (success, permanent_failure, rate_limited_wait)",
+            ),
+            &["webhook_id", "outcome"],
+        )
+        .unwrap();
+        let webhook_request_duration_seconds = prometheus::HistogramVec::new(
+            HistogramOpts::new(
+                "rsigma_webhook_request_duration_seconds",
+                "Per-webhook HTTP request latency",
+            )
+            .buckets(vec![
+                0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+            ]),
+            &["webhook_id"],
+        )
+        .unwrap();
         let detection_matches_by_rule = IntCounterVec::new(
             Opts::new(
                 "rsigma_detection_matches_by_rule_total",
@@ -260,6 +281,12 @@ impl Metrics {
             .unwrap();
         registry
             .register(Box::new(sink_delivery_failures_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(webhook_requests_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(webhook_request_duration_seconds.clone()))
             .unwrap();
         registry
             .register(Box::new(detection_matches_by_rule.clone()))
@@ -490,6 +517,8 @@ impl Metrics {
             sink_retries_total,
             sink_dropped_total,
             sink_delivery_failures_total,
+            webhook_requests_total,
+            webhook_request_duration_seconds,
             detection_matches_by_rule,
             correlation_matches_by_rule,
             source_resolves_total,
@@ -726,6 +755,32 @@ impl MetricsHook for Metrics {
     fn on_sink_delivery_failed(&self, sink: &str) {
         self.sink_delivery_failures_total
             .with_label_values(&[sink])
+            .inc();
+    }
+
+    fn register_webhook(&self, webhook_id: &str) {
+        for outcome in ["success", "permanent_failure", "rate_limited_wait"] {
+            self.webhook_requests_total
+                .with_label_values(&[webhook_id, outcome])
+                .inc_by(0);
+        }
+        // Materialise the histogram series so panels render before traffic.
+        self.webhook_request_duration_seconds
+            .with_label_values(&[webhook_id]);
+    }
+
+    fn on_webhook_request(&self, webhook_id: &str, outcome: &'static str, duration_secs: f64) {
+        self.webhook_requests_total
+            .with_label_values(&[webhook_id, outcome])
+            .inc();
+        self.webhook_request_duration_seconds
+            .with_label_values(&[webhook_id])
+            .observe(duration_secs);
+    }
+
+    fn on_webhook_rate_limited(&self, webhook_id: &str) {
+        self.webhook_requests_total
+            .with_label_values(&[webhook_id, "rate_limited_wait"])
             .inc();
     }
 }
