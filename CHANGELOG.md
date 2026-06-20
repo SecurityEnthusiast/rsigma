@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### `engine status`: query a running daemon from the command line
+### `engine status`: query a running daemon from the command line (#237)
 
 A new `rsigma engine status` subcommand fetches a running daemon's `/api/v1/status` snapshot and renders it through the shared output layer, so checking a daemon no longer requires `curl`.
 
