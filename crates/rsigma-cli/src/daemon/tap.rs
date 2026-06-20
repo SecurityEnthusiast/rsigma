@@ -504,6 +504,27 @@ mod tests {
         assert_eq!(p.redact_paths, vec!["user.email", "src_ip"]);
     }
 
+    /// Recursively sort object keys so a snapshot is stable whether or not the
+    /// `serde_json/preserve_order` feature is unified into the build (it is
+    /// under `--all-features`, which flips object output from sorted to
+    /// insertion order). Production fixtures stay order-agnostic NDJSON; this
+    /// only canonicalizes the golden text.
+    fn canonical_json(value: &serde_json::Value) -> serde_json::Value {
+        use serde_json::Value;
+        match value {
+            Value::Object(map) => {
+                let mut entries: Vec<(String, Value)> = map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), canonical_json(v)))
+                    .collect();
+                entries.sort_by(|a, b| a.0.cmp(&b.0));
+                Value::Object(entries.into_iter().collect())
+            }
+            Value::Array(arr) => Value::Array(arr.iter().map(canonical_json).collect()),
+            other => other.clone(),
+        }
+    }
+
     /// Golden output for a redacted decoded fixture line plus the summary
     /// record, pinned with the fixed test salt so the tokens are stable.
     #[test]
@@ -516,6 +537,7 @@ mod tests {
         let redactor = Redactor::new(&["user.email".into(), "src_ip".into()], SALT);
         let line =
             render_line(super::TapPayload::Decoded(Box::new(event)), Some(&redactor)).unwrap();
+        let event_value: serde_json::Value = serde_json::from_str(line.trim_end()).unwrap();
         let summary = serde_json::json!({
             "rsigma_tap_summary": {
                 "captured": 1,
@@ -524,7 +546,11 @@ mod tests {
                 "stage": "decoded",
             }
         });
-        let golden = format!("{line}{summary}\n");
+        let golden = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&canonical_json(&event_value)).unwrap(),
+            serde_json::to_string(&canonical_json(&summary)).unwrap(),
+        );
         insta::assert_snapshot!("redacted_decoded_fixture", golden);
     }
 }
