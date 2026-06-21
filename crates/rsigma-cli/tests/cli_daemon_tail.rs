@@ -17,10 +17,6 @@ use common::{DaemonProcess, http_get, http_post, poll_until, rsigma_bin, temp_fi
 use serde_json::Value;
 use tempfile::TempDir;
 
-/// The tail is opt-in (disabled by default); enable it on the daemon child via
-/// the uniform env layer so the streaming tests can exercise it.
-const TAIL_ON: &[(&str, &str)] = &[("RSIGMA_DAEMON__TAIL__ENABLED", "true")];
-
 const RULE: &str = r#"
 title: Whoami Detector
 id: 00000000-0000-0000-0000-0000000000bb
@@ -35,9 +31,10 @@ detection:
 level: high
 "#;
 
-/// Spawn an HTTP-input daemon with the tail enabled, against a single rule.
+/// Spawn an HTTP-input daemon with the tail enabled via `--enable-tail` (the
+/// tail is opt-in / disabled by default).
 fn spawn_tail(rule_path: &str) -> DaemonProcess {
-    DaemonProcess::spawn_http_with_args_env(rule_path, &[], TAIL_ON)
+    DaemonProcess::spawn_http_with_args(rule_path, &["--enable-tail"])
 }
 
 /// Build a rules directory holding two rules with distinct titles and levels,
@@ -132,16 +129,17 @@ fn tail_disabled_by_default_returns_503() {
 }
 
 #[test]
-fn tail_disable_flag_overrides_enabling_config() {
+fn tail_enabled_via_config() {
     let rule = temp_file(".yml", RULE);
+    // The config layer enables the tail (instead of the --enable-tail flag).
     let daemon = DaemonProcess::spawn_http_with_args_env(
         rule.path().to_str().unwrap(),
-        &["--disable-tail"],
-        TAIL_ON,
+        &[],
+        &[("RSIGMA_DAEMON__TAIL__ENABLED", "true")],
     );
 
-    let (status, _) = http_get(&daemon.url("/api/v1/detections/stream"));
-    assert_eq!(status, 503);
+    let (status, _) = http_get(&daemon.url("/api/v1/detections/stream?duration=1s"));
+    assert_eq!(status, 200);
 }
 
 #[test]

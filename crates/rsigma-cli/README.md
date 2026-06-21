@@ -530,7 +530,7 @@ rsigma engine tap --duration 1m -o fixture.ndjson
 rsigma engine eval -r candidate-rules/ -e @fixture.ndjson
 ```
 
-The capture is lossy by design and can never apply backpressure to detection: a full per-session buffer drops events (counted in a trailing summary record). Redaction is server-side and deterministic (per-session salted hashing), so equal values still match across the fixture while raw values never cross the wire. The tap exfiltrates raw events, so it is **disabled by default**: enable it with `daemon.tap.enabled: true` and expose the admin API only behind mTLS (`--disable-tap` force-overrides an enabling config to off). Like `engine status`, it uses the synchronous `ureq` client and shares the `--addr` convention.
+The capture is lossy by design and can never apply backpressure to detection: a full per-session buffer drops events (counted in a trailing summary record). Redaction is server-side and deterministic (per-session salted hashing), so equal values still match across the fixture while raw values never cross the wire. The tap exfiltrates raw events, so it is **disabled by default**: enable it with `--enable-tap` (or `daemon.tap.enabled: true`) and expose the admin API only behind mTLS. Like `engine status`, it uses the synchronous `ureq` client and shares the `--addr` convention.
 
 ### `engine tail`: Stream live detections
 
@@ -547,7 +547,7 @@ rsigma engine tail --rule "suspicious login" | jq '.matched_fields'
 rsigma engine tail --duration 5m --output-format ndjson > detections.ndjson
 ```
 
-Optional server-side `--level` (minimum severity) and `--rule` (case-insensitive title/id substring) filters keep a noisy daemon readable; `--duration` and `--limit` bound the stream (unset streams until interrupted). The stream is lossy by design and never backpressures the sink task: a full per-session buffer drops detections (counted in a trailing summary record). The tail is **disabled by default**: enable it with `daemon.tail.enabled: true` (`--disable-tail` force-overrides to off). Output goes through the global `--output-format` layer; like `engine status` it uses the synchronous `ureq` client and shares the `--addr` convention.
+Optional server-side `--level` (minimum severity) and `--rule` (case-insensitive title/id substring) filters keep a noisy daemon readable; `--duration` and `--limit` bound the stream (unset streams until interrupted). The stream is lossy by design and never backpressures the sink task: a full per-session buffer drops detections (counted in a trailing summary record). The tail is **disabled by default**: enable it with `--enable-tail` (or `daemon.tail.enabled: true`). Output goes through the global `--output-format` layer; like `engine status` it uses the synchronous `ureq` client and shares the `--addr` convention.
 
 ### `engine eval`: Evaluate events against rules
 

@@ -22,7 +22,7 @@ The stream is **lossy by design**: it can never apply backpressure to the sink t
 
 Like [`engine status`](status.md) it is a read-only client over the admin API. It uses a synchronous HTTP client and does not need the `daemon` build feature, and it follows the same address convention as [`config reload`](../config/reload.md): `--addr` defaults to `daemon.api.addr`, and wildcard binds (`0.0.0.0`, `[::]`) map to loopback.
 
-The tail is **disabled by default**. Enable it on the daemon with `daemon.tail.enabled: true` in the config (or `RSIGMA_DAEMON__TAIL__ENABLED=true`); otherwise the endpoint returns `503`.
+The tail is **disabled by default**. Enable it on the daemon with the `--enable-tail` flag or `daemon.tail.enabled: true` in the config; otherwise the endpoint returns `503`.
 
 ### Filters
 

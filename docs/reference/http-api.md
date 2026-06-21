@@ -355,7 +355,7 @@ A `DELETE` does not affect rule loading or any other daemon state. Use it after 
 
 Stream a bounded window of the live event stream as chunked NDJSON, one event per line, followed by a summary record. The capture ends at `duration` or `limit`, whichever comes first, and a dropped client connection tears the session down automatically. The capture is lossy by design: a full per-session buffer drops events (counted in the summary) rather than ever applying backpressure to the engine. This is the endpoint behind [`rsigma engine tap`](../cli/engine/tap.md).
 
-Disabled by default (the tap exfiltrates raw events). Enable it with `daemon.tap.enabled: true`; otherwise, and when `--disable-tap` force-overrides an enabling config, the endpoint returns `503 Service Unavailable` with `{"error":"event tap disabled","hint":"..."}`.
+Disabled by default (the tap exfiltrates raw events). Enable it with `daemon.tap.enabled: true` or the `--enable-tap` flag; otherwise the endpoint returns `503 Service Unavailable` with `{"error":"event tap disabled","hint":"..."}`.
 
 | Query param | Default | Description |
 |-------------|---------|-------------|
@@ -382,7 +382,7 @@ Error semantics:
 |--------|------|
 | `400 Bad Request` | Malformed params, an invalid `stage`, or a `duration` over `daemon.tap.max_duration`. |
 | `409 Conflict` | The concurrent-session cap (`daemon.tap.max_sessions`, default `2`) is reached. |
-| `503 Service Unavailable` | The tap is disabled (the default; not enabled via `daemon.tap.enabled: true`, or force-disabled with `--disable-tap`). |
+| `503 Service Unavailable` | The tap is disabled (the default; not enabled via `daemon.tap.enabled: true` or `--enable-tap`). |
 
 !!! warning "The tap exfiltrates raw events"
     Anyone who can reach this endpoint can read live event traffic. It is off by default; enable it only behind mTLS and redact sensitive fields. See [Security](security.md#live-event-tap).
@@ -395,7 +395,7 @@ Four Prometheus metrics track the tap: `rsigma_tap_sessions_total`, `rsigma_tap_
 
 Stream live detections as chunked NDJSON, one result per line, followed by a summary record. The capture ends at `duration` or `limit`, whichever comes first; with neither it streams until the client disconnects. Each line is the same `EvaluationResult` shape the sinks emit (so `engine tail` and a saved sink file are the same format), captured after post-evaluation enrichment and before dispatch, regardless of which sinks are configured. The stream is lossy by design: a full per-session buffer drops detections (counted in the summary) rather than ever backpressuring the sink task. This is the endpoint behind [`rsigma engine tail`](../cli/engine/tail.md).
 
-Disabled by default. Enable it with `daemon.tail.enabled: true`; otherwise, and when `--disable-tail` force-overrides an enabling config, the endpoint returns `503 Service Unavailable` with `{"error":"detection tail disabled","hint":"..."}`.
+Disabled by default. Enable it with `daemon.tail.enabled: true` or the `--enable-tail` flag; otherwise the endpoint returns `503 Service Unavailable` with `{"error":"detection tail disabled","hint":"..."}`.
 
 | Query param | Default | Description |
 |-------------|---------|-------------|
@@ -419,7 +419,7 @@ Error semantics:
 |--------|------|
 | `400 Bad Request` | Malformed params or an invalid `level`. |
 | `409 Conflict` | The concurrent-session cap (`daemon.tail.max_sessions`, default `2`) is reached. |
-| `503 Service Unavailable` | The tail is disabled (the default; not enabled via `daemon.tail.enabled: true`, or force-disabled with `--disable-tail`). |
+| `503 Service Unavailable` | The tail is disabled (the default; not enabled via `daemon.tail.enabled: true` or `--enable-tail`). |
 
 Two Prometheus metrics track the tail: `rsigma_tail_active_sessions` and `rsigma_tail_detections_dropped_total`. See [Prometheus metrics](metrics.md).
 

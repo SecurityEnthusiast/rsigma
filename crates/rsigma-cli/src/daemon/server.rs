@@ -37,7 +37,7 @@ use super::store::{SourcePosition, SqliteStateStore};
 use crate::EventFilter;
 
 /// Effective live event-tap limits, resolved from `daemon.tap.*` plus the
-/// `--disable-tap` flag.
+/// `--enable-tap` flag.
 #[derive(Debug, Clone, Copy)]
 pub struct TapSettings {
     /// Whether the tap accepts sessions. `false` makes `GET /api/v1/tap`
@@ -52,7 +52,7 @@ pub struct TapSettings {
 }
 
 /// Effective live detection-tail limits, resolved from `daemon.tail.*` plus the
-/// `--disable-tail` flag.
+/// `--enable-tail` flag.
 #[derive(Debug, Clone, Copy)]
 pub struct TailSettings {
     /// Whether the tail accepts sessions. `false` makes
@@ -175,9 +175,9 @@ pub struct DaemonConfig {
     /// pipeline-embedded `sources:` blocks. Collision-checked at
     /// construction time.
     pub source_registry: rsigma_runtime::sources::registry::DaemonSourceRegistry,
-    /// Effective live event-tap limits (`daemon.tap.*` + `--disable-tap`).
+    /// Effective live event-tap limits (`daemon.tap.*` + `--enable-tap`).
     pub tap: TapSettings,
-    /// Effective live detection-tail limits (`daemon.tail.*` + `--disable-tail`).
+    /// Effective live detection-tail limits (`daemon.tail.*` + `--enable-tail`).
     pub tail: TailSettings,
     /// Optional server-side TLS state. `Some` when the operator passed
     /// `--tls-cert`/`--tls-key`; the daemon then terminates TLS on the
@@ -2100,7 +2100,7 @@ async fn tap_stream(
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({
                 "error": "event tap disabled",
-                "hint": "restart the daemon without --disable-tap (and with daemon.tap.enabled not false) to enable GET /api/v1/tap",
+                "hint": "restart the daemon with --enable-tap (or daemon.tap.enabled: true) to enable GET /api/v1/tap",
             })),
         )
             .into_response();
@@ -2144,7 +2144,7 @@ async fn detections_stream(
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({
                 "error": "detection tail disabled",
-                "hint": "restart the daemon without --disable-tail (and with daemon.tail.enabled not false) to enable GET /api/v1/detections/stream",
+                "hint": "restart the daemon with --enable-tail (or daemon.tail.enabled: true) to enable GET /api/v1/detections/stream",
             })),
         )
             .into_response();

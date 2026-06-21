@@ -427,13 +427,13 @@ impl Merge for NatsPartial {
     }
 }
 
-/// Live event-tap limits. The only flag is `--disable-tap`; the tuning keys
+/// Live event-tap limits. The only flag is `--enable-tap`; the tuning keys
 /// are config-file-only to keep the daemon flag surface minimal.
 #[derive(Debug, Default, Clone, Deserialize, Serialize, JsonSchema)]
 pub(crate) struct TapPartial {
     /// Whether the `GET /api/v1/tap` endpoint accepts sessions (default
-    /// false; the tap is opt-in because it exfiltrates raw events).
-    /// `--disable-tap` forces this off regardless of the config value.
+    /// false; the tap is opt-in because it exfiltrates raw events). Enabled
+    /// by this key or the `--enable-tap` flag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     /// Per-session bounded channel capacity. A full channel drops events
@@ -461,13 +461,13 @@ impl Merge for TapPartial {
     }
 }
 
-/// Live detection-tail limits. The only flag is `--disable-tail`; the tuning
+/// Live detection-tail limits. The only flag is `--enable-tail`; the tuning
 /// keys are config-file-only.
 #[derive(Debug, Default, Clone, Deserialize, Serialize, JsonSchema)]
 pub(crate) struct TailPartial {
     /// Whether the `GET /api/v1/detections/stream` endpoint accepts sessions
-    /// (default false; opt-in like the event tap). `--disable-tail` forces
-    /// this off regardless of the config value.
+    /// (default false; opt-in like the event tap). Enabled by this key or the
+    /// `--enable-tail` flag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     /// Per-session bounded channel capacity. A full channel drops detections
