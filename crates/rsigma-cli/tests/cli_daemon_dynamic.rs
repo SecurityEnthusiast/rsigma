@@ -185,6 +185,83 @@ fn http_delete(url: &str) -> (u16, String) {
     }
 }
 
+/// Read and parse the daemon `/api/v1/status` payload.
+fn read_status(daemon: &DaemonProcess) -> serde_json::Value {
+    let (_, body) = http_get(&daemon.url("/api/v1/status"));
+    serde_json::from_str(&body).expect("status should be valid JSON")
+}
+
+/// Poll `/api/v1/status` until `pred` holds, returning the matching payload.
+/// Replaces fixed sleeps that waited for asynchronous event processing.
+fn wait_for_status(
+    daemon: &DaemonProcess,
+    deadline: Duration,
+    pred: impl Fn(&serde_json::Value) -> bool,
+) -> serde_json::Value {
+    let end = std::time::Instant::now() + deadline;
+    loop {
+        let v = read_status(daemon);
+        if pred(&v) {
+            return v;
+        }
+        if std::time::Instant::now() >= end {
+            panic!("status condition not met within {deadline:?}: {v}");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Like [`wait_for_status`] but returns whether the condition was observed
+/// instead of panicking. Used for best-effort waits (e.g. a source resolve
+/// attempt completing) where a later assertion is the real check.
+fn observe_status(
+    daemon: &DaemonProcess,
+    deadline: Duration,
+    pred: impl Fn(&serde_json::Value) -> bool,
+) -> bool {
+    let end = std::time::Instant::now() + deadline;
+    loop {
+        if pred(&read_status(daemon)) {
+            return true;
+        }
+        if std::time::Instant::now() >= end {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Post `payload` repeatedly until `detection_matches` reaches `target` or the
+/// deadline elapses. Robust to asynchronous reload/re-resolution: events posted
+/// before the rebuilt engine is live simply do not match, so the loop keeps
+/// trying until the new engine takes effect.
+fn wait_for_detections(
+    daemon: &DaemonProcess,
+    payload: &str,
+    target: u64,
+    deadline: Duration,
+) -> serde_json::Value {
+    let end = std::time::Instant::now() + deadline;
+    loop {
+        http_post(&daemon.url("/api/v1/events"), payload);
+        std::thread::sleep(Duration::from_millis(100));
+        let v = read_status(daemon);
+        if v["detection_matches"].as_u64().unwrap_or(0) >= target {
+            return v;
+        }
+        if std::time::Instant::now() >= end {
+            panic!("detection_matches did not reach {target} within {deadline:?}: {v}");
+        }
+    }
+}
+
+/// Total source-resolution activity (resolves + errors) reported by the daemon.
+/// Used to detect that a triggered re-resolution has completed.
+fn resolve_activity(v: &serde_json::Value) -> u64 {
+    let ds = &v["dynamic_sources"];
+    ds["resolves_total"].as_u64().unwrap_or(0) + ds["errors_total"].as_u64().unwrap_or(0)
+}
+
 // Rule that uses a %placeholder% for the detection value.
 // The pipeline var `malicious_commands` will be filled dynamically from a source.
 const DYNAMIC_VAR_RULE: &str = r#"
@@ -282,14 +359,9 @@ fn daemon_with_dynamic_pipeline_detects_via_var_expansion() {
     );
     assert_eq!(status, 200);
 
-    std::thread::sleep(Duration::from_millis(500));
-
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(
-        v["events_processed"].as_u64().unwrap() >= 1,
-        "should have processed the event"
-    );
+    let v = wait_for_status(&daemon, Duration::from_secs(10), |v| {
+        v["events_processed"].as_u64().unwrap_or(0) >= 1
+    });
     assert!(
         v["detection_matches"].as_u64().unwrap() >= 1,
         "dynamic var expansion should enable detection: {v}"
@@ -329,10 +401,9 @@ fn daemon_dynamic_pipeline_no_false_positive() {
     );
     assert_eq!(status, 200);
 
-    std::thread::sleep(Duration::from_millis(500));
-
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let v = wait_for_status(&daemon, Duration::from_secs(10), |v| {
+        v["events_processed"].as_u64().unwrap_or(0) >= 1
+    });
     assert_eq!(
         v["detection_matches"].as_u64().unwrap(),
         0,
@@ -372,28 +443,20 @@ fn daemon_reload_preserves_dynamic_detection() {
         &daemon.url("/api/v1/events"),
         r#"{"CommandLine":"malware.exe --payload"}"#,
     );
-    std::thread::sleep(Duration::from_millis(500));
+    wait_for_status(&daemon, Duration::from_secs(10), |v| {
+        v["detection_matches"].as_u64().unwrap_or(0) >= 1
+    });
 
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(
-        v["detection_matches"].as_u64().unwrap() >= 1,
-        "initial detection should work: {v}"
-    );
-
-    // Reload (source file unchanged)
+    // Reload (source file unchanged), then confirm detection still works. The
+    // reload is asynchronous, so re-post until the rebuilt engine matches
+    // instead of sleeping for a fixed window.
     retry_reload(&daemon);
-    std::thread::sleep(Duration::from_secs(3));
-
-    // Detection should still work after reload
-    http_post(
-        &daemon.url("/api/v1/events"),
+    let v = wait_for_detections(
+        &daemon,
         r#"{"CommandLine":"malware.exe --payload"}"#,
+        2,
+        Duration::from_secs(10),
     );
-    std::thread::sleep(Duration::from_millis(500));
-
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(
         v["detection_matches"].as_u64().unwrap() >= 2,
         "detection should still work after reload: {v}"
@@ -429,15 +492,15 @@ fn daemon_source_refresh_on_file_change() {
         "127.0.0.1:0",
     ]);
 
-    // Initially should NOT detect
+    // Initially should NOT detect. Wait until the event is processed, then
+    // assert no detection occurred.
     http_post(
         &daemon.url("/api/v1/events"),
         r#"{"CommandLine":"malware.exe --payload"}"#,
     );
-    std::thread::sleep(Duration::from_millis(500));
-
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let v = wait_for_status(&daemon, Duration::from_secs(10), |v| {
+        v["events_processed"].as_u64().unwrap_or(0) >= 1
+    });
     assert_eq!(
         v["detection_matches"].as_u64().unwrap(),
         0,
@@ -447,19 +510,15 @@ fn daemon_source_refresh_on_file_change() {
     // Update source file to include "malware.exe"
     write_source_file(&source_path, r#"["malware.exe"]"#);
 
-    // Trigger a reload to pick up new source data and rebuild the engine.
+    // Trigger a reload to pick up new source data and rebuild the engine, then
+    // re-post until the rebuilt engine detects.
     retry_reload(&daemon);
-    std::thread::sleep(Duration::from_secs(3));
-
-    // Now post another event and verify detection works
-    http_post(
-        &daemon.url("/api/v1/events"),
+    let v = wait_for_detections(
+        &daemon,
         r#"{"CommandLine":"malware.exe --payload"}"#,
+        1,
+        Duration::from_secs(10),
     );
-    std::thread::sleep(Duration::from_millis(500));
-
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(
         v["detection_matches"].as_u64().unwrap() >= 1,
         "should detect after source file update + reload: {v}"
@@ -498,32 +557,30 @@ fn daemon_error_policy_use_cached() {
         &daemon.url("/api/v1/events"),
         r#"{"CommandLine":"malware.exe --payload"}"#,
     );
-    std::thread::sleep(Duration::from_millis(500));
-
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(
-        v["detection_matches"].as_u64().unwrap() >= 1,
-        "initial detection should work: {v}"
-    );
+    wait_for_status(&daemon, Duration::from_secs(10), |v| {
+        v["detection_matches"].as_u64().unwrap_or(0) >= 1
+    });
 
     // Remove the source file (simulate source becoming unavailable)
     std::fs::remove_file(&source_path).unwrap();
 
-    // Trigger manual re-resolution
-    std::thread::sleep(Duration::from_millis(200));
-    http_post(&daemon.url("/api/v1/sources/resolve"), "");
-    std::thread::sleep(Duration::from_secs(2));
+    // Trigger manual re-resolution and wait for the resolve attempt to land
+    // (it fails because the file is gone; use_cached then serves the previous
+    // value). Best-effort wait: the real check is that detection still works.
+    let before = resolve_activity(&read_status(&daemon));
+    let (status, _) = http_post(&daemon.url("/api/v1/sources/resolve"), "");
+    assert_eq!(status, 200);
+    observe_status(&daemon, Duration::from_secs(5), |v| {
+        resolve_activity(v) > before
+    });
 
     // Detection should STILL work because use_cached serves the previous value
-    http_post(
-        &daemon.url("/api/v1/events"),
+    let v = wait_for_detections(
+        &daemon,
         r#"{"CommandLine":"malware.exe --payload"}"#,
+        2,
+        Duration::from_secs(10),
     );
-    std::thread::sleep(Duration::from_millis(500));
-
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(
         v["detection_matches"].as_u64().unwrap() >= 2,
         "use_cached should allow detection to continue: {v}"
@@ -589,35 +646,35 @@ fn daemon_api_sources_resolve_triggers_re_resolution() {
         "127.0.0.1:0",
     ]);
 
-    // Verify initial state: no detection
+    // Verify initial state: no detection (after the event is processed).
     http_post(
         &daemon.url("/api/v1/events"),
         r#"{"CommandLine":"malware.exe --payload"}"#,
     );
-    std::thread::sleep(Duration::from_millis(500));
-
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let v = wait_for_status(&daemon, Duration::from_secs(10), |v| {
+        v["events_processed"].as_u64().unwrap_or(0) >= 1
+    });
     assert_eq!(v["detection_matches"].as_u64().unwrap(), 0);
 
     // Update file content
     write_source_file(&source_path, r#"["malware.exe"]"#);
 
-    // Trigger re-resolution via API then reload to rebuild engine with new data
+    // Trigger re-resolution via API, wait for it to land, then reload to
+    // rebuild the engine with the new data and re-post until detection works.
+    let before = resolve_activity(&read_status(&daemon));
     let (status, _) = http_post(&daemon.url("/api/v1/sources/resolve"), "");
     assert_eq!(status, 200);
+    observe_status(&daemon, Duration::from_secs(5), |v| {
+        resolve_activity(v) > before
+    });
     retry_reload(&daemon);
-    std::thread::sleep(Duration::from_secs(3));
 
-    // Now detection should work
-    http_post(
-        &daemon.url("/api/v1/events"),
+    let v = wait_for_detections(
+        &daemon,
         r#"{"CommandLine":"malware.exe --payload"}"#,
+        1,
+        Duration::from_secs(10),
     );
-    std::thread::sleep(Duration::from_millis(500));
-
-    let (_, body) = http_get(&daemon.url("/api/v1/status"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(
         v["detection_matches"].as_u64().unwrap() >= 1,
         "should detect after re-resolution + reload: {v}"
