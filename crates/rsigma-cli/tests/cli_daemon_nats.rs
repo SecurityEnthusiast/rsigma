@@ -248,10 +248,30 @@ async fn daemon_nats_no_match_no_output() {
     )
     .await;
 
-    let msgs = collect_messages(&mut output_sub, 1, Duration::from_secs(3)).await;
+    // Canary: a matching event published after the benign ones. JetStream
+    // preserves publish order on a subject and the daemon processes
+    // sequentially, so once the canary detection arrives the benign events
+    // have already been processed. This replaces a fixed "wait and hope"
+    // window with a deterministic signal.
+    publish_and_flush(
+        &client,
+        "e2e.cli.input.benign",
+        r#"{"CommandLine":"run malware.exe"}"#,
+    )
+    .await;
+
+    let msgs = collect_messages(&mut output_sub, 1, Duration::from_secs(10)).await;
+    assert_eq!(
+        msgs.len(),
+        1,
+        "only the canary should produce a detection, got: {msgs:?}"
+    );
+    // A short drain confirms the benign events produced no detection of their
+    // own (the canary was the first and only output).
+    let extra = collect_messages(&mut output_sub, 1, Duration::from_millis(200)).await;
     assert!(
-        msgs.is_empty(),
-        "benign events should produce no output, got: {msgs:?}"
+        extra.is_empty(),
+        "benign events should produce no output, got: {extra:?}"
     );
 }
 
@@ -385,6 +405,43 @@ fn read_snapshot_json(db_path: &std::path::Path) -> Option<String> {
     .ok()
 }
 
+/// Best-effort read of `source_sequence` that tolerates the row, table, or DB
+/// file not existing yet (the daemon creates them lazily) and a transient
+/// `SQLITE_BUSY` while the daemon holds a write lock. Returns `None` on any
+/// such condition so callers can simply retry.
+fn try_read_source_sequence(db_path: &std::path::Path) -> Option<i64> {
+    let conn = rusqlite::Connection::open(db_path).ok()?;
+    conn.query_row(
+        "SELECT source_sequence FROM rsigma_correlation_state WHERE id = 1",
+        [],
+        |row| row.get::<_, Option<i64>>(0),
+    )
+    .ok()
+    .flatten()
+}
+
+/// Poll the state DB until `source_sequence` is stored and at least `min_seq`,
+/// or `deadline` elapses. Replaces fixed sleeps that waited for the periodic
+/// state save (`--state-save-interval`). Returns the stored sequence, if any.
+async fn wait_for_source_sequence(
+    db_path: &std::path::Path,
+    min_seq: i64,
+    deadline: Duration,
+) -> Option<i64> {
+    let end = tokio::time::Instant::now() + deadline;
+    loop {
+        if let Some(seq) = try_read_source_sequence(db_path)
+            && seq >= min_seq
+        {
+            return Some(seq);
+        }
+        if tokio::time::Instant::now() >= end {
+            return None;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 /// Process events through NATS, then verify the DB stores source_sequence
 /// and source_timestamp from the JetStream message metadata.
 #[tokio::test]
@@ -432,8 +489,11 @@ async fn daemon_nats_state_persists_source_position() {
         .await;
     }
 
-    // Wait for the periodic save to persist (interval=1s, plus processing time)
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    // Wait for the periodic save to persist the source position (interval=1s)
+    // instead of sleeping for a fixed window.
+    wait_for_source_sequence(&db_path, 2, Duration::from_secs(15))
+        .await
+        .expect("source_sequence >= 2 should be stored after NATS processing");
     daemon.kill();
 
     let (seq, ts) = read_source_position(&db_path);
@@ -505,11 +565,10 @@ async fn daemon_nats_forward_replay_restores_state() {
         .await;
     }
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    let stored_seq = wait_for_source_sequence(&db_path, 2, Duration::from_secs(15))
+        .await
+        .expect("sequence should be stored after run 1");
     daemon.kill();
-
-    let (stored_seq, _) = read_source_position(&db_path);
-    let stored_seq = stored_seq.expect("sequence should be stored after run 1");
     let _ = collect_messages(&mut output_sub, 10, Duration::from_millis(100)).await;
     drop(output_sub);
 
@@ -612,11 +671,10 @@ async fn daemon_nats_backward_replay_clears_state() {
         .await;
     }
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    wait_for_source_sequence(&db_path, 2, Duration::from_secs(15))
+        .await
+        .expect("should have stored sequence after run 1");
     daemon.kill();
-
-    let (stored_seq, _) = read_source_position(&db_path);
-    assert!(stored_seq.is_some(), "should have stored sequence");
     let _ = collect_messages(&mut output_sub, 10, Duration::from_millis(100)).await;
     drop(output_sub);
 
@@ -657,7 +715,10 @@ async fn daemon_nats_backward_replay_clears_state() {
         .await;
     }
 
-    let msgs = collect_messages(&mut output_sub2, 2, Duration::from_secs(10)).await;
+    // Only the first detection is inspected below. Collecting a single message
+    // returns as soon as the correlation fires instead of blocking the full
+    // timeout waiting for a second message that a clean run never produces.
+    let msgs = collect_messages(&mut output_sub2, 1, Duration::from_secs(10)).await;
     daemon2.kill();
 
     // The key assertion: correlation fires. If state was preserved (bug),
@@ -745,7 +806,9 @@ async fn daemon_nats_state_db_migration_stores_position() {
     )
     .await;
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    wait_for_source_sequence(&db_path, 1, Duration::from_secs(15))
+        .await
+        .expect("source_sequence should be populated after processing");
     daemon.kill();
 
     // Verify schema was migrated and source position is now stored
