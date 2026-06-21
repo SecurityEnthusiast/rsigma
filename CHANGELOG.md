@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### `engine tail`: stream live detections to the terminal
+### `engine tail`: stream live detections to the terminal (#239)
 
 A new `rsigma engine tail` subcommand (and the `GET /api/v1/detections/stream` endpoint behind it) streams a running daemon's live detections, the detections-out counterpart to `engine tap`. Each result is the same `EvaluationResult` shape the sinks emit, captured after post-evaluation enrichment and regardless of which sinks are configured, so `engine tail` and a saved sink file are the same format.
 
