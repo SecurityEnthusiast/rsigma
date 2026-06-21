@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Reuse pySigma backends through sigma-cli delegation
+### Reuse pySigma backends through sigma-cli delegation (#241)
 
 `rsigma backend convert` now resolves targets native-first: it uses a native rsigma backend when one exists and otherwise delegates the conversion to an external [sigma-cli](https://github.com/SigmaHQ/sigma-cli) when one is installed, so the full pySigma backend ecosystem (`splunk`, `elasticsearch`, `kusto`, `qradar`, `loki`, `crowdstrike`, and 30+ more) is reachable from the same command. It is a light subprocess wrapper with no new dependencies; no Python runtime is required unless a delegated target is actually used.
 
