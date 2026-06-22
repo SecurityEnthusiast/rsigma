@@ -107,6 +107,14 @@ fn overlay_coverage_config(
     };
 
     if let Some(cov) = base.coverage {
+        // `--rules` is repeatable with no clap default, so an empty vec means
+        // the operator left it off; let the config layer fill it.
+        if !explicit("rules")
+            && args.rules.is_empty()
+            && let Some(v) = cov.rules
+        {
+            args.rules = v;
+        }
         // `--atomics`/`--baseline` have no clap default, so `is_none` means the
         // operator left them off; let the config layer fill them.
         if args.atomics.is_none()
@@ -557,6 +565,23 @@ tags: [attack.t1059.001]
         overlay_coverage_config(&mut args, &matches, base);
         assert_eq!(args.atomics.as_deref(), Some("/file/index.yaml"));
         assert!(args.fail_on_gaps);
+    }
+
+    #[test]
+    fn config_fills_unset_rules() {
+        // No -r on the command line; the rules come from the config file.
+        let (mut args, matches) = parse(&["coverage"]);
+        let base = partial("coverage:\n  rules:\n    - /file/rules\n");
+        overlay_coverage_config(&mut args, &matches, base);
+        assert_eq!(args.rules, vec![PathBuf::from("/file/rules")]);
+    }
+
+    #[test]
+    fn cli_rules_beat_config() {
+        let (mut args, matches) = parse(&["coverage", "-r", "/cli/rules"]);
+        let base = partial("coverage:\n  rules:\n    - /file/rules\n");
+        overlay_coverage_config(&mut args, &matches, base);
+        assert_eq!(args.rules, vec![PathBuf::from("/cli/rules")]);
     }
 
     #[test]
