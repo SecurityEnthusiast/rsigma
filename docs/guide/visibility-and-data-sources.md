@@ -53,7 +53,7 @@ The bundled table covers common process, network, file, registry, module, script
 - A technique with visibility but no detection is telemetry you collect but do not act on.
 - A technique with both is genuine coverage.
 
-This is the maturity-matrix Technology/Visibility cell that detection-coverage reporting alone cannot fill.
+This is the [maturity-matrix](https://detectionengineering.io/) Technology/Visibility cell that detection-coverage reporting alone cannot fill.
 
 ## CI usage
 
