@@ -23,10 +23,10 @@ use clap::parser::ValueSource;
 use clap::{ArgMatches, Args};
 use rsigma_parser::SigmaCollection;
 
+use crate::commands::reports::CoverageReport;
 use crate::config;
 use crate::exit_code;
 use crate::output::OutputCtx;
-use report::CoverageReport;
 use sources::{DEFAULT_ATOMICS_URL, DEFAULT_BASELINE_URL};
 
 /// Arguments for `rsigma rule coverage`.
@@ -190,9 +190,9 @@ pub(crate) fn cmd_coverage(args: CoverageArgs, ctx: OutputCtx) -> i32 {
         }
     }
 
-    let report = CoverageReport::build(&coverage, atomics, baseline, targets, args.fail_on_gaps);
+    let report = CoverageReport::build(&coverage, atomics, baseline, targets);
     report.render(&ctx);
-    report.exit_code()
+    report.exit_code(args.fail_on_gaps)
 }
 
 // ---------------------------------------------------------------------------
