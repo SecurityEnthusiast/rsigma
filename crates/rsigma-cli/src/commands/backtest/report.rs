@@ -1,8 +1,8 @@
 //! Backtest accumulation, expected-vs-actual diff, and report rendering.
 //!
 //! The accumulator tallies per-rule and per-corpus-file fire counts as events
-//! stream through the engine. [`Report::build`] turns those tallies plus the
-//! resolved expectations into a stable, serializable document: the expectation
+//! stream through the engine. [`BacktestReport::build`] turns those tallies plus
+//! the resolved expectations into a stable, serializable document: the expectation
 //! diff, per-rule statistics, the set of unexpected fires (the false-positive
 //! signal on a known-benign corpus), and a per-logsource rollup of those
 //! unexpected fires.
