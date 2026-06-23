@@ -2,7 +2,17 @@
 
 All notable changes to RSigma are documented in this file. Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma/releases).
 
-## [Unreleased]
+## [0.17.0] - 2026-06-23
+
+**TL;DR**
+RSigma v0.17.0 is the "detection-engineering toolkit" release: the rule-side reporting suite that closes the program loop, plus the daemon output-delivery layer and live daemon introspection.
+* Detection-engineering reports: `rule backtest` replays an event corpus against a ruleset and diffs per-rule fire counts against declared expectations (#216); `rule coverage` maps a ruleset onto MITRE ATT&CK, exports a Navigator layer, and reports coverage gaps (#221); `rule visibility` turns the field-observability signal into a DeTT&CT administration pair and a visibility Navigator layer (#242); `rule scorecard` fuses backtest precision/recall, coverage, and fire volume into per-rule keep/tune/retire verdicts (#243).
+* Output delivery: detection results now flow through a per-sink async delivery layer with bounded queues, retry/backoff, batching, and an at-least-once ack-join across fan-out (#222); an OTLP output sink exports detections over OTLP/HTTP and OTLP/gRPC (#223); a generic, template-driven webhook sink delivers to Slack, Teams, Discord, PagerDuty, or any HTTP endpoint (#227).
+* Daemon introspection: `engine status` queries a running daemon from the command line (#237), `engine tap` records a redactable, replayable live event fixture (#238), and `engine tail` streams live detections to the terminal (#239).
+* Conversion reach: `backend convert` resolves targets native-first and delegates anything without a native backend to an installed sigma-cli, reaching the full pySigma backend ecosystem with no new dependency (#241).
+* `rstix`: Phase 2 adds STIX meta objects (#213) and relationship/sighting objects (#220), thanks to @SecurityEnthusiast; the crate is not releasable on its own yet.
+* Fibratus conversion fixes: emit the required `version` field so converted rules load (#219), and map `file_access`/`file_event`/`create_remote_thread` to their idiomatic macros (#217), thanks to @rabbitstack.
+* Faster NATS and daemon integration tests: deterministic waits replace fixed sleeps and long-poll timeouts, cutting each suite's runtime by roughly 7x with no production code changes (#240).
 
 ### `rule scorecard`: fuse the rule-side reports into per-rule keep/tune/retire verdicts (#243)
 
@@ -160,6 +170,8 @@ Phase 2 adds STIX meta objects (not releasable on its own until `StixObject` dis
 - **Deserialize:** each meta type validates JSON `"type"` against `TYPE_NAME` in a single serde pass (`ModelError::UnexpectedObjectType`); no intermediate `serde_json::Value` parse.
 - **Tests:** `roundtrip_strict` for complete types (meta objects, `ExternalReference`, `GranularMarking`, `ExtensionMap`); subset `roundtrip` for `SdoSroCommonProps` / `ScoCommonProps` fixtures that carry unmodeled SDO keys. Fixtures under `tests/fixtures/spec/meta/` include minimal TLP markings, a rich marking-def with common properties, and cross-type reject coverage. Unit pins for all nine TLP ids.
 - **Docs:** STIX object model version vs TLP marking encoding in `crates/rstix/README.md` and `docs/library/rstix.md`.
+
+[v0.16.0...v0.17.0](https://github.com/timescale/rsigma/compare/v0.16.0...v0.17.0)
 
 ## [0.16.0] - 2026-06-15
 
@@ -1970,6 +1982,7 @@ First release of rsigma -- a Sigma detection toolkit in Rust. Ships a parser, ev
 
 Initial crates.io publish. Reserved the `rsigma` crate name with a minimal CLI binary (parser + evaluator only, no linter/LSP/pipelines/correlation). Superseded the same day by v0.2.0, which is the first feature-complete release.
 
+[0.17.0]: https://github.com/timescale/rsigma/releases/tag/v0.17.0
 [0.16.0]: https://github.com/timescale/rsigma/releases/tag/v0.16.0
 [0.15.0]: https://github.com/timescale/rsigma/releases/tag/v0.15.0
 [0.14.0]: https://github.com/timescale/rsigma/releases/tag/v0.14.0
