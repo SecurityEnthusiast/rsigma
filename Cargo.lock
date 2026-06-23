@@ -3438,9 +3438,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "4fcb935c5bec503c2f0e306bdd3e58bb9029dcb14fa8d9ac76e3a5256ac0763e"
 dependencies = [
  "bytes",
  "getrandom 0.3.4",
@@ -3897,7 +3897,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -3960,7 +3960,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-convert"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "insta",
  "log",
@@ -3978,7 +3978,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-eval"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "ahash",
  "aho-corasick",
@@ -4003,7 +4003,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-lsp"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "env_logger",
  "insta",
@@ -4016,7 +4016,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-mcp"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4039,7 +4039,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-parser"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "criterion",
  "globset",
@@ -4059,7 +4059,7 @@ dependencies = [
 
 [[package]]
 name = "rsigma-runtime"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "arc-swap",
  "async-nats",
@@ -4117,7 +4117,7 @@ dependencies = [
 
 [[package]]
 name = "rstix"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "phf",
  "serde",
