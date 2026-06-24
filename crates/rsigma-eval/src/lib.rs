@@ -101,6 +101,7 @@ pub mod fields;
 pub mod matcher;
 pub mod pipeline;
 pub mod result;
+pub mod router;
 pub mod rule_index;
 pub mod schema;
 
@@ -118,7 +119,7 @@ pub use correlation_engine::{
 };
 pub use engine::Engine;
 pub use error::{EvalError, Result};
-pub use event::{Event, EventValue, JsonEvent, KvEvent, MapEvent, PlainEvent};
+pub use event::{Event, EventValue, JsonEvent, KvEvent, MapEvent, MappedEvent, PlainEvent};
 pub use field_observer::{FieldCoverage, FieldObservation, FieldObservationEntry, FieldObserver};
 pub use fields::{FieldOrigin, FieldSource, RuleFieldSet};
 pub use matcher::{CompiledMatcher, MatchDescriptor};
@@ -134,6 +135,7 @@ pub use result::{
     CorrelationBody, DetectionBody, EvaluationResult, FieldMatch, MatchDetailLevel, MatcherKind,
     ProcessResultExt, ResultBody, RuleHeader,
 };
+pub use router::{RouteOutcome, RouteResult, SchemaRouter};
 pub use schema::{
     FieldValueConfig, OnUnknown, RouteDecision, RoutingConfig, RoutingPlan, SchemaBinding,
     SchemaClassifier, SchemaCountEntry, SchemaError, SchemaMatch, SchemaObservation,
