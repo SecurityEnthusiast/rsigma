@@ -29,6 +29,7 @@ For rule quality and editor integration, a built-in linter validates rules again
 * **Array matching (experimental):** Match members of arrays in nested event data: implicit any-member matching, `[any]`/`[all]` object-scope blocks for same-element correlation, and positional `[N]` indexing, opt-in via `sigma-version: 3`. Evaluated natively and lowered to PostgreSQL JSONB; see the [Array Matching guide](https://timescale.github.io/rsigma/guide/array-matching/)
 * **Streaming daemon:** Run as a streaming detection daemon with hot-reload, Prometheus metrics, and HTTP/NATS/OTLP input
 * **Input formats:** Accept JSON, syslog (RFC 3164/5424), logfmt, CEF, EVTX (Windows Event Log), plain text, and OTLP logs with format auto-detection
+* **Schema recognition:** Recognize which schema each event uses (ECS, Sysmon, rendered Windows Event Log, CEF, OCSF, or user-defined) from its content via `engine classify`, with a live daemon surface (`--observe-schemas`, `GET /api/v1/schemas`) and per-schema metrics for spotting unrecognized sources
 * **Processing pipelines:** Use pySigma-compatible processing pipelines for field mapping, transformations, conditions, and finalizers
 * **Dynamic pipelines:** Populate any pipeline value from external sources (HTTP, files, commands, NATS) with template expansion, auto-refresh, and data extraction via jq, JSONPath, or CEL
 * **Post-evaluation enrichment:** Inject contextual data (asset info, IP reputation, identity, GeoIP, runbook URLs, ...) into detection and correlation results via four primitives (`template`, `lookup`, `http`, `command`) with kind-aware template namespaces, response cache, scope filtering, and hot-reload
@@ -139,6 +140,9 @@ cat events.ndjson | rsigma engine eval -r rules/
 
 # Interactive triage in a terminal: width-aligned table view
 rsigma engine eval -r rules/ -e @events.ndjson --output-format table
+
+# Recognize which schema each event is (ECS, Sysmon, CEF, OCSF, ...)
+cat events.ndjson | rsigma engine classify --output-format table
 
 # Pipe a CSV view into a spreadsheet or data tool
 rsigma engine eval -r rules/ -e @events.ndjson --output-format csv > matches.csv
