@@ -49,14 +49,7 @@ fn classifies_ndjson_stream_from_stdin() {
 #[test]
 fn unknown_count_surfaces_in_summary() {
     rsigma()
-        .args([
-            "engine",
-            "classify",
-            "-e",
-            "{}",
-            "--output-format",
-            "json",
-        ])
+        .args(["engine", "classify", "-e", "{}", "--output-format", "json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"unknown\": 1"))
