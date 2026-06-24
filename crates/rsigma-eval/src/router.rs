@@ -337,8 +337,10 @@ level: high
         // everything else (incl. the generic event) -> default set 0.
         let plan = plan(&[("ecs", &["ecs_test"])]);
 
-        let mut config = CorrelationConfig::default();
-        config.timestamp_fallback = crate::correlation_engine::TimestampFallback::WallClock;
+        let config = CorrelationConfig {
+            timestamp_fallback: crate::correlation_engine::TimestampFallback::WallClock,
+            ..Default::default()
+        };
 
         let mut router = SchemaRouter::build(
             &collection,
