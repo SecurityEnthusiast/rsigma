@@ -23,7 +23,7 @@ Content-based schema classification that recognizes the structure of each event 
 
 ### Fixed
 
-* jq extract expressions can no longer terminate the process. The `halt` and `halt_error` filters are implemented in `jaq-std` with `std::process::exit`, so a single source or enrichment expression could take the whole engine down; both are now removed from the supported filter surface and surface as an ordinary expression error instead.
+* jq extract expressions can no longer terminate the process. The `halt` and `halt_error` filters are implemented in `jaq-std` with `std::process::exit`, so a single source or enrichment expression could take the whole engine down; both are now removed from the supported filter surface and surface as an ordinary expression error instead (#247).
 
 ## [0.17.0] - 2026-06-23
 
