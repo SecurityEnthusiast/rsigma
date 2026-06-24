@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Schema-aware routing (#TBD)
+### Schema-aware routing (#246)
 
 `--schema-routing` on `engine eval` and `engine daemon` classifies each event and routes it to the pipeline-set bound to its schema, instead of applying one pipeline set to every event. Bindings come from the `routing:` section of `--schema-config` (`bindings`, `default_pipelines`, `on_unknown`); `--on-unknown` overrides the unknown-handling policy (`warn`, `drop`, `passthrough`, `error`).
 
