@@ -318,7 +318,41 @@ impl RuntimeEngine {
         let collection = load_collection(&self.rules_path)?;
         let has_correlations = !collection.correlations.is_empty();
 
-        if let Some(spec) = self.routing.clone() {
+        if let Some(mut spec) = self.routing.clone() {
+            // Resolve dynamic `${source.*}` sources in the routed pipeline-sets,
+            // with the same fail-closed policy as the single-engine path above.
+            if let Some(resolver) = self.source_resolver.clone() {
+                let needs_resolve = spec
+                    .pipeline_sets
+                    .iter()
+                    .any(|set| set.iter().any(|p| p.is_dynamic()));
+                if needs_resolve {
+                    let handle = tokio::runtime::Handle::try_current().map_err(|_| {
+                        "Dynamic pipelines require a tokio runtime; refusing to load rules with \
+                         unresolved sources"
+                            .to_string()
+                    })?;
+                    let allow_remote = self.allow_remote_include;
+                    let mut resolved_sets = Vec::with_capacity(spec.pipeline_sets.len());
+                    for set in spec.pipeline_sets {
+                        let resolved = tokio::task::block_in_place(|| {
+                            handle.block_on(async {
+                                resolve_pipelines_async(&resolver, &set, allow_remote).await
+                            })
+                        });
+                        match resolved {
+                            Ok(p) => resolved_sets.push(p),
+                            Err(e) => {
+                                return Err(format!(
+                                    "Dynamic source resolution failed (schema routing): {e}"
+                                ));
+                            }
+                        }
+                    }
+                    spec.pipeline_sets = resolved_sets;
+                }
+            }
+
             let mut router = SchemaRouter::build(
                 &collection,
                 spec.classifier,
@@ -434,9 +468,7 @@ impl RuntimeEngine {
         match &mut self.engine {
             EngineVariant::DetectionOnly(engine) => engine.evaluate_batch(events),
             EngineVariant::WithCorrelations(engine) => engine.process_batch(events),
-            EngineVariant::Routed(router) => {
-                events.iter().map(|e| router.route(*e).results).collect()
-            }
+            EngineVariant::Routed(router) => router.process_batch(events),
         }
     }
 

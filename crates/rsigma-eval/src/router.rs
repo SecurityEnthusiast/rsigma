@@ -33,6 +33,7 @@ use crate::error::Result;
 use crate::event::{Event, MappedEvent};
 use crate::pipeline::Pipeline;
 use crate::pipeline::transformations::Transformation;
+use crate::result::EvaluationResult;
 use crate::result::MatchDetailLevel;
 use crate::schema::{OnUnknown, RouteDecision, RoutingPlan, SchemaClassifier};
 
@@ -76,6 +77,35 @@ fn collect_field_map(pipelines: &[Pipeline]) -> HashMap<String, Vec<String>> {
         }
     }
     map
+}
+
+/// Outcome of the stateless phase for one event in [`SchemaRouter::process_batch`].
+enum Routed1 {
+    /// Dropped or errored (`on_unknown`): no results.
+    Skip,
+    /// Evaluate detections against the shared correlation store under set `set`.
+    Eval {
+        set: usize,
+        detections: Vec<EvaluationResult>,
+    },
+}
+
+/// Stateless detection for one event: classify, decide, evaluate. Borrows only
+/// shared state so it can run in parallel across a batch.
+fn detect_one<E: Event>(
+    classifier: &SchemaClassifier,
+    plan: &RoutingPlan,
+    engines: &[Engine],
+    event: &E,
+) -> Routed1 {
+    let schema = classifier.classify(event).map(|m| m.name);
+    match plan.decide(schema.as_deref()) {
+        RouteDecision::Drop | RouteDecision::Error => Routed1::Skip,
+        RouteDecision::Evaluate { set, .. } => Routed1::Eval {
+            set,
+            detections: engines[set].evaluate(event),
+        },
+    }
 }
 
 /// A multi-engine router over a classifier, a [`RoutingPlan`], one detection
@@ -182,6 +212,56 @@ impl SchemaRouter {
             Some(c) => c.import_state(snapshot),
             None => true,
         }
+    }
+
+    /// Route a batch of events: parallel classify + detection, then sequential
+    /// correlation into the shared store. Mirrors
+    /// `CorrelationEngine::process_batch`: the stateless phase runs concurrently
+    /// (under the `parallel` feature) and the stateful correlation phase runs
+    /// in order. Drop/error outcomes yield empty results for that event.
+    pub fn process_batch<E: Event + Sync>(&mut self, events: &[&E]) -> Vec<ProcessResult> {
+        // Stateless phase: classify + route + detect. Borrows only `&self`
+        // fields, so it parallelizes; correlation state is untouched here.
+        let classifier = &self.classifier;
+        let plan = &self.plan;
+        let engines = &self.engines;
+        let phase1: Vec<Routed1> = {
+            #[cfg(feature = "parallel")]
+            {
+                use rayon::prelude::*;
+                events
+                    .par_iter()
+                    .map(|e| detect_one(classifier, plan, engines, *e))
+                    .collect()
+            }
+            #[cfg(not(feature = "parallel"))]
+            {
+                events
+                    .iter()
+                    .map(|e| detect_one(classifier, plan, engines, *e))
+                    .collect()
+            }
+        };
+
+        // Stateful phase: feed detections into the shared correlation store in
+        // event order. Disjoint field borrows let the field maps and the
+        // correlation store be held at once.
+        let field_maps = &self.field_maps;
+        let correlation = &mut self.correlation;
+        phase1
+            .into_iter()
+            .zip(events)
+            .map(|(routed, event)| match routed {
+                Routed1::Skip => Vec::new(),
+                Routed1::Eval { set, detections } => match correlation {
+                    Some(ce) => {
+                        let mapped = MappedEvent::new(*event, &field_maps[set]);
+                        ce.correlate_detections(&mapped, detections)
+                    }
+                    None => detections,
+                },
+            })
+            .collect()
     }
 
     /// Classify and route one event.
