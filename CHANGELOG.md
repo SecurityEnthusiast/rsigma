@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Schema-aware log source recognition (#TBD)
+### Schema-aware log source recognition (#245)
 
 Content-based schema classification that recognizes the structure of each event from its marker fields and values rather than its wire format, so a mixed JSON stream of ECS, flat Sysmon, rendered Windows Event Log, CEF, and OCSF events can be told apart.
 
