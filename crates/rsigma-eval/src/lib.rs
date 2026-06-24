@@ -102,6 +102,7 @@ pub mod matcher;
 pub mod pipeline;
 pub mod result;
 pub mod rule_index;
+pub mod schema;
 
 // Re-export the most commonly used types and functions at crate root
 pub use compiler::{
@@ -132,4 +133,10 @@ pub use pipeline::{
 pub use result::{
     CorrelationBody, DetectionBody, EvaluationResult, FieldMatch, MatchDetailLevel, MatcherKind,
     ProcessResultExt, ResultBody, RuleHeader,
+};
+pub use schema::{
+    FieldValueConfig, SchemaClassifier, SchemaCountEntry, SchemaError, SchemaMatch,
+    SchemaObservation, SchemaObserver, SchemaPredicate, SchemaPredicateConfig, SchemaSignature,
+    SchemaSignatureConfig, SchemaSignaturesFile, builtin_schema_names, load_schema_signatures,
+    parse_schema_signatures,
 };

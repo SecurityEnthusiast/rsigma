@@ -27,6 +27,9 @@ rsigma engine eval -r path/to/rules/ -e @events.ndjson --output-format table
 # CSV for spreadsheets / data tools
 rsigma engine eval -r path/to/rules/ -e @events.ndjson --output-format csv
 
+# Recognize which schema each event is (ECS, Sysmon, CEF, OCSF, ...)
+cat events.ndjson | rsigma engine classify --output-format table
+
 # Long-running daemon with hot-reload, health checks, and Prometheus metrics
 hel run | rsigma engine daemon -r rules/ -p ecs_windows --api-addr 0.0.0.0:9090
 

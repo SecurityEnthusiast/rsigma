@@ -2,6 +2,18 @@
 
 All notable changes to RSigma are documented in this file. Each entry corresponds to a [GitHub Release](https://github.com/timescale/rsigma/releases).
 
+## [Unreleased]
+
+### Schema-aware log source recognition (#245)
+
+Content-based schema classification that recognizes the structure of each event from its marker fields and values rather than its wire format, so a mixed JSON stream of ECS, flat Sysmon, rendered Windows Event Log, CEF, and OCSF events can be told apart.
+
+* `engine classify`: a diagnostic that reads a single event, an NDJSON file, or stdin and reports the recognized schema (or `unknown`) per event plus a per-schema summary, rendered through the global output-format layer. `--schema-config` merges user-defined signatures over the built-ins.
+* Daemon schema observability: `--observe-schemas` classifies every event and exposes the per-schema breakdown and unknown rate over `GET /api/v1/schemas` and the `rsigma_events_by_schema_total{schema}` and `rsigma_events_unknown_schema_total` metrics. An optional `--schema-config` merges user signatures over the built-ins.
+* Declarative signatures (field present/absent, any-of, equals, regex) live in `rsigma-eval`; built-ins cover ECS, OCSF, rendered Windows Event Log, Sysmon, CEF, and a low-specificity `generic_json` fallback. An event matching no signature is reported as `unknown`, the signal for an unsupported schema.
+
+This is recognition and reporting only; it does not route or transform events.
+
 ## [0.17.0] - 2026-06-23
 
 **TL;DR**

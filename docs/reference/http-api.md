@@ -23,6 +23,7 @@ All bodies are JSON unless otherwise noted. All responses include a `Content-Typ
 | `/api/v1/fields/unknown` | GET | none | Fields seen in events that no rule references. Requires `--observe-fields`. |
 | `/api/v1/fields/missing` | GET | none | Fields referenced by rules that have never appeared in an event. Requires `--observe-fields`. |
 | `/api/v1/fields/observer` | DELETE | none | Reset the field observer's counters. Requires `--observe-fields`. |
+| `/api/v1/schemas` | GET | none | Per-schema event breakdown and unknown rate. Requires `--observe-schemas`. |
 | `/api/v1/tap` | GET | none | Stream a bounded, optionally-redacted window of the live event stream as chunked NDJSON. Disabled by default; enable with `daemon.tap.enabled: true`. |
 | `/api/v1/detections/stream` | GET | none | Stream live detections as chunked NDJSON, with optional `level` / `rule` filters. Disabled by default; enable with `daemon.tail.enabled: true`. |
 | `/v1/logs` | POST | none | OTLP/HTTP log ingestion (`application/x-protobuf` or `application/json`, optionally gzip-encoded). Requires `daemon-otlp`. |
@@ -348,6 +349,36 @@ curl -sS -X DELETE http://127.0.0.1:9090/api/v1/fields/observer
 ```
 
 A `DELETE` does not affect rule loading or any other daemon state. Use it after a rule reload to start a clean coverage window against the updated rule set.
+
+## Schema observability
+
+Available when the daemon is started with `--observe-schemas`. Every event is classified by schema (content-based recognition: ECS, Sysmon, rendered Windows Event Log, CEF, OCSF, a `generic_json` fallback, plus any `--schema-config` signatures), so a mixed stream's composition and its unknown rate are visible at a glance. See [`engine classify`](../cli/engine/classify.md) for the one-shot equivalent and the signature format.
+
+### `GET /api/v1/schemas`
+
+Returns the per-schema counts and the classified/unknown totals since daemon start. Returns `503` when `--observe-schemas` is off.
+
+```bash
+curl -sS http://127.0.0.1:9090/api/v1/schemas
+```
+
+```json
+{
+  "summary": {
+    "events_observed": 1248,
+    "classified": 1203,
+    "unknown": 45,
+    "uptime_seconds": 612.4
+  },
+  "by_schema": [
+    {"schema": "ecs", "count": 900},
+    {"schema": "sysmon", "count": 250},
+    {"schema": "generic_json", "count": 53}
+  ]
+}
+```
+
+The same signal is exposed as the `rsigma_events_by_schema_total{schema}` and `rsigma_events_unknown_schema_total` Prometheus counters. A rising unknown rate flags a source whose schema RSigma does not recognize; add a signature with `--schema-config`.
 
 ## Live event tap
 
