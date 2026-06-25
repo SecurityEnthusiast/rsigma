@@ -361,6 +361,68 @@ level: medium
 }
 
 #[test]
+fn test_logsource_pruning_applies_to_evaluate_batch() {
+    let yaml = r#"
+title: Linux Rule
+logsource:
+    product: linux
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+level: medium
+---
+title: Windows Rule
+logsource:
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+level: medium
+"#;
+    let mut engine = make_engine_with_rule(yaml);
+    engine.set_logsource_extractor(Some(crate::logsource::LogSourceExtractor::new()));
+
+    let ev1 = json!({"CommandLine": "whoami", "product": "windows"});
+    let ev2 = json!({"CommandLine": "whoami", "product": "windows"});
+    let e1 = JsonEvent::borrow(&ev1);
+    let e2 = JsonEvent::borrow(&ev2);
+    let results = engine.evaluate_batch(&[&e1, &e2]);
+    assert_eq!(results.len(), 2);
+    for per_event in &results {
+        assert_eq!(per_event.len(), 1);
+        assert_eq!(per_event[0].header.rule_title, "Windows Rule");
+    }
+}
+
+#[test]
+fn test_logsource_pruning_inherited_by_correlation_engine() {
+    let yaml = r#"
+title: Linux Only
+logsource:
+    product: linux
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+level: medium
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    let mut engine = crate::CorrelationEngine::new(crate::CorrelationConfig::default());
+    engine.add_collection(&collection).unwrap();
+    engine.set_logsource_extractor(Some(crate::logsource::LogSourceExtractor::new()));
+
+    // The linux rule conflicts with a windows event, so correlation's inner
+    // detection evaluation prunes it: no detection fires.
+    let ev = json!({"CommandLine": "whoami", "product": "windows"});
+    let event = JsonEvent::borrow(&ev);
+    let result = engine.process_event(&event);
+    assert_eq!(result.iter().filter(|r| r.is_detection()).count(), 0);
+    assert_eq!(engine.logsource_pruned_total(), 1);
+}
+
+#[test]
 fn test_selector_1_of() {
     let engine = make_engine_with_rule(
         r#"

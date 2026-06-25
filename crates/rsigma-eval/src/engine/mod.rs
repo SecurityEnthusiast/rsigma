@@ -11,6 +11,8 @@ mod filters;
 #[cfg(test)]
 mod tests;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use rsigma_parser::{
     ConditionExpr, FilterRule, FilterRuleTarget, LogSource, SigmaCollection, SigmaRule,
 };
@@ -101,6 +103,14 @@ pub struct Engine {
     /// engine extracts each event's logsource once and skips rules whose
     /// logsource conflicts (see [`Engine::set_logsource_extractor`]).
     logsource_extractor: Option<LogSourceExtractor>,
+    /// Monotonic count of always-evaluated rules skipped because their
+    /// product conflicts with the event's. Incremented only when an extractor
+    /// is set; surfaced via [`Engine::logsource_pruned_total`].
+    logsource_pruned: AtomicU64,
+    /// Monotonic count of `evaluate` calls where the extractor produced no
+    /// logsource at all (fail-open: every rule was evaluated). Surfaced via
+    /// [`Engine::logsource_absent_total`].
+    logsource_absent: AtomicU64,
     /// Cross-rule Aho-Corasick index for substring patterns, gated on the
     /// `daachorse-index` feature. Built only when [`cross_rule_ac_enabled`]
     /// is `true`; [`cross_rule_ac_prunable`] is the conservative per-rule
@@ -138,6 +148,8 @@ impl Engine {
             bloom_prefilter: false,
             bloom_max_bytes: None,
             logsource_extractor: None,
+            logsource_pruned: AtomicU64::new(0),
+            logsource_absent: AtomicU64::new(0),
             #[cfg(feature = "daachorse-index")]
             cross_rule_ac_index: cross_rule_ac::CrossRuleAcIndex::empty(),
             #[cfg(feature = "daachorse-index")]
@@ -160,6 +172,8 @@ impl Engine {
             bloom_prefilter: false,
             bloom_max_bytes: None,
             logsource_extractor: None,
+            logsource_pruned: AtomicU64::new(0),
+            logsource_absent: AtomicU64::new(0),
             #[cfg(feature = "daachorse-index")]
             cross_rule_ac_index: cross_rule_ac::CrossRuleAcIndex::empty(),
             #[cfg(feature = "daachorse-index")]
@@ -234,6 +248,19 @@ impl Engine {
     /// logsource pruning is disabled.
     pub fn logsource_extractor(&self) -> Option<&LogSourceExtractor> {
         self.logsource_extractor.as_ref()
+    }
+
+    /// Total always-evaluated rules skipped by logsource product pruning since
+    /// engine creation. Zero unless an extractor is set.
+    pub fn logsource_pruned_total(&self) -> u64 {
+        self.logsource_pruned.load(Ordering::Relaxed)
+    }
+
+    /// Total `evaluate` calls where the extractor produced no logsource and
+    /// pruning failed open (every rule evaluated). Zero unless an extractor
+    /// is set.
+    pub fn logsource_absent_total(&self) -> u64 {
+        self.logsource_absent.load(Ordering::Relaxed)
     }
 
     /// Enable or disable the cross-rule Aho-Corasick pre-filter.
@@ -616,9 +643,22 @@ impl Engine {
         event_logsource: Option<&LogSource>,
     ) -> Vec<usize> {
         match event_logsource {
-            Some(ls) => self
-                .rule_index
-                .candidates_with_logsource(event, ls.product.as_deref()),
+            Some(ls) => {
+                // Observability: count the fail-open case (no logsource at all)
+                // and the always-evaluated rules pruned by product conflict.
+                if ls.product.is_none() && ls.service.is_none() && ls.category.is_none() {
+                    self.logsource_absent.fetch_add(1, Ordering::Relaxed);
+                }
+                let pruned = self
+                    .rule_index
+                    .conflicting_unindexable_count(ls.product.as_deref());
+                if pruned > 0 {
+                    self.logsource_pruned
+                        .fetch_add(pruned as u64, Ordering::Relaxed);
+                }
+                self.rule_index
+                    .candidates_with_logsource(event, ls.product.as_deref())
+            }
             None => self.rule_index.candidates(event),
         }
     }

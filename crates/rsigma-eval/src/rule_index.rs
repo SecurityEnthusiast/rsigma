@@ -218,6 +218,27 @@ impl RuleIndex {
         result
     }
 
+    /// Number of always-evaluated rules pruned for an event with
+    /// `event_product`: the rules in conflicting-product buckets that
+    /// [`candidates_with_logsource`] never iterates. `O(1)` (bucket-length
+    /// arithmetic); returns `0` when `event_product` is `None`.
+    ///
+    /// [`candidates_with_logsource`]: RuleIndex::candidates_with_logsource
+    pub(crate) fn conflicting_unindexable_count(&self, event_product: Option<&str>) -> usize {
+        let product = match event_product {
+            Some(p) => p.to_lowercase(),
+            None => return 0,
+        };
+        let none_len = self.unindexable_by_product.get(&None).map_or(0, Vec::len);
+        let match_len = self
+            .unindexable_by_product
+            .get(&Some(product))
+            .map_or(0, Vec::len);
+        // Every unindexable rule lives in exactly one product bucket, so the
+        // conflicting count is the total minus the two kept buckets.
+        self.unindexable.len() - none_len - match_len
+    }
+
     /// Number of rules tracked by the index.
     #[cfg(test)]
     pub(crate) fn rule_count(&self) -> usize {
