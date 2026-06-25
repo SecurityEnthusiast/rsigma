@@ -18,13 +18,17 @@ use rsigma_parser::{
 use crate::compiler::{CompiledRule, compile_detection, compile_rule, evaluate_rule_with_bloom};
 use crate::error::{EvalError, Result};
 use crate::event::Event;
+use crate::logsource::LogSourceExtractor;
 use crate::pipeline::{Pipeline, apply_pipelines};
 use crate::result::{EvaluationResult, MatchDetailLevel};
 use crate::rule_index::RuleIndex;
 
 use bloom_index::{BloomCache, FieldBloomIndex};
 
-use filters::{filter_logsource_contains, logsource_matches, rewrite_condition_identifiers};
+use filters::{
+    filter_logsource_contains, logsource_compatible, logsource_matches,
+    rewrite_condition_identifiers,
+};
 
 /// The main rule evaluation engine.
 ///
@@ -92,6 +96,11 @@ pub struct Engine {
     /// per-field filters. `None` means use the crate default
     /// (`bloom_index::DEFAULT_MAX_TOTAL_BYTES`, 1 MB).
     bloom_max_bytes: Option<usize>,
+    /// Opt-in event-logsource extractor for conflict-based rule pruning.
+    /// `None` (default) leaves the hot path unchanged; when `Some`, the
+    /// engine extracts each event's logsource once and skips rules whose
+    /// logsource conflicts (see [`Engine::set_logsource_extractor`]).
+    logsource_extractor: Option<LogSourceExtractor>,
     /// Cross-rule Aho-Corasick index for substring patterns, gated on the
     /// `daachorse-index` feature. Built only when [`cross_rule_ac_enabled`]
     /// is `true`; [`cross_rule_ac_prunable`] is the conservative per-rule
@@ -128,6 +137,7 @@ impl Engine {
             bloom_index: FieldBloomIndex::empty(),
             bloom_prefilter: false,
             bloom_max_bytes: None,
+            logsource_extractor: None,
             #[cfg(feature = "daachorse-index")]
             cross_rule_ac_index: cross_rule_ac::CrossRuleAcIndex::empty(),
             #[cfg(feature = "daachorse-index")]
@@ -149,6 +159,7 @@ impl Engine {
             bloom_index: FieldBloomIndex::empty(),
             bloom_prefilter: false,
             bloom_max_bytes: None,
+            logsource_extractor: None,
             #[cfg(feature = "daachorse-index")]
             cross_rule_ac_index: cross_rule_ac::CrossRuleAcIndex::empty(),
             #[cfg(feature = "daachorse-index")]
@@ -200,6 +211,29 @@ impl Engine {
     /// explicitly. `None` means the crate default (1 MB) is in use.
     pub fn bloom_max_bytes(&self) -> Option<usize> {
         self.bloom_max_bytes
+    }
+
+    /// Enable or disable opt-in, conflict-based logsource pruning.
+    ///
+    /// When set to `Some`, `evaluate` extracts each event's logsource once via
+    /// the [`LogSourceExtractor`] and skips any candidate rule whose logsource
+    /// conflicts with the event's (a dimension set on both sides that
+    /// disagrees). A dimension unset on either side is a wildcard, so an event
+    /// tagged only `product: windows` skips `product: linux` rules while still
+    /// evaluating Windows-category and logsource-less rules.
+    ///
+    /// Disabled by default (`None`), leaving the hot path unchanged. Pruning
+    /// fails open: an event with no extractable logsource evaluates every
+    /// rule. The extractor is read on every `evaluate` call, so it can be
+    /// swapped at runtime (e.g. carried across a hot-reload).
+    pub fn set_logsource_extractor(&mut self, extractor: Option<LogSourceExtractor>) {
+        self.logsource_extractor = extractor;
+    }
+
+    /// Returns the configured logsource extractor, if any. `None` means
+    /// logsource pruning is disabled.
+    pub fn logsource_extractor(&self) -> Option<&LogSourceExtractor> {
+        self.logsource_extractor.as_ref()
     }
 
     /// Enable or disable the cross-rule Aho-Corasick pre-filter.
@@ -577,6 +611,12 @@ impl Engine {
         // same straight-line code as the pre-bloom engine while still
         // threading the configured match-detail level.
         let keep = self.cross_rule_ac_keep_mask(event);
+        // Extract the event logsource once when pruning is enabled; `None`
+        // (the default) leaves the loop's behaviour unchanged.
+        let event_logsource = self
+            .logsource_extractor
+            .as_ref()
+            .map(|ex| ex.extract(event));
         let mut results = Vec::new();
         for idx in self.rule_index.candidates(event) {
             if let Some(ref mask) = keep
@@ -585,6 +625,11 @@ impl Engine {
                 continue;
             }
             let rule = &self.rules[idx];
+            if let Some(ref event_ls) = event_logsource
+                && !logsource_compatible(&rule.logsource, event_ls)
+            {
+                continue;
+            }
             if let Some(mut m) =
                 evaluate_rule_with_bloom(rule, event, &bloom_index::NoBloom, self.match_detail)
             {
@@ -603,6 +648,12 @@ impl Engine {
     fn evaluate_with_bloom_path<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
         let bloom = BloomCache::new(&self.bloom_index, event);
         let keep = self.cross_rule_ac_keep_mask(event);
+        // Extract the event logsource once when pruning is enabled; `None`
+        // (the default) leaves the loop's behaviour unchanged.
+        let event_logsource = self
+            .logsource_extractor
+            .as_ref()
+            .map(|ex| ex.extract(event));
         let mut results = Vec::new();
         for idx in self.rule_index.candidates(event) {
             if let Some(ref mask) = keep
@@ -611,6 +662,11 @@ impl Engine {
                 continue;
             }
             let rule = &self.rules[idx];
+            if let Some(ref event_ls) = event_logsource
+                && !logsource_compatible(&rule.logsource, event_ls)
+            {
+                continue;
+            }
             if let Some(mut m) = evaluate_rule_with_bloom(rule, event, &bloom, self.match_detail) {
                 if self.include_event
                     && let Some(d) = m.as_detection_mut()

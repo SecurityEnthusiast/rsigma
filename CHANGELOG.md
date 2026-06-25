@@ -4,6 +4,13 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Logsource-aware evaluation
+
+Opt-in, conflict-based logsource pruning in the evaluation engine (`rsigma-eval`). `Engine::set_logsource_extractor` installs a `LogSourceExtractor` that derives each event's logsource from configurable fields (defaulting to `product`/`service`/`category`) plus optional static defaults, and the engine then skips any candidate rule whose logsource conflicts with the event's before matching. Disabled by default with the hot path unchanged, and fail-open: an event with no extractable logsource is evaluated against every rule.
+
+* Conflict-based, not subset: a rule is skipped only when a dimension (`product`, `service`, or `category`) is set on both the rule and the event and the values differ, so an event tagged only `product: windows` skips `product: linux` rules while still evaluating Windows-category and logsource-less rules. This is distinct from the existing subset `logsource_matches`, which is unchanged.
+* Correlation inherits the pruning, since `CorrelationEngine` evaluates through the same engine.
+
 ### Schema-aware routing (#246)
 
 `--schema-routing` on `engine eval` and `engine daemon` classifies each event and routes it to the pipeline-set bound to its schema, instead of applying one pipeline set to every event. Bindings come from the `routing:` section of `--schema-config` (`bindings`, `default_pipelines`, `on_unknown`); `--on-unknown` overrides the unknown-handling policy (`warn`, `drop`, `passthrough`, `error`).
