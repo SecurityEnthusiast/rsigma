@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix: STIX cyber-observable (SCO) model
+### rstix: STIX cyber-observable (SCO) model (#248)
 
 All 18 STIX 2.1 cyber-observable types land in `model::sco` with strict fixture-backed round-trips:
 
