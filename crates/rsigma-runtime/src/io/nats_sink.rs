@@ -1,5 +1,8 @@
+use std::collections::HashSet;
+
 use async_nats::jetstream;
 use async_nats::subject::Subject;
+use parking_lot::Mutex;
 
 use rsigma_eval::ProcessResult;
 
@@ -17,6 +20,9 @@ use super::nats_source::derive_nats_name;
 pub struct NatsSink {
     jetstream: jetstream::Context,
     subject: Subject,
+    /// Subjects whose JetStream stream has been ensured, so an incident subject
+    /// override only triggers stream creation once.
+    ensured: Mutex<HashSet<String>>,
 }
 
 impl NatsSink {
@@ -40,9 +46,11 @@ impl NatsSink {
         })
         .await?;
 
+        let ensured = Mutex::new(HashSet::from([subject.to_string()]));
         Ok(NatsSink {
             jetstream: js,
             subject: Subject::from(subject),
+            ensured,
         })
     }
 
@@ -58,7 +66,7 @@ impl NatsSink {
         let mut published = 0_usize;
         for m in result {
             let json = serde_json::to_string(m)?;
-            self.publish_one(&json).await?;
+            self.publish_one(&self.subject, &json).await?;
             published += 1;
         }
 
@@ -72,23 +80,61 @@ impl NatsSink {
 
     /// Publish a pre-serialized JSON string directly to the JetStream subject.
     pub async fn send_raw(&self, json: &str) -> Result<(), RuntimeError> {
-        self.publish_one(json).await?;
+        self.publish_one(&self.subject, json).await?;
         tracing::debug!(subject = %self.subject, "NATS message published (raw)");
         Ok(())
     }
 
-    /// Publish a single JSON payload, logging a warning on failure before returning.
-    async fn publish_one(&self, json: &str) -> Result<(), RuntimeError> {
-        let ack = self
-            .jetstream
-            .publish(self.subject.clone(), json.to_string().into())
+    /// Publish an incident line, optionally to a dedicated subject override so
+    /// incident consumers can subscribe without filtering the detection stream.
+    pub async fn send_incident(
+        &self,
+        json: &str,
+        subject_override: Option<&str>,
+    ) -> Result<(), RuntimeError> {
+        match subject_override {
+            Some(subject) => {
+                self.ensure_stream(subject).await?;
+                self.publish_one(&Subject::from(subject.to_string()), json)
+                    .await
+            }
+            None => self.publish_one(&self.subject, json).await,
+        }
+    }
+
+    /// Ensure a JetStream stream exists for `subject`, once per subject.
+    async fn ensure_stream(&self, subject: &str) -> Result<(), RuntimeError> {
+        if self.ensured.lock().contains(subject) {
+            return Ok(());
+        }
+        let stream_name = derive_nats_name("rsigma", subject);
+        self.jetstream
+            .get_or_create_stream(jetstream::stream::Config {
+                name: stream_name,
+                subjects: vec![subject.to_string()],
+                ..Default::default()
+            })
             .await
             .map_err(|e| {
-                tracing::warn!(subject = %self.subject, error = %e, "NATS publish failed");
+                tracing::warn!(subject, error = %e, "NATS incident stream ensure failed");
+                RuntimeError::Io(std::io::Error::other(e))
+            })?;
+        self.ensured.lock().insert(subject.to_string());
+        Ok(())
+    }
+
+    /// Publish a single JSON payload to `subject`, logging on failure.
+    async fn publish_one(&self, subject: &Subject, json: &str) -> Result<(), RuntimeError> {
+        let ack = self
+            .jetstream
+            .publish(subject.clone(), json.to_string().into())
+            .await
+            .map_err(|e| {
+                tracing::warn!(subject = %subject, error = %e, "NATS publish failed");
                 RuntimeError::Io(std::io::Error::other(e))
             })?;
         ack.await.map_err(|e| {
-            tracing::warn!(subject = %self.subject, error = %e, "NATS publish ack failed");
+            tracing::warn!(subject = %subject, error = %e, "NATS publish ack failed");
             RuntimeError::Io(std::io::Error::other(e))
         })?;
         Ok(())

@@ -12,6 +12,9 @@ All bodies are JSON unless otherwise noted. All responses include a `Content-Typ
 | `/readyz` | GET | none | Readiness probe. 200 when rules and pipelines are loaded; 503 during startup or after a failed reload. |
 | `/metrics` | GET | none | Prometheus text format. See [Prometheus metrics](metrics.md). |
 | `/api/v1/status` | GET | none | Counters, state-entry counts, uptime, and (when configured) dynamic-source summary. |
+| `/api/v1/incidents` | GET | none | Open incidents from the alert-pipeline grouping stage. |
+| `/api/v1/silences` | GET, POST | none | List silences, or create one (returns its id). |
+| `/api/v1/silences/{id}` | DELETE | none | Remove a silence by id. |
 | `/api/v1/rules` | GET | none | Rule counts and rules-directory path. |
 | `/api/v1/reload` | POST | none | Trigger an immediate rules + pipelines reload. |
 | `/api/v1/events` | POST | none | NDJSON event ingest. Only enabled with `--input http`. |
@@ -93,6 +96,81 @@ curl -sS http://127.0.0.1:9090/api/v1/status
 ```
 
 The same counters are exposed in Prometheus form on `/metrics`. Use `/api/v1/status` for a quick one-shot snapshot; use `/metrics` for monitoring. For a formatted view from the command line, [`rsigma engine status`](../cli/engine/status.md) fetches this endpoint and renders it as a table (or `json`/`ndjson`/`csv`/`tsv`).
+
+### `GET /api/v1/incidents`
+
+Open incidents from the alert-pipeline grouping stage (present when `--alert-pipeline` configures a `group` block). Each entry has the same shape as an emitted `IncidentResult`, with `state: open` and `trigger: snapshot`.
+
+```bash
+curl -sS http://127.0.0.1:9090/api/v1/incidents
+```
+
+```json
+{
+  "count": 1,
+  "incidents": [
+    {
+      "incident_id": "f8bcd62a829b1126",
+      "state": "open",
+      "trigger": "snapshot",
+      "first_seen": 1719412800,
+      "last_seen": 1719412860,
+      "max_level": "high",
+      "result_count": 2,
+      "rule_counts": {"rule-1": 2},
+      "group_by": {"match.CommandLine": "malware x"},
+      "refs": [{"rule": "rule-1", "level": "high"}]
+    }
+  ]
+}
+```
+
+The `include` mode configured on the `group` block decides whether each incident carries lightweight `refs` or full `results`. See the [Alert Pipeline](../guide/alert-pipeline.md) guide.
+
+### `GET /api/v1/silences`
+
+List operator silences (static config silences and API-created ones) with their derived state.
+
+```bash
+curl -sS http://127.0.0.1:9090/api/v1/silences
+```
+
+```json
+{
+  "count": 1,
+  "silences": [
+    {
+      "id": "0b6c...",
+      "matchers": [{"selector": "match.CommandLine", "op": "=~", "value": "malware.*"}],
+      "created_by": "ops",
+      "comment": "test maintenance",
+      "origin": "api",
+      "state": "active"
+    }
+  ]
+}
+```
+
+### `POST /api/v1/silences`
+
+Create a silence. The body is a JSON object with `matchers` (required; each `{selector, op, value}` where `op` is `=`, `!=`, `=~`, or `!~`), optional `starts_at` / `ends_at` (RFC 3339), `created_by`, and `comment`. Returns `201` with the assigned `id`. A missing matcher list or a bad regex returns `400`. Once the dynamic-silence cap (`max_silences`, default 1000) is reached it returns `429`; delete silences or raise the cap.
+
+```bash
+curl -sS -X POST http://127.0.0.1:9090/api/v1/silences \
+  -d '{"matchers":[{"selector":"rule","op":"=","value":"noisy-rule"}],"comment":"muted"}'
+```
+
+```json
+{ "status": "created", "id": "0b6c..." }
+```
+
+### `DELETE /api/v1/silences/{id}`
+
+Remove a silence by id. Returns `200` when removed, `404` when no such silence exists.
+
+```bash
+curl -sS -X DELETE http://127.0.0.1:9090/api/v1/silences/0b6c...
+```
 
 ### `GET /api/v1/rules`
 

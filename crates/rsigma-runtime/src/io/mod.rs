@@ -73,6 +73,19 @@ impl AckToken {
     }
 }
 
+/// A pre-serialized incident line plus an optional NATS subject override.
+///
+/// The alert pipeline produces structured `IncidentResult`s; the sink task
+/// serializes each to NDJSON and pairs it with the configured subject override
+/// (if any) so the delivery layer can route incidents without depending on the
+/// alert-pipeline types. Delivered via [`Sink::send_incident`].
+pub struct IncidentEnvelope {
+    /// The serialized incident NDJSON line.
+    pub json: String,
+    /// Optional NATS subject override for incident consumers.
+    pub nats_subject: Option<String>,
+}
+
 /// An event payload bundled with its acknowledgment token.
 ///
 /// Sources produce `RawEvent`s; the engine extracts `payload` for processing
@@ -190,6 +203,47 @@ impl Sink {
                                 sink_type = sink.kind_label(),
                                 error = %e,
                                 "Fan-out child sink failed (raw)",
+                            );
+                            return Err(e);
+                        }
+                    }
+                    Ok(())
+                }
+            }
+        })
+    }
+
+    /// Deliver a pre-serialized incident line to this sink.
+    ///
+    /// Stdout/file write the line inline; NATS publishes to the per-incident
+    /// subject override when set, else the sink's configured subject. OTLP and
+    /// webhook sinks no-op, since incidents are not OTLP log records and the
+    /// webhook renderer templates from structured results, not incidents.
+    pub fn send_incident<'a>(
+        &'a mut self,
+        env: &'a IncidentEnvelope,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RuntimeError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            match self {
+                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_raw(&env.json)),
+                Sink::File(s) => tokio::task::block_in_place(|| s.send_raw(&env.json)),
+                #[cfg(feature = "nats")]
+                Sink::Nats(s) => {
+                    s.send_incident(&env.json, env.nats_subject.as_deref())
+                        .await
+                }
+                #[cfg(feature = "otlp")]
+                Sink::Otlp(_) => Ok(()),
+                Sink::Webhook(_) => Ok(()),
+                Sink::FanOut(sinks) => {
+                    for (idx, sink) in sinks.iter_mut().enumerate() {
+                        if let Err(e) = sink.send_incident(env).await {
+                            tracing::warn!(
+                                sink_index = idx,
+                                sink_type = sink.kind_label(),
+                                error = %e,
+                                "Fan-out child sink failed (incident)",
                             );
                             return Err(e);
                         }

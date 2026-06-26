@@ -15,10 +15,11 @@ use rsigma_eval::{
     load_schema_config,
 };
 use rsigma_runtime::{
-    AckToken, DeliveryConfig, DeliveryFailure, Dispatcher, EnrichmentPipeline, FieldObserver,
-    FileSink, InputFormat, LogProcessor, MetricsHook, OnFull, RawEvent, RoutingSpec, RuntimeEngine,
-    SchemaClassifier, SchemaObserver, Sink, StdinSource, StdoutSink, load_schema_signatures,
-    spawn_source,
+    AckToken, AlertPipeline, AlertPipelineState, DeliveryConfig, DeliveryFailure, Dispatcher,
+    EnrichmentPipeline, FieldObserver, FileSink, IncidentEnvelope, IncludeMode, InputFormat,
+    LogProcessor, MetricsHook, OnFull, RawEvent, RoutingSpec, RuntimeEngine, SchemaClassifier,
+    SchemaObserver, Silence, SilenceOrigin, SilenceSpec, Sink, StdinSource, StdoutSink,
+    build_alert_pipeline, load_alert_pipeline_file, load_schema_signatures, spawn_source,
 };
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -113,6 +114,13 @@ struct AppState {
     /// Live detection-tail state. `Some` when the tail is enabled; the
     /// `GET /api/v1/detections/stream` handler registers sessions on it.
     tail: Option<super::tail::TailState>,
+    /// The alert-pipeline config swap, read by `GET /api/v1/incidents` to
+    /// resolve the incident include mode.
+    alert_pipeline_swap: Arc<ArcSwap<Option<Arc<AlertPipeline>>>>,
+    /// Mutable alert-pipeline state (incidents + silences), shared with the
+    /// sink task. Read by `/api/v1/incidents` and read/written by
+    /// `/api/v1/silences`.
+    alert_state: Arc<std::sync::RwLock<AlertPipelineState>>,
 }
 
 #[derive(Clone)]
@@ -197,6 +205,10 @@ pub struct DaemonConfig {
     /// / `POST /api/v1/reload`); failures during reload are logged and
     /// the previous pipeline stays active.
     pub enrichers_path: Option<PathBuf>,
+    /// Optional path to the alert-pipeline config (from `--alert-pipeline`).
+    /// Read at daemon startup and again on hot-reload; failures during
+    /// reload are logged and the previous pipeline stays active.
+    pub alert_pipeline_path: Option<PathBuf>,
     /// Webhook config file/dir paths (from `--webhook`). Loaded and validated
     /// once at daemon startup, then built into lossy (`on_full=drop`) delivery
     /// leaves. Hot reload is not supported in v1.
@@ -227,6 +239,18 @@ pub async fn run_daemon(config: DaemonConfig) {
     let enrichment_metrics = metrics.clone() as Arc<dyn rsigma_runtime::MetricsHook>;
     let enrichment_swap: Arc<ArcSwap<Option<Arc<EnrichmentPipeline>>>> =
         Arc::new(ArcSwap::new(Arc::new(None)));
+
+    // The alert pipeline (dedup and, in later stages, grouping / silencing /
+    // inhibition) runs in the sink task after enrichment. Hoisted here so the
+    // sink task and the reload task can both capture the `ArcSwap`.
+    let alert_pipeline_swap: Arc<ArcSwap<Option<Arc<AlertPipeline>>>> =
+        Arc::new(ArcSwap::new(Arc::new(None)));
+
+    // Mutable alert-pipeline state (dedup, incidents, silences). Owned by the
+    // sink task but shared behind an `RwLock` so the `/api/v1/incidents` and
+    // `/api/v1/silences` handlers can read and mutate it.
+    let alert_state: Arc<std::sync::RwLock<AlertPipelineState>> =
+        Arc::new(std::sync::RwLock::new(AlertPipelineState::default()));
 
     // Open SQLite state store if configured
     let state_store = config.state_db.as_ref().map(|path| {
@@ -426,6 +450,10 @@ pub async fn run_daemon(config: DaemonConfig) {
     //   stored source position to avoid double-counting when replaying
     //   backward, while preserving cross-boundary correlations when
     //   replaying forward. For non-NATS and Resume, always restore.
+    // Whether to restore persisted state on boot. `--clear-state` never
+    // restores; the correlation block below refines this for the NATS
+    // backward-replay case. The alert-pipeline restore reuses the decision.
+    let mut restore_state = config.state_restore_mode != StateRestoreMode::ForceClear;
     if let Some(ref store) = state_store {
         match store.load().await {
             Ok(Some((snapshot, stored_position))) => {
@@ -435,6 +463,7 @@ pub async fn run_daemon(config: DaemonConfig) {
                     #[cfg(feature = "daemon-nats")]
                     &config.replay_policy,
                 );
+                restore_state = should_restore;
                 if should_restore {
                     if processor.import_state(&snapshot) {
                         let entries = snapshot.windows.values().map(|g| g.len()).sum::<usize>();
@@ -485,6 +514,50 @@ pub async fn run_daemon(config: DaemonConfig) {
             }
             Err(e) => {
                 tracing::error!(error = %e, "Failed to build enrichment pipeline");
+                std::process::exit(crate::exit_code::CONFIG_ERROR);
+            }
+        }
+    }
+
+    // Build the alert pipeline. Failures exit cleanly because no I/O has
+    // started yet.
+    if let Some(path) = config.alert_pipeline_path.as_ref() {
+        match load_alert_pipeline_file(path).and_then(build_alert_pipeline) {
+            Ok(pipeline) => {
+                tracing::info!(path = %path.display(), "Alert pipeline loaded");
+                if let Ok(mut state) = alert_state.write() {
+                    state
+                        .silences
+                        .set_static(pipeline.static_silences().to_vec());
+                }
+                // Restore persisted alert-pipeline state (unless --clear-state),
+                // pruning entries past their window at boot.
+                if restore_state && let Some(ref store) = state_store {
+                    match store.load_alert_pipeline().await {
+                        Ok(Some(snap)) => {
+                            let now = chrono::Utc::now().timestamp();
+                            let restored = alert_state
+                                .write()
+                                .map(|mut state| pipeline.restore(&mut state, snap, now))
+                                .unwrap_or(false);
+                            if restored {
+                                tracing::info!("Alert-pipeline state restored from database");
+                            } else {
+                                tracing::warn!(
+                                    "Incompatible alert-pipeline snapshot version, starting fresh"
+                                );
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Failed to load alert-pipeline state");
+                        }
+                    }
+                }
+                alert_pipeline_swap.store(Arc::new(Some(Arc::new(pipeline))));
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to build alert pipeline");
                 std::process::exit(crate::exit_code::CONFIG_ERROR);
             }
         }
@@ -608,6 +681,8 @@ pub async fn run_daemon(config: DaemonConfig) {
         schema_observer: schema_observer.clone(),
         tap: tap.clone(),
         tail: tail.clone(),
+        alert_pipeline_swap: alert_pipeline_swap.clone(),
+        alert_state: alert_state.clone(),
     };
 
     let app = Router::new()
@@ -616,6 +691,9 @@ pub async fn run_daemon(config: DaemonConfig) {
         .route("/metrics", get(metrics_handler))
         .route("/api/v1/rules", get(list_rules))
         .route("/api/v1/status", get(status))
+        .route("/api/v1/incidents", get(list_incidents))
+        .route("/api/v1/silences", get(list_silences).post(create_silence))
+        .route("/api/v1/silences/{id}", delete(delete_silence))
         .route("/api/v1/reload", post(trigger_reload))
         .route("/api/v1/events", post(ingest_events))
         .route("/api/v1/sources", get(list_sources))
@@ -734,6 +812,9 @@ pub async fn run_daemon(config: DaemonConfig) {
     let reload_enrichers_path = config.enrichers_path.clone();
     let reload_enrichment_metrics = enrichment_metrics.clone();
     let reload_source_cache = initial_source_cache.clone();
+    let reload_alert_pipeline_swap = alert_pipeline_swap.clone();
+    let reload_alert_pipeline_path = config.alert_pipeline_path.clone();
+    let reload_alert_state = alert_state.clone();
     #[cfg(feature = "daemon-tls")]
     let reload_tls_state = tls_state.clone();
     #[cfg(feature = "daemon-tls")]
@@ -808,6 +889,35 @@ pub async fn run_daemon(config: DaemonConfig) {
                 }
             }
 
+            // Reload the alert pipeline. Failures keep the previous pipeline
+            // in place so a typo cannot take down dedup in production. The
+            // in-flight active-alert store is owned by the sink task and
+            // survives a config swap; stale alerts age out via the new
+            // pipeline's resolve_timeout.
+            if let Some(path) = reload_alert_pipeline_path.as_deref() {
+                match load_alert_pipeline_file(path).and_then(build_alert_pipeline) {
+                    Ok(new_pipeline) => {
+                        // Re-seed static silences (replacing the previous static
+                        // set); API-created silences are preserved.
+                        if let Ok(mut state) = reload_alert_state.write() {
+                            state
+                                .silences
+                                .set_static(new_pipeline.static_silences().to_vec());
+                        }
+                        reload_alert_pipeline_swap.store(Arc::new(Some(Arc::new(new_pipeline))));
+                        tracing::info!(path = %path.display(), "Alert pipeline reloaded");
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            path = %path.display(),
+                            "Failed to reload alert pipeline; keeping previous pipeline"
+                        );
+                        reload_metrics.reloads_failed.inc();
+                    }
+                }
+            }
+
             // Reload TLS certificate / key from disk when daemon-tls is
             // built in and configured. Failures keep the previous
             // certificate active so a typo in the cert path cannot
@@ -845,6 +955,8 @@ pub async fn run_daemon(config: DaemonConfig) {
         let save_interval_secs = config.state_save_interval;
         let save_hw_seq = high_water_seq.clone();
         let save_hw_ts = high_water_ts.clone();
+        let save_alert_swap = alert_pipeline_swap.clone();
+        let save_alert_state = alert_state.clone();
         tokio::spawn(async move {
             let mut interval =
                 tokio::time::interval(tokio::time::Duration::from_secs(save_interval_secs));
@@ -870,6 +982,16 @@ pub async fn run_daemon(config: DaemonConfig) {
                             windows = window_count,
                             "Periodic state snapshot saved",
                         );
+                    }
+                }
+                // Persist the alert-pipeline state when configured.
+                if let Some(pipeline) = save_alert_swap.load_full().as_ref() {
+                    let snap = {
+                        let st = save_alert_state.read().unwrap_or_else(|e| e.into_inner());
+                        pipeline.snapshot(&st)
+                    };
+                    if let Err(e) = save_store.save_alert_pipeline(&snap).await {
+                        tracing::warn!(error = %e, "Failed to save alert-pipeline snapshot");
                     }
                 }
             }
@@ -1174,6 +1296,9 @@ pub async fn run_daemon(config: DaemonConfig) {
     // across fan-out. On shutdown it drains the worker queues.
     let sink_metrics = metrics.clone();
     let enrichment_swap_for_sink = enrichment_swap.clone();
+    let alert_pipeline_swap_for_sink = alert_pipeline_swap.clone();
+    let alert_state_for_sink = alert_state.clone();
+    let alert_pipeline_metrics = metrics.clone() as Arc<dyn MetricsHook>;
     let delivery_metrics = metrics.clone() as Arc<dyn MetricsHook>;
     let dispatch_ack_tx = ack_tx.clone();
     let empty_ack_tx = ack_tx.clone();
@@ -1181,33 +1306,114 @@ pub async fn run_daemon(config: DaemonConfig) {
     drop(ack_tx);
     let sink_handle = tokio::spawn(async move {
         let dispatcher = Dispatcher::spawn(leaves, Some(df_tx), dispatch_ack_tx, delivery_metrics);
-        while let Some((mut result, ack_tokens)) = sink_rx.recv().await {
-            sink_metrics.on_output_queue_depth_change(-1);
+        // 1s tick drives the alert pipeline's repeat re-emits, resolved
+        // records, incident emissions, and silence GC. A no-op when no alert
+        // pipeline is configured.
+        let mut alert_tick = tokio::time::interval(tokio::time::Duration::from_secs(1));
+        alert_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                maybe = sink_rx.recv() => {
+                    let Some((mut result, ack_tokens)) = maybe else { break };
+                    sink_metrics.on_output_queue_depth_change(-1);
 
-            // Post-evaluation enrichment may suppress every entry; if so, ack
-            // the events and skip sink delivery. `load_full` keeps the pipeline
-            // alive across the await without holding an `ArcSwap` guard.
-            let pipeline_snapshot = enrichment_swap_for_sink.load_full();
-            if let Some(pipeline) = pipeline_snapshot.as_ref()
-                && !pipeline.is_empty()
-            {
-                pipeline.run(&mut result).await;
-                if result.is_empty() {
-                    for token in ack_tokens {
-                        let _ = empty_ack_tx.send(token);
+                    // Post-evaluation enrichment may suppress every entry; if
+                    // so, ack the events and skip sink delivery. `load_full`
+                    // keeps the pipeline alive across the await without holding
+                    // an `ArcSwap` guard.
+                    let pipeline_snapshot = enrichment_swap_for_sink.load_full();
+                    if let Some(pipeline) = pipeline_snapshot.as_ref()
+                        && !pipeline.is_empty()
+                    {
+                        pipeline.run(&mut result).await;
+                        if result.is_empty() {
+                            for token in ack_tokens {
+                                let _ = empty_ack_tx.send(token);
+                            }
+                            continue;
+                        }
                     }
-                    continue;
+
+                    // Alert pipeline: dedup folds duplicates and grouping
+                    // assigns survivors to incidents (annotating `incident_id`).
+                    // If the whole batch folds away, ack and skip dispatch,
+                    // mirroring the enrichment empty-result path. The incident
+                    // store is locked only for the synchronous process call.
+                    let alert_snapshot = alert_pipeline_swap_for_sink.load_full();
+                    if let Some(alert_pipeline) = alert_snapshot.as_ref() {
+                        let now = chrono::Utc::now().timestamp();
+                        let kept = {
+                            let mut st = alert_state_for_sink
+                                .write()
+                                .unwrap_or_else(|e| e.into_inner());
+                            alert_pipeline.process(
+                                result,
+                                &mut st,
+                                now,
+                                alert_pipeline_metrics.as_ref(),
+                            )
+                        };
+                        if kept.is_empty() {
+                            for token in ack_tokens {
+                                let _ = empty_ack_tx.send(token);
+                            }
+                            continue;
+                        }
+                        result = kept;
+                    }
+
+                    // Live detection tail: fan the post-enrichment result out to
+                    // any active tail sessions before dispatch. Lossy and
+                    // non-blocking, so it can never stall the sink task or the
+                    // ack-join.
+                    if let Some(tail) = &tail_for_sink {
+                        tail.capture(&result);
+                    }
+
+                    dispatcher.dispatch(result, ack_tokens).await;
+                }
+                _ = alert_tick.tick() => {
+                    // Emit any due dedup repeat/resolved records and incident
+                    // emissions. These are synthetic (no input event): dedup
+                    // records dispatch with no ack tokens, incidents via the
+                    // incident path (optionally to a dedicated NATS subject).
+                    let alert_snapshot = alert_pipeline_swap_for_sink.load_full();
+                    if let Some(alert_pipeline) = alert_snapshot.as_ref() {
+                        let now = chrono::Utc::now().timestamp();
+                        let out = {
+                            let mut st = alert_state_for_sink
+                                .write()
+                                .unwrap_or_else(|e| e.into_inner());
+                            alert_pipeline.tick(&mut st, now, alert_pipeline_metrics.as_ref())
+                        };
+                        for line in out.dedup_lines {
+                            dispatcher
+                                .dispatch_incident(IncidentEnvelope {
+                                    json: line.to_string(),
+                                    nats_subject: None,
+                                })
+                                .await;
+                        }
+                        let subject =
+                            alert_pipeline.incident_nats_subject().map(|s| s.to_string());
+                        for incident in out.incidents {
+                            match serde_json::to_string(&incident) {
+                                Ok(json) => {
+                                    dispatcher
+                                        .dispatch_incident(IncidentEnvelope {
+                                            json,
+                                            nats_subject: subject.clone(),
+                                        })
+                                        .await;
+                                }
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "Failed to serialize incident");
+                                }
+                            }
+                        }
+                    }
                 }
             }
-
-            // Live detection tail: fan the post-enrichment result out to any
-            // active tail sessions before dispatch. Lossy and non-blocking, so
-            // it can never stall the sink task or the ack-join.
-            if let Some(tail) = &tail_for_sink {
-                tail.capture(&result);
-            }
-
-            dispatcher.dispatch(result, ack_tokens).await;
         }
         dispatcher.shutdown().await;
     });
@@ -1374,6 +1580,22 @@ pub async fn run_daemon(config: DaemonConfig) {
                 }
             }
             Err(e) => tracing::error!(error = %e, "Failed to save state on shutdown"),
+        }
+    }
+
+    // Save the alert-pipeline state on shutdown when configured.
+    if let Some(ref store) = state_store
+        && let Some(pipeline) = alert_pipeline_swap.load_full().as_ref()
+    {
+        let snap = {
+            let st = alert_state.read().unwrap_or_else(|e| e.into_inner());
+            pipeline.snapshot(&st)
+        };
+        match store.save_alert_pipeline(&snap).await {
+            Ok(()) => tracing::info!("Alert-pipeline state saved to database on shutdown"),
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to save alert-pipeline state on shutdown")
+            }
         }
     }
 }
@@ -1792,6 +2014,108 @@ struct DynamicSourcesSummary {
     resolves_total: u64,
     errors_total: u64,
     cache_hits: u64,
+}
+
+/// `GET /api/v1/incidents` — open incidents from the grouping stage.
+async fn list_incidents(State(state): State<AppState>) -> impl IntoResponse {
+    let include = state
+        .alert_pipeline_swap
+        .load_full()
+        .as_ref()
+        .as_ref()
+        .and_then(|p| p.incident_include())
+        .unwrap_or(IncludeMode::Refs);
+    let incidents = {
+        let st = state.alert_state.read().unwrap_or_else(|e| e.into_inner());
+        st.incidents.snapshot(include)
+    };
+    let count = incidents.len();
+    Json(serde_json::json!({ "incidents": incidents, "count": count }))
+}
+
+/// `GET /api/v1/silences` — operator silences and their state.
+async fn list_silences(State(state): State<AppState>) -> impl IntoResponse {
+    let now = chrono::Utc::now().timestamp();
+    let silences = {
+        let st = state.alert_state.read().unwrap_or_else(|e| e.into_inner());
+        st.silences.snapshot(now)
+    };
+    let count = silences.len();
+    Json(serde_json::json!({ "silences": silences, "count": count }))
+}
+
+/// `POST /api/v1/silences` — create a silence. Returns the assigned id.
+async fn create_silence(State(state): State<AppState>, body: String) -> Response {
+    let spec: SilenceSpec = match serde_json::from_str(&body) {
+        Ok(spec) => spec,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": format!("invalid silence JSON: {e}") })),
+            )
+                .into_response();
+        }
+    };
+    let max_silences = state
+        .alert_pipeline_swap
+        .load_full()
+        .as_ref()
+        .as_ref()
+        .map(|p| p.max_dynamic_silences())
+        .unwrap_or(rsigma_runtime::DEFAULT_MAX_DYNAMIC_SILENCES);
+    match Silence::build(spec, SilenceOrigin::Api) {
+        Ok(silence) => {
+            let id = silence.id().to_string();
+            let added = {
+                let mut st = state.alert_state.write().unwrap_or_else(|e| e.into_inner());
+                st.silences.try_add(silence, max_silences)
+            };
+            if added {
+                (
+                    StatusCode::CREATED,
+                    Json(serde_json::json!({ "status": "created", "id": id })),
+                )
+                    .into_response()
+            } else {
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(serde_json::json!({
+                        "error": format!(
+                            "dynamic silence limit reached ({max_silences}); delete silences or raise max_silences"
+                        )
+                    })),
+                )
+                    .into_response()
+            }
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// `DELETE /api/v1/silences/{id}` — expire (remove) a silence.
+async fn delete_silence(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let removed = {
+        let mut st = state.alert_state.write().unwrap_or_else(|e| e.into_inner());
+        st.silences.remove(&id)
+    };
+    if removed {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({ "status": "deleted", "id": id })),
+        )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "no such silence", "id": id })),
+        )
+    }
 }
 
 async fn status(State(state): State<AppState>) -> impl IntoResponse {

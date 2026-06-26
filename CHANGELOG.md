@@ -4,6 +4,41 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Alert pipeline (#255)
+
+A new optional post-engine stage in the daemon sink path, between enrichment and the sinks, configured with `--alert-pipeline <path>` (or the `daemon.alert_pipeline` config key) and hot-reloaded on `SIGHUP`, file-watcher changes, and `POST /api/v1/reload`; a failed reload keeps the previous pipeline active. It deduplicates results by a configurable fingerprint, modeled on Alertmanager: the first fire passes through and opens an active alert, subsequent fires fold into it, the alert re-emits on `repeat_interval` carrying the accumulated fire count, and it emits a final `resolved` record after `resolve_timeout` and is evicted.
+
+* Fingerprints are built from a shared field-selector namespace over `EvaluationResult`: `rule`, `level`, `event.<path>`, `match.<field>`, `enrichment.<path>`, and `correlation.group_key.<field>`. A malformed selector rejects the daemon at startup with an error naming the offending selector.
+* `scope` (rules / tags / levels) restricts which results the layer acts on; out-of-scope results pass through untouched. `strip_event` retains the event for selector resolution then drops raw event payloads before delivery. `repeat_interval: 0` gives pure suppression with a single resolved summary on expiry.
+* The active-alert store is bounded by `dedup.max_active_alerts` (default 100000): once full, a first-fire for a new fingerprint passes through un-deduped rather than growing the store, so a high-cardinality fingerprint cannot exhaust memory.
+* Re-emit and resolved records ride the existing NDJSON wire shape, disambiguated by a `dedup_state` key in `enrichments` (alongside `dedup_fingerprint`, `dedup_fire_count`, `dedup_first_seen`, `dedup_last_seen`, and `dedup_fields`).
+* The `Scope` filter moved to a shared crate-level `rsigma_runtime::scope` module; the `enrichment` module re-exports it, so `rsigma_runtime::Scope` and `rsigma_runtime::enrichment::Scope` are unchanged.
+
+A second stage groups dedup survivors into incidents. It assigns each survivor to an incident, annotates the pass-through result with `incident_id` in `enrichments`, and emits a higher-level `IncidentResult` on the Alertmanager timers.
+
+* Two modes: `group_by` (default) groups by equality on a selector list with a deterministic incident id stable across restarts; an opt-in `entity_graph` union-find merges incidents sharing an entity value, guarded against the giant-component failure by a `stop_values` list and a per-value `max_value_cardinality` ceiling.
+* Incidents emit on `group_wait` (initial batch), `group_interval` (updates), and `repeat_interval` (re-emit), and emit a final `resolved` record after `resolve_timeout`. `include: refs | results` controls how much contributing detail is embedded, bounded by per-incident caps.
+* `IncidentResult` is one flat NDJSON object disambiguated by an `incident_id` key, delivered via an additive `Sink::send_incident` across stdout/file/NATS (with an optional `nats_subject` override routing incidents to a dedicated subject); OTLP and webhook sinks do not receive incidents. Open incidents are readable at `GET /api/v1/incidents`.
+* Nine Prometheus metrics across both stages: `rsigma_dedup_results_total{action}`, `rsigma_dedup_store_entries`, `rsigma_dedup_evictions_total`, `rsigma_dedup_summaries_emitted_total`, `rsigma_incidents_open`, `rsigma_incidents_emitted_total{trigger}`, `rsigma_incident_results_total`, `rsigma_incident_overmerge_total{guard}`, and `rsigma_alert_pipeline_duration_seconds`.
+
+A silencing stage mutes results matching operator-defined matchers before dedup, modeled on Alertmanager silences.
+
+* A matcher is `selector <op> value` over the field-selector namespace, with the `=`, `!=`, `=~`, `!~` operators (regex anchored); a matcher set is ANDed. The matcher engine is shared with the forthcoming inhibition stage.
+* Silences carry a time window (optional RFC 3339 `starts_at`/`ends_at`), a derived `pending`/`active`/`expired` state, and an origin: `static` silences declared under `silences:` in the config (re-seeded on hot-reload) and `api` silences created at runtime over `POST /api/v1/silences`. Expired silences are garbage-collected.
+* New endpoints: `GET`/`POST /api/v1/silences` and `DELETE /api/v1/silences/{id}`. A muted result is acked and dropped before dedup, so it neither emits nor opens an incident. Dynamic (API) silences are bounded by `max_silences` (default 1000); creation past the cap returns `429`.
+* Two metrics: `rsigma_silenced_total` and `rsigma_silences_active`.
+
+An inhibition stage mutes a target result while a matching source is active, modeled on Alertmanager `inhibit_rules`.
+
+* Config-driven `inhibit_rules`, each `{ source_match, target_match, equal, duration }` reusing the matcher engine. While a result matching `source_match` has been seen within `duration`, any result matching `target_match` sharing the same `equal` selector values is muted.
+* Carries Alertmanager's self-inhibition guard (a result matching both sides does not inhibit itself) and is non-transitive: a silenced source still inhibits its targets (the active-source index is updated from every non-inhibited result before silencing), but an inhibited target does not become a source.
+* Two metrics: `rsigma_inhibited_total{rule}` and `rsigma_inhibit_sources_active`.
+
+The alert pipeline persists its state across restarts when `--state-db` is set.
+
+* A versioned `AlertPipelineSnapshot` (active dedup alerts, open incidents, dynamic silences, and the inhibition active-source index) is saved to the existing SQLite store in its own `rsigma_alert_pipeline_state` table, on the periodic and shutdown hooks beside the correlation snapshot, and restored on boot.
+* Restore is window-aware: dedup alerts past `resolve_timeout`, incidents past their `resolve_timeout`, silences past `ends_at`, and inhibition sources past their rule's `duration` are pruned. Deterministic `group_by` incident ids survive the restart; a version mismatch starts fresh with a warning. `--clear-state` skips the restore and `--keep-state` forces it, matching the correlation-state flags.
+
 ### rstix: SCO per-field rustdoc (#254)
 
 * Per-field documentation on all 18 SCO types, 12 predefined extensions, and nested public structs (`EmailMimePart`, `WindowsRegistryValue`, `X509V3Extensions`, PE header/section types, etc.).

@@ -31,6 +31,7 @@ arc-swap = "1"
 parking_lot = "0.12"
 syslog_loose = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+uuid = { version = "1", features = ["v4"] }
 async-trait = "0.1"
 humantime = "2"
 globset = "0.4"
@@ -74,4 +75,8 @@ harness = false
 
 [[bench]]
 name = "dynamic_pipelines"
+harness = false
+
+[[bench]]
+name = "alert_pipeline"
 harness = false

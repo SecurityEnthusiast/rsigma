@@ -1,0 +1,17 @@
+silences:
+  - matchers:
+      - selector: rule
+        op: "="
+        value: noisy-rule
+      - selector: match.SourceIp
+        op: "=~"
+        value: "10\\.0\\..*"
+      - selector: level
+        op: "!="
+        value: critical
+    starts_at: "2026-01-01T00:00:00Z"
+    ends_at: "2026-01-02T00:00:00Z"
+    created_by: ops
+    comment: maintenance window
+dedup:
+  fingerprint: [rule]

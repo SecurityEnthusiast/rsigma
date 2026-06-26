@@ -20,7 +20,7 @@ use tokio::task::JoinHandle;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
-use crate::io::{AckToken, Sink};
+use crate::io::{AckToken, IncidentEnvelope, Sink};
 use crate::metrics::MetricsHook;
 
 type DeliveryFuture<'a> = Pin<Box<dyn Future<Output = Result<(), RuntimeError>> + Send + 'a>>;
@@ -32,6 +32,11 @@ type DeliveryFuture<'a> = Pin<Box<dyn Future<Output = Result<(), RuntimeError>> 
 pub trait DeliverySink: Send + 'static {
     /// Deliver a single result, returning an error the worker may retry.
     fn deliver<'a>(&'a mut self, result: &'a ProcessResult) -> DeliveryFuture<'a>;
+    /// Deliver a single incident line. Defaults to a no-op so mock sinks and
+    /// any sink that does not carry incidents need no implementation.
+    fn deliver_incident<'a>(&'a mut self, _incident: &'a IncidentEnvelope) -> DeliveryFuture<'a> {
+        Box::pin(async { Ok(()) })
+    }
     /// Short, stable label used for structured logs and per-sink metrics.
     fn label(&self) -> &'static str;
 }
@@ -39,6 +44,9 @@ pub trait DeliverySink: Send + 'static {
 impl DeliverySink for Sink {
     fn deliver<'a>(&'a mut self, result: &'a ProcessResult) -> DeliveryFuture<'a> {
         self.send(result)
+    }
+    fn deliver_incident<'a>(&'a mut self, incident: &'a IncidentEnvelope) -> DeliveryFuture<'a> {
+        self.send_incident(incident)
     }
     fn label(&self) -> &'static str {
         self.kind_label()
@@ -123,10 +131,16 @@ impl Drop for AckGuard {
     }
 }
 
-/// One unit of work handed to a worker: a shared result plus the shared ack
+/// The payload of one unit of work: either a result batch or an incident line.
+enum DeliveryPayload {
+    Result(Arc<ProcessResult>),
+    Incident(Arc<IncidentEnvelope>),
+}
+
+/// One unit of work handed to a worker: a shared payload plus the shared ack
 /// guard whose lifetime gates the ack.
 struct DeliveryItem {
-    result: Arc<ProcessResult>,
+    payload: DeliveryPayload,
     _guard: Arc<AckGuard>,
 }
 
@@ -230,7 +244,28 @@ impl Dispatcher {
         for worker in &self.workers {
             worker
                 .enqueue(DeliveryItem {
-                    result: result.clone(),
+                    payload: DeliveryPayload::Result(result.clone()),
+                    _guard: guard.clone(),
+                })
+                .await;
+        }
+    }
+
+    /// Fan one incident line into every worker. Incidents are synthetic (no
+    /// input event), so they carry no ack tokens.
+    pub async fn dispatch_incident(&self, incident: IncidentEnvelope) {
+        if self.workers.is_empty() {
+            return;
+        }
+        let guard = Arc::new(AckGuard {
+            tokens: Mutex::new(Vec::new()),
+            ack_tx: self.ack_tx.clone(),
+        });
+        let incident = Arc::new(incident);
+        for worker in &self.workers {
+            worker
+                .enqueue(DeliveryItem {
+                    payload: DeliveryPayload::Incident(incident.clone()),
                     _guard: guard.clone(),
                 })
                 .await;
@@ -273,15 +308,11 @@ async fn worker_loop<S: DeliverySink>(
         }
         metrics.on_sink_queue_depth_change(label, -(batch.len() as i64));
         for item in &batch {
-            deliver_one(
-                &mut sink,
-                &item.result,
-                &cfg,
-                dlq_tx.as_ref(),
-                &metrics,
-                label,
-            )
-            .await;
+            let target = match &item.payload {
+                DeliveryPayload::Result(r) => DeliverTarget::Result(r),
+                DeliveryPayload::Incident(e) => DeliverTarget::Incident(e),
+            };
+            deliver_one(&mut sink, target, &cfg, dlq_tx.as_ref(), &metrics, label).await;
         }
         // Dropping `batch` drops each item's `Arc<AckGuard>` clone, advancing
         // the ack-join.
@@ -289,9 +320,15 @@ async fn worker_loop<S: DeliverySink>(
     }
 }
 
+/// What a worker is delivering: a result batch or an incident line.
+enum DeliverTarget<'a> {
+    Result(&'a ProcessResult),
+    Incident(&'a IncidentEnvelope),
+}
+
 async fn deliver_one<S: DeliverySink>(
     sink: &mut S,
-    result: &ProcessResult,
+    target: DeliverTarget<'_>,
     cfg: &DeliveryConfig,
     dlq_tx: Option<&mpsc::Sender<DeliveryFailure>>,
     metrics: &Arc<dyn MetricsHook>,
@@ -299,7 +336,11 @@ async fn deliver_one<S: DeliverySink>(
 ) {
     let mut attempt: u32 = 0;
     loop {
-        match sink.deliver(result).await {
+        let outcome = match target {
+            DeliverTarget::Result(r) => sink.deliver(r).await,
+            DeliverTarget::Incident(e) => sink.deliver_incident(e).await,
+        };
+        match outcome {
             Ok(()) => return,
             Err(e) => {
                 // A `Permanent` error will not heal on retry (e.g. a 4xx from a
@@ -310,7 +351,12 @@ async fn deliver_one<S: DeliverySink>(
                     metrics.on_sink_delivery_failed(label);
                     match dlq_tx {
                         Some(dlq) => {
-                            let serialized = serde_json::to_string(result).unwrap_or_default();
+                            let serialized = match target {
+                                DeliverTarget::Result(r) => {
+                                    serde_json::to_string(r).unwrap_or_default()
+                                }
+                                DeliverTarget::Incident(e) => e.json.clone(),
+                            };
                             let _ = dlq
                                 .send(DeliveryFailure {
                                     serialized,

@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use rsigma_eval::CorrelationSnapshot;
+use rsigma_runtime::AlertPipelineSnapshot;
 
 /// Position of the last acked event from the source stream.
 ///
@@ -36,6 +37,11 @@ impl SqliteStateStore {
             r#"
             PRAGMA journal_mode = WAL;
             CREATE TABLE IF NOT EXISTS rsigma_correlation_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                snapshot TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS rsigma_alert_pipeline_state (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 snapshot TEXT NOT NULL,
                 updated_at INTEGER NOT NULL
@@ -157,6 +163,55 @@ impl SqliteStateStore {
                 };
 
                 Ok(Some((snapshot, position)))
+            } else {
+                Ok(None)
+            }
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking: {e}"))?
+    }
+
+    /// Save the alert-pipeline snapshot, replacing any existing one.
+    pub async fn save_alert_pipeline(
+        &self,
+        snapshot: &AlertPipelineSnapshot,
+    ) -> Result<(), String> {
+        let json = serde_json::to_string(snapshot)
+            .map_err(|e| format!("serialize alert-pipeline snapshot: {e}"))?;
+        let conn = self.conn.clone();
+        let updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        tokio::task::spawn_blocking(move || {
+            let c = conn.lock().map_err(|_| "state store lock poisoned")?;
+            c.execute(
+                "INSERT INTO rsigma_alert_pipeline_state (id, snapshot, updated_at)
+                 VALUES (1, ?1, ?2)
+                 ON CONFLICT (id) DO UPDATE SET snapshot = ?1, updated_at = ?2",
+                rusqlite::params![&json, updated_at],
+            )
+            .map_err(|e| format!("save alert-pipeline snapshot: {e}"))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking: {e}"))?
+    }
+
+    /// Load the most recent alert-pipeline snapshot, if any.
+    pub async fn load_alert_pipeline(&self) -> Result<Option<AlertPipelineSnapshot>, String> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || {
+            let c = conn.lock().map_err(|_| "state store lock poisoned")?;
+            let mut stmt = c
+                .prepare("SELECT snapshot FROM rsigma_alert_pipeline_state WHERE id = 1")
+                .map_err(|e| format!("prepare load alert-pipeline: {e}"))?;
+            let mut rows = stmt.query([]).map_err(|e| format!("query: {e}"))?;
+            if let Some(row) = rows.next().map_err(|e| format!("next: {e}"))? {
+                let json: String = row.get(0).map_err(|e| format!("get snapshot: {e}"))?;
+                let snapshot: AlertPipelineSnapshot = serde_json::from_str(&json)
+                    .map_err(|e| format!("deserialize alert-pipeline snapshot: {e}"))?;
+                Ok(Some(snapshot))
             } else {
                 Ok(None)
             }
@@ -291,5 +346,27 @@ mod tests {
         let store = SqliteStateStore::open(&db).unwrap();
 
         assert!(store.load().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn alert_pipeline_snapshot_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("test.db");
+        let store = SqliteStateStore::open(&db).unwrap();
+
+        // No snapshot yet.
+        assert!(store.load_alert_pipeline().await.unwrap().is_none());
+
+        // Build a snapshot via the public API and round-trip it through SQLite.
+        let pipeline = rsigma_runtime::parse_alert_pipeline_config(
+            "dedup:\n  fingerprint: [rule]\n  resolve_timeout: 1h\n",
+        )
+        .unwrap();
+        let state = rsigma_runtime::AlertPipelineState::default();
+        let snap = pipeline.snapshot(&state);
+        store.save_alert_pipeline(&snap).await.unwrap();
+
+        let loaded = store.load_alert_pipeline().await.unwrap().unwrap();
+        assert_eq!(loaded.version, rsigma_runtime::SNAPSHOT_VERSION);
     }
 }

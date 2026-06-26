@@ -42,6 +42,7 @@
 //! }
 //! ```
 
+pub mod alert_pipeline;
 pub mod egress;
 pub mod engine;
 pub mod enrichment;
@@ -52,9 +53,18 @@ pub mod metrics;
 pub mod parse;
 pub mod pipeline_deprecation;
 pub mod processor;
+pub mod scope;
 pub mod sources;
 pub mod tap;
 
+pub use alert_pipeline::{
+    AlertPipeline, AlertPipelineConfigError, AlertPipelineFile, AlertPipelineSnapshot,
+    AlertPipelineState, DEFAULT_MAX_DYNAMIC_SILENCES, DedupStore, GroupMode, IncidentRef,
+    IncidentResult, IncidentStore, IncludeMode, MatchOp, Matcher, MatcherError, MatcherSet,
+    MatcherSpec, SNAPSHOT_VERSION, Selector, SelectorParseError, Silence, SilenceError,
+    SilenceOrigin, SilenceSpec, SilenceState, SilenceStore, SilenceView, TickOutput,
+    build_alert_pipeline, load_alert_pipeline_file, parse_alert_pipeline_config,
+};
 pub use egress::{
     EgressDenial, EgressFilteredResolver, EgressPolicy, default_egress_policy,
     set_default_egress_policy,
@@ -79,7 +89,7 @@ pub use io::webhook::{
 };
 pub use io::{
     AckToken, DeliveryConfig, DeliveryFailure, DeliverySink, Dispatcher, EventSource, FileSink,
-    OnFull, RawEvent, Sink, StdinSource, StdoutSink, spawn_source,
+    IncidentEnvelope, OnFull, RawEvent, Sink, StdinSource, StdoutSink, spawn_source,
 };
 pub use metrics::{MetricsHook, NoopMetrics};
 pub use pipeline_deprecation::warn_pipeline_inline_sources;

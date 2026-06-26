@@ -66,6 +66,19 @@ pub struct Metrics {
     pub tap_events_dropped_total: IntCounter,
     pub tail_active_sessions: IntGauge,
     pub tail_detections_dropped_total: IntCounter,
+    pub dedup_results_total: IntCounterVec,
+    pub dedup_store_entries: IntGauge,
+    pub dedup_evictions_total: IntCounter,
+    pub dedup_summaries_emitted_total: IntCounter,
+    pub alert_pipeline_duration_seconds: Histogram,
+    pub incidents_open: IntGauge,
+    pub incidents_emitted_total: IntCounterVec,
+    pub incident_results_total: IntCounter,
+    pub incident_overmerge_total: IntCounterVec,
+    pub silenced_total: IntCounter,
+    pub silences_active: IntGauge,
+    pub inhibited_total: IntCounterVec,
+    pub inhibit_sources_active: IntGauge,
 }
 
 impl Metrics {
@@ -591,6 +604,149 @@ impl Metrics {
             .register(Box::new(tail_detections_dropped_total.clone()))
             .unwrap();
 
+        let dedup_results_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_dedup_results_total",
+                "Alert-pipeline dedup outcomes by action (emitted, folded, repeat, resolved)",
+            ),
+            &["action"],
+        )
+        .unwrap();
+        let dedup_store_entries = IntGauge::with_opts(Opts::new(
+            "rsigma_dedup_store_entries",
+            "Active dedup alerts currently tracked by the alert pipeline",
+        ))
+        .unwrap();
+        let dedup_evictions_total = IntCounter::with_opts(Opts::new(
+            "rsigma_dedup_evictions_total",
+            "Active dedup alerts evicted after resolving",
+        ))
+        .unwrap();
+        let dedup_summaries_emitted_total = IntCounter::with_opts(Opts::new(
+            "rsigma_dedup_summaries_emitted_total",
+            "Dedup summary records emitted (repeat re-emits plus resolved records)",
+        ))
+        .unwrap();
+        let alert_pipeline_duration_seconds = Histogram::with_opts(
+            HistogramOpts::new(
+                "rsigma_alert_pipeline_duration_seconds",
+                "Alert-pipeline stage duration in seconds",
+            )
+            .buckets(vec![
+                0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1,
+            ]),
+        )
+        .unwrap();
+        // Pre-materialise the fixed `action` label set and zero the gauge so
+        // the `# HELP` / `# TYPE` lines and zero series appear on the first
+        // scrape, before any event flows.
+        for action in ["emitted", "folded", "repeat", "resolved"] {
+            dedup_results_total.with_label_values(&[action]).inc_by(0);
+        }
+        dedup_store_entries.set(0);
+        registry
+            .register(Box::new(dedup_results_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(dedup_store_entries.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(dedup_evictions_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(dedup_summaries_emitted_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(alert_pipeline_duration_seconds.clone()))
+            .unwrap();
+
+        let incidents_open = IntGauge::with_opts(Opts::new(
+            "rsigma_incidents_open",
+            "Open incidents currently tracked by the grouping stage",
+        ))
+        .unwrap();
+        let incidents_emitted_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_incidents_emitted_total",
+                "Incident emissions by trigger (group_wait, group_interval, repeat, resolved)",
+            ),
+            &["trigger"],
+        )
+        .unwrap();
+        let incident_results_total = IntCounter::with_opts(Opts::new(
+            "rsigma_incident_results_total",
+            "Total incident records emitted",
+        ))
+        .unwrap();
+        let incident_overmerge_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_incident_overmerge_total",
+                "Entity-graph guard hits that suppressed a join, by guard",
+            ),
+            &["guard"],
+        )
+        .unwrap();
+        // Pre-materialise the fixed label sets and zero the gauge so the
+        // `# HELP` / `# TYPE` lines render on the first scrape.
+        for trigger in ["group_wait", "group_interval", "repeat", "resolved"] {
+            incidents_emitted_total
+                .with_label_values(&[trigger])
+                .inc_by(0);
+        }
+        for guard in ["stop_value", "cardinality_ceiling"] {
+            incident_overmerge_total
+                .with_label_values(&[guard])
+                .inc_by(0);
+        }
+        incidents_open.set(0);
+        registry.register(Box::new(incidents_open.clone())).unwrap();
+        registry
+            .register(Box::new(incidents_emitted_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(incident_results_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(incident_overmerge_total.clone()))
+            .unwrap();
+
+        let silenced_total = IntCounter::with_opts(Opts::new(
+            "rsigma_silenced_total",
+            "Results muted by an active silence",
+        ))
+        .unwrap();
+        let silences_active = IntGauge::with_opts(Opts::new(
+            "rsigma_silences_active",
+            "Currently-active silences",
+        ))
+        .unwrap();
+        silences_active.set(0);
+        registry.register(Box::new(silenced_total.clone())).unwrap();
+        registry
+            .register(Box::new(silences_active.clone()))
+            .unwrap();
+
+        let inhibited_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_inhibited_total",
+                "Results muted by an inhibition rule, by rule name",
+            ),
+            &["rule"],
+        )
+        .unwrap();
+        let inhibit_sources_active = IntGauge::with_opts(Opts::new(
+            "rsigma_inhibit_sources_active",
+            "Currently-active inhibition sources",
+        ))
+        .unwrap();
+        inhibit_sources_active.set(0);
+        registry
+            .register(Box::new(inhibited_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(inhibit_sources_active.clone()))
+            .unwrap();
+
         Metrics {
             registry,
             events_processed,
@@ -652,6 +808,19 @@ impl Metrics {
             tap_events_dropped_total,
             tail_active_sessions,
             tail_detections_dropped_total,
+            dedup_results_total,
+            dedup_store_entries,
+            dedup_evictions_total,
+            dedup_summaries_emitted_total,
+            alert_pipeline_duration_seconds,
+            incidents_open,
+            incidents_emitted_total,
+            incident_results_total,
+            incident_overmerge_total,
+            silenced_total,
+            silences_active,
+            inhibited_total,
+            inhibit_sources_active,
         }
     }
 
@@ -747,6 +916,59 @@ impl MetricsHook for Metrics {
 
     fn on_correlation_matches(&self, count: u64) {
         self.correlation_matches.inc_by(count);
+    }
+
+    fn on_alert_pipeline_result(&self, action: &str) {
+        self.dedup_results_total.with_label_values(&[action]).inc();
+    }
+
+    fn set_alert_pipeline_store_entries(&self, count: i64) {
+        self.dedup_store_entries.set(count);
+    }
+
+    fn on_alert_pipeline_eviction(&self) {
+        self.dedup_evictions_total.inc();
+    }
+
+    fn on_alert_pipeline_summary_emitted(&self) {
+        self.dedup_summaries_emitted_total.inc();
+    }
+
+    fn observe_alert_pipeline_duration(&self, seconds: f64) {
+        self.alert_pipeline_duration_seconds.observe(seconds);
+    }
+
+    fn on_incident_emitted(&self, trigger: &str) {
+        self.incidents_emitted_total
+            .with_label_values(&[trigger])
+            .inc();
+        self.incident_results_total.inc();
+    }
+
+    fn set_incidents_open(&self, count: i64) {
+        self.incidents_open.set(count);
+    }
+
+    fn on_alert_pipeline_overmerge(&self, guard: &str) {
+        self.incident_overmerge_total
+            .with_label_values(&[guard])
+            .inc();
+    }
+
+    fn on_alert_pipeline_silenced(&self) {
+        self.silenced_total.inc();
+    }
+
+    fn set_silences_active(&self, count: i64) {
+        self.silences_active.set(count);
+    }
+
+    fn on_alert_pipeline_inhibited(&self, rule: &str) {
+        self.inhibited_total.with_label_values(&[rule]).inc();
+    }
+
+    fn set_inhibit_sources_active(&self, count: i64) {
+        self.inhibit_sources_active.set(count);
     }
 
     fn observe_processing_latency(&self, seconds: f64) {

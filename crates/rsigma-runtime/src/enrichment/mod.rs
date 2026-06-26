@@ -50,11 +50,11 @@ pub mod config;
 mod http;
 pub mod http_cache;
 mod lookup;
-mod scope;
 mod template;
 #[cfg(test)]
 mod tests;
 
+pub use crate::scope::Scope;
 pub use command::{CommandEnricher, OutputFormat};
 pub use http::{
     DEFAULT_ENRICHER_MAX_RESPONSE_BYTES, HttpEnricher, HttpEnricherClient,
@@ -62,7 +62,6 @@ pub use http::{
 };
 pub use http_cache::{CacheKey, CacheOutcome, HttpResponseCache};
 pub use lookup::LookupEnricher;
-pub use scope::Scope;
 pub use template::{
     TemplateEnricher, TemplateError, render_template, render_template_json,
     validate_template_namespace,
