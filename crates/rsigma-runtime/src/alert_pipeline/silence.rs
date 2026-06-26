@@ -76,6 +76,17 @@ pub struct SilenceView {
     pub state: SilenceState,
 }
 
+/// Persisted form of a dynamic (API) silence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SilenceSnap {
+    pub id: String,
+    pub matchers: Vec<MatcherSpec>,
+    pub starts_at: Option<i64>,
+    pub ends_at: Option<i64>,
+    pub created_by: Option<String>,
+    pub comment: Option<String>,
+}
+
 /// Errors building a silence from a spec.
 #[derive(Debug, Clone)]
 pub enum SilenceError {
@@ -165,6 +176,35 @@ impl Silence {
         self.state(now) == SilenceState::Active && self.matchers.matches(result)
     }
 
+    /// Persisted form (for API-origin silences).
+    fn to_snap(&self) -> SilenceSnap {
+        SilenceSnap {
+            id: self.id.clone(),
+            matchers: self.matchers.to_specs(),
+            starts_at: self.starts_at,
+            ends_at: self.ends_at,
+            created_by: self.created_by.clone(),
+            comment: self.comment.clone(),
+        }
+    }
+
+    /// Rebuild an API-origin silence from its persisted form.
+    fn from_snap(snap: SilenceSnap) -> Result<Self, SilenceError> {
+        if snap.matchers.is_empty() {
+            return Err(SilenceError::EmptyMatchers);
+        }
+        let matchers = MatcherSet::compile(&snap.matchers).map_err(SilenceError::Matcher)?;
+        Ok(Silence {
+            id: snap.id,
+            matchers,
+            starts_at: snap.starts_at,
+            ends_at: snap.ends_at,
+            created_by: snap.created_by,
+            comment: snap.comment,
+            origin: SilenceOrigin::Api,
+        })
+    }
+
     fn view(&self, now: i64) -> SilenceView {
         SilenceView {
             id: self.id.clone(),
@@ -236,6 +276,30 @@ impl SilenceStore {
     /// A snapshot of every silence for the API.
     pub fn snapshot(&self, now: i64) -> Vec<SilenceView> {
         self.silences.iter().map(|s| s.view(now)).collect()
+    }
+
+    /// Persisted form of the dynamic (API) silences only; static ones come from
+    /// config and are re-seeded on boot.
+    pub(crate) fn api_snapshot(&self) -> Vec<SilenceSnap> {
+        self.silences
+            .iter()
+            .filter(|s| s.origin == SilenceOrigin::Api)
+            .map(|s| s.to_snap())
+            .collect()
+    }
+
+    /// Restore API silences from persisted form, skipping any already expired at
+    /// `now` or that fail to recompile.
+    pub(crate) fn restore_api(&mut self, snaps: Vec<SilenceSnap>, now: i64) {
+        for snap in snaps {
+            match Silence::from_snap(snap) {
+                Ok(silence) if silence.state(now) != SilenceState::Expired => {
+                    self.silences.push(silence);
+                }
+                Ok(_) => {}
+                Err(e) => tracing::warn!(error = %e, "Dropping unrestorable silence"),
+            }
+        }
     }
 }
 

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::value::{SigmaValue, Timespan};
 
@@ -44,7 +44,7 @@ impl FromStr for Status {
 }
 
 /// Severity level of a triggered rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
     Informational,

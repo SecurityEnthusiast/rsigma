@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use rsigma_eval::EvaluationResult;
 use rsigma_parser::Level;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::dedup::fnv1a64;
@@ -93,7 +93,7 @@ pub struct GroupConfig {
 }
 
 /// A lightweight reference to a contributing result.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncidentRef {
     /// Rule id, falling back to the rule title.
     pub rule: String,
@@ -133,14 +133,18 @@ pub struct IncidentResult {
     /// Contributing references (`include: refs`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refs: Option<Vec<IncidentRef>>,
-    /// Contributing results (`include: results`), event payloads stripped.
+    /// Contributing results (`include: results`), event payloads stripped and
+    /// stored as serialized JSON values.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub results: Option<Vec<EvaluationResult>>,
+    pub results: Option<Vec<Value>>,
 }
 
 /// Internal per-incident state.
-#[derive(Debug)]
-struct Incident {
+///
+/// Serializable for persistence: contributing `results` are stored as
+/// serialized JSON values (since [`EvaluationResult`] is serialize-only).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct Incident {
     id: String,
     first_seen: i64,
     last_seen: i64,
@@ -154,7 +158,7 @@ struct Incident {
     rule_counts: BTreeMap<String, u64>,
     result_count: u64,
     refs: Vec<IncidentRef>,
-    results: Vec<EvaluationResult>,
+    results: Vec<Value>,
 }
 
 /// A grouping outcome the driver records a metric for.
@@ -401,6 +405,29 @@ impl IncidentStore {
         }
         out
     }
+
+    /// Export open incidents for persistence.
+    pub(crate) fn export(&self) -> Vec<Incident> {
+        self.incidents.values().cloned().collect()
+    }
+
+    /// Restore incidents, dropping any already past `resolve_timeout` at `now`,
+    /// and rebuild the entity index from the restored incidents' entity values
+    /// (the index and cardinality counters are not themselves persisted).
+    pub(crate) fn restore(&mut self, incidents: Vec<Incident>, now: i64, resolve_secs: i64) {
+        for inc in incidents {
+            if now - inc.last_seen >= resolve_secs {
+                continue;
+            }
+            for (sel, values) in &inc.entities {
+                for value in values {
+                    self.entity_index
+                        .insert((sel.clone(), value.clone()), inc.id.clone());
+                }
+            }
+            self.incidents.insert(inc.id.clone(), inc);
+        }
+    }
 }
 
 impl Incident {
@@ -447,7 +474,8 @@ impl Incident {
                 if self.results.len() < cfg.caps.max_results_per_incident {
                     let mut sample = result.clone();
                     strip_event_payloads(&mut sample);
-                    self.results.push(sample);
+                    self.results
+                        .push(serde_json::to_value(&sample).unwrap_or(Value::Null));
                 }
             }
         }

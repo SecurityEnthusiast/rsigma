@@ -450,6 +450,10 @@ pub async fn run_daemon(config: DaemonConfig) {
     //   stored source position to avoid double-counting when replaying
     //   backward, while preserving cross-boundary correlations when
     //   replaying forward. For non-NATS and Resume, always restore.
+    // Whether to restore persisted state on boot. `--clear-state` never
+    // restores; the correlation block below refines this for the NATS
+    // backward-replay case. The alert-pipeline restore reuses the decision.
+    let mut restore_state = config.state_restore_mode != StateRestoreMode::ForceClear;
     if let Some(ref store) = state_store {
         match store.load().await {
             Ok(Some((snapshot, stored_position))) => {
@@ -459,6 +463,7 @@ pub async fn run_daemon(config: DaemonConfig) {
                     #[cfg(feature = "daemon-nats")]
                     &config.replay_policy,
                 );
+                restore_state = should_restore;
                 if should_restore {
                     if processor.import_state(&snapshot) {
                         let entries = snapshot.windows.values().map(|g| g.len()).sum::<usize>();
@@ -524,6 +529,30 @@ pub async fn run_daemon(config: DaemonConfig) {
                     state
                         .silences
                         .set_static(pipeline.static_silences().to_vec());
+                }
+                // Restore persisted alert-pipeline state (unless --clear-state),
+                // pruning entries past their window at boot.
+                if restore_state && let Some(ref store) = state_store {
+                    match store.load_alert_pipeline().await {
+                        Ok(Some(snap)) => {
+                            let now = chrono::Utc::now().timestamp();
+                            let restored = alert_state
+                                .write()
+                                .map(|mut state| pipeline.restore(&mut state, snap, now))
+                                .unwrap_or(false);
+                            if restored {
+                                tracing::info!("Alert-pipeline state restored from database");
+                            } else {
+                                tracing::warn!(
+                                    "Incompatible alert-pipeline snapshot version, starting fresh"
+                                );
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Failed to load alert-pipeline state");
+                        }
+                    }
                 }
                 alert_pipeline_swap.store(Arc::new(Some(Arc::new(pipeline))));
             }
@@ -926,6 +955,8 @@ pub async fn run_daemon(config: DaemonConfig) {
         let save_interval_secs = config.state_save_interval;
         let save_hw_seq = high_water_seq.clone();
         let save_hw_ts = high_water_ts.clone();
+        let save_alert_swap = alert_pipeline_swap.clone();
+        let save_alert_state = alert_state.clone();
         tokio::spawn(async move {
             let mut interval =
                 tokio::time::interval(tokio::time::Duration::from_secs(save_interval_secs));
@@ -951,6 +982,16 @@ pub async fn run_daemon(config: DaemonConfig) {
                             windows = window_count,
                             "Periodic state snapshot saved",
                         );
+                    }
+                }
+                // Persist the alert-pipeline state when configured.
+                if let Some(pipeline) = save_alert_swap.load_full().as_ref() {
+                    let snap = {
+                        let st = save_alert_state.read().unwrap_or_else(|e| e.into_inner());
+                        pipeline.snapshot(&st)
+                    };
+                    if let Err(e) = save_store.save_alert_pipeline(&snap).await {
+                        tracing::warn!(error = %e, "Failed to save alert-pipeline snapshot");
                     }
                 }
             }
@@ -1345,11 +1386,13 @@ pub async fn run_daemon(config: DaemonConfig) {
                                 .unwrap_or_else(|e| e.into_inner());
                             alert_pipeline.tick(&mut st, now, alert_pipeline_metrics.as_ref())
                         };
-                        if !out.results.is_empty() {
-                            if let Some(tail) = &tail_for_sink {
-                                tail.capture(&out.results);
-                            }
-                            dispatcher.dispatch(out.results, Vec::new()).await;
+                        for line in out.dedup_lines {
+                            dispatcher
+                                .dispatch_incident(IncidentEnvelope {
+                                    json: line.to_string(),
+                                    nats_subject: None,
+                                })
+                                .await;
                         }
                         let subject =
                             alert_pipeline.incident_nats_subject().map(|s| s.to_string());
@@ -1537,6 +1580,22 @@ pub async fn run_daemon(config: DaemonConfig) {
                 }
             }
             Err(e) => tracing::error!(error = %e, "Failed to save state on shutdown"),
+        }
+    }
+
+    // Save the alert-pipeline state on shutdown when configured.
+    if let Some(ref store) = state_store
+        && let Some(pipeline) = alert_pipeline_swap.load_full().as_ref()
+    {
+        let snap = {
+            let st = alert_state.read().unwrap_or_else(|e| e.into_inner());
+            pipeline.snapshot(&st)
+        };
+        match store.save_alert_pipeline(&snap).await {
+            Ok(()) => tracing::info!("Alert-pipeline state saved to database on shutdown"),
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to save alert-pipeline state on shutdown")
+            }
         }
     }
 }

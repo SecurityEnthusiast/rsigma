@@ -125,7 +125,7 @@ See [TLS deployment](../../reference/security.md#tls-termination-for-the-api-lis
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--state-db <PATH>` | unset | SQLite database for persisting correlation state across restarts. When set, state is loaded on startup and saved periodically and on shutdown. |
+| `--state-db <PATH>` | unset | SQLite database for persisting correlation and alert-pipeline state across restarts. When set, state is loaded on startup and saved periodically and on shutdown. |
 | `--state-save-interval <SECONDS>` | `30` | Periodic snapshot interval. No effect without `--state-db`. |
 | `--clear-state` | off | Clear stored state on startup. With `--replay-from-*`, forces a clean slate even if the replay starts after the stored position. |
 | `--keep-state` | off | Force restore stored state even during replay. Use for forward catch-up where you want to preserve cross-boundary correlation windows. Mutually exclusive with `--clear-state`. |

@@ -137,6 +137,12 @@ The dedup stage exposes (see [Metrics](../reference/metrics.md)):
 - `rsigma_dedup_summaries_emitted_total` — `repeat` plus `resolved` records emitted.
 - `rsigma_alert_pipeline_duration_seconds` — stage duration.
 
+## Persistence
+
+When the daemon runs with `--state-db <PATH>`, the alert pipeline's state is persisted to the SQLite store alongside the correlation snapshot, in its own `rsigma_alert_pipeline_state` table. The snapshot carries the active dedup alerts, open incidents, the dynamic (API) silences, and the inhibition active-source index; static silences come from config and are re-seeded on boot. It is written periodically (`--state-save-interval`) and on graceful shutdown, and restored on boot.
+
+Restore is window-aware: dedup alerts past `resolve_timeout`, incidents past their `resolve_timeout`, silences past `ends_at`, and inhibition sources past their rule's `duration` are dropped during restore, so stale state never lingers. Deterministic `group_by` incident ids are preserved across the restart. A snapshot whose version does not match the current build is ignored with a warning (the daemon starts fresh). `--clear-state` skips the restore (and `--keep-state` forces it), matching the correlation-state flags.
+
 ### Relationship to `rsigma.suppress`
 
 Dedup here is a sink-path stage that applies to detection and correlation results alike. It is distinct from the correlation engine's per-rule `rsigma.suppress`, which is engine-side and applies only to correlation firings. The two can be used together.

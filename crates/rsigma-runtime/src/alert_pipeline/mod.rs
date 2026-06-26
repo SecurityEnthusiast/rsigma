@@ -21,6 +21,7 @@ mod inhibit;
 mod matcher;
 mod selector;
 mod silence;
+mod snapshot;
 mod state;
 
 pub use config::{
@@ -35,6 +36,7 @@ pub use selector::{Selector, SelectorParseError};
 pub use silence::{
     Silence, SilenceError, SilenceOrigin, SilenceSpec, SilenceState, SilenceStore, SilenceView,
 };
+pub use snapshot::{AlertPipelineSnapshot, SNAPSHOT_VERSION};
 pub use state::AlertPipelineState;
 
 use rsigma_eval::{EvaluationResult, ProcessResult};
@@ -51,8 +53,9 @@ use silence::Silence as StaticSilence;
 /// resolved) and incident emissions.
 #[derive(Debug, Default)]
 pub struct TickOutput {
-    /// Dedup `repeat` / `resolved` records, dispatched like normal results.
-    pub results: ProcessResult,
+    /// Dedup `repeat` / `resolved` summary lines (serialized results with
+    /// `dedup_*` keys), dispatched as raw NDJSON.
+    pub dedup_lines: Vec<Value>,
     /// Incident emissions, dispatched via the incident path.
     pub incidents: Vec<IncidentResult>,
 }
@@ -209,7 +212,7 @@ impl AlertPipeline {
                 if record.state == "resolved" {
                     metrics.on_alert_pipeline_eviction();
                 }
-                out.results.push(record.result);
+                out.dedup_lines.push(record.json);
             }
             metrics.set_alert_pipeline_store_entries(state.dedup.len() as i64);
         }
@@ -232,10 +235,50 @@ impl AlertPipeline {
             metrics.set_inhibit_sources_active(state.inhibit.active_count(icfg, now) as i64);
         }
 
-        if !out.results.is_empty() || !out.incidents.is_empty() {
+        if !out.dedup_lines.is_empty() || !out.incidents.is_empty() {
             metrics.observe_alert_pipeline_duration(start.elapsed().as_secs_f64());
         }
         out
+    }
+
+    /// Capture the mutable state into a versioned persistence snapshot.
+    pub fn snapshot(&self, state: &AlertPipelineState) -> AlertPipelineSnapshot {
+        AlertPipelineSnapshot {
+            version: SNAPSHOT_VERSION,
+            dedup: state.dedup.snapshot(),
+            incidents: state.incidents.export(),
+            silences: state.silences.api_snapshot(),
+            inhibit_sources: state.inhibit.snapshot(),
+        }
+    }
+
+    /// Restore a snapshot into `state`, pruning entries past their window at
+    /// `now`. Returns `false` on a version mismatch (caller starts fresh).
+    pub fn restore(
+        &self,
+        state: &mut AlertPipelineState,
+        snap: AlertPipelineSnapshot,
+        now: i64,
+    ) -> bool {
+        if snap.version != SNAPSHOT_VERSION {
+            return false;
+        }
+        // Silences are independent of the configured stages.
+        state.silences.restore_api(snap.silences, now);
+        if let Some(cfg) = self.dedup.as_ref() {
+            state
+                .dedup
+                .restore(snap.dedup, now, cfg.resolve_timeout.as_secs() as i64);
+        }
+        if let Some(g) = self.group.as_ref() {
+            state
+                .incidents
+                .restore(snap.incidents, now, g.resolve_timeout.as_secs() as i64);
+        }
+        if let Some(icfg) = self.inhibit.as_ref() {
+            state.inhibit.restore(snap.inhibit_sources, icfg, now);
+        }
+        true
     }
 }
 
@@ -408,6 +451,59 @@ mod tests {
         assert!(run(&p, "10.0.0.1", Level::High, &mut st, 1).is_empty());
         // High target on a different IP passes.
         assert_eq!(run(&p, "10.0.0.2", Level::High, &mut st, 2).len(), 1);
+    }
+
+    #[test]
+    fn snapshot_round_trips_and_prunes() {
+        let p = pipeline(
+            "dedup:\n  fingerprint: [match.SourceIp]\n  resolve_timeout: 1h\ngroup:\n  by: [match.SourceIp]\n  group_wait: 1h\n  resolve_timeout: 1h\n",
+        );
+        let mut st = AlertPipelineState::default();
+        let _ = run(&p, "10.0.0.1", Level::High, &mut st, 100);
+        st.silences.add(
+            Silence::build(
+                SilenceSpec {
+                    matchers: vec![MatcherSpec {
+                        selector: "rule".to_string(),
+                        op: MatchOp::Eq,
+                        value: "other".to_string(),
+                    }],
+                    ..Default::default()
+                },
+                SilenceOrigin::Api,
+            )
+            .unwrap(),
+        );
+        assert_eq!(st.dedup.len(), 1);
+        assert_eq!(st.incidents.len(), 1);
+
+        // Round-trip the snapshot through JSON.
+        let json = serde_json::to_string(&p.snapshot(&st)).unwrap();
+        let snap: AlertPipelineSnapshot = serde_json::from_str(&json).unwrap();
+
+        // Restore within the window: state comes back.
+        let mut fresh = AlertPipelineState::default();
+        assert!(p.restore(&mut fresh, snap, 200));
+        assert_eq!(fresh.dedup.len(), 1, "dedup alert restored");
+        assert_eq!(fresh.incidents.len(), 1, "incident restored");
+        assert_eq!(
+            fresh.silences.api_snapshot().len(),
+            1,
+            "api silence restored"
+        );
+        // The restored dedup alert folds a duplicate.
+        assert!(run(&p, "10.0.0.1", Level::High, &mut fresh, 250).is_empty());
+
+        // Restore far past the windows: dedup + incident are pruned.
+        let snap2: AlertPipelineSnapshot =
+            serde_json::from_str(&serde_json::to_string(&p.snapshot(&st)).unwrap()).unwrap();
+        let mut aged = AlertPipelineState::default();
+        assert!(p.restore(&mut aged, snap2, 100 + 3600 + 5));
+        assert!(aged.dedup.is_empty(), "stale dedup alert pruned on restore");
+        assert!(
+            aged.incidents.is_empty(),
+            "stale incident pruned on restore"
+        );
     }
 
     #[test]

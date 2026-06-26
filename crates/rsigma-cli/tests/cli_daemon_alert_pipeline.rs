@@ -377,3 +377,71 @@ fn inhibition_mutes_high_while_critical_active() {
     .expect("critical + other-IP high should both reach the sink");
     assert_eq!(lines, 2, "only the same-IP high target is muted");
 }
+
+#[test]
+fn alert_pipeline_state_survives_restart() {
+    let rule = temp_file(".yml", common::SIMPLE_RULE);
+    let alert_pipeline = temp_file(
+        ".yml",
+        "dedup:\n  fingerprint: [rule]\n  resolve_timeout: 1h\n",
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let state_db = dir.path().join("state.db");
+    let state_db = state_db.to_str().unwrap().to_string();
+
+    // First daemon: open an active dedup alert, then wait for a periodic save.
+    {
+        let daemon = DaemonProcess::spawn(&[
+            "engine",
+            "daemon",
+            "-r",
+            rule.path().to_str().unwrap(),
+            "--alert-pipeline",
+            alert_pipeline.path().to_str().unwrap(),
+            "--input",
+            "http",
+            "--api-addr",
+            "127.0.0.1:0",
+            "--state-db",
+            &state_db,
+            "--state-save-interval",
+            "1",
+        ]);
+        let body = serde_json::to_string(&serde_json::json!({"CommandLine": "malware a"})).unwrap();
+        assert_eq!(http_post(&daemon.url("/api/v1/events"), &body).0, 200);
+        let opened = poll_until(Duration::from_secs(5), || {
+            let (_, m) = http_get(&daemon.url("/metrics"));
+            (counter(&m, "rsigma_dedup_store_entries") == Some(1)).then_some(())
+        });
+        assert!(opened.is_some(), "an active alert should open");
+        // The save interval is 1s; wait for at least one periodic save.
+        std::thread::sleep(Duration::from_secs(2));
+    } // first daemon killed and reaped on drop
+
+    // Second daemon on the same state DB restores the active alert.
+    let daemon = DaemonProcess::spawn(&[
+        "engine",
+        "daemon",
+        "-r",
+        rule.path().to_str().unwrap(),
+        "--alert-pipeline",
+        alert_pipeline.path().to_str().unwrap(),
+        "--input",
+        "http",
+        "--api-addr",
+        "127.0.0.1:0",
+        "--state-db",
+        &state_db,
+        "--state-save-interval",
+        "1",
+        "--keep-state",
+    ]);
+    let restored = poll_until(Duration::from_secs(5), || {
+        let (_, m) = http_get(&daemon.url("/metrics"));
+        (counter(&m, "rsigma_dedup_store_entries") == Some(1)).then_some(())
+    });
+    assert!(
+        restored.is_some(),
+        "the active dedup alert should be restored after restart"
+    );
+}

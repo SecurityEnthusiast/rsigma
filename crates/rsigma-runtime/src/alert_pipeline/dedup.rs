@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use rsigma_eval::EvaluationResult;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::selector::Selector;
@@ -34,8 +35,12 @@ pub struct DedupConfig {
 }
 
 /// One fingerprint's active-alert state.
-#[derive(Debug)]
-struct ActiveAlert {
+///
+/// `sample` is the event-stripped first-fire result as a JSON [`Value`] (rather
+/// than an [`EvaluationResult`], which is serialize-only), so the active-alert
+/// store round-trips through the persistence snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ActiveAlert {
     first_seen: i64,
     last_seen: i64,
     last_emitted: i64,
@@ -45,7 +50,7 @@ struct ActiveAlert {
     emitted_count: u64,
     /// Representative result (event payloads stripped) used to build the
     /// `repeat` / `resolved` records.
-    sample: EvaluationResult,
+    sample: Value,
     /// Resolved fingerprint selector values, surfaced on the summary records.
     fields: Vec<(String, Value)>,
 }
@@ -61,8 +66,8 @@ pub struct DedupStore {
 pub(crate) struct DedupRecord {
     /// `repeat` or `resolved`.
     pub state: &'static str,
-    /// The summary result to emit.
-    pub result: EvaluationResult,
+    /// The summary line to emit (a serialized result with `dedup_*` keys).
+    pub json: Value,
 }
 
 impl DedupStore {
@@ -94,7 +99,7 @@ impl DedupStore {
         &mut self,
         fingerprint: String,
         now: i64,
-        sample: EvaluationResult,
+        sample: Value,
         fields: Vec<(String, Value)>,
     ) {
         self.alerts.insert(
@@ -123,7 +128,7 @@ impl DedupStore {
             if now - alert.last_seen >= resolve_secs {
                 out.push(DedupRecord {
                     state: "resolved",
-                    result: build_record(alert, fingerprint, "resolved"),
+                    json: build_record(alert, fingerprint, "resolved"),
                 });
                 resolved.push(fingerprint.clone());
             } else if repeat_secs > 0
@@ -132,7 +137,7 @@ impl DedupStore {
             {
                 out.push(DedupRecord {
                     state: "repeat",
-                    result: build_record(alert, fingerprint, "repeat"),
+                    json: build_record(alert, fingerprint, "repeat"),
                 });
                 alert.last_emitted = now;
                 alert.emitted_count = alert.fire_count;
@@ -143,6 +148,29 @@ impl DedupStore {
             self.alerts.remove(&key);
         }
         out
+    }
+
+    /// Snapshot the active alerts (fingerprint -> alert) for persistence.
+    pub(crate) fn snapshot(&self) -> Vec<(String, ActiveAlert)> {
+        self.alerts
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
+    /// Restore active alerts, dropping any already past `resolve_timeout` at
+    /// `now`.
+    pub(crate) fn restore(
+        &mut self,
+        alerts: Vec<(String, ActiveAlert)>,
+        now: i64,
+        resolve_secs: i64,
+    ) {
+        for (fingerprint, alert) in alerts {
+            if now - alert.last_seen < resolve_secs {
+                self.alerts.insert(fingerprint, alert);
+            }
+        }
     }
 }
 
@@ -195,13 +223,23 @@ fn canonical(value: &Value) -> String {
     }
 }
 
-/// Build a `repeat` / `resolved` summary record from an active alert.
-fn build_record(alert: &ActiveAlert, fingerprint: &str, state: &'static str) -> EvaluationResult {
+/// Build a `repeat` / `resolved` summary line (a JSON [`Value`]) from an active
+/// alert by injecting the `dedup_*` keys into the sample's `enrichments` object.
+fn build_record(alert: &ActiveAlert, fingerprint: &str, state: &'static str) -> Value {
     let mut result = alert.sample.clone();
-    let map = result
-        .header
-        .enrichments
-        .get_or_insert_with(serde_json::Map::new);
+    if !result.is_object() {
+        result = Value::Object(serde_json::Map::new());
+    }
+    let obj = result.as_object_mut().expect("result is an object");
+    let enrichments = obj
+        .entry("enrichments")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if !enrichments.is_object() {
+        *enrichments = Value::Object(serde_json::Map::new());
+    }
+    let map = enrichments
+        .as_object_mut()
+        .expect("enrichments is an object");
     map.insert("dedup_state".to_string(), Value::String(state.to_string()));
     map.insert(
         "dedup_fingerprint".to_string(),
@@ -221,11 +259,12 @@ fn build_record(alert: &ActiveAlert, fingerprint: &str, state: &'static str) -> 
     result
 }
 
-/// A stripped-down clone of a result, safe to retain as a long-lived sample.
-pub(crate) fn sample_of(result: &EvaluationResult) -> EvaluationResult {
+/// The event-stripped, serialized form of a result, retained as a long-lived
+/// sample. A `Value` (not an [`EvaluationResult`]) so the store is persistable.
+pub(crate) fn sample_of(result: &EvaluationResult) -> Value {
     let mut sample = result.clone();
     strip_event_payloads(&mut sample);
-    sample
+    serde_json::to_value(&sample).unwrap_or(Value::Null)
 }
 
 /// FNV-1a 64-bit. Inlined so the digest is stable across toolchains and crate
@@ -310,10 +349,10 @@ mod tests {
         };
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].state, "resolved");
-        let enr = records[0].result.header.enrichments.as_ref().unwrap();
+        let enr = &records[0].json["enrichments"];
         assert_eq!(enr["dedup_state"], serde_json::json!("resolved"));
         assert_eq!(enr["dedup_fire_count"], serde_json::json!(3));
-        assert!(records[0].result.as_detection().unwrap().event.is_none());
+        assert!(records[0].json.get("event").is_none());
         assert!(store.is_empty(), "resolved alert is evicted");
     }
 
@@ -339,7 +378,7 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].state, "repeat");
         assert_eq!(
-            records[0].result.header.enrichments.as_ref().unwrap()["dedup_fire_count"],
+            records[0].json["enrichments"]["dedup_fire_count"],
             serde_json::json!(2)
         );
 

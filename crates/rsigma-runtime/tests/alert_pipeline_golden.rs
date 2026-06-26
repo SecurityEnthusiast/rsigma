@@ -69,19 +69,17 @@ fn dedup_repeat_and_resolved_wire_shape() {
     };
 
     // A repeat re-emit is due at +11s with two fires accumulated.
-    let repeat = pipeline.tick(&mut st, 1011, &m).results;
+    let repeat = pipeline.tick(&mut st, 1011, &m).dedup_lines;
     assert_eq!(repeat.len(), 1);
-    let repeat_json = serde_json::to_string(&repeat[0]).unwrap();
-    let repeat_value: serde_json::Value = serde_json::from_str(&repeat_json).unwrap();
+    let repeat_value = repeat[0].clone();
     assert_eq!(repeat_value, expected("repeat"));
     // The raw event payload is stripped from the summary record.
     assert!(repeat_value.get("event").is_none());
 
     // After resolve_timeout of no fires, the alert resolves and evicts.
-    let resolved = pipeline.tick(&mut st, 1040, &m).results;
+    let resolved = pipeline.tick(&mut st, 1040, &m).dedup_lines;
     assert_eq!(resolved.len(), 1);
-    let resolved_json = serde_json::to_string(&resolved[0]).unwrap();
-    let resolved_value: serde_json::Value = serde_json::from_str(&resolved_json).unwrap();
+    let resolved_value = resolved[0].clone();
     assert_eq!(resolved_value, expected("resolved"));
     assert!(st.dedup.is_empty());
 }

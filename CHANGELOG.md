@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Alert pipeline: deduplication
+### Alert pipeline
 
 A new optional post-engine stage in the daemon sink path, between enrichment and the sinks, configured with `--alert-pipeline <path>` (or the `daemon.alert_pipeline` config key) and hot-reloaded on `SIGHUP`, file-watcher changes, and `POST /api/v1/reload`; a failed reload keeps the previous pipeline active. It deduplicates results by a configurable fingerprint, modeled on Alertmanager: the first fire passes through and opens an active alert, subsequent fires fold into it, the alert re-emits on `repeat_interval` carrying the accumulated fire count, and it emits a final `resolved` record after `resolve_timeout` and is evicted.
 
@@ -32,6 +32,11 @@ An inhibition stage mutes a target result while a matching source is active, mod
 * Config-driven `inhibit_rules`, each `{ source_match, target_match, equal, duration }` reusing the matcher engine. While a result matching `source_match` has been seen within `duration`, any result matching `target_match` sharing the same `equal` selector values is muted.
 * Carries Alertmanager's self-inhibition guard (a result matching both sides does not inhibit itself) and is non-transitive: a silenced source still inhibits its targets (the active-source index is updated from every non-inhibited result before silencing), but an inhibited target does not become a source.
 * Two metrics: `rsigma_inhibited_total{rule}` and `rsigma_inhibit_sources_active`.
+
+The alert pipeline persists its state across restarts when `--state-db` is set.
+
+* A versioned `AlertPipelineSnapshot` (active dedup alerts, open incidents, dynamic silences, and the inhibition active-source index) is saved to the existing SQLite store in its own `rsigma_alert_pipeline_state` table, on the periodic and shutdown hooks beside the correlation snapshot, and restored on boot.
+* Restore is window-aware: dedup alerts past `resolve_timeout`, incidents past their `resolve_timeout`, silences past `ends_at`, and inhibition sources past their rule's `duration` are pruned. Deterministic `group_by` incident ids survive the restart; a version mismatch starts fresh with a warning. `--clear-state` skips the restore and `--keep-state` forces it, matching the correlation-state flags.
 
 ### rstix: STIX cyber-observable (SCO) model (#248)
 

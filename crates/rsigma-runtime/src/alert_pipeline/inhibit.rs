@@ -21,10 +21,19 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use rsigma_eval::EvaluationResult;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::matcher::MatcherSet;
 use super::selector::Selector;
+
+/// Persisted form of one active inhibition source.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InhibitSourceSnap {
+    pub rule: String,
+    pub equal_key: String,
+    pub last_seen: i64,
+}
 
 /// A validated inhibition rule.
 #[derive(Debug, Clone)]
@@ -101,6 +110,31 @@ impl InhibitStore {
                 .find(|r| &r.name == name)
                 .is_some_and(|r| now - last < r.duration.as_secs() as i64)
         });
+    }
+
+    /// Snapshot the active sources for persistence.
+    pub(crate) fn snapshot(&self) -> Vec<InhibitSourceSnap> {
+        self.sources
+            .iter()
+            .map(|((rule, equal_key), &last_seen)| InhibitSourceSnap {
+                rule: rule.clone(),
+                equal_key: equal_key.clone(),
+                last_seen,
+            })
+            .collect()
+    }
+
+    /// Restore active sources, dropping any whose rule no longer exists or that
+    /// are already past their rule's `duration` at `now`.
+    pub(crate) fn restore(&mut self, snaps: Vec<InhibitSourceSnap>, cfg: &InhibitConfig, now: i64) {
+        for snap in snaps {
+            if let Some(rule) = cfg.rules.iter().find(|r| r.name == snap.rule)
+                && now - snap.last_seen < rule.duration.as_secs() as i64
+            {
+                self.sources
+                    .insert((snap.rule, snap.equal_key), snap.last_seen);
+            }
+        }
     }
 
     /// Count of currently-active sources.
