@@ -4,7 +4,7 @@ The alert pipeline is an optional post-engine stage in the daemon's output path,
 
 It is configured with a separate YAML file via `--alert-pipeline <path>` (or the `daemon.alert_pipeline` config key) and is hot-reloaded on `SIGHUP`, file-watcher changes, and `POST /api/v1/reload`; a failed reload keeps the previous pipeline active.
 
-This page covers deduplication.
+This page covers deduplication and incident grouping.
 
 ## Deduplication
 
@@ -73,3 +73,58 @@ The dedup stage exposes (see [Metrics](../reference/metrics.md)):
 ### Relationship to `rsigma.suppress`
 
 Dedup here is a sink-path stage that applies to detection and correlation results alike. It is distinct from the correlation engine's per-rule `rsigma.suppress`, which is engine-side and applies only to correlation firings. The two can be used together.
+
+## Grouping
+
+Grouping collapses related results into incidents and emits a higher-level `IncidentResult` on the Alertmanager timers. Pass-through results are never delayed: each survivor flows to the sinks immediately, annotated with its `incident_id` in `enrichments`. The incident itself is emitted by a background tick.
+
+Two modes:
+
+- `group_by` (default): group by equality on an ordered selector list. The `incident_id` is a deterministic fingerprint of the `(selector -> value)` pairs, so the same logical incident keeps one id across restarts and re-emissions. The rule identity is deliberately excluded from the key, so an incident can span rules that share the group value.
+- `entity_graph` (opt-in): union-find over `(selector, value)` entity pairs. A result joins (and merges) any open incident that shares an entity value, and the `incident_id` is a surrogate UUID. This is powerful but prone to the *giant-component* failure, where one common value (a domain controller, a shared service account, an egress NAT IP) transitively merges unrelated incidents. It ships with mandatory guards: a `stop_values` list of non-joinable values and a per-value `max_value_cardinality` ceiling above which a value stops acting as a join key (both surfaced on `rsigma_incident_overmerge_total`).
+
+### Timers
+
+- `group_wait`: initial batching delay before the first incident emission, so a burst lands as one incident.
+- `group_interval`: minimum delay before emitting an updated incident after new results join.
+- `repeat_interval`: re-emit cadence for a still-open incident (`0` disables re-emits).
+- `resolve_timeout`: idle timeout after which the incident emits a final `resolved` record and is evicted.
+
+### Configuration
+
+```yaml
+group:
+  mode: group_by          # or entity_graph
+  by:                     # group_by mode: the group key selectors
+    - match.SourceIp
+  entities:               # entity_graph mode: the join-edge selectors
+    - match.SourceIp
+    - match.User
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 0
+  resolve_timeout: 1h
+  include: refs           # refs | results
+  caps:
+    max_open_incidents: 10000
+    max_entities_per_incident: 1000
+    max_results_per_incident: 1000
+    max_value_cardinality: 10000
+  stop_values: ["0.0.0.0", "-", ""]   # entity_graph
+  nats_subject: rsigma.incidents       # optional, route incidents to a dedicated NATS subject
+```
+
+`include: refs` (default) embeds lightweight `{rule, level}` references; `include: results` embeds the full (event-stripped) contributing results, bounded by `max_results_per_incident`.
+
+### Wire shape
+
+An `IncidentResult` is one flat NDJSON object, disambiguated downstream by the presence of an `incident_id` key. It carries the `state` (`open` / `resolved`), the `trigger` (`group_wait` / `group_interval` / `repeat` / `resolved`), the window bounds, the `max_level`, the `result_count`, per-rule `rule_counts`, the `group_by` key (group_by mode) or `entities` map (entity_graph mode), and the `refs` or `results`. Incidents are delivered to stdout/file/NATS sinks; with `nats_subject` set, incidents publish to that dedicated subject instead of the detection stream. OTLP and webhook sinks do not receive incidents.
+
+Open incidents are also readable at `GET /api/v1/incidents`.
+
+### Metrics
+
+- `rsigma_incidents_open` — open incidents currently tracked.
+- `rsigma_incidents_emitted_total{trigger}` — incident emissions by trigger.
+- `rsigma_incident_results_total` — total incident records emitted.
+- `rsigma_incident_overmerge_total{guard}` — entity-graph guard hits (`stop_value` / `cardinality_ceiling`).

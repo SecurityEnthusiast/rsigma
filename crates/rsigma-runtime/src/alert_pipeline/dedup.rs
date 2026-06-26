@@ -230,7 +230,7 @@ pub(crate) fn sample_of(result: &EvaluationResult) -> EvaluationResult {
 
 /// FNV-1a 64-bit. Inlined so the digest is stable across toolchains and crate
 /// versions (unlike `DefaultHasher`), which matters for persisted fingerprints.
-fn fnv1a64(bytes: &[u8]) -> u64 {
+pub(crate) fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for &byte in bytes {
         hash ^= u64::from(byte);

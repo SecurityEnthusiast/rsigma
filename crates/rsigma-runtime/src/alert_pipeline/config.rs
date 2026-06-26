@@ -6,6 +6,7 @@
 //! daemon refuses to start on a malformed config rather than silently
 //! mismatching at runtime.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -15,6 +16,7 @@ use crate::Scope;
 
 use super::AlertPipeline;
 use super::dedup::DedupConfig;
+use super::grouping::{Caps, GroupConfig, GroupMode, IncludeMode};
 use super::selector::{Selector, SelectorParseError};
 
 /// Default re-emit cadence: `0` means pure suppression (no re-emits, only a
@@ -23,6 +25,12 @@ const DEFAULT_REPEAT_INTERVAL: Duration = Duration::from_secs(0);
 
 /// Default idle timeout after which an active alert resolves.
 const DEFAULT_RESOLVE_TIMEOUT: Duration = Duration::from_secs(3600);
+
+/// Default incident batching delay before the first emission.
+const DEFAULT_GROUP_WAIT: Duration = Duration::from_secs(30);
+
+/// Default minimum delay before emitting an updated incident.
+const DEFAULT_GROUP_INTERVAL: Duration = Duration::from_secs(300);
 
 /// Top-level alert-pipeline config file.
 ///
@@ -50,6 +58,9 @@ pub struct AlertPipelineFile {
     /// Fingerprint deduplication. Omitted means no dedup.
     #[serde(default)]
     pub dedup: Option<DedupFile>,
+    /// Incident grouping. Omitted means no grouping.
+    #[serde(default)]
+    pub group: Option<GroupFile>,
 }
 
 /// `scope:` block, mirroring the enrichers config.
@@ -81,6 +92,72 @@ pub struct DedupFile {
     pub resolve_timeout: Option<Duration>,
 }
 
+/// Grouping mode label.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupModeLabel {
+    /// Group by equality on the `by` selectors (default).
+    #[default]
+    GroupBy,
+    /// Union-find over `entities` selector values.
+    EntityGraph,
+}
+
+/// Contributing-result include label.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IncludeLabel {
+    /// Lightweight references only (default).
+    #[default]
+    Refs,
+    /// Full (event-stripped) contributing results.
+    Results,
+}
+
+/// `group.caps:` block.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CapsFile {
+    #[serde(default)]
+    pub max_open_incidents: Option<usize>,
+    #[serde(default)]
+    pub max_entities_per_incident: Option<usize>,
+    #[serde(default)]
+    pub max_results_per_incident: Option<usize>,
+    #[serde(default)]
+    pub max_value_cardinality: Option<u64>,
+}
+
+/// `group:` block.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct GroupFile {
+    #[serde(default)]
+    pub mode: GroupModeLabel,
+    /// `group_by` mode: selectors forming the group key.
+    #[serde(default)]
+    pub by: Vec<String>,
+    /// `entity_graph` mode: selectors forming join edges.
+    #[serde(default)]
+    pub entities: Vec<String>,
+    #[serde(default, with = "humantime_opt")]
+    pub group_wait: Option<Duration>,
+    #[serde(default, with = "humantime_opt")]
+    pub group_interval: Option<Duration>,
+    #[serde(default, with = "humantime_opt")]
+    pub repeat_interval: Option<Duration>,
+    #[serde(default, with = "humantime_opt")]
+    pub resolve_timeout: Option<Duration>,
+    #[serde(default)]
+    pub include: IncludeLabel,
+    #[serde(default)]
+    pub caps: Option<CapsFile>,
+    /// `entity_graph` values that never form a join edge.
+    #[serde(default)]
+    pub stop_values: Vec<String>,
+    /// Optional NATS subject override for emitted incidents.
+    #[serde(default)]
+    pub nats_subject: Option<String>,
+}
+
 /// Errors produced while loading or validating an alert-pipeline config.
 #[derive(Debug)]
 pub enum AlertPipelineConfigError {
@@ -94,6 +171,12 @@ pub enum AlertPipelineConfigError {
     Scope(String),
     /// `dedup` was configured with an empty `fingerprint` list.
     EmptyFingerprint,
+    /// A grouping selector failed to parse.
+    GroupSelector(SelectorParseError),
+    /// `group.mode: group_by` with an empty `by` list.
+    EmptyGroupBy,
+    /// `group.mode: entity_graph` with an empty `entities` list.
+    EmptyEntities,
 }
 
 impl std::fmt::Display for AlertPipelineConfigError {
@@ -112,6 +195,15 @@ impl std::fmt::Display for AlertPipelineConfigError {
             AlertPipelineConfigError::EmptyFingerprint => write!(
                 f,
                 "dedup is configured but dedup.fingerprint is empty; list at least one selector"
+            ),
+            AlertPipelineConfigError::GroupSelector(e) => write!(f, "group: {e}"),
+            AlertPipelineConfigError::EmptyGroupBy => write!(
+                f,
+                "group.mode is group_by but group.by is empty; list at least one selector"
+            ),
+            AlertPipelineConfigError::EmptyEntities => write!(
+                f,
+                "group.mode is entity_graph but group.entities is empty; list at least one selector"
             ),
         }
     }
@@ -168,7 +260,70 @@ pub fn build_alert_pipeline(
         None => None,
     };
 
-    Ok(AlertPipeline::new(scope, file.strip_event, dedup))
+    let group = match file.group {
+        Some(g) => Some(build_group(g)?),
+        None => None,
+    };
+
+    Ok(AlertPipeline::new(scope, file.strip_event, dedup, group))
+}
+
+/// Validate a `group:` block into a [`GroupConfig`].
+fn build_group(g: GroupFile) -> Result<GroupConfig, AlertPipelineConfigError> {
+    let mode = match g.mode {
+        GroupModeLabel::GroupBy => GroupMode::GroupBy,
+        GroupModeLabel::EntityGraph => GroupMode::EntityGraph,
+    };
+    let parse = |raw: &str| Selector::parse(raw).map_err(AlertPipelineConfigError::GroupSelector);
+    let by =
+        g.by.iter()
+            .map(|s| parse(s))
+            .collect::<Result<Vec<_>, _>>()?;
+    let entities = g
+        .entities
+        .iter()
+        .map(|s| parse(s))
+        .collect::<Result<Vec<_>, _>>()?;
+    match mode {
+        GroupMode::GroupBy if by.is_empty() => return Err(AlertPipelineConfigError::EmptyGroupBy),
+        GroupMode::EntityGraph if entities.is_empty() => {
+            return Err(AlertPipelineConfigError::EmptyEntities);
+        }
+        _ => {}
+    }
+    let include = match g.include {
+        IncludeLabel::Refs => IncludeMode::Refs,
+        IncludeLabel::Results => IncludeMode::Results,
+    };
+    let caps_file = g.caps.unwrap_or_default();
+    let defaults = Caps::default();
+    let caps = Caps {
+        max_open_incidents: caps_file
+            .max_open_incidents
+            .unwrap_or(defaults.max_open_incidents),
+        max_entities_per_incident: caps_file
+            .max_entities_per_incident
+            .unwrap_or(defaults.max_entities_per_incident),
+        max_results_per_incident: caps_file
+            .max_results_per_incident
+            .unwrap_or(defaults.max_results_per_incident),
+        max_value_cardinality: caps_file
+            .max_value_cardinality
+            .unwrap_or(defaults.max_value_cardinality),
+    };
+    Ok(GroupConfig {
+        mode,
+        by,
+        entities,
+        group_wait: g.group_wait.unwrap_or(DEFAULT_GROUP_WAIT),
+        group_interval: g.group_interval.unwrap_or(DEFAULT_GROUP_INTERVAL),
+        repeat_interval: g.repeat_interval.unwrap_or(DEFAULT_REPEAT_INTERVAL),
+        resolve_timeout: g.resolve_timeout.unwrap_or(DEFAULT_RESOLVE_TIMEOUT),
+        include,
+        caps,
+        stop_values: g.stop_values.into_iter().collect::<BTreeSet<_>>(),
+        nats_subject: g.nats_subject,
+    })
 }
 
 /// humantime serde adapter for `Option<Duration>`, accepting `null` / missing.

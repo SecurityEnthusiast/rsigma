@@ -106,6 +106,15 @@ pub trait MetricsHook: Send + Sync {
     fn on_alert_pipeline_summary_emitted(&self) {}
     /// Observe the alert-pipeline stage duration in seconds.
     fn observe_alert_pipeline_duration(&self, _seconds: f64) {}
+
+    /// An incident was emitted. `trigger` is one of `group_wait` /
+    /// `group_interval` / `repeat` / `resolved`.
+    fn on_incident_emitted(&self, _trigger: &str) {}
+    /// Report the current number of open incidents.
+    fn set_incidents_open(&self, _count: i64) {}
+    /// An entity-graph guard suppressed a join. `guard` is `stop_value` or
+    /// `cardinality_ceiling`.
+    fn on_alert_pipeline_overmerge(&self, _guard: &str) {}
 }
 
 /// No-op implementation for use when metrics are disabled (e.g., `rsigma run`).

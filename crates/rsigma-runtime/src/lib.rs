@@ -58,9 +58,9 @@ pub mod sources;
 pub mod tap;
 
 pub use alert_pipeline::{
-    AlertPipeline, AlertPipelineConfigError, AlertPipelineFile, DedupStore, Selector,
-    SelectorParseError, build_alert_pipeline, load_alert_pipeline_file,
-    parse_alert_pipeline_config,
+    AlertPipeline, AlertPipelineConfigError, AlertPipelineFile, DedupStore, GroupMode, IncidentRef,
+    IncidentResult, IncidentStore, IncludeMode, Selector, SelectorParseError, TickOutput,
+    build_alert_pipeline, load_alert_pipeline_file, parse_alert_pipeline_config,
 };
 pub use egress::{
     EgressDenial, EgressFilteredResolver, EgressPolicy, default_egress_policy,
@@ -86,7 +86,7 @@ pub use io::webhook::{
 };
 pub use io::{
     AckToken, DeliveryConfig, DeliveryFailure, DeliverySink, Dispatcher, EventSource, FileSink,
-    OnFull, RawEvent, Sink, StdinSource, StdoutSink, spawn_source,
+    IncidentEnvelope, OnFull, RawEvent, Sink, StdinSource, StdoutSink, spawn_source,
 };
 pub use metrics::{MetricsHook, NoopMetrics};
 pub use pipeline_deprecation::warn_pipeline_inline_sources;

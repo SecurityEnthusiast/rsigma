@@ -1,0 +1,18 @@
+group:
+  mode: entity_graph
+  entities:
+    - match.SourceIp
+    - match.User
+    - event.host.name
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 1h
+  resolve_timeout: 6h
+  include: results
+  caps:
+    max_open_incidents: 5000
+    max_entities_per_incident: 500
+    max_results_per_incident: 200
+    max_value_cardinality: 1000
+  stop_values: ["0.0.0.0", "-", ""]
+  nats_subject: rsigma.incidents

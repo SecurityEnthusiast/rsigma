@@ -11,8 +11,14 @@ A new optional post-engine stage in the daemon sink path, between enrichment and
 * Fingerprints are built from a shared field-selector namespace over `EvaluationResult`: `rule`, `level`, `event.<path>`, `match.<field>`, `enrichment.<path>`, and `correlation.group_key.<field>`. A malformed selector rejects the daemon at startup with an error naming the offending selector.
 * `scope` (rules / tags / levels) restricts which results the layer acts on; out-of-scope results pass through untouched. `strip_event` retains the event for selector resolution then drops raw event payloads before delivery. `repeat_interval: 0` gives pure suppression with a single resolved summary on expiry.
 * Re-emit and resolved records ride the existing NDJSON wire shape, disambiguated by a `dedup_state` key in `enrichments` (alongside `dedup_fingerprint`, `dedup_fire_count`, `dedup_first_seen`, `dedup_last_seen`, and `dedup_fields`).
-* Five Prometheus metrics: `rsigma_dedup_results_total{action}`, `rsigma_dedup_store_entries`, `rsigma_dedup_evictions_total`, `rsigma_dedup_summaries_emitted_total`, and `rsigma_alert_pipeline_duration_seconds`.
 * The `Scope` filter moved to a shared crate-level `rsigma_runtime::scope` module; the `enrichment` module re-exports it, so `rsigma_runtime::Scope` and `rsigma_runtime::enrichment::Scope` are unchanged.
+
+A second stage groups dedup survivors into incidents. It assigns each survivor to an incident, annotates the pass-through result with `incident_id` in `enrichments`, and emits a higher-level `IncidentResult` on the Alertmanager timers.
+
+* Two modes: `group_by` (default) groups by equality on a selector list with a deterministic incident id stable across restarts; an opt-in `entity_graph` union-find merges incidents sharing an entity value, guarded against the giant-component failure by a `stop_values` list and a per-value `max_value_cardinality` ceiling.
+* Incidents emit on `group_wait` (initial batch), `group_interval` (updates), and `repeat_interval` (re-emit), and emit a final `resolved` record after `resolve_timeout`. `include: refs | results` controls how much contributing detail is embedded, bounded by per-incident caps.
+* `IncidentResult` is one flat NDJSON object disambiguated by an `incident_id` key, delivered via an additive `Sink::send_incident` across stdout/file/NATS (with an optional `nats_subject` override routing incidents to a dedicated subject); OTLP and webhook sinks do not receive incidents. Open incidents are readable at `GET /api/v1/incidents`.
+* Nine Prometheus metrics across both stages: `rsigma_dedup_results_total{action}`, `rsigma_dedup_store_entries`, `rsigma_dedup_evictions_total`, `rsigma_dedup_summaries_emitted_total`, `rsigma_incidents_open`, `rsigma_incidents_emitted_total{trigger}`, `rsigma_incident_results_total`, `rsigma_incident_overmerge_total{guard}`, and `rsigma_alert_pipeline_duration_seconds`.
 
 ### rstix: STIX cyber-observable (SCO) model (#248)
 

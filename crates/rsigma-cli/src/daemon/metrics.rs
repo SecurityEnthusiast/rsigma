@@ -71,6 +71,10 @@ pub struct Metrics {
     pub dedup_evictions_total: IntCounter,
     pub dedup_summaries_emitted_total: IntCounter,
     pub alert_pipeline_duration_seconds: Histogram,
+    pub incidents_open: IntGauge,
+    pub incidents_emitted_total: IntCounterVec,
+    pub incident_results_total: IntCounter,
+    pub incident_overmerge_total: IntCounterVec,
 }
 
 impl Metrics {
@@ -652,6 +656,56 @@ impl Metrics {
             .register(Box::new(alert_pipeline_duration_seconds.clone()))
             .unwrap();
 
+        let incidents_open = IntGauge::with_opts(Opts::new(
+            "rsigma_incidents_open",
+            "Open incidents currently tracked by the grouping stage",
+        ))
+        .unwrap();
+        let incidents_emitted_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_incidents_emitted_total",
+                "Incident emissions by trigger (group_wait, group_interval, repeat, resolved)",
+            ),
+            &["trigger"],
+        )
+        .unwrap();
+        let incident_results_total = IntCounter::with_opts(Opts::new(
+            "rsigma_incident_results_total",
+            "Total incident records emitted",
+        ))
+        .unwrap();
+        let incident_overmerge_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_incident_overmerge_total",
+                "Entity-graph guard hits that suppressed a join, by guard",
+            ),
+            &["guard"],
+        )
+        .unwrap();
+        // Pre-materialise the fixed label sets and zero the gauge so the
+        // `# HELP` / `# TYPE` lines render on the first scrape.
+        for trigger in ["group_wait", "group_interval", "repeat", "resolved"] {
+            incidents_emitted_total
+                .with_label_values(&[trigger])
+                .inc_by(0);
+        }
+        for guard in ["stop_value", "cardinality_ceiling"] {
+            incident_overmerge_total
+                .with_label_values(&[guard])
+                .inc_by(0);
+        }
+        incidents_open.set(0);
+        registry.register(Box::new(incidents_open.clone())).unwrap();
+        registry
+            .register(Box::new(incidents_emitted_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(incident_results_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(incident_overmerge_total.clone()))
+            .unwrap();
+
         Metrics {
             registry,
             events_processed,
@@ -718,6 +772,10 @@ impl Metrics {
             dedup_evictions_total,
             dedup_summaries_emitted_total,
             alert_pipeline_duration_seconds,
+            incidents_open,
+            incidents_emitted_total,
+            incident_results_total,
+            incident_overmerge_total,
         }
     }
 
@@ -833,6 +891,23 @@ impl MetricsHook for Metrics {
 
     fn observe_alert_pipeline_duration(&self, seconds: f64) {
         self.alert_pipeline_duration_seconds.observe(seconds);
+    }
+
+    fn on_incident_emitted(&self, trigger: &str) {
+        self.incidents_emitted_total
+            .with_label_values(&[trigger])
+            .inc();
+        self.incident_results_total.inc();
+    }
+
+    fn set_incidents_open(&self, count: i64) {
+        self.incidents_open.set(count);
+    }
+
+    fn on_alert_pipeline_overmerge(&self, guard: &str) {
+        self.incident_overmerge_total
+            .with_label_values(&[guard])
+            .inc();
     }
 
     fn observe_processing_latency(&self, seconds: f64) {

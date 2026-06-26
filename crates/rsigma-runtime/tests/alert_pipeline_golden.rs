@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use rsigma_eval::{DetectionBody, EvaluationResult, FieldMatch, ResultBody, RuleHeader};
 use rsigma_parser::Level;
-use rsigma_runtime::{DedupStore, NoopMetrics, parse_alert_pipeline_config};
+use rsigma_runtime::{DedupStore, IncidentStore, NoopMetrics, parse_alert_pipeline_config};
 
 fn detection() -> EvaluationResult {
     EvaluationResult {
@@ -39,11 +39,12 @@ fn dedup_repeat_and_resolved_wire_shape() {
     )
     .unwrap();
     let mut store = DedupStore::default();
+    let mut incidents = IncidentStore::default();
     let m = NoopMetrics;
 
     // First fire opens the alert; a second fire folds in.
-    let _ = pipeline.process(vec![detection()], &mut store, 1000, &m);
-    let _ = pipeline.process(vec![detection()], &mut store, 1005, &m);
+    let _ = pipeline.process(vec![detection()], &mut store, &mut incidents, 1000, &m);
+    let _ = pipeline.process(vec![detection()], &mut store, &mut incidents, 1005, &m);
 
     // Expected wire shape, compared as a parsed value so the assertion is
     // robust to JSON object key ordering (serde_json's `preserve_order`
@@ -69,7 +70,7 @@ fn dedup_repeat_and_resolved_wire_shape() {
     };
 
     // A repeat re-emit is due at +11s with two fires accumulated.
-    let repeat = pipeline.tick(&mut store, 1011, &m);
+    let repeat = pipeline.tick(&mut store, &mut incidents, 1011, &m).results;
     assert_eq!(repeat.len(), 1);
     let repeat_json = serde_json::to_string(&repeat[0]).unwrap();
     let repeat_value: serde_json::Value = serde_json::from_str(&repeat_json).unwrap();
@@ -78,10 +79,42 @@ fn dedup_repeat_and_resolved_wire_shape() {
     assert!(repeat_value.get("event").is_none());
 
     // After resolve_timeout of no fires, the alert resolves and evicts.
-    let resolved = pipeline.tick(&mut store, 1040, &m);
+    let resolved = pipeline.tick(&mut store, &mut incidents, 1040, &m).results;
     assert_eq!(resolved.len(), 1);
     let resolved_json = serde_json::to_string(&resolved[0]).unwrap();
     let resolved_value: serde_json::Value = serde_json::from_str(&resolved_json).unwrap();
     assert_eq!(resolved_value, expected("resolved"));
     assert!(store.is_empty());
+}
+
+#[test]
+fn incident_wire_shape() {
+    let pipeline = parse_alert_pipeline_config(
+        "group:\n  by: [match.CommandLine]\n  group_wait: 0s\n  resolve_timeout: 1h\n",
+    )
+    .unwrap();
+    let mut dedup = DedupStore::default();
+    let mut incidents = IncidentStore::default();
+    let m = NoopMetrics;
+
+    let _ = pipeline.process(vec![detection()], &mut dedup, &mut incidents, 1000, &m);
+    let out = pipeline.tick(&mut dedup, &mut incidents, 1000, &m);
+    assert_eq!(out.incidents.len(), 1);
+    let json = serde_json::to_string(&out.incidents[0]).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "incident_id": "f8bcd62a829b1126",
+            "state": "open",
+            "trigger": "group_wait",
+            "first_seen": 1000,
+            "last_seen": 1000,
+            "max_level": "high",
+            "result_count": 1,
+            "rule_counts": {"rule-1": 1},
+            "group_by": {"match.CommandLine": "malware.exe"},
+            "refs": [{"rule": "rule-1", "level": "high"}]
+        })
+    );
 }

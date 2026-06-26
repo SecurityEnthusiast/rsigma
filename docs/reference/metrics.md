@@ -74,9 +74,9 @@ Exposed when the daemon is built with `daemon` and `--enrichers` is passed. Ever
 
 The `kind` label is carried even though `enricher_id` typically already encodes it (`asset_lookup_det` vs `asset_lookup_corr`), so dashboards can compute `sum by (kind)` without depending on a naming convention.
 
-## Alert pipeline (5 metrics)
+## Alert pipeline (9 metrics)
 
-Exposed when the daemon is built with `daemon`. The fixed `action` label set on `rsigma_dedup_results_total` and the `rsigma_dedup_store_entries` gauge are pre-registered at startup, so they render with their `# HELP` / `# TYPE` lines and zeroed series on the first scrape, even before `--alert-pipeline` is passed or any event fires. See the [Alert Pipeline](../guide/alert-pipeline.md) guide.
+Exposed when the daemon is built with `daemon`. The fixed label sets on `rsigma_dedup_results_total`, `rsigma_incidents_emitted_total`, and `rsigma_incident_overmerge_total`, plus the `rsigma_dedup_store_entries` and `rsigma_incidents_open` gauges, are pre-registered at startup, so they render with their `# HELP` / `# TYPE` lines and zeroed series on the first scrape, even before `--alert-pipeline` is passed or any event fires. See the [Alert Pipeline](../guide/alert-pipeline.md) guide.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
@@ -84,6 +84,10 @@ Exposed when the daemon is built with `daemon`. The fixed `action` label set on 
 | `rsigma_dedup_store_entries` | gauge | — | Active dedup alerts currently tracked. |
 | `rsigma_dedup_evictions_total` | counter | — | Active alerts evicted after resolving. |
 | `rsigma_dedup_summaries_emitted_total` | counter | — | Dedup summary records emitted (repeat re-emits plus resolved records). |
+| `rsigma_incidents_open` | gauge | — | Open incidents currently tracked by the grouping stage. |
+| `rsigma_incidents_emitted_total` | counter | `trigger` (`group_wait`, `group_interval`, `repeat`, `resolved`) | Incident emissions by trigger. |
+| `rsigma_incident_results_total` | counter | — | Total incident records emitted. |
+| `rsigma_incident_overmerge_total` | counter | `guard` (`stop_value`, `cardinality_ceiling`) | Entity-graph guard hits that suppressed a join. |
 | `rsigma_alert_pipeline_duration_seconds` | histogram | — | Alert-pipeline stage duration in seconds. |
 
 ## OTLP (3 metrics)

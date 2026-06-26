@@ -16,10 +16,10 @@ use rsigma_eval::{
 };
 use rsigma_runtime::{
     AckToken, AlertPipeline, DedupStore, DeliveryConfig, DeliveryFailure, Dispatcher,
-    EnrichmentPipeline, FieldObserver, FileSink, InputFormat, LogProcessor, MetricsHook, OnFull,
-    RawEvent, RoutingSpec, RuntimeEngine, SchemaClassifier, SchemaObserver, Sink, StdinSource,
-    StdoutSink, build_alert_pipeline, load_alert_pipeline_file, load_schema_signatures,
-    spawn_source,
+    EnrichmentPipeline, FieldObserver, FileSink, IncidentEnvelope, IncidentStore, IncludeMode,
+    InputFormat, LogProcessor, MetricsHook, OnFull, RawEvent, RoutingSpec, RuntimeEngine,
+    SchemaClassifier, SchemaObserver, Sink, StdinSource, StdoutSink, build_alert_pipeline,
+    load_alert_pipeline_file, load_schema_signatures, spawn_source,
 };
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -114,6 +114,11 @@ struct AppState {
     /// Live detection-tail state. `Some` when the tail is enabled; the
     /// `GET /api/v1/detections/stream` handler registers sessions on it.
     tail: Option<super::tail::TailState>,
+    /// The alert-pipeline config swap, read by `GET /api/v1/incidents` to
+    /// resolve the incident include mode.
+    alert_pipeline_swap: Arc<ArcSwap<Option<Arc<AlertPipeline>>>>,
+    /// Open incidents from the grouping stage, shared with the sink task.
+    incident_store: Arc<std::sync::RwLock<IncidentStore>>,
 }
 
 #[derive(Clone)]
@@ -238,6 +243,11 @@ pub async fn run_daemon(config: DaemonConfig) {
     // sink task and the reload task can both capture the `ArcSwap`.
     let alert_pipeline_swap: Arc<ArcSwap<Option<Arc<AlertPipeline>>>> =
         Arc::new(ArcSwap::new(Arc::new(None)));
+
+    // Open incidents from the grouping stage. Owned by the sink task but shared
+    // behind an `RwLock` so the `GET /api/v1/incidents` handler can read it.
+    let incident_store: Arc<std::sync::RwLock<IncidentStore>> =
+        Arc::new(std::sync::RwLock::new(IncidentStore::default()));
 
     // Open SQLite state store if configured
     let state_store = config.state_db.as_ref().map(|path| {
@@ -634,6 +644,8 @@ pub async fn run_daemon(config: DaemonConfig) {
         schema_observer: schema_observer.clone(),
         tap: tap.clone(),
         tail: tail.clone(),
+        alert_pipeline_swap: alert_pipeline_swap.clone(),
+        incident_store: incident_store.clone(),
     };
 
     let app = Router::new()
@@ -642,6 +654,7 @@ pub async fn run_daemon(config: DaemonConfig) {
         .route("/metrics", get(metrics_handler))
         .route("/api/v1/rules", get(list_rules))
         .route("/api/v1/status", get(status))
+        .route("/api/v1/incidents", get(list_incidents))
         .route("/api/v1/reload", post(trigger_reload))
         .route("/api/v1/events", post(ingest_events))
         .route("/api/v1/sources", get(list_sources))
@@ -1225,6 +1238,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     let sink_metrics = metrics.clone();
     let enrichment_swap_for_sink = enrichment_swap.clone();
     let alert_pipeline_swap_for_sink = alert_pipeline_swap.clone();
+    let incident_store_for_sink = incident_store.clone();
     let alert_pipeline_metrics = metrics.clone() as Arc<dyn MetricsHook>;
     let delivery_metrics = metrics.clone() as Arc<dyn MetricsHook>;
     let dispatch_ack_tx = ack_tx.clone();
@@ -1263,26 +1277,35 @@ pub async fn run_daemon(config: DaemonConfig) {
                         }
                     }
 
-                    // Alert pipeline: dedup folds duplicates into the active
-                    // store. If the whole batch folds away, ack and skip
-                    // dispatch, mirroring the enrichment empty-result path.
+                    // Alert pipeline: dedup folds duplicates and grouping
+                    // assigns survivors to incidents (annotating `incident_id`).
+                    // If the whole batch folds away, ack and skip dispatch,
+                    // mirroring the enrichment empty-result path. The incident
+                    // store is locked only for the synchronous process call.
                     let alert_snapshot = alert_pipeline_swap_for_sink.load_full();
                     if let Some(alert_pipeline) = alert_snapshot.as_ref()
                         && !alert_pipeline.is_noop()
                     {
                         let now = chrono::Utc::now().timestamp();
-                        result = alert_pipeline.process(
-                            result,
-                            &mut alert_store,
-                            now,
-                            alert_pipeline_metrics.as_ref(),
-                        );
-                        if result.is_empty() {
+                        let kept = {
+                            let mut incidents = incident_store_for_sink
+                                .write()
+                                .unwrap_or_else(|e| e.into_inner());
+                            alert_pipeline.process(
+                                result,
+                                &mut alert_store,
+                                &mut incidents,
+                                now,
+                                alert_pipeline_metrics.as_ref(),
+                            )
+                        };
+                        if kept.is_empty() {
                             for token in ack_tokens {
                                 let _ = empty_ack_tx.send(token);
                             }
                             continue;
                         }
+                        result = kept;
                     }
 
                     // Live detection tail: fan the post-enrichment result out to
@@ -1296,24 +1319,48 @@ pub async fn run_daemon(config: DaemonConfig) {
                     dispatcher.dispatch(result, ack_tokens).await;
                 }
                 _ = alert_tick.tick() => {
-                    // Emit any due repeat re-emits and resolved records. These
-                    // are synthetic (no input event), so they dispatch with no
-                    // ack tokens.
+                    // Emit any due dedup repeat/resolved records and incident
+                    // emissions. These are synthetic (no input event): dedup
+                    // records dispatch with no ack tokens, incidents via the
+                    // incident path (optionally to a dedicated NATS subject).
                     let alert_snapshot = alert_pipeline_swap_for_sink.load_full();
                     if let Some(alert_pipeline) = alert_snapshot.as_ref()
                         && !alert_pipeline.is_noop()
                     {
                         let now = chrono::Utc::now().timestamp();
-                        let records = alert_pipeline.tick(
-                            &mut alert_store,
-                            now,
-                            alert_pipeline_metrics.as_ref(),
-                        );
-                        if !records.is_empty() {
+                        let out = {
+                            let mut incidents = incident_store_for_sink
+                                .write()
+                                .unwrap_or_else(|e| e.into_inner());
+                            alert_pipeline.tick(
+                                &mut alert_store,
+                                &mut incidents,
+                                now,
+                                alert_pipeline_metrics.as_ref(),
+                            )
+                        };
+                        if !out.results.is_empty() {
                             if let Some(tail) = &tail_for_sink {
-                                tail.capture(&records);
+                                tail.capture(&out.results);
                             }
-                            dispatcher.dispatch(records, Vec::new()).await;
+                            dispatcher.dispatch(out.results, Vec::new()).await;
+                        }
+                        let subject =
+                            alert_pipeline.incident_nats_subject().map(|s| s.to_string());
+                        for incident in out.incidents {
+                            match serde_json::to_string(&incident) {
+                                Ok(json) => {
+                                    dispatcher
+                                        .dispatch_incident(IncidentEnvelope {
+                                            json,
+                                            nats_subject: subject.clone(),
+                                        })
+                                        .await;
+                                }
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "Failed to serialize incident");
+                                }
+                            }
                         }
                     }
                 }
@@ -1902,6 +1949,26 @@ struct DynamicSourcesSummary {
     resolves_total: u64,
     errors_total: u64,
     cache_hits: u64,
+}
+
+/// `GET /api/v1/incidents` — open incidents from the grouping stage.
+async fn list_incidents(State(state): State<AppState>) -> impl IntoResponse {
+    let include = state
+        .alert_pipeline_swap
+        .load_full()
+        .as_ref()
+        .as_ref()
+        .and_then(|p| p.incident_include())
+        .unwrap_or(IncludeMode::Refs);
+    let incidents = {
+        let store = state
+            .incident_store
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        store.snapshot(include)
+    };
+    let count = incidents.len();
+    Json(serde_json::json!({ "incidents": incidents, "count": count }))
 }
 
 async fn status(State(state): State<AppState>) -> impl IntoResponse {

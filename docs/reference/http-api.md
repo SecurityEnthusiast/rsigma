@@ -12,6 +12,7 @@ All bodies are JSON unless otherwise noted. All responses include a `Content-Typ
 | `/readyz` | GET | none | Readiness probe. 200 when rules and pipelines are loaded; 503 during startup or after a failed reload. |
 | `/metrics` | GET | none | Prometheus text format. See [Prometheus metrics](metrics.md). |
 | `/api/v1/status` | GET | none | Counters, state-entry counts, uptime, and (when configured) dynamic-source summary. |
+| `/api/v1/incidents` | GET | none | Open incidents from the alert-pipeline grouping stage. |
 | `/api/v1/rules` | GET | none | Rule counts and rules-directory path. |
 | `/api/v1/reload` | POST | none | Trigger an immediate rules + pipelines reload. |
 | `/api/v1/events` | POST | none | NDJSON event ingest. Only enabled with `--input http`. |
@@ -93,6 +94,36 @@ curl -sS http://127.0.0.1:9090/api/v1/status
 ```
 
 The same counters are exposed in Prometheus form on `/metrics`. Use `/api/v1/status` for a quick one-shot snapshot; use `/metrics` for monitoring. For a formatted view from the command line, [`rsigma engine status`](../cli/engine/status.md) fetches this endpoint and renders it as a table (or `json`/`ndjson`/`csv`/`tsv`).
+
+### `GET /api/v1/incidents`
+
+Open incidents from the alert-pipeline grouping stage (present when `--alert-pipeline` configures a `group` block). Each entry has the same shape as an emitted `IncidentResult`, with `state: open` and `trigger: snapshot`.
+
+```bash
+curl -sS http://127.0.0.1:9090/api/v1/incidents
+```
+
+```json
+{
+  "count": 1,
+  "incidents": [
+    {
+      "incident_id": "f8bcd62a829b1126",
+      "state": "open",
+      "trigger": "snapshot",
+      "first_seen": 1719412800,
+      "last_seen": 1719412860,
+      "max_level": "high",
+      "result_count": 2,
+      "rule_counts": {"rule-1": 2},
+      "group_by": {"match.CommandLine": "malware x"},
+      "refs": [{"rule": "rule-1", "level": "high"}]
+    }
+  ]
+}
+```
+
+The `include` mode configured on the `group` block decides whether each incident carries lightweight `refs` or full `results`. See the [Alert Pipeline](../guide/alert-pipeline.md) guide.
 
 ### `GET /api/v1/rules`
 
