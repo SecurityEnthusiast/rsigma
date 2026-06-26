@@ -52,6 +52,7 @@ pub mod metrics;
 pub mod parse;
 pub mod pipeline_deprecation;
 pub mod processor;
+pub mod scope;
 pub mod sources;
 pub mod tap;
 

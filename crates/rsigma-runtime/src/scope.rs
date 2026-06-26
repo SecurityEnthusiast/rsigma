@@ -1,10 +1,10 @@
-//! Scope filtering for enrichers.
+//! Scope filtering for post-evaluation stages.
 //!
-//! Each enricher carries an optional [`Scope`] that decides, on a per-result
-//! basis, whether the enricher should fire. Scope is applied **after** the
-//! kind-vs-body filter and **before** [`Enricher::enrich`](super::Enricher::enrich)
-//! runs, so an enricher pays no I/O cost for results it would have ignored
-//! anyway.
+//! A [`Scope`] decides, on a per-result basis, whether a post-engine stage
+//! should act on a given [`EvaluationResult`]. Enrichers apply it **after**
+//! the kind-vs-body filter and **before**
+//! [`Enricher::enrich`](crate::enrichment::Enricher::enrich) runs, so a stage
+//! pays no I/O cost for results it would have ignored anyway.
 //!
 //! Three independent axes:
 //!
@@ -13,20 +13,18 @@
 //!   (`attack.*` matches `attack.t1059.001`).
 //! - `levels`: severity membership.
 //!
-//! All three axes are **AND-ed** when configured: an enricher fires only when
+//! All three axes are **AND-ed** when configured: a stage acts only when
 //! every populated axis matches. Empty axes are not filters (an empty
 //! `tags: []` does not exclude every result; it means "no tag constraint").
-//! No `scope.kinds` axis exists — the top-level `kind` field on the enricher
-//! already gates which result-body variant it sees.
 
 use globset::{Glob, GlobMatcher};
 use rsigma_eval::EvaluationResult;
 use rsigma_parser::Level;
 
-/// Scope filter applied per result before [`Enricher::enrich`](super::Enricher::enrich).
+/// Scope filter applied per result before a post-engine stage acts.
 ///
 /// Constructed once at config load and then read concurrently from the
-/// pipeline driver, so all internal state is immutable after `Scope::new`.
+/// stage driver, so all internal state is immutable after `Scope::new`.
 #[derive(Debug, Default)]
 pub struct Scope {
     rule_ids: Vec<String>,
@@ -97,7 +95,7 @@ impl Scope {
         })
     }
 
-    /// True when no axis is populated. The pipeline can fast-path past
+    /// True when no axis is populated. The driver can fast-path past
     /// empty scopes without inspecting the result.
     pub fn is_unrestricted(&self) -> bool {
         self.rule_ids.is_empty()
