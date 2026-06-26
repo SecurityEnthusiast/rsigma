@@ -260,7 +260,10 @@ mod tests {
           }
         }"#;
         let err = serde_json::from_str::<Process>(json).unwrap_err();
-        assert!(err.to_string().contains("process requires at least one specific property"));
+        assert!(
+            err.to_string()
+                .contains("process requires at least one specific property")
+        );
     }
 
     #[test]

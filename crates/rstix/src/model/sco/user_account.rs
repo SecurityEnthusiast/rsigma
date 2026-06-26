@@ -257,9 +257,10 @@ mod tests {
           }
         }"#;
         let err = serde_json::from_str::<UserAccount>(json).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("user-account requires at least one specific property"));
+        assert!(
+            err.to_string()
+                .contains("user-account requires at least one specific property")
+        );
     }
 
     #[test]
