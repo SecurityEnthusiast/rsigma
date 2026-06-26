@@ -294,7 +294,7 @@ impl IncidentStore {
             Some(survivor) => {
                 // Merge any other touched incidents into the survivor.
                 for other in touched.iter().skip(1) {
-                    self.merge(&survivor, other);
+                    self.merge(&survivor, other, cfg.caps.max_results_per_incident);
                 }
                 survivor
             }
@@ -317,7 +317,7 @@ impl IncidentStore {
     }
 
     /// Merge incident `other` into `survivor`, repointing its entity index.
-    fn merge(&mut self, survivor: &str, other: &str) {
+    fn merge(&mut self, survivor: &str, other: &str, max_results: usize) {
         if survivor == other {
             return;
         }
@@ -345,6 +345,9 @@ impl IncidentStore {
             }
             inc.refs.append(&mut victim.refs);
             inc.results.append(&mut victim.results);
+            // Keep the per-incident cap after merging two incidents' samples.
+            inc.refs.truncate(max_results);
+            inc.results.truncate(max_results);
         }
     }
 
@@ -396,9 +399,14 @@ impl IncidentStore {
         }
         for id in resolved {
             if let Some(inc) = self.incidents.remove(&id) {
+                // Drop the resolved incident's entity values from both the index
+                // and the cardinality counters so neither grows unbounded with
+                // distinct entity values over time.
                 for (sel, values) in inc.entities {
                     for value in values {
-                        self.entity_index.remove(&(sel.clone(), value));
+                        let key = (sel.clone(), value);
+                        self.entity_index.remove(&key);
+                        self.value_counts.remove(&key);
                     }
                 }
             }
@@ -746,6 +754,43 @@ mod tests {
         );
         assert_eq!(store.len(), 2, "stop value must not bridge incidents");
         assert!(guards >= 2, "stop-value guard fired");
+    }
+
+    #[test]
+    fn cardinality_counter_freed_after_resolve() {
+        // A value's occurrence counter must not leak: once its incident
+        // resolves, the counter is dropped so the value can join fresh.
+        let mut cfg = entity_cfg();
+        cfg.caps.max_value_cardinality = 2;
+        cfg.entities = vec![Selector::parse("match.SourceIp").unwrap()];
+        let mut store = IncidentStore::default();
+        let mut guards = 0;
+        store.assign(
+            &cfg,
+            &detection("r", "10.0.0.9", "a", Level::High),
+            0,
+            |_| guards += 1,
+        );
+        store.assign(
+            &cfg,
+            &detection("r", "10.0.0.9", "b", Level::High),
+            1,
+            |_| guards += 1,
+        );
+        assert_eq!(guards, 0, "two occurrences are within the ceiling");
+        store.tick(&cfg, 0); // group_wait 0 opens the incident
+        store.tick(&cfg, 5000); // past resolve_timeout
+        assert!(store.is_empty());
+        // The counter for 10.0.0.9 was freed on resolve, so a new occurrence
+        // joins fresh rather than tripping the ceiling.
+        store.assign(
+            &cfg,
+            &detection("r", "10.0.0.9", "c", Level::High),
+            6000,
+            |_| guards += 1,
+        );
+        assert_eq!(guards, 0, "counter reset after resolve");
+        assert_eq!(store.len(), 1);
     }
 
     #[test]
