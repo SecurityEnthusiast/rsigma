@@ -15,11 +15,11 @@ use rsigma_eval::{
     load_schema_config,
 };
 use rsigma_runtime::{
-    AckToken, AlertPipeline, DedupStore, DeliveryConfig, DeliveryFailure, Dispatcher,
-    EnrichmentPipeline, FieldObserver, FileSink, IncidentEnvelope, IncidentStore, IncludeMode,
-    InputFormat, LogProcessor, MetricsHook, OnFull, RawEvent, RoutingSpec, RuntimeEngine,
-    SchemaClassifier, SchemaObserver, Sink, StdinSource, StdoutSink, build_alert_pipeline,
-    load_alert_pipeline_file, load_schema_signatures, spawn_source,
+    AckToken, AlertPipeline, AlertPipelineState, DeliveryConfig, DeliveryFailure, Dispatcher,
+    EnrichmentPipeline, FieldObserver, FileSink, IncidentEnvelope, IncludeMode, InputFormat,
+    LogProcessor, MetricsHook, OnFull, RawEvent, RoutingSpec, RuntimeEngine, SchemaClassifier,
+    SchemaObserver, Silence, SilenceOrigin, SilenceSpec, Sink, StdinSource, StdoutSink,
+    build_alert_pipeline, load_alert_pipeline_file, load_schema_signatures, spawn_source,
 };
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -117,8 +117,10 @@ struct AppState {
     /// The alert-pipeline config swap, read by `GET /api/v1/incidents` to
     /// resolve the incident include mode.
     alert_pipeline_swap: Arc<ArcSwap<Option<Arc<AlertPipeline>>>>,
-    /// Open incidents from the grouping stage, shared with the sink task.
-    incident_store: Arc<std::sync::RwLock<IncidentStore>>,
+    /// Mutable alert-pipeline state (incidents + silences), shared with the
+    /// sink task. Read by `/api/v1/incidents` and read/written by
+    /// `/api/v1/silences`.
+    alert_state: Arc<std::sync::RwLock<AlertPipelineState>>,
 }
 
 #[derive(Clone)]
@@ -244,10 +246,11 @@ pub async fn run_daemon(config: DaemonConfig) {
     let alert_pipeline_swap: Arc<ArcSwap<Option<Arc<AlertPipeline>>>> =
         Arc::new(ArcSwap::new(Arc::new(None)));
 
-    // Open incidents from the grouping stage. Owned by the sink task but shared
-    // behind an `RwLock` so the `GET /api/v1/incidents` handler can read it.
-    let incident_store: Arc<std::sync::RwLock<IncidentStore>> =
-        Arc::new(std::sync::RwLock::new(IncidentStore::default()));
+    // Mutable alert-pipeline state (dedup, incidents, silences). Owned by the
+    // sink task but shared behind an `RwLock` so the `/api/v1/incidents` and
+    // `/api/v1/silences` handlers can read and mutate it.
+    let alert_state: Arc<std::sync::RwLock<AlertPipelineState>> =
+        Arc::new(std::sync::RwLock::new(AlertPipelineState::default()));
 
     // Open SQLite state store if configured
     let state_store = config.state_db.as_ref().map(|path| {
@@ -517,6 +520,11 @@ pub async fn run_daemon(config: DaemonConfig) {
         match load_alert_pipeline_file(path).and_then(build_alert_pipeline) {
             Ok(pipeline) => {
                 tracing::info!(path = %path.display(), "Alert pipeline loaded");
+                if let Ok(mut state) = alert_state.write() {
+                    state
+                        .silences
+                        .set_static(pipeline.static_silences().to_vec());
+                }
                 alert_pipeline_swap.store(Arc::new(Some(Arc::new(pipeline))));
             }
             Err(e) => {
@@ -645,7 +653,7 @@ pub async fn run_daemon(config: DaemonConfig) {
         tap: tap.clone(),
         tail: tail.clone(),
         alert_pipeline_swap: alert_pipeline_swap.clone(),
-        incident_store: incident_store.clone(),
+        alert_state: alert_state.clone(),
     };
 
     let app = Router::new()
@@ -655,6 +663,8 @@ pub async fn run_daemon(config: DaemonConfig) {
         .route("/api/v1/rules", get(list_rules))
         .route("/api/v1/status", get(status))
         .route("/api/v1/incidents", get(list_incidents))
+        .route("/api/v1/silences", get(list_silences).post(create_silence))
+        .route("/api/v1/silences/{id}", delete(delete_silence))
         .route("/api/v1/reload", post(trigger_reload))
         .route("/api/v1/events", post(ingest_events))
         .route("/api/v1/sources", get(list_sources))
@@ -775,6 +785,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     let reload_source_cache = initial_source_cache.clone();
     let reload_alert_pipeline_swap = alert_pipeline_swap.clone();
     let reload_alert_pipeline_path = config.alert_pipeline_path.clone();
+    let reload_alert_state = alert_state.clone();
     #[cfg(feature = "daemon-tls")]
     let reload_tls_state = tls_state.clone();
     #[cfg(feature = "daemon-tls")]
@@ -857,6 +868,13 @@ pub async fn run_daemon(config: DaemonConfig) {
             if let Some(path) = reload_alert_pipeline_path.as_deref() {
                 match load_alert_pipeline_file(path).and_then(build_alert_pipeline) {
                     Ok(new_pipeline) => {
+                        // Re-seed static silences (replacing the previous static
+                        // set); API-created silences are preserved.
+                        if let Ok(mut state) = reload_alert_state.write() {
+                            state
+                                .silences
+                                .set_static(new_pipeline.static_silences().to_vec());
+                        }
                         reload_alert_pipeline_swap.store(Arc::new(Some(Arc::new(new_pipeline))));
                         tracing::info!(path = %path.display(), "Alert pipeline reloaded");
                     }
@@ -1238,7 +1256,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     let sink_metrics = metrics.clone();
     let enrichment_swap_for_sink = enrichment_swap.clone();
     let alert_pipeline_swap_for_sink = alert_pipeline_swap.clone();
-    let incident_store_for_sink = incident_store.clone();
+    let alert_state_for_sink = alert_state.clone();
     let alert_pipeline_metrics = metrics.clone() as Arc<dyn MetricsHook>;
     let delivery_metrics = metrics.clone() as Arc<dyn MetricsHook>;
     let dispatch_ack_tx = ack_tx.clone();
@@ -1247,11 +1265,9 @@ pub async fn run_daemon(config: DaemonConfig) {
     drop(ack_tx);
     let sink_handle = tokio::spawn(async move {
         let dispatcher = Dispatcher::spawn(leaves, Some(df_tx), dispatch_ack_tx, delivery_metrics);
-        // Active-alert store for the alert pipeline's dedup stage. Owned
-        // single-threaded by this task; survives config hot-swaps.
-        let mut alert_store = DedupStore::default();
-        // 1s tick drives the alert pipeline's repeat re-emits and resolved
-        // records. A no-op when no alert pipeline is configured.
+        // 1s tick drives the alert pipeline's repeat re-emits, resolved
+        // records, incident emissions, and silence GC. A no-op when no alert
+        // pipeline is configured.
         let mut alert_tick = tokio::time::interval(tokio::time::Duration::from_secs(1));
         alert_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -1283,18 +1299,15 @@ pub async fn run_daemon(config: DaemonConfig) {
                     // mirroring the enrichment empty-result path. The incident
                     // store is locked only for the synchronous process call.
                     let alert_snapshot = alert_pipeline_swap_for_sink.load_full();
-                    if let Some(alert_pipeline) = alert_snapshot.as_ref()
-                        && !alert_pipeline.is_noop()
-                    {
+                    if let Some(alert_pipeline) = alert_snapshot.as_ref() {
                         let now = chrono::Utc::now().timestamp();
                         let kept = {
-                            let mut incidents = incident_store_for_sink
+                            let mut st = alert_state_for_sink
                                 .write()
                                 .unwrap_or_else(|e| e.into_inner());
                             alert_pipeline.process(
                                 result,
-                                &mut alert_store,
-                                &mut incidents,
+                                &mut st,
                                 now,
                                 alert_pipeline_metrics.as_ref(),
                             )
@@ -1324,20 +1337,13 @@ pub async fn run_daemon(config: DaemonConfig) {
                     // records dispatch with no ack tokens, incidents via the
                     // incident path (optionally to a dedicated NATS subject).
                     let alert_snapshot = alert_pipeline_swap_for_sink.load_full();
-                    if let Some(alert_pipeline) = alert_snapshot.as_ref()
-                        && !alert_pipeline.is_noop()
-                    {
+                    if let Some(alert_pipeline) = alert_snapshot.as_ref() {
                         let now = chrono::Utc::now().timestamp();
                         let out = {
-                            let mut incidents = incident_store_for_sink
+                            let mut st = alert_state_for_sink
                                 .write()
                                 .unwrap_or_else(|e| e.into_inner());
-                            alert_pipeline.tick(
-                                &mut alert_store,
-                                &mut incidents,
-                                now,
-                                alert_pipeline_metrics.as_ref(),
-                            )
+                            alert_pipeline.tick(&mut st, now, alert_pipeline_metrics.as_ref())
                         };
                         if !out.results.is_empty() {
                             if let Some(tail) = &tail_for_sink {
@@ -1961,14 +1967,77 @@ async fn list_incidents(State(state): State<AppState>) -> impl IntoResponse {
         .and_then(|p| p.incident_include())
         .unwrap_or(IncludeMode::Refs);
     let incidents = {
-        let store = state
-            .incident_store
-            .read()
-            .unwrap_or_else(|e| e.into_inner());
-        store.snapshot(include)
+        let st = state.alert_state.read().unwrap_or_else(|e| e.into_inner());
+        st.incidents.snapshot(include)
     };
     let count = incidents.len();
     Json(serde_json::json!({ "incidents": incidents, "count": count }))
+}
+
+/// `GET /api/v1/silences` — operator silences and their state.
+async fn list_silences(State(state): State<AppState>) -> impl IntoResponse {
+    let now = chrono::Utc::now().timestamp();
+    let silences = {
+        let st = state.alert_state.read().unwrap_or_else(|e| e.into_inner());
+        st.silences.snapshot(now)
+    };
+    let count = silences.len();
+    Json(serde_json::json!({ "silences": silences, "count": count }))
+}
+
+/// `POST /api/v1/silences` — create a silence. Returns the assigned id.
+async fn create_silence(State(state): State<AppState>, body: String) -> Response {
+    let spec: SilenceSpec = match serde_json::from_str(&body) {
+        Ok(spec) => spec,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": format!("invalid silence JSON: {e}") })),
+            )
+                .into_response();
+        }
+    };
+    match Silence::build(spec, SilenceOrigin::Api) {
+        Ok(silence) => {
+            let id = silence.id().to_string();
+            {
+                let mut st = state.alert_state.write().unwrap_or_else(|e| e.into_inner());
+                st.silences.add(silence);
+            }
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({ "status": "created", "id": id })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// `DELETE /api/v1/silences/{id}` — expire (remove) a silence.
+async fn delete_silence(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let removed = {
+        let mut st = state.alert_state.write().unwrap_or_else(|e| e.into_inner());
+        st.silences.remove(&id)
+    };
+    if removed {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({ "status": "deleted", "id": id })),
+        )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "no such silence", "id": id })),
+        )
+    }
 }
 
 async fn status(State(state): State<AppState>) -> impl IntoResponse {

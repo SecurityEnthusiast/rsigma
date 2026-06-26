@@ -20,6 +20,13 @@ A second stage groups dedup survivors into incidents. It assigns each survivor t
 * `IncidentResult` is one flat NDJSON object disambiguated by an `incident_id` key, delivered via an additive `Sink::send_incident` across stdout/file/NATS (with an optional `nats_subject` override routing incidents to a dedicated subject); OTLP and webhook sinks do not receive incidents. Open incidents are readable at `GET /api/v1/incidents`.
 * Nine Prometheus metrics across both stages: `rsigma_dedup_results_total{action}`, `rsigma_dedup_store_entries`, `rsigma_dedup_evictions_total`, `rsigma_dedup_summaries_emitted_total`, `rsigma_incidents_open`, `rsigma_incidents_emitted_total{trigger}`, `rsigma_incident_results_total`, `rsigma_incident_overmerge_total{guard}`, and `rsigma_alert_pipeline_duration_seconds`.
 
+A silencing stage mutes results matching operator-defined matchers before dedup, modeled on Alertmanager silences.
+
+* A matcher is `selector <op> value` over the field-selector namespace, with the `=`, `!=`, `=~`, `!~` operators (regex anchored); a matcher set is ANDed. The matcher engine is shared with the forthcoming inhibition stage.
+* Silences carry a time window (optional RFC 3339 `starts_at`/`ends_at`), a derived `pending`/`active`/`expired` state, and an origin: `static` silences declared under `silences:` in the config (re-seeded on hot-reload) and `api` silences created at runtime over `POST /api/v1/silences`. Expired silences are garbage-collected.
+* New endpoints: `GET`/`POST /api/v1/silences` and `DELETE /api/v1/silences/{id}`. A muted result is acked and dropped before dedup, so it neither emits nor opens an incident.
+* Two metrics: `rsigma_silenced_total` and `rsigma_silences_active`.
+
 ### rstix: STIX cyber-observable (SCO) model (#248)
 
 All 18 STIX 2.1 cyber-observable types land in `model::sco` with strict fixture-backed round-trips:

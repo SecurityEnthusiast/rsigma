@@ -185,3 +185,77 @@ fn grouping_annotates_incident_id_and_exposes_open_incidents() {
         serde_json::json!("malware x")
     );
 }
+
+/// Read a plain (unlabeled) counter from a Prometheus text body.
+fn counter(metrics: &str, name: &str) -> Option<u64> {
+    metrics.lines().find_map(|line| {
+        let line = line.trim();
+        line.strip_prefix(name)
+            .filter(|rest| rest.starts_with(' '))
+            .and_then(|rest| rest.trim().parse::<f64>().ok())
+            .map(|v| v as u64)
+    })
+}
+
+#[test]
+fn silence_mutes_matching_detections() {
+    let rule = temp_file(".yml", common::SIMPLE_RULE);
+    // An empty alert-pipeline config still enables the layer, so an API
+    // silence applies.
+    let alert_pipeline = temp_file(".yml", "{}\n");
+
+    let output_file = tempfile::NamedTempFile::new().unwrap();
+    let output_path = output_file.path().to_str().unwrap().to_string();
+
+    let daemon = DaemonProcess::spawn(&[
+        "engine",
+        "daemon",
+        "-r",
+        rule.path().to_str().unwrap(),
+        "--alert-pipeline",
+        alert_pipeline.path().to_str().unwrap(),
+        "--input",
+        "http",
+        "--api-addr",
+        "127.0.0.1:0",
+        "--output",
+        &format!("file://{output_path}"),
+    ]);
+
+    // Create a silence matching the rule's CommandLine, before sending events.
+    let silence = serde_json::json!({
+        "matchers": [{"selector": "match.CommandLine", "op": "=~", "value": "malware.*"}],
+        "comment": "test maintenance",
+        "created_by": "ops"
+    })
+    .to_string();
+    let (status, _) = http_post(&daemon.url("/api/v1/silences"), &silence);
+    assert_eq!(status, 201, "silence creation should return 201");
+
+    // It shows up active on the silences view.
+    let (gs, gbody) = http_get(&daemon.url("/api/v1/silences"));
+    assert_eq!(gs, 200);
+    let view: serde_json::Value = serde_json::from_str(&gbody).unwrap();
+    assert_eq!(view["count"], serde_json::json!(1));
+    assert_eq!(view["silences"][0]["state"], serde_json::json!("active"));
+    assert_eq!(view["silences"][0]["origin"], serde_json::json!("api"));
+
+    // Three matching detections, all silenced.
+    let body = serde_json::to_string(&serde_json::json!({"CommandLine": "malware z"})).unwrap();
+    for _ in 0..3 {
+        let (s, _) = http_post(&daemon.url("/api/v1/events"), &body);
+        assert_eq!(s, 200);
+    }
+
+    // Wait until the metrics confirm three results were silenced.
+    let ok = poll_until(Duration::from_secs(5), || {
+        let (_, m) = http_get(&daemon.url("/metrics"));
+        (counter(&m, "rsigma_silenced_total") == Some(3)).then_some(())
+    });
+    assert!(ok.is_some(), "expected three silenced results");
+
+    // Nothing reached the sink.
+    let text = std::fs::read_to_string(&output_path).unwrap_or_default();
+    let lines = text.lines().filter(|l| !l.trim().is_empty()).count();
+    assert_eq!(lines, 0, "silenced detections must not reach the sink");
+}

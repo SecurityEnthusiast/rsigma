@@ -16,7 +16,7 @@ use rsigma_eval::{
     DetectionBody, EvaluationResult, FieldMatch, ProcessResult, ResultBody, RuleHeader,
 };
 use rsigma_parser::Level;
-use rsigma_runtime::{DedupStore, IncidentStore, NoopMetrics, parse_alert_pipeline_config};
+use rsigma_runtime::{AlertPipelineState, NoopMetrics, parse_alert_pipeline_config};
 
 const BATCH: usize = 1_000;
 
@@ -68,15 +68,13 @@ fn bench_alert_pipeline(c: &mut Criterion) {
             |b, &cardinality| {
                 let batches = batch(cardinality);
                 b.iter(|| {
-                    // Fresh stores per iteration so dedup/grouping state does
-                    // not accumulate across iterations.
-                    let mut dedup = DedupStore::default();
-                    let mut incidents = IncidentStore::default();
+                    // Fresh state per iteration so dedup/grouping does not
+                    // accumulate across iterations.
+                    let mut state = AlertPipelineState::default();
                     let mut now = 0i64;
                     for b in &batches {
                         now += 1;
-                        let kept =
-                            pipeline.process(b.clone(), &mut dedup, &mut incidents, now, &metrics);
+                        let kept = pipeline.process(b.clone(), &mut state, now, &metrics);
                         black_box(kept);
                     }
                 });

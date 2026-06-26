@@ -115,6 +115,11 @@ pub trait MetricsHook: Send + Sync {
     /// An entity-graph guard suppressed a join. `guard` is `stop_value` or
     /// `cardinality_ceiling`.
     fn on_alert_pipeline_overmerge(&self, _guard: &str) {}
+
+    /// A result was muted by an active silence.
+    fn on_alert_pipeline_silenced(&self) {}
+    /// Report the current number of active silences.
+    fn set_silences_active(&self, _count: i64) {}
 }
 
 /// No-op implementation for use when metrics are disabled (e.g., `rsigma run`).

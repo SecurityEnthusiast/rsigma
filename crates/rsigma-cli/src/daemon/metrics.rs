@@ -75,6 +75,8 @@ pub struct Metrics {
     pub incidents_emitted_total: IntCounterVec,
     pub incident_results_total: IntCounter,
     pub incident_overmerge_total: IntCounterVec,
+    pub silenced_total: IntCounter,
+    pub silences_active: IntGauge,
 }
 
 impl Metrics {
@@ -706,6 +708,22 @@ impl Metrics {
             .register(Box::new(incident_overmerge_total.clone()))
             .unwrap();
 
+        let silenced_total = IntCounter::with_opts(Opts::new(
+            "rsigma_silenced_total",
+            "Results muted by an active silence",
+        ))
+        .unwrap();
+        let silences_active = IntGauge::with_opts(Opts::new(
+            "rsigma_silences_active",
+            "Currently-active silences",
+        ))
+        .unwrap();
+        silences_active.set(0);
+        registry.register(Box::new(silenced_total.clone())).unwrap();
+        registry
+            .register(Box::new(silences_active.clone()))
+            .unwrap();
+
         Metrics {
             registry,
             events_processed,
@@ -776,6 +794,8 @@ impl Metrics {
             incidents_emitted_total,
             incident_results_total,
             incident_overmerge_total,
+            silenced_total,
+            silences_active,
         }
     }
 
@@ -908,6 +928,14 @@ impl MetricsHook for Metrics {
         self.incident_overmerge_total
             .with_label_values(&[guard])
             .inc();
+    }
+
+    fn on_alert_pipeline_silenced(&self) {
+        self.silenced_total.inc();
+    }
+
+    fn set_silences_active(&self, count: i64) {
+        self.silences_active.set(count);
     }
 
     fn observe_processing_latency(&self, seconds: f64) {

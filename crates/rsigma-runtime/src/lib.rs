@@ -58,8 +58,10 @@ pub mod sources;
 pub mod tap;
 
 pub use alert_pipeline::{
-    AlertPipeline, AlertPipelineConfigError, AlertPipelineFile, DedupStore, GroupMode, IncidentRef,
-    IncidentResult, IncidentStore, IncludeMode, Selector, SelectorParseError, TickOutput,
+    AlertPipeline, AlertPipelineConfigError, AlertPipelineFile, AlertPipelineState, DedupStore,
+    GroupMode, IncidentRef, IncidentResult, IncidentStore, IncludeMode, MatchOp, Matcher,
+    MatcherError, MatcherSet, MatcherSpec, Selector, SelectorParseError, Silence, SilenceError,
+    SilenceOrigin, SilenceSpec, SilenceState, SilenceStore, SilenceView, TickOutput,
     build_alert_pipeline, load_alert_pipeline_file, parse_alert_pipeline_config,
 };
 pub use egress::{

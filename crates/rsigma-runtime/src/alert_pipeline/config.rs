@@ -18,6 +18,7 @@ use super::AlertPipeline;
 use super::dedup::DedupConfig;
 use super::grouping::{Caps, GroupConfig, GroupMode, IncludeMode};
 use super::selector::{Selector, SelectorParseError};
+use super::silence::{Silence, SilenceError, SilenceOrigin, SilenceSpec};
 
 /// Default re-emit cadence: `0` means pure suppression (no re-emits, only a
 /// resolved summary on expiry).
@@ -61,6 +62,10 @@ pub struct AlertPipelineFile {
     /// Incident grouping. Omitted means no grouping.
     #[serde(default)]
     pub group: Option<GroupFile>,
+    /// Static silences seeded at load and re-seeded on hot-reload. Dynamic
+    /// silences created over the API are independent of this list.
+    #[serde(default)]
+    pub silences: Vec<SilenceSpec>,
 }
 
 /// `scope:` block, mirroring the enrichers config.
@@ -177,6 +182,8 @@ pub enum AlertPipelineConfigError {
     EmptyGroupBy,
     /// `group.mode: entity_graph` with an empty `entities` list.
     EmptyEntities,
+    /// A static silence failed to build.
+    Silence(SilenceError),
 }
 
 impl std::fmt::Display for AlertPipelineConfigError {
@@ -205,6 +212,7 @@ impl std::fmt::Display for AlertPipelineConfigError {
                 f,
                 "group.mode is entity_graph but group.entities is empty; list at least one selector"
             ),
+            AlertPipelineConfigError::Silence(e) => write!(f, "silences: {e}"),
         }
     }
 }
@@ -265,7 +273,21 @@ pub fn build_alert_pipeline(
         None => None,
     };
 
-    Ok(AlertPipeline::new(scope, file.strip_event, dedup, group))
+    let mut static_silences = Vec::with_capacity(file.silences.len());
+    for spec in file.silences {
+        static_silences.push(
+            Silence::build(spec, SilenceOrigin::Static)
+                .map_err(AlertPipelineConfigError::Silence)?,
+        );
+    }
+
+    Ok(AlertPipeline::new(
+        scope,
+        file.strip_event,
+        dedup,
+        group,
+        static_silences,
+    ))
 }
 
 /// Validate a `group:` block into a [`GroupConfig`].
@@ -351,10 +373,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_file_builds_a_noop_pipeline() {
+    fn empty_file_builds() {
         let file: AlertPipelineFile = yaml_serde::from_str("{}").unwrap();
-        let pipeline = build_alert_pipeline(file).unwrap();
-        assert!(pipeline.is_noop());
+        build_alert_pipeline(file).unwrap();
     }
 
     #[test]
@@ -371,8 +392,32 @@ dedup:
   resolve_timeout: 30m
 "#;
         let file: AlertPipelineFile = yaml_serde::from_str(yaml).unwrap();
+        build_alert_pipeline(file).unwrap();
+    }
+
+    #[test]
+    fn static_silence_parses() {
+        let yaml = r#"
+silences:
+  - matchers:
+      - selector: rule
+        op: "="
+        value: noisy-rule
+    comment: maintenance
+"#;
+        let file: AlertPipelineFile = yaml_serde::from_str(yaml).unwrap();
         let pipeline = build_alert_pipeline(file).unwrap();
-        assert!(!pipeline.is_noop());
+        assert_eq!(pipeline.static_silences().len(), 1);
+    }
+
+    #[test]
+    fn static_silence_without_matchers_is_rejected() {
+        let yaml = r#"
+silences:
+  - comment: bad
+"#;
+        let file: AlertPipelineFile = yaml_serde::from_str(yaml).unwrap();
+        assert!(build_alert_pipeline(file).is_err());
     }
 
     #[test]

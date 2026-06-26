@@ -4,7 +4,45 @@ The alert pipeline is an optional post-engine stage in the daemon's output path,
 
 It is configured with a separate YAML file via `--alert-pipeline <path>` (or the `daemon.alert_pipeline` config key) and is hot-reloaded on `SIGHUP`, file-watcher changes, and `POST /api/v1/reload`; a failed reload keeps the previous pipeline active.
 
-This page covers deduplication and incident grouping.
+This page covers silencing, deduplication, and incident grouping. The stages run in that order: a silenced result is muted before it can dedup or open an incident.
+
+## Silencing
+
+A silence mutes results matching a set of matchers for a time window, modeled on Alertmanager silences. A muted result is acked and dropped before dedup, so it neither emits nor contributes to an incident.
+
+Silences come from two origins:
+
+- **static**: declared in the `--alert-pipeline` config under `silences:`. Re-seeded on hot-reload (the previous static set is replaced); use these for maintenance-as-code.
+- **api**: created at runtime over `POST /api/v1/silences`, independent of the config file. Use these for ad-hoc mutes during an incident.
+
+### Matchers
+
+A matcher is `selector <op> value`, where the left-hand side is a [field selector](#field-selectors) and `<op>` is one of `=` (equals), `!=` (not equals), `=~` (regex match), `!~` (regex no-match). Regex operators are anchored (full match). A matcher set is ANDed: every matcher must match. The same matcher engine backs inhibition.
+
+### Config (static silences)
+
+```yaml
+silences:
+  - matchers:
+      - selector: rule
+        op: "="
+        value: noisy-rule
+      - selector: level
+        op: "!="
+        value: critical
+    comment: "muted during migration"
+    created_by: ops
+    # starts_at / ends_at are optional RFC 3339 timestamps; absent means
+    # active immediately / never expires.
+```
+
+### The silence API
+
+- `POST /api/v1/silences` creates a silence from a JSON body (`matchers`, optional `starts_at`/`ends_at` RFC 3339, `created_by`, `comment`) and returns the assigned `id`.
+- `GET /api/v1/silences` lists every silence with its derived `state` (`pending` / `active` / `expired`) and `origin`.
+- `DELETE /api/v1/silences/{id}` removes a silence.
+
+Expired silences are garbage-collected on the background tick. Metrics: `rsigma_silenced_total` (results muted) and `rsigma_silences_active` (currently-active silences).
 
 ## Deduplication
 

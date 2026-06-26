@@ -17,7 +17,10 @@
 mod config;
 mod dedup;
 mod grouping;
+mod matcher;
 mod selector;
+mod silence;
+mod state;
 
 pub use config::{
     AlertPipelineConfigError, AlertPipelineFile, CapsFile, DedupFile, GroupFile, GroupModeLabel,
@@ -26,7 +29,12 @@ pub use config::{
 };
 pub use dedup::DedupStore;
 pub use grouping::{GroupMode, IncidentRef, IncidentResult, IncidentStore, IncludeMode};
+pub use matcher::{MatchOp, Matcher, MatcherError, MatcherSet, MatcherSpec};
 pub use selector::{Selector, SelectorParseError};
+pub use silence::{
+    Silence, SilenceError, SilenceOrigin, SilenceSpec, SilenceState, SilenceStore, SilenceView,
+};
+pub use state::AlertPipelineState;
 
 use rsigma_eval::{EvaluationResult, ProcessResult};
 use serde_json::Value;
@@ -35,6 +43,7 @@ use crate::{MetricsHook, Scope};
 
 use dedup::DedupConfig;
 use grouping::{GroupConfig, OvermergeGuard};
+use silence::Silence as StaticSilence;
 
 /// Output of [`AlertPipeline::tick`]: dedup summary records (re-emit /
 /// resolved) and incident emissions.
@@ -57,6 +66,7 @@ pub struct AlertPipeline {
     strip_event: bool,
     dedup: Option<DedupConfig>,
     group: Option<GroupConfig>,
+    static_silences: Vec<StaticSilence>,
 }
 
 impl AlertPipeline {
@@ -66,18 +76,20 @@ impl AlertPipeline {
         strip_event: bool,
         dedup: Option<DedupConfig>,
         group: Option<GroupConfig>,
+        static_silences: Vec<StaticSilence>,
     ) -> Self {
         AlertPipeline {
             scope,
             strip_event,
             dedup,
             group,
+            static_silences,
         }
     }
 
-    /// True when the pipeline does nothing, so the sink task can skip it.
-    pub fn is_noop(&self) -> bool {
-        self.dedup.is_none() && self.group.is_none() && !self.strip_event
+    /// The static silences declared in the config, for (re-)seeding the store.
+    pub fn static_silences(&self) -> &[StaticSilence] {
+        &self.static_silences
     }
 
     /// The configured incident include mode, if grouping is enabled.
@@ -97,14 +109,10 @@ impl AlertPipeline {
     pub fn process(
         &self,
         results: ProcessResult,
-        dedup_store: &mut DedupStore,
-        incident_store: &mut IncidentStore,
+        state: &mut AlertPipelineState,
         now: i64,
         metrics: &dyn MetricsHook,
     ) -> ProcessResult {
-        if self.is_noop() {
-            return results;
-        }
         let start = std::time::Instant::now();
         let mut kept = Vec::with_capacity(results.len());
 
@@ -114,17 +122,24 @@ impl AlertPipeline {
                 continue;
             }
 
+            // Silencing: an active silence mutes the result before dedup, so a
+            // silenced result neither emits nor opens an incident.
+            if state.silences.active_match(&result, now).is_some() {
+                metrics.on_alert_pipeline_silenced();
+                continue;
+            }
+
             // Dedup: fold duplicates into the active alert.
             if let Some(cfg) = self.dedup.as_ref() {
                 let fingerprint = dedup::fingerprint(&cfg.fingerprint, &result);
-                if dedup_store.contains(&fingerprint) {
-                    dedup_store.fold(&fingerprint, now);
+                if state.dedup.contains(&fingerprint) {
+                    state.dedup.fold(&fingerprint, now);
                     metrics.on_alert_pipeline_result("folded");
                     continue;
                 }
                 let fields = dedup::resolve_fields(&cfg.fingerprint, &result);
                 let sample = dedup::sample_of(&result);
-                dedup_store.insert(fingerprint, now, sample, fields);
+                state.dedup.insert(fingerprint, now, sample, fields);
                 metrics.on_alert_pipeline_result("emitted");
             }
 
@@ -132,7 +147,7 @@ impl AlertPipeline {
             // group-by selectors off the result while the event is still
             // present, then annotate it with the incident id.
             if let Some(gcfg) = self.group.as_ref()
-                && let Some(id) = incident_store.assign(gcfg, &result, now, |guard| {
+                && let Some(id) = state.incidents.assign(gcfg, &result, now, |guard| {
                     metrics.on_alert_pipeline_overmerge(guard_label(guard));
                 })
             {
@@ -151,10 +166,10 @@ impl AlertPipeline {
         }
 
         if self.dedup.is_some() {
-            metrics.set_alert_pipeline_store_entries(dedup_store.len() as i64);
+            metrics.set_alert_pipeline_store_entries(state.dedup.len() as i64);
         }
         if self.group.is_some() {
-            metrics.set_incidents_open(incident_store.len() as i64);
+            metrics.set_incidents_open(state.incidents.len() as i64);
         }
         metrics.observe_alert_pipeline_duration(start.elapsed().as_secs_f64());
         kept
@@ -164,8 +179,7 @@ impl AlertPipeline {
     /// emissions (`group_wait` / `group_interval` / `repeat` / `resolved`).
     pub fn tick(
         &self,
-        dedup_store: &mut DedupStore,
-        incident_store: &mut IncidentStore,
+        state: &mut AlertPipelineState,
         now: i64,
         metrics: &dyn MetricsHook,
     ) -> TickOutput {
@@ -173,7 +187,7 @@ impl AlertPipeline {
         let mut out = TickOutput::default();
 
         if let Some(cfg) = self.dedup.as_ref() {
-            for record in dedup_store.tick(cfg, now) {
+            for record in state.dedup.tick(cfg, now) {
                 metrics.on_alert_pipeline_result(record.state);
                 metrics.on_alert_pipeline_summary_emitted();
                 if record.state == "resolved" {
@@ -181,16 +195,20 @@ impl AlertPipeline {
                 }
                 out.results.push(record.result);
             }
-            metrics.set_alert_pipeline_store_entries(dedup_store.len() as i64);
+            metrics.set_alert_pipeline_store_entries(state.dedup.len() as i64);
         }
 
         if let Some(gcfg) = self.group.as_ref() {
-            for emission in incident_store.tick(gcfg, now) {
+            for emission in state.incidents.tick(gcfg, now) {
                 metrics.on_incident_emitted(emission.trigger);
                 out.incidents.push(emission.result);
             }
-            metrics.set_incidents_open(incident_store.len() as i64);
+            metrics.set_incidents_open(state.incidents.len() as i64);
         }
+
+        // Garbage-collect expired silences and refresh the active gauge.
+        state.silences.gc(now);
+        metrics.set_silences_active(state.silences.active_count(now) as i64);
 
         if !out.results.is_empty() || !out.incidents.is_empty() {
             metrics.observe_alert_pipeline_duration(start.elapsed().as_secs_f64());
@@ -269,50 +287,40 @@ mod tests {
         p: &AlertPipeline,
         ip: &str,
         level: Level,
-        dedup: &mut DedupStore,
-        incidents: &mut IncidentStore,
+        state: &mut AlertPipelineState,
         now: i64,
     ) -> ProcessResult {
-        p.process(
-            vec![detection(ip, level)],
-            dedup,
-            incidents,
-            now,
-            &NoopMetrics,
-        )
+        p.process(vec![detection(ip, level)], state, now, &NoopMetrics)
     }
 
     #[test]
     fn dedup_emits_first_fire_and_folds_duplicates() {
         let p = pipeline("dedup:\n  fingerprint: [match.SourceIp]\n  resolve_timeout: 1h\n");
-        let mut dedup = DedupStore::default();
-        let mut inc = IncidentStore::default();
+        let mut st = AlertPipelineState::default();
 
-        let first = run(&p, "10.0.0.1", Level::High, &mut dedup, &mut inc, 0);
+        let first = run(&p, "10.0.0.1", Level::High, &mut st, 0);
         assert_eq!(first.len(), 1);
-        let dup = run(&p, "10.0.0.1", Level::High, &mut dedup, &mut inc, 5);
+        let dup = run(&p, "10.0.0.1", Level::High, &mut st, 5);
         assert!(dup.is_empty());
     }
 
     #[test]
     fn out_of_scope_results_bypass_the_layer() {
         let p = pipeline("scope:\n  levels: [critical]\ndedup:\n  fingerprint: [match.SourceIp]\n");
-        let mut dedup = DedupStore::default();
-        let mut inc = IncidentStore::default();
-        let a = run(&p, "10.0.0.1", Level::High, &mut dedup, &mut inc, 0);
-        let b = run(&p, "10.0.0.1", Level::High, &mut dedup, &mut inc, 1);
+        let mut st = AlertPipelineState::default();
+        let a = run(&p, "10.0.0.1", Level::High, &mut st, 0);
+        let b = run(&p, "10.0.0.1", Level::High, &mut st, 1);
         assert_eq!(a.len(), 1);
         assert_eq!(b.len(), 1);
-        assert!(dedup.is_empty());
+        assert!(st.dedup.is_empty());
     }
 
     #[test]
     fn grouping_annotates_incident_id_and_opens_on_group_wait() {
         let p =
             pipeline("group:\n  by: [match.SourceIp]\n  group_wait: 30s\n  resolve_timeout: 1h\n");
-        let mut dedup = DedupStore::default();
-        let mut inc = IncidentStore::default();
-        let kept = run(&p, "10.0.0.1", Level::High, &mut dedup, &mut inc, 0);
+        let mut st = AlertPipelineState::default();
+        let kept = run(&p, "10.0.0.1", Level::High, &mut st, 0);
         assert_eq!(kept.len(), 1);
         let id = kept[0].header.enrichments.as_ref().unwrap()["incident_id"]
             .as_str()
@@ -321,12 +329,8 @@ mod tests {
         assert!(!id.is_empty());
 
         // No incident emission before group_wait; one open emission after.
-        assert!(
-            p.tick(&mut dedup, &mut inc, 10, &NoopMetrics)
-                .incidents
-                .is_empty()
-        );
-        let out = p.tick(&mut dedup, &mut inc, 40, &NoopMetrics);
+        assert!(p.tick(&mut st, 10, &NoopMetrics).incidents.is_empty());
+        let out = p.tick(&mut st, 40, &NoopMetrics);
         assert_eq!(out.incidents.len(), 1);
         assert_eq!(out.incidents[0].incident_id, id);
         assert_eq!(out.incidents[0].trigger, "group_wait");
@@ -337,10 +341,9 @@ mod tests {
         let p = pipeline(
             "dedup:\n  fingerprint: [rule, match.SourceIp]\n  resolve_timeout: 1h\ngroup:\n  by: [match.SourceIp]\n  group_wait: 0s\n",
         );
-        let mut dedup = DedupStore::default();
-        let mut inc = IncidentStore::default();
+        let mut st = AlertPipelineState::default();
         // First fire: deduped (passes) and grouped.
-        let a = run(&p, "10.0.0.1", Level::High, &mut dedup, &mut inc, 0);
+        let a = run(&p, "10.0.0.1", Level::High, &mut st, 0);
         assert_eq!(a.len(), 1);
         assert!(
             a[0].header
@@ -350,21 +353,39 @@ mod tests {
                 .contains_key("incident_id")
         );
         // Duplicate: folded by dedup, never reaches grouping.
-        let b = run(&p, "10.0.0.1", Level::High, &mut dedup, &mut inc, 1);
+        let b = run(&p, "10.0.0.1", Level::High, &mut st, 1);
         assert!(b.is_empty());
-        assert_eq!(inc.len(), 1, "the duplicate did not open a second incident");
+        assert_eq!(
+            st.incidents.len(),
+            1,
+            "the duplicate did not open a second incident"
+        );
     }
 
     #[test]
     fn strip_event_drops_payload_after_grouping() {
         let p = pipeline("strip_event: true\ngroup:\n  by: [event.raw]\n  group_wait: 0s\n");
-        let mut dedup = DedupStore::default();
-        let mut inc = IncidentStore::default();
-        let kept = run(&p, "10.0.0.1", Level::High, &mut dedup, &mut inc, 0);
+        let mut st = AlertPipelineState::default();
+        let kept = run(&p, "10.0.0.1", Level::High, &mut st, 0);
         assert_eq!(kept.len(), 1);
         // Event stripped from the delivered result, but grouping still keyed
         // on event.raw (one incident opened).
         assert!(kept[0].as_detection().unwrap().event.is_none());
-        assert_eq!(inc.len(), 1);
+        assert_eq!(st.incidents.len(), 1);
+    }
+
+    #[test]
+    fn static_silence_mutes_matching_results() {
+        let p = pipeline(
+            "silences:\n  - matchers:\n      - selector: match.SourceIp\n        op: \"=\"\n        value: 10.0.0.1\ndedup:\n  fingerprint: [match.SourceIp]\n",
+        );
+        let mut st = AlertPipelineState::default();
+        st.silences.set_static(p.static_silences().to_vec());
+
+        // 10.0.0.1 is silenced (dropped); 10.0.0.2 passes through.
+        assert!(run(&p, "10.0.0.1", Level::High, &mut st, 0).is_empty());
+        assert_eq!(run(&p, "10.0.0.2", Level::High, &mut st, 0).len(), 1);
+        // The silenced result never entered the dedup store.
+        assert_eq!(st.dedup.len(), 1);
     }
 }
