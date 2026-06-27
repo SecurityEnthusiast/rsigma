@@ -35,7 +35,10 @@ Only `--rules` is required. The static signals (untagged, no-owner, incomplete-a
 | Rules | `--rules <PATH>` | yes | The rule set to report on (repeatable; file or directory). |
 | Prometheus snapshot or endpoint | `--metrics <FILE\|URL>` | no | Per-rule fire volume from `rsigma_detection_matches_by_rule_total` and `rsigma_correlation_matches_by_rule_total`, joined by `rule_title`. Drives `silent` and `noisy`. |
 | Prometheus query API | `--metrics-window <DURATION>` | no | When `--metrics` is a Prometheus query-API base, switches to a `query_range` over the window to derive a true last-fired timestamp. |
+| Event corpus | `--corpus <PATH>` | no | The offline alternative to `--metrics` (no daemon, no Prometheus): a file or directory replayed through the engine for per-rule fire counts. Combined with `--metrics`, the counts are summed. Also drives `silent` and `noisy`. |
 | Field-observability snapshot | `--fields <FILE>` | no | The `/api/v1/fields` payload (or its `missing` array) from a daemon with `--observe-fields`, or the `rsigma engine eval --observe-fields` report. Drives `broken-fields`. |
+
+At least one of `--metrics` or `--corpus` is required for the `silent` and `noisy` signals; the static signals need only `--rules`.
 
 The Prometheus join inherits the caveat documented in [Metrics](../../reference/metrics.md): `rule_title` is not guaranteed unique, so when two rules share a title their counters add together. The shared reader is the same one [`rule scorecard`](scorecard.md) uses.
 
@@ -48,6 +51,8 @@ The broken-coverage rollup needs each rule's full referenced-field set, so it jo
 | `--rules <PATH>` | required | Sigma rule file or directory (repeatable). May also be supplied via `hygiene.rules`. |
 | `--metrics <FILE\|URL>` | unset | A Prometheus exposition snapshot file or a `/metrics` URL. May also be supplied via `hygiene.metrics`. |
 | `--metrics-window <DURATION>` | unset | Range-query window (e.g. `7d`, `24h`) when `--metrics` is a query-API base. May also be supplied via `hygiene.metrics_window`. |
+| `--corpus <PATH>` | unset | Event corpus file or directory replayed for offline fire counts (repeatable). |
+| `--input-format <FORMAT>` | `auto` | Input log format for non-NDJSON corpus files (`json`, `syslog`, `plain`, `logfmt`, `cef`, `auto`). Only used with `--corpus`. |
 | `--fields <FILE>` | unset | A field-observability JSON snapshot. May also be supplied via `hygiene.fields`. |
 | `--silent-threshold <DURATION>` | `365d` | Age past which a never-fired rule is a retirement candidate. May also be supplied via `hygiene.silent_threshold`. |
 | `--stale-threshold <DURATION>` | `365d` | Modified-date age past which a rule is flagged stale. May also be supplied via `hygiene.stale_threshold`. |
@@ -90,6 +95,12 @@ rsigma rule hygiene --rules ./rules
 
 ```bash
 rsigma rule hygiene --rules ./rules --metrics http://localhost:9090/metrics
+```
+
+### Use a replayed corpus instead of Prometheus (offline)
+
+```bash
+rsigma rule hygiene --rules ./rules --corpus ./corpus
 ```
 
 ### Add broken field coverage from a field-observability snapshot

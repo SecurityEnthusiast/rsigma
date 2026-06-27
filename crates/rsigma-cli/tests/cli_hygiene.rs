@@ -78,6 +78,56 @@ fn hygiene_static_signals_need_only_rules() {
 }
 
 #[test]
+fn hygiene_corpus_replay_is_offline_fire_source() {
+    // Replaying a corpus that fires only Alpha and Bravo leaves the other rules
+    // silent, with no Prometheus source. The corpus directory is walked.
+    let output = rsigma()
+        .args([
+            "rule",
+            "hygiene",
+            "-r",
+            &fixture("rules.yml"),
+            "--corpus",
+            &fixture("corpus"),
+            "--output-format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let doc: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(doc["summary"]["metrics_source"], true);
+    let silent: Vec<&str> = doc["never_fired"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(silent.contains(&"Charlie Quiet"));
+    // Alpha and Bravo fired in the corpus, so they are not silent.
+    assert!(!silent.contains(&"Alpha Clean"));
+    assert!(!silent.contains(&"Bravo Noisy"));
+}
+
+#[test]
+fn hygiene_corpus_missing_path_is_config_error() {
+    rsigma()
+        .args([
+            "rule",
+            "hygiene",
+            "-r",
+            &fixture("rules.yml"),
+            "--corpus",
+            "/no/such/corpus",
+        ])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("corpus path not found"));
+}
+
+#[test]
 fn hygiene_fail_on_silent_exits_one() {
     rsigma()
         .args([

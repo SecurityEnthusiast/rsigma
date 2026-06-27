@@ -22,9 +22,10 @@ The report carries seven signals in one pass:
 |----------|------|------------|
 | Just the rules | `--rules <PATH>` | untagged, no-owner, incomplete-ads, deprecated |
 | A Prometheus scrape or endpoint | `--metrics <FILE\|URL>` | silent, noisy |
+| An event corpus (offline) | `--corpus <PATH>` | silent, noisy |
 | A field-observability snapshot | `--fields <FILE>` | broken-fields |
 
-The static signals need only `--rules`, so the cheapest useful run is one that flags untagged, unowned, undocumented, and deprecated rules with no infrastructure at all. Layering in `--metrics` and `--fields` adds the data-driven signals.
+The static signals need only `--rules`, so the cheapest useful run is one that flags untagged, unowned, undocumented, and deprecated rules with no infrastructure at all. Layering in `--metrics` (or `--corpus`) and `--fields` adds the data-driven signals.
 
 ### Production fire volume
 
@@ -40,6 +41,12 @@ A point-in-time scrape establishes silence by absence: a rule whose counter has 
 rsigma rule hygiene --rules ./rules \
     --metrics http://prometheus:9090 --metrics-window 90d \
     --silent-threshold 90d
+```
+
+When there is no daemon or Prometheus to read, `--corpus` is the offline alternative: it replays a corpus (a file or a directory walked recursively) through the engine and counts per-rule fires, producing the same silence and noisy signals. Correlation state resets per file. Combined with `--metrics`, the counts are summed.
+
+```bash
+rsigma rule hygiene --rules ./rules --corpus ./corpus
 ```
 
 ### Broken field coverage

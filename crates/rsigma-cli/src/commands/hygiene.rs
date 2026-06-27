@@ -60,6 +60,17 @@ pub(crate) struct HygieneArgs {
     #[arg(long = "metrics-window", value_name = "DURATION")]
     pub metrics_window: Option<String>,
 
+    /// Event corpus file(s) or directory(ies) to replay for per-rule fire counts
+    /// when no Prometheus source is available (repeatable). Combined with
+    /// `--metrics`, the counts are summed.
+    #[arg(long = "corpus", value_name = "PATH")]
+    pub corpus: Vec<PathBuf>,
+
+    /// Input log format for non-NDJSON corpus files (json, syslog, plain,
+    /// logfmt, cef, auto). Only used with `--corpus`.
+    #[arg(long = "input-format", value_name = "FORMAT", default_value = config::defaults::INPUT_FORMAT)]
+    pub input_format: String,
+
     /// A #55 field-observability JSON snapshot (the `/api/v1/fields` payload or
     /// just its `missing` array). Drives the broken-coverage signal.
     #[arg(long = "fields", value_name = "FILE")]
@@ -360,7 +371,7 @@ pub(crate) fn cmd_hygiene(args: HygieneArgs, ctx: OutputCtx) -> i32 {
 
     let collection = crate::load_collection_multi(&args.rules);
 
-    let metrics = match &args.metrics {
+    let mut metrics = match &args.metrics {
         Some(spec) => match metrics_source::load_metrics(spec, args.metrics_window.as_deref()) {
             Ok(m) => Some(m),
             Err(e) => {
@@ -370,6 +381,31 @@ pub(crate) fn cmd_hygiene(args: HygieneArgs, ctx: OutputCtx) -> i32 {
         },
         None => None,
     };
+
+    // The offline alternative to `--metrics`: replay a corpus through the engine
+    // for per-rule fire counts, merged into the same by-title table the silence
+    // and noisy signals consume.
+    if !args.corpus.is_empty() {
+        match corpus::fire_counts(&collection, &args.corpus, &args.input_format) {
+            Ok(counts) => match &mut metrics {
+                Some(m) => {
+                    for (title, count) in counts {
+                        *m.by_title.entry(title).or_insert(0) += count;
+                    }
+                }
+                None => {
+                    metrics = Some(MetricsData {
+                        by_title: counts,
+                        last_fired: std::collections::BTreeMap::new(),
+                    });
+                }
+            },
+            Err(e) => {
+                eprintln!("error: {e}");
+                return exit_code::CONFIG_ERROR;
+            }
+        }
+    }
 
     let missing_fields = match &args.fields {
         Some(path) => match load_missing_fields(path) {
@@ -926,6 +962,157 @@ fn signal_list(report: &HygieneReport, sig: Signal) -> &[String] {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Corpus replay (offline never-fired and fire-count source)
+// ---------------------------------------------------------------------------
+
+/// Replay an event corpus through the engine to produce per-rule fire counts,
+/// keyed by `rule_title` so they merge with the Prometheus table. Reuses the
+/// shared format-aware [`crate::commands::eval_stream`] loop; correlation state
+/// resets per file so each file is an independent window.
+mod corpus {
+    use std::collections::BTreeMap;
+    use std::fs::File;
+    use std::io::BufReader;
+    use std::path::{Path, PathBuf};
+
+    use rsigma_eval::{CorrelationConfig, CorrelationEngine, Engine, EvaluationResult};
+    use rsigma_parser::SigmaCollection;
+
+    use crate::EventFilter;
+    use crate::commands::eval_stream::{
+        CorrelationProcessor, DetectionProcessor, EventProcessor, stream_events,
+    };
+    use crate::config;
+
+    /// Per-rule fire counts from replaying `paths`, keyed by `rule_title`.
+    pub(super) fn fire_counts(
+        collection: &SigmaCollection,
+        paths: &[PathBuf],
+        input_format: &str,
+    ) -> Result<BTreeMap<String, u64>, String> {
+        let files = collect_files(paths)?;
+        let mut counts: BTreeMap<String, u64> = BTreeMap::new();
+        let has_correlations = !collection.correlations.is_empty();
+        // Detection-only rule sets are stateless, so one engine is reused; with
+        // correlations the engine is rebuilt per file to reset window state.
+        let detection_engine = (!has_correlations).then(|| build_detection_engine(collection));
+
+        for path in &files {
+            if has_correlations {
+                let mut engine = build_correlation_engine(collection);
+                let mut processor = CorrelationProcessor {
+                    engine: &mut engine,
+                };
+                replay_file(path, input_format, &mut processor, &mut counts);
+            } else {
+                let engine = detection_engine.as_ref().expect("detection engine built");
+                let mut processor = DetectionProcessor { engine };
+                replay_file(path, input_format, &mut processor, &mut counts);
+            }
+        }
+        Ok(counts)
+    }
+
+    fn replay_file<P: EventProcessor>(
+        path: &Path,
+        input_format: &str,
+        processor: &mut P,
+        counts: &mut BTreeMap<String, u64>,
+    ) {
+        let mut on_result = |m: &EvaluationResult| {
+            *counts.entry(m.header.rule_title.clone()).or_insert(0) += 1;
+        };
+        let format = match extension(path).as_deref() {
+            Some("ndjson") | Some("jsonl") => "json",
+            Some("evtx") => {
+                eprintln!(
+                    "warning: skipping EVTX corpus file {} (not supported by rule hygiene)",
+                    path.display()
+                );
+                return;
+            }
+            _ => input_format,
+        };
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!(
+                    "warning: could not open corpus file {}: {e}",
+                    path.display()
+                );
+                return;
+            }
+        };
+        stream_events(
+            BufReader::new(file),
+            &EventFilter::None,
+            format,
+            config::defaults::SYSLOG_TZ,
+            config::defaults::SYSLOG_STRIP_BOM,
+            None,
+            processor,
+            &mut on_result,
+        );
+    }
+
+    fn build_detection_engine(collection: &SigmaCollection) -> Engine {
+        let mut engine = Engine::new();
+        if let Err(e) = engine.add_collection(collection) {
+            eprintln!("error compiling rules for corpus replay: {e}");
+            std::process::exit(crate::exit_code::RULE_ERROR);
+        }
+        engine
+    }
+
+    fn build_correlation_engine(collection: &SigmaCollection) -> CorrelationEngine {
+        let mut engine = CorrelationEngine::new(CorrelationConfig::default());
+        if let Err(e) = engine.add_collection(collection) {
+            eprintln!("error compiling rules for corpus replay: {e}");
+            std::process::exit(crate::exit_code::RULE_ERROR);
+        }
+        engine
+    }
+
+    fn extension(path: &Path) -> Option<String> {
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+    }
+
+    /// Expand each path into the corpus files it contributes: a file is itself,
+    /// a directory is walked recursively. A missing path is a hard error.
+    fn collect_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
+        let mut out = Vec::new();
+        for path in paths {
+            if path.is_dir() {
+                walk_dir(path, &mut out)?;
+            } else if path.is_file() {
+                out.push(path.clone());
+            } else {
+                return Err(format!("corpus path not found: {}", path.display()));
+            }
+        }
+        out.sort();
+        Ok(out)
+    }
+
+    fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+        let entries = std::fs::read_dir(dir)
+            .map_err(|e| format!("could not read corpus directory {}: {e}", dir.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("could not read corpus entry: {e}"))?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk_dir(&path, out)?;
+            } else if path.is_file() {
+                out.push(path);
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -957,6 +1144,7 @@ mod tests {
             args.stale_threshold,
             config::defaults::HYGIENE_STALE_THRESHOLD
         );
+        assert_eq!(args.input_format, config::defaults::INPUT_FORMAT);
     }
 
     #[test]
