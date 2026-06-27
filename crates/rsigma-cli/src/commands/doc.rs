@@ -8,12 +8,15 @@
 //! reused fields, to stdout or merged into the rule file with `--in-place`.
 
 use std::path::{Path, PathBuf};
+use std::process;
 
-use clap::{Args, ValueEnum};
+use clap::parser::ValueSource;
+use clap::{ArgMatches, Args, ValueEnum};
 use rsigma_parser::ads::{is_exempt, scaffold_missing};
 use rsigma_parser::{AdsContent, AdsSection, LintConfig, SigmaRule, Status};
 use serde::Serialize;
 
+use crate::config;
 use crate::exit_code;
 use crate::output::{DelimitedWriter, OutputCtx, OutputFormat, Tabular, render_json};
 
@@ -54,6 +57,44 @@ pub(crate) struct DocArgs {
     /// built-in defaults (enforce `stable`, require every section).
     #[arg(long = "lint-config", value_name = "PATH")]
     pub lint_config: Option<PathBuf>,
+
+    /// Path to an rsigma config file. Overrides config-file discovery.
+    /// CLI flags still take precedence over config-file values.
+    #[arg(long = "config", value_name = "PATH")]
+    pub config: Option<PathBuf>,
+
+    /// Print the effective `doc` config (defaults < file < env) and exit.
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
+}
+
+/// Apply the layered `doc` config (file < env) under the CLI flags, then run.
+/// `--dry-run` prints the resolved config and exits.
+pub(crate) fn apply_doc_config(args: &mut DocArgs, matches: &ArgMatches) {
+    let base = config::load_and_merge(args.config.as_deref());
+    if args.dry_run {
+        config::print_dry_run("doc", &base);
+        process::exit(exit_code::SUCCESS);
+    }
+    overlay_doc_config(args, matches, base);
+}
+
+/// Pure overlay of the resolved `doc` section onto `args` (no disk access),
+/// split out so it can be unit-tested.
+fn overlay_doc_config(args: &mut DocArgs, matches: &ArgMatches, base: config::RsigmaConfigPartial) {
+    let explicit = |id: &str| {
+        matches!(
+            matches.value_source(id),
+            Some(ValueSource::CommandLine | ValueSource::EnvVariable)
+        )
+    };
+
+    if let Some(doc) = base.doc
+        && !explicit("fail_on_missing")
+        && let Some(v) = doc.fail_on_missing
+    {
+        args.fail_on_missing = v;
+    }
 }
 
 /// Render format for `rule doc`.
@@ -560,6 +601,18 @@ fn merge_in_place(path: &Path, entries: &[rsigma_parser::AdsScaffoldEntry]) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::{Command, FromArgMatches};
+
+    fn parse(argv: &[&str]) -> (DocArgs, ArgMatches) {
+        let cmd = DocArgs::augment_args(Command::new("doc"));
+        let matches = cmd.get_matches_from(argv);
+        let args = DocArgs::from_arg_matches(&matches).expect("valid args");
+        (args, matches)
+    }
+
+    fn partial(yaml: &str) -> config::RsigmaConfigPartial {
+        yaml_serde::from_str(yaml).expect("valid partial")
+    }
 
     #[test]
     fn yaml_quote_escapes() {
@@ -571,5 +624,27 @@ mod tests {
     fn status_strings() {
         assert_eq!(status_str(Status::Stable), "stable");
         assert_eq!(status_str(Status::Experimental), "experimental");
+    }
+
+    #[test]
+    fn defaults_match_config_defaults() {
+        let (args, _) = parse(&["doc", "rule.yml"]);
+        assert_eq!(args.fail_on_missing, config::defaults::DOC_FAIL_ON_MISSING);
+    }
+
+    #[test]
+    fn config_fills_unset_fail_on_missing() {
+        let (mut args, matches) = parse(&["doc", "rule.yml"]);
+        let base = partial("doc:\n  fail_on_missing: true\n");
+        overlay_doc_config(&mut args, &matches, base);
+        assert!(args.fail_on_missing);
+    }
+
+    #[test]
+    fn cli_flag_wins_over_config() {
+        let (mut args, matches) = parse(&["doc", "rule.yml", "--fail-on-missing"]);
+        let base = partial("doc:\n  fail_on_missing: false\n");
+        overlay_doc_config(&mut args, &matches, base);
+        assert!(args.fail_on_missing);
     }
 }
