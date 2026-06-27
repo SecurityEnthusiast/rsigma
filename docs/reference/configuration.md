@@ -1,6 +1,6 @@
 # Configuration
 
-`rsigma engine daemon`, `rsigma engine eval`, `rsigma rule backtest`, `rsigma rule coverage`, `rsigma rule scorecard`, and `rsigma rule visibility` can be driven by a YAML config file in addition to CLI flags and environment variables. This page describes the schema, the discovery chain, and the precedence model that decides which value wins when more than one layer sets the same key.
+`rsigma engine daemon`, `rsigma engine eval`, `rsigma rule backtest`, `rsigma rule coverage`, `rsigma rule scorecard`, `rsigma rule visibility`, and `rsigma rule hygiene` can be driven by a YAML config file in addition to CLI flags and environment variables. This page describes the schema, the discovery chain, and the precedence model that decides which value wins when more than one layer sets the same key.
 
 The same machinery is exposed through the [`rsigma config` group](../cli/config/init.md) for scaffolding, validation, introspection, and reload.
 
@@ -137,6 +137,15 @@ scorecard:
 visibility:
   # mapping: ./mapping.json
   fail_on_blind_spots: false
+
+hygiene:
+  # rules: [./rules]
+  # metrics: http://localhost:9090/metrics
+  # fields: ./fields.json
+  silent_threshold: 365d
+  stale_threshold: 365d
+  # noisy_threshold: 100000
+  # fail_on: [silent]
 ```
 
 Run [`rsigma config init`](../cli/config/init.md) to scaffold a full, commented version. The full machine-readable schema is emitted by [`rsigma config schema`](../cli/config/schema.md).
@@ -162,6 +171,7 @@ Run [`rsigma config init`](../cli/config/init.md) to scaffold a full, commented 
 | `scorecard` | `rule scorecard` | The two required reports (`backtest`, `coverage`), the verdict thresholds (`min_precision`, `tune_max_precision`, `retire_max_precision`, `min_volume`, `stale_window`, `max_fp_ratio`), the optional inputs (`metrics`, `metrics_window`, `triage`), `fail_on`, and `report`. |
 | `visibility` | `rule visibility` | `mapping` (logsource/field to ATT&CK data-source table path or URL; unset uses the bundled default) and `fail_on_blind_spots`. `rules` and `observed` are intentionally absent (they are invocation-specific CLI arguments). |
 | `doc` | `rule doc` | `fail_on_missing` (the CI gate). The ADS bar itself (enforced statuses and required sections) lives in `.rsigma-lint.yml` under an `ads:` block, not here. See [Detection Strategy](../guide/detection-strategy.md). |
+| `hygiene` | `rule hygiene` | `rules`, the optional sources (`metrics`, `metrics_window`, `fields`), the thresholds (`silent_threshold`, `stale_threshold`, `noisy_threshold`), and `fail_on`. See [Rule Hygiene](../guide/rule-hygiene.md). |
 | `mcp` | `mcp serve` | `mcp.http_addr` (the `--http` bind address; unset means stdio), `mcp.lint_config`, and `mcp.rules_dir`. The auth token is secret and stays flag/env-only. Inert unless built with the `mcp` feature. |
 
 ### Secrets policy
@@ -192,7 +202,7 @@ The uniform scheme is detected by the `__` separator, so it never collides with 
 
 ## `--dry-run` and `config show`
 
-[`config show`](../cli/config/show.md) folds `default + file + env` and reports the winning layer for each leaf. To preview what a real command will use, including its flag layer, the daemon, eval, backtest, coverage, scorecard, and visibility commands support `--dry-run`:
+[`config show`](../cli/config/show.md) folds `default + file + env` and reports the winning layer for each leaf. To preview what a real command will use, including its flag layer, the daemon, eval, backtest, coverage, scorecard, visibility, and hygiene commands support `--dry-run`:
 
 ```bash
 rsigma engine daemon --dry-run

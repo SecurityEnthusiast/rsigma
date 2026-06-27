@@ -66,7 +66,7 @@ These flags work with every subcommand, mirroring how `--log-format` does, and t
 
 ## Subcommands
 
-Commands are grouped into four noun-led groups: `engine` (eval / daemon), `rule` (parse / validate / lint / fields / backtest / coverage / scorecard / visibility / condition / stdin), `backend` (convert / targets / formats), and `pipeline` (resolve).
+Commands are grouped into four noun-led groups: `engine` (eval / daemon), `rule` (parse / validate / lint / fields / doc / backtest / coverage / scorecard / visibility / hygiene / condition / stdin), `backend` (convert / targets / formats), and `pipeline` (resolve).
 
 ### Migrating from the old flat commands
 
@@ -113,7 +113,7 @@ rsigma config path
 rsigma config reload
 ```
 
-`engine daemon`, `engine eval`, `rule backtest`, `rule coverage`, `rule scorecard`, `rule visibility`, and `rule doc` also support `--config <PATH>` (load only that file) and `--dry-run` (print the effective section and exit `0`).
+`engine daemon`, `engine eval`, `rule backtest`, `rule coverage`, `rule scorecard`, `rule visibility`, `rule doc`, and `rule hygiene` also support `--config <PATH>` (load only that file) and `--dry-run` (print the effective section and exit `0`).
 
 Discovery walks: `/etc/rsigma/config.yaml` → `~/.config/rsigma/config.yaml` → nearest `.rsigmarc` (walked up from CWD) → `./rsigma.yaml`. Override with `--config`. The full schema, environment-variable scheme (`RSIGMA_<SECTION>__<KEY>`), and secrets policy live in the [Configuration Reference](https://timescale.github.io/rsigma/reference/configuration/).
 
@@ -965,6 +965,24 @@ rsigma rule visibility -r rules/ --observed fields.json --fail-on-blind-spots
 ```
 
 Exit codes: `0` success, `1` blind spots under `--fail-on-blind-spots`, `2` unreadable rules, `3` an unfetchable mapping table or malformed observed report. The full flag table and report shape are in the [`rule visibility` reference](https://timescale.github.io/rsigma/cli/rule/visibility/).
+
+### `rule hygiene`: Flag retirement and clean-up candidates
+
+Assembles the signals rsigma already produces into one report of retirement and clean-up candidates: never-fired (silence) and noisy over a Prometheus snapshot or endpoint, untagged (the same `attack.*` notion `rule coverage` uses), no-owner, incomplete ADS, broken field coverage over a field-observability snapshot, and deprecated/stale status. The static signals need only `--rules`; `--metrics` adds silence and noise, `--fields` adds broken coverage.
+
+```bash
+# Static signals from the rules alone
+rsigma rule hygiene -r rules/
+
+# Add production fire volume for silence and noise, then add broken field coverage
+rsigma rule hygiene -r rules/ --metrics http://localhost:9090/metrics --fields fields.json
+
+# Gate CI on rules silent past a year, and on rules with no owner
+rsigma rule hygiene -r rules/ --metrics metrics.txt --silent-threshold 365d \
+    --fail-on silent --fail-on no-owner
+```
+
+The report renders through the global `--output-format` (TTY table, json/ndjson/csv/tsv) plus a `--report` JSON file. `--fail-on` is repeatable over `silent`, `noisy`, `untagged`, `no-owner`, `incomplete-ads`, `broken-fields`, `deprecated`, or `any`. Exit codes: `0` success or report-only, `1` a selected `--fail-on` condition matched, `2` unreadable rules, `3` a bad flag or an unreadable metrics/fields input. The full reference is in the [`rule hygiene` reference](https://timescale.github.io/rsigma/cli/rule/hygiene/).
 
 ### `pipeline resolve`: Test dynamic source resolution
 

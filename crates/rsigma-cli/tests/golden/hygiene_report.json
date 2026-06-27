@@ -1,0 +1,85 @@
+{
+  "summary": {
+    "rules_total": 7,
+    "detection_rules": 7,
+    "correlation_rules": 0,
+    "flagged": 6,
+    "metrics_source": true,
+    "fields_source": true,
+    "never_fired": 1,
+    "noisy": 1,
+    "untagged": 1,
+    "no_owner": 1,
+    "incomplete_ads": 1,
+    "broken_coverage": 1,
+    "stale_status": 1
+  },
+  "rules": [
+    {
+      "rule": "Bravo Noisy",
+      "id": "00000000-0000-0000-0000-0000000000b2",
+      "kind": "detection",
+      "signals": ["noisy"],
+      "fire_count": 500,
+      "owner": "Bob",
+      "status": "test",
+      "tags": ["attack.t1071"]
+    },
+    {
+      "rule": "Charlie Quiet",
+      "id": "00000000-0000-0000-0000-0000000000c3",
+      "kind": "detection",
+      "signals": ["silent"],
+      "fire_count": 0,
+      "owner": "Carol",
+      "status": "test",
+      "tags": ["attack.t1003"]
+    },
+    {
+      "rule": "Delta Untagged Orphan",
+      "id": "00000000-0000-0000-0000-0000000000d4",
+      "kind": "detection",
+      "signals": ["untagged", "no-owner"],
+      "fire_count": 3,
+      "status": "test",
+      "tags": []
+    },
+    {
+      "rule": "Echo Incomplete ADS",
+      "id": "00000000-0000-0000-0000-0000000000e5",
+      "kind": "detection",
+      "signals": ["incomplete-ads"],
+      "fire_count": 2,
+      "owner": "Eve",
+      "status": "stable",
+      "tags": ["attack.t1059"]
+    },
+    {
+      "rule": "Foxtrot Deprecated",
+      "id": "00000000-0000-0000-0000-0000000000f6",
+      "kind": "detection",
+      "signals": ["deprecated"],
+      "fire_count": 4,
+      "owner": "Frank",
+      "status": "deprecated",
+      "tags": ["attack.t1059"]
+    },
+    {
+      "rule": "Golf Broken Fields",
+      "id": "00000000-0000-0000-0000-000000000077",
+      "kind": "detection",
+      "signals": ["broken-fields"],
+      "fire_count": 6,
+      "owner": "Grace",
+      "status": "test",
+      "tags": ["attack.t1059"]
+    }
+  ],
+  "never_fired": ["Charlie Quiet"],
+  "noisy": ["Bravo Noisy"],
+  "untagged": ["Delta Untagged Orphan"],
+  "no_owner": ["Delta Untagged Orphan"],
+  "incomplete_ads": ["Echo Incomplete ADS"],
+  "broken_coverage": ["Golf Broken Fields"],
+  "stale_status": ["Foxtrot Deprecated"]
+}

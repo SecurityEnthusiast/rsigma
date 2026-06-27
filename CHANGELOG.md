@@ -4,6 +4,14 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Rule hygiene and retirement report
+
+A new `rsigma rule hygiene` subcommand assembles the signals rsigma already produces into one report of retirement and clean-up candidates, the detection-lifecycle phase the toolkit did not yet touch. It runs no evaluation: the static signals read off the parsed rules, the data-driven signals join optional snapshots. The feature is additive and ships with no new dependencies.
+
+* **Signals.** Seven, in one report: never-fired (silence) and noisy (a robust median-plus-MAD outlier test, with an absolute `--noisy-threshold` override) over a Prometheus snapshot or endpoint window; untagged (the same `attack.*` notion `rule coverage` uses, via a shared extractor); no-owner (from a `custom_attributes` `owner` key or the `author` field); incomplete-ads (a `stable` detection rule missing required ADS sections, mirroring the lint default bar); broken-fields (a rule whose referenced fields are all in a field-observability snapshot's never-seen set); and deprecated/stale (`status: deprecated`/`unsupported`, or a `modified`/`date` older than `--stale-threshold`).
+* **Command.** `rsigma rule hygiene --rules <PATH>... [--metrics <FILE|URL>] [--metrics-window <DUR>] [--corpus <PATH>] [--fields <FILE>] [--silent-threshold <DUR>] [--stale-threshold <DUR>] [--noisy-threshold <N>] [--report <FILE>] [--fail-on <COND>]...`, under the `rule` group. Only `--rules` is required; the static signals need nothing else, and `--corpus` is the offline alternative to `--metrics` for the silence and noisy signals. The report renders through the global output-format layer (TTY table, json/ndjson/csv/tsv) plus a `--report` JSON file, and a repeatable `--fail-on` (`silent`, `noisy`, `untagged`, `no-owner`, `incomplete-ads`, `broken-fields`, `deprecated`, or `any`) exits `1` under the house exit-code scheme. A `hygiene` config section carries the inputs, thresholds, and the gate default.
+* **Internals.** The ATT&CK tag extraction and the Prometheus exposition reader plus metrics loader were lifted into shared `crate::rule_meta` and `crate::metrics_source` modules that `rule coverage` and `rule scorecard` now consume, so the commands cannot drift on what "untagged" means or on how the per-rule counters are parsed. Behavior-neutral; the existing coverage and scorecard tests (and the promtext fuzz target) are unchanged.
+
 ### ADS detection-strategy metadata and lint (#261)
 
 Optional [Palantir Alerting and Detection Strategy (ADS)](https://github.com/palantir/alerting-detection-strategy-framework) metadata on Sigma rules, with enforcement in the linter and a new authoring command. The whole feature is additive metadata plus reads over it: no engine, eval, or hot-path changes, and no new dependencies.

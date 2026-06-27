@@ -5,7 +5,9 @@ mod daemon;
 pub(crate) mod exit_code;
 mod fix;
 pub(crate) mod logsource_opts;
+pub(crate) mod metrics_source;
 pub(crate) mod output;
+pub(crate) mod rule_meta;
 
 use std::path::PathBuf;
 use std::process;
@@ -13,7 +15,7 @@ use std::process;
 use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
 use commands::{
     BacktestArgs, ClassifyArgs, ConditionArgs, ConvertArgs, CoverageArgs, DocArgs, EvalArgs,
-    FieldsArgs, LintArgs, LintCounts, ListFormatsArgs, MigrateSourcesArgs, ParseArgs,
+    FieldsArgs, HygieneArgs, LintArgs, LintCounts, ListFormatsArgs, MigrateSourcesArgs, ParseArgs,
     ScorecardArgs, StatusArgs, StdinArgs, TailArgs, TapArgs, ValidateArgs, VisibilityArgs,
 };
 // `pipeline resolve` resolves dynamic sources, which needs the async runtime
@@ -251,6 +253,9 @@ enum RuleCommands {
 
     /// Score telemetry visibility: DeTT&CT export + visibility Navigator layer
     Visibility(VisibilityArgs),
+
+    /// Flag rule hygiene and retirement candidates (silence, noise, tags, owner, ADS, fields, status)
+    Hygiene(HygieneArgs),
 
     /// Parse a condition expression and print the AST
     Condition(ConditionArgs),
@@ -506,6 +511,13 @@ fn dispatch_rule(cmd: RuleCommands, matches: &ArgMatches, ctx: output::OutputCtx
                 .expect("rule visibility submatches present");
             run_visibility(args, vm, ctx);
         }
+        RuleCommands::Hygiene(args) => {
+            let hm = matches
+                .subcommand_matches("rule")
+                .and_then(|m| m.subcommand_matches("hygiene"))
+                .expect("rule hygiene submatches present");
+            run_hygiene(args, hm, ctx);
+        }
         RuleCommands::Condition(args) => commands::cmd_condition(args, ctx),
         RuleCommands::Stdin(args) => commands::cmd_stdin(args, ctx),
         RuleCommands::MigrateSources(args) => commands::cmd_migrate_sources(args),
@@ -584,6 +596,16 @@ fn run_doc(mut args: DocArgs, matches: &ArgMatches, ctx: output::OutputCtx) {
 fn run_visibility(mut args: VisibilityArgs, matches: &ArgMatches, ctx: output::OutputCtx) {
     commands::apply_visibility_config(&mut args, matches);
     let code = commands::cmd_visibility(args, ctx);
+    process::exit(code);
+}
+
+/// Entry point for `rule hygiene`. Applies the `hygiene` config section (CLI
+/// flag > env > file > default) before running, then exits with the house exit
+/// code (0 success or report-only, 1 when a --fail-on condition matches, 2 on
+/// rule load failure, 3 on bad flags or an unreadable metrics/fields input).
+fn run_hygiene(mut args: HygieneArgs, matches: &ArgMatches, ctx: output::OutputCtx) {
+    commands::apply_hygiene_config(&mut args, matches);
+    let code = commands::cmd_hygiene(args, ctx);
     process::exit(code);
 }
 
