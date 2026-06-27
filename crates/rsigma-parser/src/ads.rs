@@ -280,6 +280,21 @@ pub fn attack_tags(rule: &SigmaRule) -> impl Iterator<Item = &str> {
         .filter(|t| t.starts_with("attack."))
 }
 
+/// Whether the rule carries an ATT&CK categorization: an `attack.*` tag, or a
+/// tag in any of the `extra_namespaces` (a private ATT&CK-adjacent taxonomy a
+/// team recognises via the linter's `tag_namespaces` setting).
+///
+/// [`AdsSection::Categorization`]'s own [`content`](AdsSection::content) and
+/// [`is_present`](AdsSection::is_present) consider only `attack.*`; this is the
+/// config-aware variant the linter, `rule doc`, and the `author_ads` tool use so
+/// the three agree on whether a rule is categorized.
+pub fn has_categorization(rule: &SigmaRule, extra_namespaces: &[String]) -> bool {
+    rule.tags
+        .iter()
+        .filter_map(|t| t.split('.').next())
+        .any(|ns| ns == "attack" || extra_namespaces.iter().any(|e| e == ns))
+}
+
 /// The status of one ADS section on a rule: which section, whether it is
 /// present, and its content when present.
 #[derive(Debug, Clone, Serialize)]
@@ -576,6 +591,29 @@ custom_attributes:
         assert!(keys.contains(&"rsigma.ads.validation"));
         assert!(keys.contains(&"rsigma.ads.response"));
         assert_eq!(entries.len(), 5);
+    }
+
+    #[test]
+    fn categorization_honours_extra_namespaces() {
+        let rule = rule(
+            r#"
+title: Private taxonomy
+status: stable
+logsource:
+    category: test
+detection:
+    selection:
+        field: value
+    condition: selection
+tags:
+    - myorg.technique
+"#,
+        );
+        // attack.* alone does not satisfy it.
+        assert!(!AdsSection::Categorization.is_present(&rule));
+        assert!(!has_categorization(&rule, &[]));
+        // A configured namespace does.
+        assert!(has_categorization(&rule, &["myorg".to_string()]));
     }
 
     #[test]

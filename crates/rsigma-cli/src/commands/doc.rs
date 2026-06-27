@@ -149,11 +149,12 @@ pub(crate) fn cmd_doc(args: DocArgs, ctx: OutputCtx) -> i32 {
     }
 }
 
-/// The resolved ADS bar: which statuses are enforced and which sections are
-/// required.
+/// The resolved ADS bar: which statuses are enforced, which sections are
+/// required, and which extra tag namespaces satisfy the categorization check.
 struct AdsBar {
     enforce_status: Vec<String>,
     required: Vec<AdsSection>,
+    tag_namespaces: Vec<String>,
 }
 
 impl AdsBar {
@@ -161,6 +162,18 @@ impl AdsBar {
         match status {
             Some(s) => self.enforce_status.iter().any(|e| e == status_str(s)),
             None => false,
+        }
+    }
+
+    /// Whether a section's content is present on the rule. Categorization is
+    /// namespace-aware (matching the linter), so a tag in a configured
+    /// `tag_namespaces` namespace satisfies it; every other section delegates to
+    /// the parser's presence check.
+    fn section_present(&self, section: AdsSection, rule: &SigmaRule) -> bool {
+        if section == AdsSection::Categorization {
+            rsigma_parser::ads::has_categorization(rule, &self.tag_namespaces)
+        } else {
+            section.is_present(rule)
         }
     }
 }
@@ -176,6 +189,10 @@ fn load_ads_bar(args: &DocArgs) -> AdsBar {
         None
     };
 
+    let tag_namespaces = loaded
+        .as_ref()
+        .map(|c| c.tag_namespaces.clone())
+        .unwrap_or_default();
     let ads = loaded.and_then(|c| c.ads).unwrap_or_default();
     let required = AdsSection::all()
         .iter()
@@ -185,6 +202,7 @@ fn load_ads_bar(args: &DocArgs) -> AdsBar {
     AdsBar {
         enforce_status: ads.enforce_status,
         required,
+        tag_namespaces,
     }
 }
 
@@ -256,7 +274,7 @@ impl RuleDoc {
             .map(|&s| SectionEntry {
                 id: s.id(),
                 required: bar.required.contains(&s),
-                present: s.is_present(&rule),
+                present: bar.section_present(s, &rule),
                 carrier: s.carrier_field(),
             })
             .collect();
@@ -264,7 +282,7 @@ impl RuleDoc {
         let missing_required: Vec<&'static str> = bar
             .required
             .iter()
-            .filter(|s| !s.is_present(&rule))
+            .filter(|s| !bar.section_present(**s, &rule))
             .map(|s| s.id())
             .collect();
 
@@ -612,6 +630,48 @@ mod tests {
 
     fn partial(yaml: &str) -> config::RsigmaConfigPartial {
         yaml_serde::from_str(yaml).expect("valid partial")
+    }
+
+    fn parse_rule(yaml: &str) -> SigmaRule {
+        rsigma_parser::parse_sigma_yaml(yaml)
+            .unwrap()
+            .rules
+            .pop()
+            .unwrap()
+    }
+
+    const PRIVATE_NS_RULE: &str = r#"
+title: Private taxonomy
+status: stable
+logsource:
+    category: test
+detection:
+    selection:
+        field: value
+    condition: selection
+tags:
+    - myorg.technique
+"#;
+
+    #[test]
+    fn categorization_uses_configured_namespaces() {
+        let rule = parse_rule(PRIVATE_NS_RULE);
+        // Without a configured namespace, a private-taxonomy tag does not
+        // satisfy categorization, matching attack.*-only.
+        let strict = AdsBar {
+            enforce_status: vec!["stable".to_string()],
+            required: AdsSection::all().to_vec(),
+            tag_namespaces: vec![],
+        };
+        assert!(!strict.section_present(AdsSection::Categorization, &rule));
+
+        // With `myorg` recognised, it does, matching `rule lint`.
+        let lenient = AdsBar {
+            enforce_status: vec!["stable".to_string()],
+            required: AdsSection::all().to_vec(),
+            tag_namespaces: vec!["myorg".to_string()],
+        };
+        assert!(lenient.section_present(AdsSection::Categorization, &rule));
     }
 
     #[test]

@@ -28,11 +28,12 @@ impl RsigmaMcp {
     pub(crate) fn run_author_ads(&self, input: SourceInput) -> Result<Value, McpError> {
         let collection = self.load_collection(input.yaml.as_deref(), input.path.as_deref())?;
         let bar = self.lint_config().ads.clone().unwrap_or_default();
+        let extra_ns = &self.lint_config().tag_namespaces;
 
         let rules: Vec<Value> = collection
             .rules
             .iter()
-            .map(|rule| author_ads_for_rule(rule, &bar))
+            .map(|rule| author_ads_for_rule(rule, &bar, extra_ns))
             .collect();
 
         Ok(json!({
@@ -43,29 +44,38 @@ impl RsigmaMcp {
     }
 }
 
-/// Build the ADS report for one rule against the active ADS bar.
-fn author_ads_for_rule(rule: &SigmaRule, bar: &AdsConfig) -> Value {
+/// Build the ADS report for one rule against the active ADS bar. `extra_ns` are
+/// the linter's `tag_namespaces`, so the categorization check matches `rule
+/// lint` (a tag in any recognised namespace, not just `attack.*`, counts).
+fn author_ads_for_rule(rule: &SigmaRule, bar: &AdsConfig, extra_ns: &[String]) -> Value {
     let status = rule.status.map(status_str);
     let enforced = bar.enforces_status(status);
     let exempt = is_exempt(rule);
 
+    let present = |s: AdsSection| -> bool {
+        if s == AdsSection::Categorization {
+            rsigma_parser::ads::has_categorization(rule, extra_ns)
+        } else {
+            s.is_present(rule)
+        }
+    };
+
     let sections: Vec<Value> = AdsSection::all()
         .iter()
         .map(|&s| {
-            let content = s.content(rule);
             json!({
                 "id": s.id(),
                 "required": bar.requires(s.id()),
-                "present": content.is_some(),
+                "present": present(s),
                 "carrier": s.carrier_field(),
-                "content": content.map(|c| to_value(&c)),
+                "content": s.content(rule).map(|c| to_value(&c)),
             })
         })
         .collect();
 
     let missing_required: Vec<&str> = AdsSection::all()
         .iter()
-        .filter(|s| bar.requires(s.id()) && !s.is_present(rule))
+        .filter(|s| bar.requires(s.id()) && !present(**s))
         .map(|s| s.id())
         .collect();
 
