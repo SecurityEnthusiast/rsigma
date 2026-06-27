@@ -128,6 +128,25 @@ fn hygiene_corpus_missing_path_is_config_error() {
 }
 
 #[test]
+fn hygiene_empty_corpus_dir_is_config_error() {
+    // An empty corpus directory must not silently mark every rule silent; it is
+    // a configuration error so `--fail-on silent` cannot trip on a non-run.
+    let dir = tempfile::tempdir().unwrap();
+    rsigma()
+        .args([
+            "rule",
+            "hygiene",
+            "-r",
+            &fixture("rules.yml"),
+            "--corpus",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("no corpus files found"));
+}
+
+#[test]
 fn hygiene_fail_on_silent_exits_one() {
     rsigma()
         .args([

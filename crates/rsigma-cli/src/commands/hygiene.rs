@@ -986,40 +986,61 @@ mod corpus {
     use crate::config;
 
     /// Per-rule fire counts from replaying `paths`, keyed by `rule_title`.
+    ///
+    /// Errors rather than returning an empty map when the walk finds no files or
+    /// when every file is skipped or unreadable: an unevaluated corpus must not
+    /// silently mark every rule silent (which could trip `--fail-on silent`).
     pub(super) fn fire_counts(
         collection: &SigmaCollection,
         paths: &[PathBuf],
         input_format: &str,
     ) -> Result<BTreeMap<String, u64>, String> {
         let files = collect_files(paths)?;
+        if files.is_empty() {
+            return Err("no corpus files found under the given --corpus path(s)".to_string());
+        }
         let mut counts: BTreeMap<String, u64> = BTreeMap::new();
         let has_correlations = !collection.correlations.is_empty();
         // Detection-only rule sets are stateless, so one engine is reused; with
         // correlations the engine is rebuilt per file to reset window state.
         let detection_engine = (!has_correlations).then(|| build_detection_engine(collection));
 
+        let mut evaluated = 0usize;
         for path in &files {
-            if has_correlations {
+            let streamed = if has_correlations {
                 let mut engine = build_correlation_engine(collection);
                 let mut processor = CorrelationProcessor {
                     engine: &mut engine,
                 };
-                replay_file(path, input_format, &mut processor, &mut counts);
+                replay_file(path, input_format, &mut processor, &mut counts)
             } else {
                 let engine = detection_engine.as_ref().expect("detection engine built");
                 let mut processor = DetectionProcessor { engine };
-                replay_file(path, input_format, &mut processor, &mut counts);
+                replay_file(path, input_format, &mut processor, &mut counts)
+            };
+            if streamed {
+                evaluated += 1;
             }
+        }
+        if evaluated == 0 {
+            return Err(
+                "no corpus files could be evaluated (every file was skipped or unreadable)"
+                    .to_string(),
+            );
         }
         Ok(counts)
     }
 
+    /// Replay one corpus file, accumulating per-rule fires. Returns `true` when
+    /// the file was actually streamed, `false` when it was skipped (EVTX) or
+    /// could not be opened, so the caller can tell an unevaluated corpus apart
+    /// from one that genuinely fired nothing.
     fn replay_file<P: EventProcessor>(
         path: &Path,
         input_format: &str,
         processor: &mut P,
         counts: &mut BTreeMap<String, u64>,
-    ) {
+    ) -> bool {
         let mut on_result = |m: &EvaluationResult| {
             *counts.entry(m.header.rule_title.clone()).or_insert(0) += 1;
         };
@@ -1030,7 +1051,7 @@ mod corpus {
                     "warning: skipping EVTX corpus file {} (not supported by rule hygiene)",
                     path.display()
                 );
-                return;
+                return false;
             }
             _ => input_format,
         };
@@ -1041,7 +1062,7 @@ mod corpus {
                     "warning: could not open corpus file {}: {e}",
                     path.display()
                 );
-                return;
+                return false;
             }
         };
         stream_events(
@@ -1054,6 +1075,7 @@ mod corpus {
             processor,
             &mut on_result,
         );
+        true
     }
 
     fn build_detection_engine(collection: &SigmaCollection) -> Engine {

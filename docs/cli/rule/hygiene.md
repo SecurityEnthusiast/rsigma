@@ -35,7 +35,7 @@ Only `--rules` is required. The static signals (untagged, no-owner, incomplete-a
 | Rules | `--rules <PATH>` | yes | The rule set to report on (repeatable; file or directory). |
 | Prometheus snapshot or endpoint | `--metrics <FILE\|URL>` | no | Per-rule fire volume from `rsigma_detection_matches_by_rule_total` and `rsigma_correlation_matches_by_rule_total`, joined by `rule_title`. Drives `silent` and `noisy`. |
 | Prometheus query API | `--metrics-window <DURATION>` | no | When `--metrics` is a Prometheus query-API base, switches to a `query_range` over the window to derive a true last-fired timestamp. |
-| Event corpus | `--corpus <PATH>` | no | The offline alternative to `--metrics` (no daemon, no Prometheus): a file or directory replayed through the engine for per-rule fire counts. Combined with `--metrics`, the counts are summed. Also drives `silent` and `noisy`. |
+| Event corpus | `--corpus <PATH>` | no | The offline alternative to `--metrics` (no daemon, no Prometheus): a file or directory replayed through the engine for per-rule fire counts. Combined with `--metrics`, the counts are summed. Also drives `silent` and `noisy`. A `--corpus` path that contains no readable files exits `3` rather than marking every rule silent. |
 | Field-observability snapshot | `--fields <FILE>` | no | The `/api/v1/fields` payload (or its `missing` array) from a daemon with `--observe-fields`, or the `rsigma engine eval --observe-fields` report. Drives `broken-fields`. |
 
 At least one of `--metrics` or `--corpus` is required for the `silent` and `noisy` signals; the static signals need only `--rules`.
