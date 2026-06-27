@@ -4,6 +4,17 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Triage feedback loop: analyst dispositions and a per-rule false-positive ratio
+
+A new opt-in daemon capability that captures analyst verdicts on the alerts a ruleset produces and turns them into a live per-rule false-positive ratio, the canonical SOC detection-quality metric. It is a measurement loop, not a case manager: it ingests a verdict and emits a ratio. Enabled with `--enable-dispositions` or `daemon.dispositions.enabled: true`; off by default, so existing deployments are unchanged.
+
+* A disposition is one JSON object: `rule_id` (required, with the title fallback the per-rule metrics use), `verdict` (`true_positive`, `false_positive`, or `benign_true_positive`), an optional `scope` (`detection` default or `incident`), optional `fingerprint` and `incident_id` alert identities, an optional RFC 3339 `timestamp` (default ingest time), and optional `analyst` and `note` for traceability. An `incident`-scoped verdict with no `rule_id` resolves to the incident's contributing rules through the live alert-pipeline incident map.
+* `POST /api/v1/dispositions` accepts a single object, a JSON array, or NDJSON, and returns an ingest summary (`accepted`, `duplicate`, `rejected`, plus per-record errors). `GET /api/v1/dispositions` returns the per-rule view (counts and the ratio) plus the active window, numerator, and minimum sample.
+* The ratio per rule is `false_positive / total_dispositioned` over a rolling window (daily buckets, default 30 days), suppressed until the rule reaches `daemon.dispositions.min_sample` (default 5) so a single false positive cannot publish a misleading 100%. Whether `benign_true_positive` counts toward the numerator is the `daemon.dispositions.numerator` knob (`fp_only` default, or `fp_and_btp`).
+* Redelivery is idempotent: dispositions dedup on `(fingerprint or incident_id, verdict)`, falling back to `(rule_id, timestamp, analyst)` when no alert identity is carried.
+* Four Prometheus metrics: `rsigma_rule_false_positive_ratio{rule_title}` (gauge, absent until the minimum sample), `rsigma_dispositions_total{rule_title,verdict}`, `rsigma_disposition_ingest_total{source,result}`, and `rsigma_disposition_ingest_errors_total{reason}`.
+* The store is orthogonal to the eval and sink paths (fed only by its ingestion paths), so it cannot affect detection throughput. Config lives under `daemon.dispositions` (`enabled`, `source`, `window`, `numerator`, `min_sample`).
+
 ### Rule hygiene and retirement report (#262)
 
 A new `rsigma rule hygiene` subcommand assembles the signals rsigma already produces into one report of retirement and clean-up candidates, the detection-lifecycle phase the toolkit did not yet touch. It runs no evaluation: the static signals read off the parsed rules, the data-driven signals join optional snapshots. The feature is additive and ships with no new dependencies.

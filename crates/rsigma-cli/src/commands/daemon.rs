@@ -480,6 +480,15 @@ pub(crate) struct DaemonArgs {
     #[arg(long = "enable-tail")]
     pub enable_tail: bool,
 
+    /// Enable the triage feedback loop (`POST`/`GET /api/v1/dispositions`).
+    ///
+    /// Disabled by default. This flag turns it on for this run; it can also be
+    /// enabled with `daemon.dispositions.enabled: true`. The tuning keys
+    /// (`window`, `numerator`, `min_sample`, `source`) are config-file-only
+    /// under `daemon.dispositions`.
+    #[arg(long = "enable-dispositions")]
+    pub enable_dispositions: bool,
+
     // ---------------------------------------------------------------
     // TLS (requires the `daemon-tls` build feature)
     // ---------------------------------------------------------------
@@ -570,6 +579,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
     // `--enable-*` flags) before `base` is moved into `apply_daemon_config`.
     let tap = resolve_tap_settings(&base, args.enable_tap);
     let tail = resolve_tail_settings(&base, args.enable_tail);
+    let dispositions = resolve_disposition_settings(&base, args.enable_dispositions);
     apply_daemon_config(&mut args, matches, base);
 
     let DaemonArgs {
@@ -655,6 +665,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         sources: source_paths,
         enable_tap: _,
         enable_tail: _,
+        enable_dispositions: _,
         #[cfg(feature = "daemon-tls")]
         tls_cert,
         #[cfg(feature = "daemon-tls")]
@@ -788,6 +799,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         source_paths,
         tap,
         tail,
+        dispositions,
         #[cfg(feature = "daemon-tls")]
         tls_args,
     );
@@ -848,6 +860,50 @@ fn resolve_tap_settings(
         buffer_events,
         max_sessions,
         max_duration,
+    }
+}
+
+/// Resolve the effective triage-feedback settings from the merged config plus
+/// the `--enable-dispositions` flag. The tuning keys live only in
+/// `daemon.dispositions`; the loop is opt-in, enabled by the flag or
+/// `daemon.dispositions.enabled: true`.
+fn resolve_disposition_settings(
+    base: &config::RsigmaConfigPartial,
+    enable_dispositions: bool,
+) -> daemon::server::DispositionSettings {
+    let d = base.daemon.as_ref().and_then(|d| d.dispositions.as_ref());
+    let enabled = d
+        .and_then(|d| d.enabled)
+        .unwrap_or(config::defaults::DISPOSITIONS_ENABLED)
+        || enable_dispositions;
+    let window_str = d
+        .and_then(|d| d.window.clone())
+        .unwrap_or_else(|| config::defaults::DISPOSITIONS_WINDOW.to_string());
+    let window = humantime::parse_duration(&window_str).unwrap_or_else(|e| {
+        eprintln!("Invalid daemon.dispositions.window '{window_str}': {e}");
+        process::exit(exit_code::CONFIG_ERROR);
+    });
+    let numerator_str = d
+        .and_then(|d| d.numerator.clone())
+        .unwrap_or_else(|| config::defaults::DISPOSITIONS_NUMERATOR.to_string());
+    let numerator = rsigma_runtime::Numerator::parse(&numerator_str).unwrap_or_else(|e| {
+        eprintln!("Invalid daemon.dispositions.numerator: {e}");
+        process::exit(exit_code::CONFIG_ERROR);
+    });
+    let min_sample = d
+        .and_then(|d| d.min_sample)
+        .unwrap_or(config::defaults::DISPOSITIONS_MIN_SAMPLE);
+    let source = d.and_then(|d| d.source.clone());
+
+    daemon::server::DispositionSettings {
+        enabled,
+        source,
+        config: rsigma_runtime::DispositionConfig {
+            window,
+            numerator,
+            min_sample,
+            ..Default::default()
+        },
     }
 }
 
@@ -1266,6 +1322,7 @@ fn run_daemon(
     source_paths: Vec<PathBuf>,
     tap: daemon::server::TapSettings,
     tail: daemon::server::TailSettings,
+    dispositions: daemon::server::DispositionSettings,
     #[cfg(feature = "daemon-tls")] tls_args: TlsCliArgs,
 ) {
     use rsigma_eval::resolve_builtin_pipeline;
@@ -1422,6 +1479,7 @@ fn run_daemon(
         source_registry,
         tap,
         tail,
+        dispositions,
         #[cfg(feature = "daemon-tls")]
         tls_state,
     };
