@@ -1,0 +1,8 @@
+# HELP rsigma_detection_matches_by_rule_total Detection matches per rule.
+# TYPE rsigma_detection_matches_by_rule_total counter
+rsigma_detection_matches_by_rule_total{rule_title="Alpha Clean",level="low"} 2
+rsigma_detection_matches_by_rule_total{rule_title="Bravo Noisy",level="high"} 500
+rsigma_detection_matches_by_rule_total{rule_title="Delta Untagged Orphan",level="low"} 3
+rsigma_detection_matches_by_rule_total{rule_title="Echo Incomplete ADS",level="low"} 2
+rsigma_detection_matches_by_rule_total{rule_title="Foxtrot Deprecated",level="low"} 4
+rsigma_detection_matches_by_rule_total{rule_title="Golf Broken Fields",level="low"} 6
