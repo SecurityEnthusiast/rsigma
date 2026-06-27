@@ -73,7 +73,7 @@ With that in place, `rule lint` emits an `ads_missing_*` finding per missing req
 rsigma rule doc rules/ --fail-on-missing
 ```
 
-It exits 1 when any rule whose status is enforced is below the bar, and `--missing-only` narrows the report to exactly those rules.
+It exits 1 when any rule whose status is enforced is below the bar, and `--missing-only` narrows the report to exactly those rules. A section whose `rsigma.ads.*` key is present but blank counts as undocumented here (the Markdown render shows "_Not documented._"), whereas `rule lint` reports it as the `info`-level `ads_empty_section`; run `rule lint --fail-level info` to make the lint step fail on blanks too.
 
 ## See also
 

@@ -182,8 +182,19 @@ impl AdsBar {
 /// `.rsigma-lint.yml`, or the built-in defaults.
 fn load_ads_bar(args: &DocArgs) -> AdsBar {
     let loaded = if let Some(explicit) = &args.lint_config {
-        LintConfig::load(explicit).ok()
+        // An explicit --lint-config that cannot be read or parsed is a hard
+        // error (exit 3), matching `rule lint`; a silently-default ADS bar
+        // would let CI apply the wrong bar without noticing.
+        match LintConfig::load(explicit) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("Error loading lint config '{}': {e}", explicit.display());
+                process::exit(exit_code::CONFIG_ERROR);
+            }
+        }
     } else if let Some(first) = args.rules.first() {
+        // Auto-discovery stays best-effort: a malformed discovered file falls
+        // back to defaults rather than failing an unrelated invocation.
         LintConfig::find_in_ancestors(first).and_then(|p| LintConfig::load(&p).ok())
     } else {
         None
@@ -515,13 +526,19 @@ fn run_scaffold(args: &DocArgs, ctx: &OutputCtx) -> i32 {
 
     if args.in_place {
         match merge_in_place(path, &entries) {
-            Ok(()) => {
+            Ok(0) => {
                 if ctx.show_progress() {
                     eprintln!(
-                        "Merged {} ADS section(s) into {}",
-                        entries.len(),
+                        "No sections merged into {}: every scaffolded key already exists \
+                         (fill any blank values in place).",
                         path.display()
                     );
+                }
+                exit_code::SUCCESS
+            }
+            Ok(n) => {
+                if ctx.show_progress() {
+                    eprintln!("Merged {n} ADS section(s) into {}", path.display());
                 }
                 exit_code::SUCCESS
             }
@@ -565,10 +582,28 @@ fn yaml_quote(s: &str) -> String {
 }
 
 /// Merge the scaffold entries into the rule file's `custom_attributes:` block,
-/// appending a new block when none exists.
-fn merge_in_place(path: &Path, entries: &[rsigma_parser::AdsScaffoldEntry]) -> Result<(), String> {
+/// appending a new block when none exists. Returns the number of sections
+/// actually written.
+///
+/// Entries whose key already appears in the file are skipped so the merge never
+/// introduces a duplicate YAML key (a blank `rsigma.ads.strategy: ""` counts as
+/// missing for the scaffold, but its key is still present, and a prepended
+/// duplicate would be silently overridden by the existing empty value).
+fn merge_in_place(
+    path: &Path,
+    entries: &[rsigma_parser::AdsScaffoldEntry],
+) -> Result<usize, String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+
+    let to_add: Vec<rsigma_parser::AdsScaffoldEntry> = entries
+        .iter()
+        .filter(|e| !file_has_key(&content, e.key))
+        .cloned()
+        .collect();
+    if to_add.is_empty() {
+        return Ok(0);
+    }
 
     let lines: Vec<&str> = content.lines().collect();
     let header = lines.iter().position(|l| {
@@ -590,7 +625,7 @@ fn merge_in_place(path: &Path, entries: &[rsigma_parser::AdsScaffoldEntry]) -> R
                 .map(|l| l.len() - l.trim_start().len())
                 .filter(|n| *n > 0)
                 .unwrap_or(2);
-            let block = scaffold_yaml(entries, child_indent);
+            let block = scaffold_yaml(&to_add, child_indent);
             let mut out: Vec<String> = lines[..=idx].iter().map(|s| s.to_string()).collect();
             for l in block.lines() {
                 out.push(l.to_string());
@@ -605,7 +640,7 @@ fn merge_in_place(path: &Path, entries: &[rsigma_parser::AdsScaffoldEntry]) -> R
             joined
         }
         None => {
-            let block = scaffold_yaml(entries, 4);
+            let block = scaffold_yaml(&to_add, 4);
             let mut text = content.trim_end().to_string();
             text.push_str("\ncustom_attributes:\n");
             text.push_str(&block);
@@ -613,7 +648,15 @@ fn merge_in_place(path: &Path, entries: &[rsigma_parser::AdsScaffoldEntry]) -> R
         }
     };
 
-    std::fs::write(path, new_text).map_err(|e| format!("cannot write {}: {e}", path.display()))
+    std::fs::write(path, new_text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    Ok(to_add.len())
+}
+
+/// Whether `content` already declares the dotted key `<key>:` on some line
+/// (under `custom_attributes:` or as a top-level flat key).
+fn file_has_key(content: &str, key: &str) -> bool {
+    let needle = format!("{key}:");
+    content.lines().any(|l| l.trim_start().starts_with(&needle))
 }
 
 #[cfg(test)]

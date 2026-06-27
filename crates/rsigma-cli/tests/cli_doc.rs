@@ -184,6 +184,69 @@ falsepositives:
 }
 
 #[test]
+fn explicit_missing_lint_config_is_config_error() {
+    // An explicit --lint-config that cannot be read is a hard error, matching
+    // `rule lint`, rather than silently falling back to the default ADS bar.
+    rsigma()
+        .args([
+            "rule",
+            "doc",
+            &fixture("documented.yml"),
+            "--lint-config",
+            "/tmp/nonexistent_rsigma_lint_config.yml",
+        ])
+        .assert()
+        .code(3);
+}
+
+#[test]
+fn in_place_scaffold_does_not_duplicate_a_blank_key() {
+    // A rule with a present-but-blank rsigma.ads.strategy: the scaffold must
+    // not prepend a second `rsigma.ads.strategy:` key (a duplicate the YAML
+    // parser would silently collapse back to the empty value).
+    let rule = temp_file(
+        ".yml",
+        r#"title: Blank Section Rule
+id: 12121212-3434-5656-7878-909090909090
+status: stable
+description: Has a goal already.
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+level: medium
+tags:
+    - attack.execution
+falsepositives:
+    - Known benign tooling
+custom_attributes:
+    rsigma.ads.strategy: ""
+"#,
+    );
+    let path = rule.path().to_str().unwrap();
+
+    rsigma()
+        .args(["rule", "doc", "--scaffold", path, "--in-place"])
+        .assert()
+        .success();
+
+    let merged = std::fs::read_to_string(rule.path()).unwrap();
+    let strategy_keys = merged.matches("rsigma.ads.strategy:").count();
+    assert_eq!(
+        strategy_keys, 1,
+        "blank key must not be duplicated:\n{merged}"
+    );
+    // The genuinely-absent sections were still added.
+    assert!(merged.contains("rsigma.ads.validation:"));
+
+    // The merged file still parses (no duplicate-key breakage).
+    rsigma().args(["rule", "doc", path]).assert().success();
+}
+
+#[test]
 fn dry_run_prints_config() {
     rsigma()
         .args(["rule", "doc", &fixture("documented.yml"), "--dry-run"])

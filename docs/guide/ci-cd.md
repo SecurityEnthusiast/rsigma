@@ -122,7 +122,9 @@ To require every `status: stable` rule to carry a full [detection-strategy docum
 rsigma rule doc rules/ --fail-on-missing
 ```
 
-It exits `1` when any enforced rule is missing a required ADS section, and `0` otherwise. The same checks also surface through `rule lint` (as `ads_missing_*` findings) if you prefer a single lint step; `rule doc` is the standalone view, and `--missing-only` narrows the report to just the rules below the bar.
+It exits `1` when any enforced rule is missing a required ADS section, and `0` otherwise. The same sections also surface through `rule lint` (as `ads_missing_*` findings) if you prefer a single lint step; `rule doc` is the standalone view, and `--missing-only` narrows the report to just the rules below the bar.
+
+The two gates agree on absent sections. They differ only on a section whose key is present but blank: `rule doc --fail-on-missing` treats it as undocumented and fails, while `rule lint` reports the lower-severity `ads_empty_section` (`info`) and so passes at the default `--fail-level error`. Run `rule lint --fail-level info` if you want the lint step to fail on blank sections too.
 
 ## `rule validate` in CI
 
