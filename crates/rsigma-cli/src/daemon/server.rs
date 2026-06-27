@@ -695,6 +695,22 @@ pub async fn run_daemon(config: DaemonConfig) {
             metrics.clone(),
             alert_state.clone(),
         );
+        // Restore persisted disposition state (unless --clear-state), pruning
+        // buckets past the window at boot.
+        if restore_state && let Some(ref store) = state_store {
+            match store.load_dispositions().await {
+                Ok(Some(snap)) => {
+                    let now = chrono::Utc::now().timestamp();
+                    if state.restore(snap, now) {
+                        tracing::info!("Disposition state restored from database");
+                    } else {
+                        tracing::warn!("Incompatible disposition snapshot version, starting fresh");
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => tracing::warn!(error = %e, "Failed to load disposition state"),
+            }
+        }
         // Optional pull source: load the declared dynamic source(s) and ingest
         // each refreshed payload as dispositions over the Phase 0 seam.
         if let Some(src_path) = config.dispositions.source.as_ref() {
@@ -731,6 +747,9 @@ pub async fn run_daemon(config: DaemonConfig) {
     } else {
         None
     };
+    // A handle for the periodic and shutdown state savers (the field itself is
+    // moved into `AppState` below).
+    let disposition_state_for_save = disposition_state.clone();
 
     let app_state = AppState {
         processor: processor.clone(),
@@ -1029,6 +1048,7 @@ pub async fn run_daemon(config: DaemonConfig) {
         let save_hw_ts = high_water_ts.clone();
         let save_alert_swap = alert_pipeline_swap.clone();
         let save_alert_state = alert_state.clone();
+        let save_dispositions = disposition_state_for_save.clone();
         tokio::spawn(async move {
             let mut interval =
                 tokio::time::interval(tokio::time::Duration::from_secs(save_interval_secs));
@@ -1065,6 +1085,13 @@ pub async fn run_daemon(config: DaemonConfig) {
                     if let Err(e) = save_store.save_alert_pipeline(&snap).await {
                         tracing::warn!(error = %e, "Failed to save alert-pipeline snapshot");
                     }
+                }
+                // Persist the disposition store when the triage loop is enabled.
+                if let Some(dispositions) = save_dispositions.as_ref()
+                    && let Some(snap) = dispositions.snapshot()
+                    && let Err(e) = save_store.save_dispositions(&snap).await
+                {
+                    tracing::warn!(error = %e, "Failed to save disposition snapshot");
                 }
             }
         });
@@ -1668,6 +1695,17 @@ pub async fn run_daemon(config: DaemonConfig) {
             Err(e) => {
                 tracing::error!(error = %e, "Failed to save alert-pipeline state on shutdown")
             }
+        }
+    }
+
+    // Save the disposition state on shutdown when the triage loop is enabled.
+    if let Some(ref store) = state_store
+        && let Some(dispositions) = disposition_state_for_save.as_ref()
+        && let Some(snap) = dispositions.snapshot()
+    {
+        match store.save_dispositions(&snap).await {
+            Ok(()) => tracing::info!("Disposition state saved to database on shutdown"),
+            Err(e) => tracing::error!(error = %e, "Failed to save disposition state on shutdown"),
         }
     }
 }

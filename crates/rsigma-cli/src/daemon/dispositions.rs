@@ -12,7 +12,7 @@ use std::sync::{Arc, RwLock};
 
 use rsigma_runtime::{
     AlertPipelineState, Disposition, DispositionConfig, DispositionScope, DispositionStore,
-    IncludeMode, IngestOutcome, parse_dispositions, triage_feed,
+    IncludeMode, IngestOutcome, parse_dispositions,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -54,11 +54,24 @@ impl DispositionState {
         }
     }
 
-    /// The shared store handle (for persistence and the pull source).
-    // Consumed by the pull source (Phase 2) and the persistence hooks (Phase 3).
-    #[allow(dead_code)]
-    pub fn store(&self) -> Arc<RwLock<DispositionStore>> {
-        self.store.clone()
+    /// Capture the store into a versioned snapshot for persistence, or `None`
+    /// if the store lock is poisoned.
+    pub fn snapshot(&self) -> Option<rsigma_runtime::DispositionSnapshot> {
+        self.store.read().ok().map(|s| s.snapshot())
+    }
+
+    /// Restore a persisted snapshot at `now`, pruning entries past the window,
+    /// then refresh the ratio gauges. Returns `false` on a version mismatch.
+    pub fn restore(&self, snapshot: rsigma_runtime::DispositionSnapshot, now: i64) -> bool {
+        let restored = self
+            .store
+            .write()
+            .map(|mut s| s.restore(snapshot, now))
+            .unwrap_or(false);
+        if restored {
+            self.refresh_all_gauges();
+        }
+        restored
     }
 
     /// Ingest a batch from `body` (a single object, a JSON array, or NDJSON),
@@ -310,16 +323,6 @@ impl DispositionState {
             "rules": rules,
         })
     }
-
-    /// The `TriageFeed` JSON shape the `rule scorecard --triage` input consumes.
-    // Surfaced for the scorecard contract wiring in Phase 3.
-    #[allow(dead_code)]
-    pub fn triage_feed(&self) -> serde_json::Value {
-        self.store
-            .read()
-            .map(|s| triage_feed(&s))
-            .unwrap_or_else(|_| json!({ "rules": [] }))
-    }
 }
 
 #[cfg(test)]
@@ -444,6 +447,33 @@ mod tests {
                 .with_label_values(&["validation"])
                 .get(),
             1
+        );
+    }
+
+    #[test]
+    fn snapshot_restores_and_refreshes_gauges() {
+        let original = state(1);
+        original
+            .ingest(
+                r#"[{"rule_id":"r1","verdict":"false_positive","fingerprint":"a"},{"rule_id":"r1","verdict":"true_positive","fingerprint":"b"}]"#,
+                "api",
+            )
+            .unwrap();
+        let snap = original.snapshot().expect("snapshot");
+
+        let restored = state(1);
+        let now = chrono::Utc::now().timestamp();
+        assert!(restored.restore(snap, now));
+
+        // The restored view matches and the gauge was refreshed on restore.
+        assert_eq!(restored.view()["rules"][0]["total"], 2);
+        assert_eq!(
+            restored
+                .metrics
+                .rule_false_positive_ratio
+                .with_label_values(&["r1"])
+                .get(),
+            0.5
         );
     }
 
