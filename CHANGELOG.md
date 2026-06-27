@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### ADS detection-strategy metadata and lint
+### ADS detection-strategy metadata and lint (#261)
 
 Optional [Palantir Alerting and Detection Strategy (ADS)](https://github.com/palantir/alerting-detection-strategy-framework) metadata on Sigma rules, with enforcement in the linter and a new authoring command. The whole feature is additive metadata plus reads over it: no engine, eval, or hot-path changes, and no new dependencies.
 
