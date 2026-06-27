@@ -310,14 +310,24 @@ impl RiskState {
     }
 
     /// Restore a snapshot, dropping contributions already past the window at
-    /// `now` and skipping entities left empty. Returns `false` on a version
-    /// mismatch (the caller starts fresh).
-    pub fn restore(&mut self, snap: RiskStateSnapshot, window_secs: i64, now: i64) -> bool {
+    /// `now`, skipping entities left empty, and honoring `max_open_entities` so a
+    /// restore cannot load more entities than the live cap allows. Returns
+    /// `false` on a version mismatch (the caller starts fresh).
+    pub fn restore(
+        &mut self,
+        snap: RiskStateSnapshot,
+        window_secs: i64,
+        max_open_entities: usize,
+        now: i64,
+    ) -> bool {
         if snap.version != SNAPSHOT_VERSION {
             return false;
         }
         let cutoff = now - window_secs;
         for entity in snap.entities {
+            if self.entities.len() >= max_open_entities {
+                break;
+            }
             let contributions: VecDeque<Contribution> = entity
                 .contributions
                 .into_iter()
@@ -564,7 +574,12 @@ mod tests {
 
         // Restore within the window: the entity comes back and keeps accruing.
         let mut fresh = RiskState::default();
-        assert!(fresh.restore(snap, c.window.as_secs() as i64, 200));
+        assert!(fresh.restore(
+            snap,
+            c.window.as_secs() as i64,
+            c.caps.max_open_entities,
+            200
+        ));
         assert_eq!(fresh.len(), 1);
         let again = fresh.record(
             &c,
@@ -579,8 +594,34 @@ mod tests {
         let snap2: RiskStateSnapshot =
             serde_json::from_str(&serde_json::to_string(&st.snapshot()).unwrap()).unwrap();
         let mut aged = RiskState::default();
-        assert!(aged.restore(snap2, c.window.as_secs() as i64, 100 + 3600 + 5));
+        assert!(aged.restore(
+            snap2,
+            c.window.as_secs() as i64,
+            c.caps.max_open_entities,
+            100 + 3600 + 5
+        ));
         assert!(aged.is_empty(), "stale entity pruned on restore");
+    }
+
+    #[test]
+    fn restore_honors_max_open_entities() {
+        let mut src = RiskState::default();
+        let c = cfg(Some(1_000_000), None);
+        for i in 0..5 {
+            src.record(
+                &c,
+                "user",
+                &format!("u{i}"),
+                contrib(0, 10, &["execution"], "r1"),
+                0,
+            );
+        }
+        let snap = src.snapshot();
+
+        let mut restored = RiskState::default();
+        // Cap the restore at 3; the remaining snapshot entities are dropped.
+        assert!(restored.restore(snap, c.window.as_secs() as i64, 3, 0));
+        assert_eq!(restored.len(), 3);
     }
 
     #[test]
@@ -590,6 +631,6 @@ mod tests {
             version: SNAPSHOT_VERSION + 1,
             entities: vec![],
         };
-        assert!(!st.restore(snap, 3600, 0));
+        assert!(!st.restore(snap, 3600, usize::MAX, 0));
     }
 }

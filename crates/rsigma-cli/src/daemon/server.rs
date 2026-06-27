@@ -973,6 +973,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     let reload_alert_pipeline_path = config.alert_pipeline_path.clone();
     let reload_alert_state = alert_state.clone();
     let reload_risk_swap = risk_swap.clone();
+    let reload_risk_state = risk_state.clone();
     let reload_risk_path = config.risk_path.clone();
     #[cfg(feature = "daemon-tls")]
     let reload_tls_state = tls_state.clone();
@@ -1084,6 +1085,15 @@ pub async fn run_daemon(config: DaemonConfig) {
             if let Some(path) = reload_risk_path.as_deref() {
                 match load_risk_file(path).and_then(build_risk_layer) {
                     Ok(new_layer) => {
+                        // If the reloaded config drops the accumulator, clear
+                        // in-flight entities: with no `incident` block the tick
+                        // no longer prunes them, so they would otherwise linger
+                        // forever and keep being snapshotted.
+                        if new_layer.incident_config().is_none()
+                            && let Ok(mut st) = reload_risk_state.write()
+                        {
+                            *st = RiskState::default();
+                        }
                         reload_risk_swap.store(Arc::new(Some(Arc::new(new_layer))));
                         tracing::info!(path = %path.display(), "Risk layer reloaded");
                     }

@@ -258,7 +258,12 @@ impl RiskLayer {
         let Some(cfg) = self.incident.as_ref() else {
             return false;
         };
-        state.restore(snap, cfg.window.as_secs() as i64, now)
+        state.restore(
+            snap,
+            cfg.window.as_secs() as i64,
+            cfg.caps.max_open_entities,
+            now,
+        )
     }
 }
 
