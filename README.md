@@ -37,6 +37,7 @@ For rule quality and editor integration, a built-in linter validates rules again
 * **Corpus backtesting:** Replay an event corpus against a ruleset with `rule backtest`, diffing per-rule fire counts against declared expectations (positive/negative fixtures, bounded noise budgets), flagging uncovered fires as potential false positives, and emitting a JSON or JUnit XML report for CI
 * **ATT&CK coverage:** Map a ruleset onto MITRE ATT&CK with `rule coverage`, exporting an ATT&CK Navigator layer (format 4.5, scored by rule count) and reporting coverage gaps against the Atomic Red Team library, the SigmaHQ baseline heatmap, and a target technique list, with `--fail-on-gaps` for CI
 * **Detection scorecard:** Fuse the backtest report, the coverage report, an optional Prometheus production-volume snapshot, and an optional triage feed with `rule scorecard` into per-rule keep/tune/retire verdicts (precision proxy, volume, ATT&CK context, reason), rendered through the output-format layer or as a markdown/HTML artifact, with a sole-coverage guard and `--fail-on` for CI
+* **Rule hygiene:** Drive the retirement cadence with `rule hygiene`, which flags candidates in one report (never-fired and noisy over a Prometheus snapshot, untagged via the shared ATT&CK extractor, no-owner, incomplete ADS, broken field coverage via a field-observability snapshot, and deprecated/stale status), rendered through the output-format layer with a `--report` file and a repeatable `--fail-on` for CI
 * **Telemetry visibility:** Score data-source maturity with `rule visibility`, joining the field-observability signal with the rule logsource inventory through a bundled ATT&CK mapping table to emit a [DeTT&CT](https://github.com/rabobank-cdc/DeTTECT) data-source/technique administration pair and a visibility Navigator layer (format 4.5, scored on DeTT&CT's 0-4 scale), surfacing blind spots (rules for data you do not receive) with `--fail-on-blind-spots` for CI
 * **Detection-as-Code CI:** Gate a rule repository in one step with the [`timescale/rsigma-action`](https://github.com/timescale/rsigma-action) GitHub Action, which wraps `rule lint`, `rule validate`, a merge-base fields-drift diff, `rule backtest`, and `rule coverage` into a single pull-request check with diff annotations, a sticky summary comment, and verified cached binary installs; see the [CI/CD guide](https://timescale.github.io/rsigma/guide/ci-cd/)
 * **Rule conversion:** Convert rules into backend-native query strings via a pluggable backend trait (PostgreSQL/TimescaleDB SQL, LynxDB SPL2, Fibratus rule YAML for EDR sensors)
@@ -356,6 +357,9 @@ rsigma rule scorecard --backtest backtest.json --coverage coverage.json --fail-o
 
 # Score telemetry visibility: DeTT&CT export + visibility Navigator layer, gate on blind spots
 rsigma rule visibility -r rules/ --observed fields.json --navigator visibility.json --fail-on-blind-spots
+
+# Flag retirement candidates (silence, noise, tags, owner, ADS, fields, status), gate CI
+rsigma rule hygiene -r rules/ --metrics http://localhost:9090/metrics --fail-on silent --fail-on no-owner
 
 # List available backends and formats
 rsigma backend targets

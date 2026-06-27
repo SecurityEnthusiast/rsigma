@@ -78,6 +78,17 @@ rsigma rule scorecard --backtest backtest.json --coverage coverage.json --fail-o
 
 A retire candidate that is the sole rule covering an ATT&CK technique is downgraded to tune, so the gate never asks you to drop coverage. See [Detection Scorecard](detection-scorecard.md) and the [`rule scorecard`](../cli/rule/scorecard.md) reference.
 
+## `rule hygiene` for the retirement cadence
+
+`rule scorecard` needs the backtest and coverage reports; `rule hygiene` runs on the rules alone and flags retirement and clean-up candidates: untagged, unowned, undocumented (incomplete ADS), and deprecated/stale rules with no extra inputs, plus silence and noise when you add a Prometheus scrape and broken field coverage when you add a field-observability snapshot. Gate on the conditions your program treats as blocking:
+
+```bash
+rsigma rule hygiene -r rules/ --metrics metrics.txt \
+    --silent-threshold 365d --fail-on silent --fail-on no-owner
+```
+
+It exits `1` when a selected `--fail-on` condition matches, the same gating model as the rest of the triad. See [Rule Hygiene](rule-hygiene.md) and the [`rule hygiene`](../cli/rule/hygiene.md) reference.
+
 ## `--fail-on-detection` for `engine eval`
 
 `engine eval --fail-on-detection` is the zero-setup fallback when you do not want an expectations file: a single fixture and a single rule, where exit `1` means "something fired."
