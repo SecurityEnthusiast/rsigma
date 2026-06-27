@@ -457,10 +457,10 @@ fn markdown_for(doc: &RuleDoc) -> String {
 
     for &section in AdsSection::all() {
         let _ = writeln!(s, "## {}\n", heading(section));
-        if section == AdsSection::Priority {
-            if let Some(level) = rule.level {
-                let _ = writeln!(s, "**Level:** {}\n", level.as_str());
-            }
+        if section == AdsSection::Priority
+            && let Some(level) = rule.level
+        {
+            let _ = writeln!(s, "**Level:** {}\n", level.as_str());
         }
         match section.content(rule) {
             Some(content) => {
