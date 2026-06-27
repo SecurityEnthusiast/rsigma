@@ -19,7 +19,6 @@ mod dedup;
 mod grouping;
 mod inhibit;
 mod matcher;
-mod selector;
 mod silence;
 mod snapshot;
 mod state;
@@ -32,7 +31,7 @@ pub use config::{
 pub use dedup::DedupStore;
 pub use grouping::{GroupMode, IncidentRef, IncidentResult, IncidentStore, IncludeMode};
 pub use matcher::{MatchOp, Matcher, MatcherError, MatcherSet, MatcherSpec};
-pub use selector::{Selector, SelectorParseError};
+pub use crate::selector::{Selector, SelectorParseError};
 pub use silence::{
     Silence, SilenceError, SilenceOrigin, SilenceSpec, SilenceState, SilenceStore, SilenceView,
 };

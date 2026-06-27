@@ -55,6 +55,7 @@ pub mod parse;
 pub mod pipeline_deprecation;
 pub mod processor;
 pub mod scope;
+pub mod selector;
 pub mod sources;
 pub mod tap;
 
@@ -62,10 +63,11 @@ pub use alert_pipeline::{
     AlertPipeline, AlertPipelineConfigError, AlertPipelineFile, AlertPipelineSnapshot,
     AlertPipelineState, DEFAULT_MAX_DYNAMIC_SILENCES, DedupStore, GroupMode, IncidentRef,
     IncidentResult, IncidentStore, IncludeMode, MatchOp, Matcher, MatcherError, MatcherSet,
-    MatcherSpec, SNAPSHOT_VERSION, Selector, SelectorParseError, Silence, SilenceError,
-    SilenceOrigin, SilenceSpec, SilenceState, SilenceStore, SilenceView, TickOutput,
-    build_alert_pipeline, load_alert_pipeline_file, parse_alert_pipeline_config,
+    MatcherSpec, SNAPSHOT_VERSION, Silence, SilenceError, SilenceOrigin, SilenceSpec, SilenceState,
+    SilenceStore, SilenceView, TickOutput, build_alert_pipeline, load_alert_pipeline_file,
+    parse_alert_pipeline_config,
 };
+pub use selector::{Selector, SelectorParseError};
 pub use dispositions::{
     Disposition, DispositionConfig, DispositionError, DispositionScope, DispositionSnapshot,
     DispositionStore, IngestOutcome, Numerator, RawDisposition, RuleSummary, Verdict,

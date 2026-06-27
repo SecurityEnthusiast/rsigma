@@ -19,7 +19,7 @@ use rsigma_eval::EvaluationResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::selector::Selector;
+use crate::selector::Selector;
 use super::strip_event_payloads;
 
 /// Validated dedup configuration.
