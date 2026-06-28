@@ -12,7 +12,9 @@ mod stdin;
 mod stdout;
 pub mod webhook;
 
-pub use delivery::{DeliveryConfig, DeliveryFailure, DeliverySink, Dispatcher, OnFull};
+pub use delivery::{
+    DeliveryConfig, DeliveryContext, DeliveryFailure, DeliverySink, Dispatcher, OnFull,
+};
 pub use file::FileSink;
 #[cfg(feature = "nats")]
 pub use nats_config::NatsConnectConfig;

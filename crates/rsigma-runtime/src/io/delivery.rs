@@ -11,11 +11,12 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 use rsigma_eval::ProcessResult;
 
@@ -31,10 +32,22 @@ type DeliveryFuture<'a> = Pin<Box<dyn Future<Output = Result<(), RuntimeError>> 
 /// can be unit-tested against a mock without a test-only enum variant.
 pub trait DeliverySink: Send + 'static {
     /// Deliver a single result, returning an error the worker may retry.
-    fn deliver<'a>(&'a mut self, result: &'a ProcessResult) -> DeliveryFuture<'a>;
+    ///
+    /// `ctx` is minted once per queued item and handed back unchanged on every
+    /// retry, so a sink that derives request identity from it (e.g. a signed
+    /// webhook) reproduces the same id, timestamp, and signature on a re-send.
+    fn deliver<'a>(
+        &'a mut self,
+        result: &'a ProcessResult,
+        ctx: &'a DeliveryContext,
+    ) -> DeliveryFuture<'a>;
     /// Deliver a single incident line. Defaults to a no-op so mock sinks and
     /// any sink that does not carry incidents need no implementation.
-    fn deliver_incident<'a>(&'a mut self, _incident: &'a IncidentEnvelope) -> DeliveryFuture<'a> {
+    fn deliver_incident<'a>(
+        &'a mut self,
+        _incident: &'a IncidentEnvelope,
+        _ctx: &'a DeliveryContext,
+    ) -> DeliveryFuture<'a> {
         Box::pin(async { Ok(()) })
     }
     /// Short, stable label used for structured logs and per-sink metrics.
@@ -42,10 +55,18 @@ pub trait DeliverySink: Send + 'static {
 }
 
 impl DeliverySink for Sink {
-    fn deliver<'a>(&'a mut self, result: &'a ProcessResult) -> DeliveryFuture<'a> {
+    fn deliver<'a>(
+        &'a mut self,
+        result: &'a ProcessResult,
+        _ctx: &'a DeliveryContext,
+    ) -> DeliveryFuture<'a> {
         self.send(result)
     }
-    fn deliver_incident<'a>(&'a mut self, incident: &'a IncidentEnvelope) -> DeliveryFuture<'a> {
+    fn deliver_incident<'a>(
+        &'a mut self,
+        incident: &'a IncidentEnvelope,
+        _ctx: &'a DeliveryContext,
+    ) -> DeliveryFuture<'a> {
         self.send_incident(incident)
     }
     fn label(&self) -> &'static str {
@@ -92,6 +113,38 @@ impl Default for DeliveryConfig {
             backoff_base: Duration::from_millis(100),
             backoff_max: Duration::from_secs(5),
         }
+    }
+}
+
+/// Per-delivery identity, minted once per queued item and reused on every
+/// retry attempt.
+///
+/// The worker creates one of these before the retry loop and hands the same
+/// reference to the sink on each attempt. A sink that derives request identity
+/// from it (today, a signed webhook) therefore reproduces a byte-identical id,
+/// timestamp, and signature when a delivery is retried, which is what lets a
+/// receiver dedupe redeliveries and enforce a replay window.
+pub struct DeliveryContext {
+    /// Stable base id for this delivery (`msg_<uuid>`). A sink may append a
+    /// per-result suffix to address individual results within one batch.
+    pub id_base: String,
+    /// Wall-clock time of the first attempt; used as the signed timestamp.
+    pub first_attempt: SystemTime,
+}
+
+impl DeliveryContext {
+    /// Mint a fresh context (random id, current time). Called once per item.
+    pub fn new() -> Self {
+        DeliveryContext {
+            id_base: format!("msg_{}", Uuid::new_v4().simple()),
+            first_attempt: SystemTime::now(),
+        }
+    }
+}
+
+impl Default for DeliveryContext {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -334,11 +387,14 @@ async fn deliver_one<S: DeliverySink>(
     metrics: &Arc<dyn MetricsHook>,
     label: &'static str,
 ) {
+    // Minted once and reused on every retry so a signed sink reproduces the
+    // same id/timestamp/signature on a re-send.
+    let ctx = DeliveryContext::new();
     let mut attempt: u32 = 0;
     loop {
         let outcome = match target {
-            DeliverTarget::Result(r) => sink.deliver(r).await,
-            DeliverTarget::Incident(e) => sink.deliver_incident(e).await,
+            DeliverTarget::Result(r) => sink.deliver(r, &ctx).await,
+            DeliverTarget::Incident(e) => sink.deliver_incident(e, &ctx).await,
         };
         match outcome {
             Ok(()) => return,
@@ -449,7 +505,11 @@ mod tests {
     }
 
     impl DeliverySink for MockSink {
-        fn deliver<'a>(&'a mut self, _result: &'a ProcessResult) -> DeliveryFuture<'a> {
+        fn deliver<'a>(
+            &'a mut self,
+            _result: &'a ProcessResult,
+            _ctx: &'a DeliveryContext,
+        ) -> DeliveryFuture<'a> {
             let fail_first = self.fail_first.clone();
             let delivered = self.delivered.clone();
             let attempts = self.attempts.clone();
