@@ -332,6 +332,8 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    use zeroize::Zeroizing;
+
     use super::super::signing::SigningScheme;
     use crate::metrics::NoopMetrics;
 
@@ -494,7 +496,10 @@ mod tests {
             .await;
 
         let secret = b"shared-secret".to_vec();
-        let signer = WebhookSigner::new(SigningScheme::Standard, vec![secret.clone()]);
+        let signer = WebhookSigner::new(
+            SigningScheme::Standard,
+            vec![Zeroizing::new(secret.clone())],
+        );
         let mut sink = signed_sink_to(format!("{}/hook", server.uri()), signer);
         sink.send(&vec![detection("hi")], &ctx()).await.unwrap();
 
@@ -530,7 +535,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let signer = WebhookSigner::new(SigningScheme::Standard, vec![b"k".to_vec()]);
+        let signer =
+            WebhookSigner::new(SigningScheme::Standard, vec![Zeroizing::new(b"k".to_vec())]);
         let mut sink = signed_sink_to(format!("{}/hook", server.uri()), signer);
         let result: ProcessResult = vec![detection("hi")];
 

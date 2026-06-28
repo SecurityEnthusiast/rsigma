@@ -24,6 +24,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use rsigma_eval::ResultBody;
 use serde::Deserialize;
+use zeroize::Zeroizing;
 
 use crate::enrichment::{
     EnricherKind, HttpEnricherClient, Scope, TemplateError, build_default_http_client,
@@ -689,24 +690,34 @@ fn build_signer(
 }
 
 /// Read and decode a signing secret from the environment.
-fn read_secret(id: &str, var: &str, encoding: Option<&str>) -> Result<Vec<u8>, WebhookConfigError> {
-    let raw = std::env::var(var)
-        .ok()
-        .filter(|v| !v.is_empty())
-        .ok_or_else(|| WebhookConfigError::MissingSecretEnv {
-            webhook_id: id.to_string(),
-            var: var.to_string(),
-        })?;
+///
+/// The returned key is wrapped in [`Zeroizing`] so the secret bytes are wiped
+/// from memory when they are dropped, including on the error path where a later
+/// key fails to resolve.
+fn read_secret(
+    id: &str,
+    var: &str,
+    encoding: Option<&str>,
+) -> Result<Zeroizing<Vec<u8>>, WebhookConfigError> {
+    let raw = Zeroizing::new(
+        std::env::var(var)
+            .ok()
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| WebhookConfigError::MissingSecretEnv {
+                webhook_id: id.to_string(),
+                var: var.to_string(),
+            })?,
+    );
     let key = match encoding.unwrap_or("utf8") {
-        "utf8" => raw.into_bytes(),
+        "utf8" => Zeroizing::new(raw.as_bytes().to_vec()),
         "base64" => {
-            let trimmed = raw.strip_prefix("whsec_").unwrap_or(&raw);
-            BASE64
-                .decode(trimmed.as_bytes())
-                .map_err(|e| WebhookConfigError::InvalidSigning {
+            let trimmed = raw.strip_prefix("whsec_").unwrap_or(raw.as_str());
+            Zeroizing::new(BASE64.decode(trimmed.as_bytes()).map_err(|e| {
+                WebhookConfigError::InvalidSigning {
                     webhook_id: id.to_string(),
                     message: format!("secret in '{var}' is not valid base64: {e}"),
-                })?
+                }
+            })?)
         }
         other => {
             return Err(WebhookConfigError::InvalidSigning {

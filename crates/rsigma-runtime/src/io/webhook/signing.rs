@@ -15,6 +15,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Sha256, Sha512};
+use zeroize::Zeroizing;
 
 type HmacSha256 = Hmac<Sha256>;
 type HmacSha512 = Hmac<Sha512>;
@@ -94,12 +95,15 @@ impl SigningScheme {
 pub(crate) struct WebhookSigner {
     scheme: SigningScheme,
     /// HMAC keys, primary first. A second key (rotation) produces a second
-    /// signature so a receiver accepts either during a key rollover.
-    keys: Vec<Vec<u8>>,
+    /// signature so a receiver accepts either during a key rollover. Held in
+    /// `Zeroizing` so the secret bytes are wiped from memory when the signer is
+    /// dropped (paired with the `hmac` crate's `zeroize` feature, which wipes
+    /// the key inside each transient MAC).
+    keys: Vec<Zeroizing<Vec<u8>>>,
 }
 
 impl WebhookSigner {
-    pub(crate) fn new(scheme: SigningScheme, keys: Vec<Vec<u8>>) -> Self {
+    pub(crate) fn new(scheme: SigningScheme, keys: Vec<Zeroizing<Vec<u8>>>) -> Self {
         WebhookSigner { scheme, keys }
     }
 
@@ -213,7 +217,7 @@ mod tests {
         // The canonical Standard Webhooks (svix) test vector: the secret is the
         // base64 body of a `whsec_`-prefixed key.
         let key = BASE64.decode("MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw").unwrap();
-        let signer = WebhookSigner::new(SigningScheme::Standard, vec![key]);
+        let signer = WebhookSigner::new(SigningScheme::Standard, vec![Zeroizing::new(key)]);
 
         let headers = signer.sign(
             r#"{"test": 2432232314}"#,
@@ -243,7 +247,7 @@ mod tests {
         // GitHub's own documentation example.
         let signer = WebhookSigner::new(
             SigningScheme::Github,
-            vec![b"It's a Secret to Everybody".to_vec()],
+            vec![Zeroizing::new(b"It's a Secret to Everybody".to_vec())],
         );
         let headers = signer.sign("Hello, World!", at(0), "unused");
         assert_eq!(headers.len(), 1);
@@ -266,7 +270,7 @@ mod tests {
             id_header: None,
         });
         let key = b"top-secret".to_vec();
-        let signer = WebhookSigner::new(scheme, vec![key.clone()]);
+        let signer = WebhookSigner::new(scheme, vec![Zeroizing::new(key.clone())]);
 
         let body = r#"{"a":1}"#;
         let headers = signer.sign(body, at(1_700_000_000), "msg_x");
@@ -289,7 +293,7 @@ mod tests {
             timestamp_header: Some("X-Signature-Timestamp".to_string()),
             id_header: Some("X-Webhook-Id".to_string()),
         });
-        let signer = WebhookSigner::new(scheme, vec![b"k".to_vec()]);
+        let signer = WebhookSigner::new(scheme, vec![Zeroizing::new(b"k".to_vec())]);
         let headers = signer.sign("{}", at(42), "msg_y");
         let names: Vec<&str> = headers.iter().map(|(k, _)| k.as_str()).collect();
         assert!(names.contains(&"X-Signature"));
@@ -305,7 +309,10 @@ mod tests {
     fn standard_rotation_emits_two_space_joined_signatures() {
         let signer = WebhookSigner::new(
             SigningScheme::Standard,
-            vec![b"new-key".to_vec(), b"old-key".to_vec()],
+            vec![
+                Zeroizing::new(b"new-key".to_vec()),
+                Zeroizing::new(b"old-key".to_vec()),
+            ],
         );
         let headers = signer.sign("{}", at(10), "msg_1");
         let value = &headers
@@ -321,7 +328,8 @@ mod tests {
 
     #[test]
     fn signing_is_deterministic_across_calls() {
-        let signer = WebhookSigner::new(SigningScheme::Standard, vec![b"k".to_vec()]);
+        let signer =
+            WebhookSigner::new(SigningScheme::Standard, vec![Zeroizing::new(b"k".to_vec())]);
         let a = signer.sign("body", at(99), "msg_z");
         let b = signer.sign("body", at(99), "msg_z");
         assert_eq!(
