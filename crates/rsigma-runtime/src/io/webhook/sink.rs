@@ -11,9 +11,11 @@ use rsigma_eval::{EvaluationResult, ProcessResult};
 
 use crate::enrichment::{HttpEnricherClient, render_template, render_template_json};
 use crate::error::RuntimeError;
+use crate::io::DeliveryContext;
 use crate::metrics::MetricsHook;
 
 use super::config::WebhookKind;
+use super::signing::WebhookSigner;
 
 /// Cap on the response bytes drained (and discarded) per request. Webhook
 /// responses are never parsed; draining a bounded prefix lets reqwest reuse
@@ -97,6 +99,9 @@ pub struct WebhookSink {
     limiter: Option<TokenBucket>,
     client: HttpEnricherClient,
     metrics: Arc<dyn MetricsHook>,
+    /// Optional HMAC request signer. When set, every delivery carries
+    /// signature headers over the rendered body bytes.
+    signer: Option<WebhookSigner>,
 }
 
 impl WebhookSink {
@@ -113,6 +118,7 @@ impl WebhookSink {
         limiter: Option<TokenBucket>,
         client: HttpEnricherClient,
         metrics: Arc<dyn MetricsHook>,
+        signer: Option<WebhookSigner>,
     ) -> Self {
         let label: &'static str = Box::leak(id.clone().into_boxed_str());
         WebhookSink {
@@ -128,6 +134,7 @@ impl WebhookSink {
             limiter,
             client,
             metrics,
+            signer,
         }
     }
 
@@ -150,17 +157,26 @@ impl WebhookSink {
     /// with that error so the shared worker can apply retry/backoff (for a
     /// retryable error) or route to the DLQ (for a [`RuntimeError::Permanent`]
     /// or after the retry budget is spent).
-    pub async fn send(&mut self, result: &ProcessResult) -> Result<(), RuntimeError> {
-        for eval in result.iter() {
+    pub async fn send(
+        &mut self,
+        result: &ProcessResult,
+        ctx: &DeliveryContext,
+    ) -> Result<(), RuntimeError> {
+        for (idx, eval) in result.iter().enumerate() {
             if !self.kind.matches(&eval.body) || !self.scope.matches(eval) {
                 continue;
             }
-            self.deliver_one(eval).await?;
+            self.deliver_one(eval, ctx, idx).await?;
         }
         Ok(())
     }
 
-    async fn deliver_one(&mut self, eval: &EvaluationResult) -> Result<(), RuntimeError> {
+    async fn deliver_one(
+        &mut self,
+        eval: &EvaluationResult,
+        ctx: &DeliveryContext,
+        idx: usize,
+    ) -> Result<(), RuntimeError> {
         let waited = match &mut self.limiter {
             Some(limiter) => limiter.acquire().await,
             None => false,
@@ -188,6 +204,32 @@ impl WebhookSink {
             header_map.insert(header_name, header_value);
         }
         let body = self.body.as_ref().map(|b| render_template_json(b, eval));
+
+        // Sign the exact body bytes that go on the wire. The id and timestamp
+        // come from the per-delivery context, so a retry reproduces the same
+        // signature. The id is unique per result within the delivery.
+        if let Some(signer) = &self.signer {
+            let request_id = format!("{}-{idx}", ctx.id_base);
+            for (name, value) in signer.sign(
+                body.as_deref().unwrap_or(""),
+                ctx.first_attempt,
+                &request_id,
+            ) {
+                let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
+                    RuntimeError::Permanent(format!(
+                        "webhook {}: invalid signing header name '{name}': {e}",
+                        self.id
+                    ))
+                })?;
+                let header_value = HeaderValue::from_str(&value).map_err(|e| {
+                    RuntimeError::Permanent(format!(
+                        "webhook {}: invalid signing header value for '{name}': {e}",
+                        self.id
+                    ))
+                })?;
+                header_map.insert(header_name, header_value);
+            }
+        }
 
         let mut req = self
             .client
@@ -315,7 +357,12 @@ mod tests {
             None,
             crate::enrichment::build_default_http_client().unwrap(),
             Arc::new(NoopMetrics),
+            None,
         )
+    }
+
+    fn ctx() -> DeliveryContext {
+        DeliveryContext::new()
     }
 
     #[tokio::test]
@@ -328,7 +375,7 @@ mod tests {
             .await;
         let mut sink = sink_to(format!("{}/hook", server.uri()));
         let result: ProcessResult = vec![detection("hi")];
-        assert!(sink.send(&result).await.is_ok());
+        assert!(sink.send(&result, &ctx()).await.is_ok());
     }
 
     #[tokio::test]
@@ -340,7 +387,7 @@ mod tests {
             .await;
         let mut sink = sink_to(format!("{}/hook", server.uri()));
         let result: ProcessResult = vec![detection("hi")];
-        match sink.send(&result).await {
+        match sink.send(&result, &ctx()).await {
             Err(RuntimeError::Io(_)) => {}
             other => panic!("expected retryable Io error, got {other:?}"),
         }
@@ -355,7 +402,7 @@ mod tests {
             .await;
         let mut sink = sink_to(format!("{}/hook", server.uri()));
         let result: ProcessResult = vec![detection("hi")];
-        match sink.send(&result).await {
+        match sink.send(&result, &ctx()).await {
             Err(RuntimeError::Permanent(_)) => {}
             other => panic!("expected permanent error, got {other:?}"),
         }
@@ -386,7 +433,7 @@ mod tests {
             }),
         };
         let result: ProcessResult = vec![correlation];
-        assert!(sink.send(&result).await.is_ok());
+        assert!(sink.send(&result, &ctx()).await.is_ok());
     }
 
     #[test]

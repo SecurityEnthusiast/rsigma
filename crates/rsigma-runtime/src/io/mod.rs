@@ -159,7 +159,10 @@ impl Sink {
                 Sink::Nats(s) => s.send(result).await,
                 #[cfg(feature = "otlp")]
                 Sink::Otlp(s) => s.send(result).await,
-                Sink::Webhook(s) => s.send(result).await,
+                // The delivery layer drives webhooks through `DeliverySink`
+                // with a per-item context; this direct path is a completeness
+                // fallback, so it mints a one-shot context.
+                Sink::Webhook(s) => s.send(result, &DeliveryContext::new()).await,
                 Sink::FanOut(sinks) => {
                     for (idx, sink) in sinks.iter_mut().enumerate() {
                         if let Err(e) = sink.send(result).await {
