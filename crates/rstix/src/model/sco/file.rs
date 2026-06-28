@@ -10,6 +10,7 @@ use crate::model::common::ScoCommonProps;
 use crate::model::sco::extensions::{
     ArchiveExt, NtfsExt, PdfExt, RasterImageExt, WindowsPeBinaryExt,
 };
+use crate::model::validate::validate_sco_ref;
 
 /// Properties of a file on a file system (STIX §6.7).
 ///
@@ -115,6 +116,9 @@ impl File {
         PdfExt::validate_in_map(&self.common.extensions)?;
         RasterImageExt::validate_in_map(&self.common.extensions)?;
         WindowsPeBinaryExt::validate_in_map(&self.common.extensions)?;
+        for child in &self.contains_refs {
+            validate_sco_ref(child)?;
+        }
         Ok(())
     }
 }

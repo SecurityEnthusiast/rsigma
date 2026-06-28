@@ -9,8 +9,8 @@
   "confidence": 75,
   "relationship_type": "attributed-to",
   "description": "Relationship with SDO/SRO common properties populated.",
-  "source_ref": "intrusion-set--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061",
-  "target_ref": "campaign--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0062",
+  "source_ref": "campaign--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0062",
+  "target_ref": "intrusion-set--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061",
   "start_time": "2016-04-01T00:00:00.000Z",
   "stop_time": "2016-05-01T00:00:00.000Z"
 }

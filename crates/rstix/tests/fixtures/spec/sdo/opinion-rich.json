@@ -1,0 +1,20 @@
+{
+  "type": "opinion",
+  "spec_version": "2.1",
+  "id": "opinion--b01efc25-77b4-4003-b18b-f6e24b5cd9f7",
+  "created_by_ref": "identity--f431f809-377b-45e0-aa1c-6a4751cae5ff",
+  "created": "2016-05-12T08:17:27.000Z",
+  "modified": "2016-05-12T08:17:27.000Z",
+  "labels": ["review"],
+  "confidence": 70,
+  "object_refs": [
+    "relationship--16d2358f-3b0d-4c88-b047-0da2f7ed4471",
+    "campaign--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f"
+  ],
+  "opinion": "agree",
+  "explanation": "The evidence supports this assessment.",
+  "authors": ["Analyst One"],
+  "object_marking_refs": [
+    "marking-definition--613f2e26-407d-48c7-9eca-b8e91df99dc9"
+  ]
+}

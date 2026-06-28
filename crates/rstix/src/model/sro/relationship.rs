@@ -3,17 +3,17 @@
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::SdoSroCommonProps;
+use crate::model::validate::{validate_relationship_endpoints, validate_relationship_type};
 
-/// Source object reference (STIX §5.1.2 — SDO or SCO; target validation deferred).
+/// Source object reference (STIX §5.1.2 — SDO or SCO).
 pub type RelSourceRef = StixId;
-/// Target object reference (STIX §5.1.2 — SDO or SCO; target validation deferred).
+/// Target object reference (STIX §5.1.2 — SDO or SCO).
 pub type RelTargetRef = StixId;
 
 /// A STIX relationship linking a source object to a target object.
 ///
 /// `source_ref` and `target_ref` must reference SDOs or SCOs per STIX §5.1.2.
-/// SDO/SCO-only validation is deferred until `StixObject` dispatch lands
-/// (follow-up: typed bundle parse).
+/// Reference kind is validated from the id prefix at deserialize time.
 ///
 /// # Examples
 ///
@@ -43,7 +43,10 @@ pub struct Relationship {
     /// STIX object type (`relationship`).
     #[cfg_attr(
         feature = "serde",
-        serde(rename = "type", deserialize_with = "deserialize_relationship_type")
+        serde(
+            rename = "type",
+            deserialize_with = "deserialize_relationship_type_field"
+        )
     )]
     object_type: String,
     /// SDO/SRO common properties.
@@ -79,9 +82,15 @@ impl Relationship {
     /// STIX type name for relationships.
     pub const TYPE_NAME: &'static str = "relationship";
 
-    /// Check relationship-specific invariants (type charset, time ordering).
+    /// Check relationship-specific invariants (type charset, time ordering, ref kinds).
     pub fn validate(&self) -> Result<(), ModelError> {
+        self.common.validate(Self::TYPE_NAME)?;
         validate_relationship_type(&self.relationship_type)?;
+        validate_relationship_endpoints(
+            &self.source_ref,
+            &self.target_ref,
+            &self.relationship_type,
+        )?;
         if let (Some(start_time), Some(stop_time)) = (&self.start_time, &self.stop_time)
             && stop_time <= start_time
         {
@@ -91,19 +100,8 @@ impl Relationship {
     }
 }
 
-fn validate_relationship_type(relationship_type: &str) -> Result<(), ModelError> {
-    if relationship_type.is_empty()
-        || !relationship_type
-            .bytes()
-            .all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'-'))
-    {
-        return Err(ModelError::RelationshipTypeInvalid);
-    }
-    Ok(())
-}
-
 #[cfg(feature = "serde")]
-fn deserialize_relationship_type<'de, D>(deserializer: D) -> Result<String, D::Error>
+fn deserialize_relationship_type_field<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -118,7 +116,10 @@ impl<'de> serde::Deserialize<'de> for Relationship {
     {
         #[derive(serde::Deserialize)]
         struct Raw {
-            #[serde(rename = "type", deserialize_with = "deserialize_relationship_type")]
+            #[serde(
+                rename = "type",
+                deserialize_with = "deserialize_relationship_type_field"
+            )]
             object_type: String,
             #[serde(flatten)]
             common: SdoSroCommonProps,

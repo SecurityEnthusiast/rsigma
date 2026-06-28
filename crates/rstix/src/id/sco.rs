@@ -12,6 +12,39 @@ pub enum DeterministicIdError {
     /// Canonicalization failed.
     #[error("JCS serialization failed: {0}")]
     JcsFailed(String),
+    /// Parsed id does not match deterministic generation from contributing properties.
+    #[error("SCO id mismatch: expected {expected}, got {actual}")]
+    IdMismatch {
+        /// Expected deterministic id.
+        expected: String,
+        /// Id present on the wire.
+        actual: String,
+    },
+}
+
+/// Verify that an SCO id matches deterministic UUIDv5 generation when contributing
+/// properties are present (STIX §2.9 / §3.4 SHOULD). Skips `process` and objects
+/// with no id-contributing properties (those use random UUIDv4).
+pub fn verify_sco_deterministic_id(
+    kind: ScoKind,
+    full_value: &serde_json::Value,
+    actual_id: &StixId,
+) -> Result<(), DeterministicIdError> {
+    if kind == ScoKind::Process {
+        return Ok(());
+    }
+    let selected = select_id_contributing_properties(kind, full_value);
+    if selected.as_object().is_some_and(serde_json::Map::is_empty) {
+        return Ok(());
+    }
+    let expected = generate_sco_id(kind, full_value)?;
+    if actual_id.as_str() != expected.as_str() {
+        return Err(DeterministicIdError::IdMismatch {
+            expected: expected.as_str().to_owned(),
+            actual: actual_id.as_str().to_owned(),
+        });
+    }
+    Ok(())
 }
 
 fn clone_field(

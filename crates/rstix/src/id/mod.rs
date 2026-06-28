@@ -6,4 +6,5 @@ mod sco;
 pub use jcs::{JcsError, jcs_canonicalize};
 pub use sco::{
     DeterministicIdError, STIX_SCO_NAMESPACE, generate_sco_id, select_id_contributing_properties,
+    verify_sco_deterministic_id,
 };

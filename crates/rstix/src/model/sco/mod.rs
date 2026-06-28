@@ -188,6 +188,102 @@ impl QueryableStixObject for ScoObject {
     }
 }
 
+#[cfg(feature = "serde")]
+impl serde::Serialize for ScoObject {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Artifact(inner) => inner.serialize(serializer),
+            Self::AutonomousSystem(inner) => inner.serialize(serializer),
+            Self::Directory(inner) => inner.serialize(serializer),
+            Self::DomainName(inner) => inner.serialize(serializer),
+            Self::EmailAddr(inner) => inner.serialize(serializer),
+            Self::EmailMessage(inner) => inner.serialize(serializer),
+            Self::File(inner) => inner.serialize(serializer),
+            Self::Ipv4Addr(inner) => inner.serialize(serializer),
+            Self::Ipv6Addr(inner) => inner.serialize(serializer),
+            Self::MacAddr(inner) => inner.serialize(serializer),
+            Self::Mutex(inner) => inner.serialize(serializer),
+            Self::NetworkTraffic(inner) => inner.serialize(serializer),
+            Self::Process(inner) => inner.serialize(serializer),
+            Self::Software(inner) => inner.serialize(serializer),
+            Self::Url(inner) => inner.serialize(serializer),
+            Self::UserAccount(inner) => inner.serialize(serializer),
+            Self::WindowsRegistryKey(inner) => inner.serialize(serializer),
+            Self::X509Certificate(inner) => inner.serialize(serializer),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+pub(crate) fn deserialize_sco_object_from_value(
+    value: serde_json::Value,
+) -> Result<ScoObject, serde_json::Error> {
+    if let Some(map) = value.as_object() {
+        crate::model::validate::validate_sco_forbidden_common_keys(map)
+            .map_err(serde::de::Error::custom)?;
+    }
+
+    let type_name = value
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "SCO object missing type field",
+            ))
+        })?;
+
+    crate::model::validate::validate_sco_deterministic_id(type_name, &value)
+        .map_err(serde::de::Error::custom)?;
+
+    match type_name {
+        "artifact" => serde_json::from_value(value).map(ScoObject::Artifact),
+        "autonomous-system" => serde_json::from_value(value).map(ScoObject::AutonomousSystem),
+        "directory" => serde_json::from_value(value).map(ScoObject::Directory),
+        "domain-name" => serde_json::from_value(value).map(ScoObject::DomainName),
+        "email-address" => serde_json::from_value(value).map(ScoObject::EmailAddr),
+        "email-message" => serde_json::from_value(value).map(ScoObject::EmailMessage),
+        "file" => serde_json::from_value(value).map(ScoObject::File),
+        "ipv4-addr" => serde_json::from_value(value).map(ScoObject::Ipv4Addr),
+        "ipv6-addr" => serde_json::from_value(value).map(ScoObject::Ipv6Addr),
+        "mac-addr" => serde_json::from_value(value).map(ScoObject::MacAddr),
+        "mutex" => serde_json::from_value(value).map(ScoObject::Mutex),
+        "network-traffic" => serde_json::from_value(value).map(ScoObject::NetworkTraffic),
+        "process" => serde_json::from_value(value).map(ScoObject::Process),
+        "software" => serde_json::from_value(value).map(ScoObject::Software),
+        "url" => serde_json::from_value(value).map(ScoObject::Url),
+        "user-account" => serde_json::from_value(value).map(ScoObject::UserAccount),
+        "windows-registry-key" => serde_json::from_value(value).map(ScoObject::WindowsRegistryKey),
+        "x509-certificate" => serde_json::from_value(value).map(ScoObject::X509Certificate),
+        _ => Err(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unknown SCO type `{type_name}`"),
+        ))),
+    }
+}
+
+crate::impl_bundle_object_cast!(Sco, Artifact, Artifact);
+crate::impl_bundle_object_cast!(Sco, AutonomousSystem, AutonomousSystem);
+crate::impl_bundle_object_cast!(Sco, Directory, Directory);
+crate::impl_bundle_object_cast!(Sco, DomainName, DomainName);
+crate::impl_bundle_object_cast!(Sco, EmailAddr, EmailAddr);
+crate::impl_bundle_object_cast!(Sco, EmailMessage, EmailMessage);
+crate::impl_bundle_object_cast!(Sco, File, File);
+crate::impl_bundle_object_cast!(Sco, Ipv4Addr, Ipv4Addr);
+crate::impl_bundle_object_cast!(Sco, Ipv6Addr, Ipv6Addr);
+crate::impl_bundle_object_cast!(Sco, MacAddr, MacAddr);
+crate::impl_bundle_object_cast!(Sco, Mutex, Mutex);
+crate::impl_bundle_object_cast!(Sco, NetworkTraffic, NetworkTraffic);
+crate::impl_bundle_object_cast!(Sco, Process, Process);
+crate::impl_bundle_object_cast!(Sco, Software, Software);
+crate::impl_bundle_object_cast!(Sco, Url, Url);
+crate::impl_bundle_object_cast!(Sco, UserAccount, UserAccount);
+crate::impl_bundle_object_cast!(Sco, WindowsRegistryKey, WindowsRegistryKey);
+crate::impl_bundle_object_cast!(Sco, X509Certificate, X509Certificate);
+
 #[cfg(all(test, feature = "serde"))]
 mod tests {
     use super::*;

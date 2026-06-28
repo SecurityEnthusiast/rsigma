@@ -4,9 +4,9 @@
 
 - [README](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md)
 
-The crate is delivered incrementally by phase. Phase 1 (Core Foundation) is complete with core primitives, deterministic SCO ID helpers, and vocabulary tables.
+The crate is delivered incrementally by phase. **Core Foundation** is complete with core primitives, deterministic SCO ID helpers, and vocabulary tables.
 
-Phase 2 (Data Model + Serialization) is **in progress**. The `model::common`, `model::meta`, `model::sro`, and `model::sco` modules are in place; this work is not releasable on its own.
+**Data Model + Serialization** is **in progress**. The typed object model (meta, all 19 SDOs, SROs, 18 SCOs + extensions), `StixObject` dispatch, and `Bundle` parsing are in place with fixture-backed tests.
 
 ## Current scope
 
@@ -15,19 +15,20 @@ Phase 2 (Data Model + Serialization) is **in progress**. The `model::common`, `m
 - Core primitives (`StixId`, object-kind discriminants, typed IDs, timestamps, confidence scales, spec version, language tags, query traits).
 - Deterministic SCO ID helpers (`select_id_contributing_properties`, canonicalization, UUIDv5 generation).
 - Open and closed vocabulary tables (`vocab`) including `OpinionValue` ordering.
-- `model::common` property containers (`SdoSroCommonProps`, `ScoCommonProps`, `ExternalReference`, `GranularMarking`, `ExtensionMap`).
+- `model::common` property containers (`SdoSroCommonProps`, `ScoCommonProps`, `ExternalReference`, `GranularMarking`, `ExtensionMap`, `KillChainPhase`).
 - `model::meta` objects (`MarkingDefinition`, `ExtensionDefinition`, `LanguageContent`, `MetaObject`) with TLP UUID constants.
+- `model::sdo` objects (all 19 STIX domain objects, `SdoObject`, `IndicatorPattern`, `ObservedDataForm`).
 - `model::sro` objects (`Relationship`, `Sighting`, `WhereSightedRef`, `SroObject`).
 - `model::sco` objects (all 18 STIX cyber-observable types, `ScoObject`, typed ref unions, 12 predefined extensions).
+- `model::StixObject` and `model::Bundle` with `parse_bundle()` entrypoint, bundle ref validation, and `x_*` property capture.
 - Leaf-type serde (`StixId`, timestamps, typed IDs, `LanguageTag`) via `serde_impls/` and inline/`macro` impls.
-- Temporary `parse_bundle()` entrypoint that currently returns `ParseError::NotImplemented`.
-- Integration tests in `tests/spec.rs` backed by JSON fixtures under `tests/fixtures/spec/`.
+- Integration tests in `tests/spec.rs` and `tests/bundle.rs` backed by JSON fixtures under `tests/fixtures/spec/`.
 
 ## Testing
 
 See [crate README — Development Notes](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#development-notes) for the full convention. Summary:
 
-- **Wire tests** (`tests/spec.rs`, `tests/fixtures/spec/`): JSON round-trip via `roundtrip_strict` (complete types) or subset `roundtrip` (common-property-only structs), plus reject fixtures.
+- **Wire tests** (`tests/spec.rs`, `tests/bundle.rs`, `tests/fixtures/spec/`): JSON round-trip via `roundtrip_strict` (complete types) or subset `roundtrip` (common-property-only structs), plus reject fixtures.
 - **Unit tests** (`src/**` `#[cfg(test)]`): invariants and normative pins without duplicating wire coverage.
 
 ### STIX version vs TLP marking encoding
@@ -57,21 +58,18 @@ Nine public constants (`TLP1_*`, `TLP2_*`) hold the predefined STIX `marking-def
 
 The unit pin does not replace wire tests: it covers ids that do not yet have dedicated JSON fixtures. The wire tests prove serde and field mapping for representative TLP 1.x and 2.0 shapes.
 
-### Model invariant decisions (`model::common`)
+### Model invariant decisions
 
-rstix enforces STIX invariants at deserialize time (not deferred to a later validation pass). See [crate README — Model invariant decisions](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#model-invariant-decisions-modelcommon) for the full table. Summary:
+rstix enforces STIX invariants at deserialize time (and bundle-scoped checks after parse). See [crate README — Model invariant decisions](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#model-invariant-decisions-modelcommon) for the full table. Summary:
 
 - **`confidence`:** `Option<Confidence>` on SDO/SRO common props (absent vs present).
-- **`external-reference` §2.5.2:** non-empty `source_name` plus at least one detail field (`description`, `url`, or `external_id`).
+- **`external-reference` §2.5.2:** non-empty `source_name` plus at least one detail field.
 - **`granular-marking`:** required non-empty `selectors`; `marking_ref` xor `lang`.
-- **`ExtensionDefinition`:** required `created_by_ref` (STIX §7.2.2).
-- **Meta object `type`:** deserialize rejects JSON whose `"type"` does not match the target struct.
-- **SRO object `type`:** same single-pass `"type"` validation for `Relationship` and `Sighting`.
-- **SRO invariants:** `Relationship` relationship-type charset and time ordering; `Sighting` count range, time-window ordering, and `where_sighted_refs` identity/location typing — see [crate README — Model invariant decisions](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#model-invariant-decisions-modelcommon).
-- **SRO deferral:** `source_ref` / `target_ref` / `sighting_of_ref` SDO/SCO target validation waits for `StixObject` dispatch.
-- **SCO invariants:** artifact payload XOR url; file hashes-or-name; email-message multipart rules; network-traffic protocols and endpoint refs; at-least-one-property types (process, user-account, windows-registry-key, x509-certificate); typed ref unions for domain-name, directory, network-traffic endpoints, and email MIME raw refs — see [crate README — Model invariant decisions](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#model-invariant-decisions-modelcommon).
-- **SCO query semantics:** `ScoObject::created()` / `modified()` always return `None`; ref fields expose `QueryValue::Id`.
-- **Round-trip helpers:** `roundtrip_strict` requires full fixture equality for complete types. Subset `roundtrip` — every emitted field must match the fixture, extra fixture keys allowed, dropped fields not caught on object fixtures; for common-property structs that ignore extra SDO keys until concrete SDO types land in a later Phase 2 milestone.
+- **SDO/SRO/Meta/SCO `type`:** deserialize rejects wrong or missing `"type"`.
+- **SRO refs:** relationship endpoints must be SDO or SCO kinds; `sighting_of_ref` must be SDO kind; bundle parse verifies referenced ids exist in the same bundle.
+- **Relationship matrix:** per-`relationship_type` allowed source/target pairs deferred to the **Validation Pipeline**.
+- **`x_*` properties:** captured in `Bundle::extra_properties()` during parse.
+- **SCO invariants:** see crate README for artifact/file/process/user-account rules and extension validation.
 
 ## Feature flags
 

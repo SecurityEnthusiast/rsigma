@@ -1,0 +1,33 @@
+{
+  "type": "indicator",
+  "spec_version": "2.1",
+  "id": "indicator--26ffb872-1dd9-446e-b6f5-d58527e5b5d2",
+  "created": "2016-05-12T08:17:27.000Z",
+  "modified": "2016-05-12T08:17:27.000Z",
+  "created_by_ref": "identity--c78cb6e5-0c4b-4611-8297-d1b8b55e40b5",
+  "labels": ["malicious-activity"],
+  "confidence": 85,
+  "name": "File hash for Poison Ivy variant",
+  "description": "This file hash indicates that a sample of Poison Ivy is present.",
+  "indicator_types": ["malicious-activity"],
+  "pattern": "[file:hashes.'SHA-256' = 'ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c']",
+  "pattern_type": "stix",
+  "pattern_version": "2.1",
+  "valid_from": "2016-01-01T00:00:00.000Z",
+  "valid_until": "2017-01-01T00:00:00.000Z",
+  "kill_chain_phases": [
+    {
+      "kill_chain_name": "lockheed-martin-cyber-kill-chain",
+      "phase_name": "installation"
+    }
+  ],
+  "external_references": [
+    {
+      "source_name": "capec",
+      "external_id": "CAPEC-163"
+    }
+  ],
+  "object_marking_refs": [
+    "marking-definition--613f2e26-407d-48c7-9eca-b8e91df99dc9"
+  ]
+}

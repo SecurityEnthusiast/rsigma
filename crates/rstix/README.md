@@ -3,10 +3,10 @@
 [![CI](https://github.com/timescale/rsigma/actions/workflows/ci.yml/badge.svg)](https://github.com/timescale/rsigma/actions/workflows/ci.yml)
 
 `rstix` is a Rust library crate for STIX 2.1 and TAXII 2.1 in the rsigma workspace.
-Phase 1 (Core Foundation) is complete: core primitive types, deterministic SCO ID helpers,
+**Core Foundation** is complete: core primitive types, deterministic SCO ID helpers,
 and vocabulary tables are available for downstream model/validation phases.
 
-Phase 2 (Data Model + Serialization) is **in progress**. The `model::common`, `model::meta`, `model::sro`, and `model::sco` modules are in place; typed SDO objects, `StixObject` dispatch, and `Bundle` parsing follow in later work.
+**Data Model + Serialization** is **in progress**. The `model::common`, `model::meta`, `model::sdo`, `model::sro`, `model::sco`, `StixObject`, and `Bundle` layers are in place with fixture-backed tests. Streaming bundle parse, custom type registry, and the **Validation Pipeline** follow in later work.
 
 This library is part of [rsigma].
 
@@ -14,7 +14,8 @@ This library is part of [rsigma].
 
 ### Entry points
 
-- `parse_bundle(json: &str)`: top-level STIX bundle parse entrypoint. In the current phase it returns `Err(ParseError::NotImplemented)`.
+- `parse_bundle(json: &str)`: parse a STIX 2.1 bundle into a typed [`Bundle`](model::Bundle) (alias for [`Bundle::parse`](model::Bundle::parse)).
+- `model::Bundle::parse_with_options(json, opts)`: bundle parse with [`ParseOptions`](model::ParseOptions) (custom types, object limits).
 - `core::StixId::parse(id: &str)`: parse and validate STIX object IDs in `{type}--{uuid}` form.
 - `core::StixId::generate(type_name: &str)`: create a random UUIDv4-based STIX ID for a type prefix.
 - `id::generate_sco_id(kind, value)`: generate deterministic SCO IDs using canonicalized contributing properties.
@@ -23,7 +24,7 @@ This library is part of [rsigma].
 
 ### Error types
 
-- `ParseError`: top-level parse error enum. The current phase includes only `NotImplemented`.
+- `ParseError`: top-level parse error enum (JSON errors, bundle shape, duplicate ids, object limits, unknown types, and wrapped `ModelError`).
 - `model::ModelError`: model-level invariant violations (for example non-empty `source_name`, external-reference §2.5.2 detail fields, granular-marking exclusivity and selectors).
 - `core::StixIdError`: errors for STIX ID parsing and typed-ID conversion.
 - `core::TimestampError`: errors for STIX/TAXII timestamp parsing.
@@ -34,7 +35,7 @@ This library is part of [rsigma].
 ### Module surface
 
 - `core` (always): `StixId`, typed IDs (42 wrappers), `StixObjectKind` + SDO/SCO/SRO/Meta discriminants, `StixTimestamp`, `TaxiiTimestamp`, `Confidence` and built-in scales, `SpecVersion`, `LanguageTag`, `QueryableStixObject`, `QueryValue`.
-- `model` (always): `ModelError`; `model::common` — `SdoSroCommonProps`, `ScoCommonProps`, `ExternalReference`, `GranularMarking`, `ExtensionMap`, and related types; `model::meta` — `MarkingDefinition`, `ExtensionDefinition`, `LanguageContent`, `MetaObject`, and TLP UUID constants; `model::sro` — `Relationship`, `Sighting`, `WhereSightedRef`, `SroObject`, `RelSourceRef`, `RelTargetRef`, `SightingOfRef`, and `Sighting::COUNT_MAX`; `model::sco` — all 18 STIX cyber-observable types, `ScoObject`, typed ref unions (`ref_types`), and 12 predefined SCO extensions under `model::sco::extensions`.
+- `model` (always): `ModelError`; `model::common` — `SdoSroCommonProps`, `ScoCommonProps`, `ExternalReference`, `GranularMarking`, `ExtensionMap`, `KillChainPhase`, and related types; `model::meta` — `MarkingDefinition`, `ExtensionDefinition`, `LanguageContent`, `MetaObject`, and TLP UUID constants; `model::sdo` — all 19 STIX domain objects, `SdoObject`, `IndicatorPattern`, `ObservedDataForm`, and typed ref unions (`MalwareSampleRef`, `MalwareAnalysisSampleRef`); `model::sro` — `Relationship`, `Sighting`, `WhereSightedRef`, `SroObject`, `RelSourceRef`, `RelTargetRef`, `SightingOfRef`, and `Sighting::COUNT_MAX`; `model::sco` — all 18 STIX cyber-observable types, `ScoObject`, typed ref unions (`ref_types`), and 12 predefined SCO extensions under `model::sco::extensions`; `model::StixObject` — top-level enum dispatching SDO/SCO/SRO/Meta plus `CustomStixObject`; `model::Bundle` — bundle container with ref validation and `x_*` property capture; `model::ParseOptions` / `TypeRegistry` — parse-time limits and optional custom type registration.
 - `id` (always): deterministic SCO ID derivation (`select_id_contributing_properties`, canonicalization, UUIDv5 generation).
 - `vocab` (always): open/closed vocabulary tables and `OpinionValue` ordering enum.
 - `serde_impls` (internal, `serde` feature): hand-written serializers for `StixId`, timestamps, and `Confidence`; typed-ID serde is generated in the `define_typed_id!` macro.
@@ -45,19 +46,23 @@ This library is part of [rsigma].
 
 ## Current Phase Status
 
-- **Phase:** 2 in progress (`model::common`, `model::meta`, `model::sro`, and `model::sco` landed)
-- **Implemented:** `model::common`, leaf-type serde, `model::meta` (marking-definition, extension-definition, language-content), `model::sro` (relationship, sighting), and `model::sco` (18 cyber-observable types + 12 extensions) with fixture-backed tests.
-- **Deferred:** SDO typed objects, `StixObject` dispatch, `Bundle` parsing, validation pipeline, graph/marking/store/TAXII runtime behaviors.
+- **Phase:** Data Model + Serialization in progress (`model::common`, `model::meta`, `model::sdo`, `model::sro`, `model::sco`, `StixObject`, and `Bundle` landed)
+- **Implemented:** full typed object model for meta, all 19 SDOs, SROs, 18 SCOs (+ 12 extensions), `StixObject` dispatch, `Bundle::parse`, bundle-scoped reference existence checks, `x_*` top-level property capture, and `parse_bundle()`.
+- **Deferred to later phases:** **Validation Pipeline** semantic checks (granular selector paths, language-content nested rules, STIX-W0031), **Pattern Engine** indicator AST, graph/store/TAXII runtime behaviors.
+- **Data Model + Serialization** ship gate: optional real MITRE ATT&CK corpus via `RSTIX_ATTCK_BUNDLE` / `tests/fixtures/corpus/enterprise-attack.json` (synthetic large-bundle tests run in CI today).
 
 ## Usage
 
 ```rust
 use rstix::core::{IndicatorId, StixId, StixTimestamp};
 use rstix::model::common::SdoSroCommonProps;
-use rstix::{parse_bundle, ParseError};
+use rstix::parse_bundle;
 
-let result = parse_bundle(r#"{"type":"bundle","id":"bundle--00000000-0000-0000-0000-000000000000"}"#);
-assert!(matches!(result, Err(ParseError::NotImplemented)));
+let bundle = parse_bundle(
+    r#"{"type":"bundle","id":"bundle--00000000-0000-0000-0000-000000000000","objects":[]}"#,
+)
+.unwrap();
+assert_eq!(bundle.id().type_name(), "bundle");
 
 let id = StixId::generate("indicator");
 let typed = IndicatorId::from_stix_id(id).unwrap();
@@ -77,7 +82,7 @@ assert!(json.contains("\"spec_version\":\"2.1\""));
 
 ### Testing layout
 
-Two layers, consistent across Phase 2:
+Two layers, consistent across the Data Model + Serialization phase:
 
 | Layer | Location | Purpose |
 | ----- | -------- | ------- |
@@ -108,7 +113,7 @@ STIX 2.1 bundle
 **What is deprecated in STIX 2.1 (meta objects on this branch):**
 
 - Only the **TLP v1 encoding** (`definition_type` / `definition` for TLP labels). STIX 2.1 says producers should use TLP v2 (`extensions`) for new markings. rstix still **parses** v1 because ATT&CK and other feeds reference the four predefined v1 UUIDs.
-- Phase 4 validation will emit **STIX-W0031** when v1 encoding is detected. Phase 2 does not warn yet — it deserializes.
+- The **Validation Pipeline** will emit **STIX-W0031** when v1 encoding is detected. Data Model + Serialization does not warn yet — it deserializes.
 
 **What is not deprecated:** `ExtensionDefinition`, `LanguageContent`, statement markings (`definition_type: "statement"`), and all five TLP v2 predefined markings.
 
@@ -146,7 +151,7 @@ Prefer **id comparison** (`TLP1_*` / `TLP2_*`) on `object_marking_refs` when you
 
 `model::meta::marking_def` exports nine public `TLP*` constants (four TLP 1.x + five TLP 2.0 predefined `marking-definition` ids from the STIX specification). Callers compare `object_marking_refs` and granular markings against these ids without loading JSON.
 
-**Why the values are hardcoded:** they are normative spec identifiers, not application configuration. The constants are the public API surface for known TLP markings (the same pattern as Phase 1 SCO ID golden vectors).
+**Why the values are hardcoded:** they are normative spec identifiers, not application configuration. The constants are the public API surface for known TLP markings (the same pattern as Core Foundation SCO ID golden vectors).
 
 **Why `constants_match_spec_ids` exists:** the unit test `constants_match_spec_ids` in `marking_def.rs` pins all nine ids against the spec literals so a mistaken edit to a `pub const` fails CI. It does not parse JSON; it guards the full constant set in one place.
 
@@ -156,7 +161,9 @@ Prefer **id comparison** (`TLP1_*` / `TLP2_*`) on `object_marking_refs` when you
 
 ### Model invariant decisions (`model::common`)
 
-Phase 2 validates STIX invariants at deserialize time (and via `new` / `validate` for programmatic construction). Where the spec distinguishes “absent” from “invalid”, rstix **enforces** at parse time rather than deferring to a later validation pipeline:
+The **Data Model + Serialization** phase validates STIX invariants at deserialize time (and via `new` / `validate` for programmatic construction). Where the spec distinguishes “absent” from “invalid”, rstix **enforces** at parse time rather than deferring to a later validation pipeline.
+
+**Spec audit record:** open vs resolved differentials vs `plan/stix-v2.1-spec.md` are documented in `plan/spec-differential-status.md` (local plan folder; not committed to git).
 
 | Area | Enforced behavior | Why not defer? |
 | ---- | ----------------- | -------------- |
@@ -164,12 +171,29 @@ Phase 2 validates STIX invariants at deserialize time (and via `new` / `validate
 | `external-reference` (STIX §2.5.2) | Non-empty `source_name` **and** at least one of `description`, `url`, or `external_id`. | `source_name`-only objects are invalid per spec; rejecting at deserialize catches bad CTI data early. Negative fixture: `external-reference-source-only.json`. |
 | `granular-marking` selectors | Field is **required** on deserialize (no `#[serde(default)]`); must be non-empty in `validate()`. | Empty or missing selectors are invalid; `with_marking_ref` / `with_lang` delegate to `new()` so the same rules apply programmatically. |
 | `ExtensionDefinition.created_by_ref` | Required on deserialize (`ExtensionDefinitionMissingCreatedByRef`). | STIX §7.2.2 requires the authoring identity reference for extension definitions. |
-| `Relationship.relationship_type` | ASCII `[a-z0-9-]` only; `stop_time` must be later than `start_time` when both set. | STIX §5.1.2 charset and time-window MUST rules. |
+| `Relationship.relationship_type` | ASCII `[a-z0-9-]` only; `stop_time` must be later than `start_time` when both set; per-type source/target matrix from STIX 2.1 relationship tables (55 forward entries + common `related-to` / `derived-from` / `duplicate-of`). | STIX §5.1.2 charset, time-window, and relationship context tables. |
+| `Sighting.summary` | Wire bool or string; stored as `Option<String>` (`true`/`false` normalized); serializes bool for `"true"`/`"false"`. | STIX §5.2.1 boolean default with string wire form. |
+| SDO/SRO common props | `SdoSroCommonProps::validate`: id prefix matches `type`, `modified >= created`, marking refs not self, ref kind checks for `created_by_ref` / marking refs, `ExtensionMap::validate`. | STIX §3.2 / §7.2.1 shared invariants centralized in `model/validate.rs`. |
+| Bundle container | Rejects bundle `spec_version`; requires bundle id prefix; `validate_refs` checks existence + ref kinds + language-content `object_modified` match; serialize merges `x_*` from `extra_properties`. | STIX §8 bundle rules; no default object count cap (`usize::MAX`). |
+| SDO invariants | Removed stricter-than-spec empty-name / empty-list checks on grouping context length, note/opinion/report refs, malware-analysis product emptiness and analysis window ordering. Retained spec MUST rules: observed-data XOR + ordering + count range; indicator time window; malware family name when `is_family: true`; malware-analysis result/sco_refs + SCO kind on `analysis_sco_refs`; location geo rules; kill-chain phase empties; `OpinionValue` closed vocab; CAPEC/CVE external ref shape on attack-pattern/vulnerability; malware sample_refs same binary when `is_family: false`. | Align deserialize validation with STIX property tables — optional/empty wire values no longer rejected when spec is silent. |
+| `Relationship` per-type matrix | Enforced via `validate_relationship_endpoints` (was deferred). | Previously README listed as Validation Pipeline deferral. |
+| `language-content` | `object_modified` is `Option<StixTimestamp>`; `lang` rejected on common props; bundle validates match to target `modified`. | STIX §7.2.4. |
+| `marking-definition` | `spec_version` required; legacy `definition_type` + `definition` required when `extensions` empty. | STIX §7.2.1. |
+| `extension-definition` | Rejects `extensions`, `confidence`, and `lang` on common props. | STIX §7.2.2 forbidden common properties. |
+| SCO ref/format checks | `file.contains_refs` SCO kind; domain-name/email-addr/url basic format validation; artifact `encryption_algorithm` closed vocab; observed-data `object_refs` SCO or SRO kind. | STIX §6 reference targets and vocabularies. |
+| Extension map | Predefined extension keys (`*-ext`, TLP definition id) must not carry `extension_type`; toplevel-property-extension entries peeled before typed deserialize. | STIX §3.10 / §7.3. |
 | `Sighting.count` | `0..=999_999_999` when present. | STIX §5.2.1 inclusive range. |
 | `Sighting` time window | `last_seen >= first_seen` when both set. | STIX §5.2.1 ordering rule. |
 | `Sighting.where_sighted_refs` | Each entry must be `identity` or `location` (`WhereSightedRef`). | STIX §5.2.1 reference targets. |
-| `Relationship` / `Sighting` ref targets | `source_ref`, `target_ref`, `sighting_of_ref` accept any valid `StixId` at deserialize. | SDO/SCO-only / SDO-only validation deferred until `StixObject` dispatch. |
-| SCO `type` field | Each SCO struct rejects wrong/missing `"type"` at deserialize (`UnexpectedObjectType`). | Same single-pass validation as SRO/meta objects. |
+| `Relationship` / `Sighting` ref kind | `source_ref` / `target_ref` must be SDO or SCO kinds; `sighting_of_ref` must be SDO kind (checked via `StixObjectKind` on the id prefix). | STIX §5.1.2 / §5.2.1 reference target classes. |
+| Bundle reference existence | After parse, every collected internal ref must resolve to an object id present in the same bundle (`BundleReferenceMissing`). | Cross-object integrity within a bundle; standalone object JSON does not run this pass. |
+| `x_*` top-level properties | Keys prefixed `x_` are peeled before typed deserialize and stored in `Bundle::extra_properties()` keyed by object id; re-merged on bundle serialize. | ATT&CK and vendor extensions (Group H3); typed fields remain lossless. |
+| SDO `type` field | Each SDO struct rejects wrong/missing `"type"` at deserialize. | Same single-pass validation as SRO/meta/SCO objects. |
+| SDO typed refs | `Malware.operating_system_refs` and `MalwareAnalysis` VM/OS/software refs use `SoftwareId`; sample refs use typed unions. | STIX §4.11.1 / §4.12.1 software-object constraints. |
+| `Indicator.pattern` | Stored as `IndicatorPattern` enum (`Stix` vs `Other`); wire JSON remains flat `pattern` / `pattern_type` / `pattern_version`. | Separates STIX patterning from other languages without **Pattern Engine** AST parse. |
+| `ObservedData` content | `ObservedDataForm` enum: `ObjectRefs` XOR `DeprecatedObjects` (embedded `ScoObject` map). | STIX §4.14 mutual exclusion. |
+| `SdoObject` / `StixObject` | `#[non_exhaustive]`; `created()` / `modified()` populated for SDO/SRO/Meta arms, `None` for SCO. | STIX §3.2 common property rules. |
+| SCO `type` field | Each SCO struct rejects wrong/missing `"type"` at deserialize (`UnexpectedObjectType`). | Same single-pass validation as SRO/meta/SDO objects. |
 | SCO invariants (artifact, file, email-message, network-traffic, process, user-account, …) | Enforced in `validate()` called from custom `Deserialize`; see `ModelError` variants. | Spec MUST rules (payload XOR url, hashes or name, multipart body rules, protocols + endpoint refs, at-least-one-property types). |
 | SCO typed ref unions | `DomainNameResolvesToRef`, `DirectoryContainsRef`, `NetworkTrafficEndpointRef`, `EmailMimeBodyRawRef` reject wrong target types at deserialize. | STIX §6 union ref targets. |
 | SCO extensions | Parent types (`File`, `NetworkTraffic`, `Process`, `UserAccount`) call `validate_in_map` for known extension keys during `validate()`. Negative unit fixtures: shared `extensions/no-properties.json` for empty-body `*NoProperties` cases, plus per-extension invalid payloads where the failure mode differs. Parent `*-with-invalid-*-ext.json` fixtures in `spec.rs` prove dispatch. `ExtensionDeserializeFailed { key, detail }` preserves serde context. | Predefined extension invariants (STIX 2.1 §3.10). |
@@ -177,7 +201,7 @@ Phase 2 validates STIX invariants at deserialize time (and via `new` / `validate
 | `UserAccount` at-least-one-property | §6.16.1 specific fields **or** `unix-account-ext` key present; extension body validated separately (`windows-registry-key` checks §6.17.1 fields only — no predefined extension). | `plan/stix-v2.1-spec.md` §6.16 / §6.16.2 / §6.17. |
 | `ScoObject` / `QueryValue` | `#[non_exhaustive]`; `created()` / `modified()` always `None` for SCO arms. | STIX §3.2 — SCOs have no created/modified. |
 | `ExtensionMap` | Public `insert()` mirrors `BTreeMap` semantics. | Programmatic extension assembly without reaching into the inner map. |
-| Round-trip helpers (`tests/support/roundtrip.rs`) | `roundtrip_strict`: re-serialized JSON must equal the fixture (complete types — meta objects, SRO objects, `ExternalReference`, `GranularMarking`, `ExtensionMap`). `roundtrip`: subset compare — every emitted field must match the fixture, extra fixture keys allowed, dropped fields not caught on object fixtures; use for `SdoSroCommonProps` / `ScoCommonProps` fixtures that carry unmodeled SDO keys until concrete SDO types land. | Strict mode catches dropped fields today; subset mode matches the Phase 2 common-prop testing contract from PR #201. |
+| Round-trip helpers (`tests/support/roundtrip.rs`) | `roundtrip_strict`: re-serialized JSON must equal the fixture (complete types — meta, SDO, SRO, SCO, common leaf types). `roundtrip`: subset compare for `SdoSroCommonProps` / `ScoCommonProps` fixtures only. | Strict mode catches dropped fields; subset mode is documented as partial. |
 
 ## License
 

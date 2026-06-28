@@ -65,9 +65,8 @@ pub fn assert_fixture_rejects<T: DeserializeOwned>(relative_path: &str) {
 /// Subset compare used by [`roundtrip`]: for object fixtures, every emitted field
 /// must match the fixture, but extra fixture keys are allowed; dropped fields are
 /// NOT caught by this object-vs-object arm. Only non-object fixtures use full value
-/// equality. Once concrete SDO/SRO types land in a later Phase 2 milestone, full
-/// fixture comparison will catch dropped fields for free. Prefer [`roundtrip_strict`]
-/// for complete types that must not drop any fixture field today.
+/// equality. Prefer [`roundtrip_strict`] for complete types that must not drop any
+/// fixture field today.
 fn assert_reserialized_matches_fixture_subset(
     original: &serde_json::Value,
     reserialized: &serde_json::Value,

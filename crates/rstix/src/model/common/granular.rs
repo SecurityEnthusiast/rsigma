@@ -82,6 +82,9 @@ impl GranularMarking {
         if self.selectors.is_empty() {
             return Err(ModelError::GranularMarkingEmptySelectors);
         }
+        for selector in &self.selectors {
+            crate::model::validate::validate_granular_selector_syntax(selector)?;
+        }
         match (self.marking_ref.is_some(), self.lang.is_some()) {
             (true, false) | (false, true) => Ok(()),
             _ => Err(ModelError::GranularMarkingExclusivity),

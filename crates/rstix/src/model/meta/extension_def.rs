@@ -75,8 +75,24 @@ impl ExtensionDefinition {
 
     /// Validate required `created_by_ref`.
     pub fn validate(&self) -> Result<(), ModelError> {
+        self.common.validate(Self::TYPE_NAME)?;
         if self.common.created_by_ref.is_none() {
             return Err(ModelError::ExtensionDefinitionMissingCreatedByRef);
+        }
+        if !self.common.extensions.is_empty() {
+            return Err(ModelError::ExtensionDefinitionForbiddenCommonProperty {
+                property: "extensions".to_owned(),
+            });
+        }
+        if self.common.confidence.is_some() {
+            return Err(ModelError::ExtensionDefinitionForbiddenCommonProperty {
+                property: "confidence".to_owned(),
+            });
+        }
+        if self.common.lang.is_some() {
+            return Err(ModelError::ExtensionDefinitionForbiddenCommonProperty {
+                property: "lang".to_owned(),
+            });
         }
         Ok(())
     }
