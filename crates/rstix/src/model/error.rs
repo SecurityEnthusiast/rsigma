@@ -29,6 +29,70 @@ pub enum ModelError {
         /// `type` value from the JSON document.
         actual: String,
     },
+    /// A kill-chain phase `kill_chain_name` is empty.
+    #[error("kill chain phase kill_chain_name must be non-empty")]
+    KillChainPhaseEmptyKillChainName,
+    /// A kill-chain phase `phase_name` is empty.
+    #[error("kill chain phase phase_name must be non-empty")]
+    KillChainPhaseEmptyPhaseName,
+    /// Object `id` prefix does not match the declared STIX `type`.
+    #[error(
+        "STIX id `{id}` type prefix `{actual_type}` does not match object type `{expected_type}`"
+    )]
+    IdTypeMismatch {
+        /// Full STIX id string.
+        id: String,
+        /// Expected type prefix from the object.
+        expected_type: String,
+        /// Actual type prefix parsed from the id.
+        actual_type: String,
+    },
+    /// `modified` is earlier than `created`.
+    #[error("modified must be greater than or equal to created")]
+    ModifiedBeforeCreated,
+    /// A marking reference points at the same object id (circular reference).
+    #[error(
+        "object `{object_id}` must not reference itself in object_marking_refs or granular_markings"
+    )]
+    MarkingDefinitionCircularRef {
+        /// Object id that circularly references itself.
+        object_id: String,
+    },
+    /// A STIX reference id prefix is not an allowed target type.
+    #[error("reference `{ref_id}` has invalid kind; expected {expected}")]
+    InvalidReferenceKind {
+        /// Referenced STIX id.
+        ref_id: String,
+        /// Human-readable list of expected type prefixes.
+        expected: String,
+    },
+    /// An SDO `last_seen` is earlier than `first_seen` when both are set.
+    #[error("SDO last_seen must be greater than or equal to first_seen")]
+    SdoLastSeenBeforeFirstSeen,
+    /// A `location` lacks region, country, and latitude/longitude pair.
+    #[error("location requires region, country, or both latitude and longitude")]
+    LocationMissingGeo,
+    /// A `location` sets latitude without longitude or vice versa.
+    #[error("location latitude and longitude must both be set or both be absent")]
+    LocationLatitudeLongitudePairRequired,
+    /// A `location` latitude is outside `-90.0..=90.0`.
+    #[error("location latitude must be between -90.0 and 90.0 inclusive")]
+    LocationLatitudeOutOfRange,
+    /// A `location` longitude is outside `-180.0..=180.0`.
+    #[error("location longitude must be between -180.0 and 180.0 inclusive")]
+    LocationLongitudeOutOfRange,
+    /// A `location` `precision` is set without latitude and longitude.
+    #[error("location precision requires latitude and longitude")]
+    LocationPrecisionRequiresCoordinates,
+    /// A `malware-analysis` lacks both `result` and `analysis_sco_refs`.
+    #[error("malware-analysis requires result or at least one analysis_sco_refs entry")]
+    MalwareAnalysisResultOrScoRefsRequired,
+    /// A `malware` `sample_refs` entry is not file or artifact.
+    #[error("malware sample_refs must reference file or artifact")]
+    MalwareSampleRefInvalid,
+    /// A `malware-analysis` `sample_ref` is not file, network-traffic, or artifact.
+    #[error("malware-analysis sample_ref must reference file, network-traffic, or artifact")]
+    MalwareAnalysisSampleRefInvalid,
     /// A `relationship` `relationship_type` contains characters outside `[a-z0-9-]`.
     #[error("relationship type must contain only lowercase ASCII letters, digits, and hyphens")]
     RelationshipTypeInvalid,
@@ -195,4 +259,139 @@ pub enum ModelError {
     /// `windows-service-ext` has no properties.
     #[error("windows-service-ext requires at least one property")]
     WindowsServiceExtNoProperties,
+    /// A `location` lacks region, country, or latitude/longitude.
+    #[error("location requires region, country, or both latitude and longitude")]
+    LocationInsufficientProperties,
+    /// A `location` sets only one of latitude and longitude.
+    #[error("location latitude and longitude must both be present")]
+    LocationLatitudeLongitudePair,
+    /// A `malware` family is missing the required `name`.
+    #[error("malware family requires name")]
+    MalwareFamilyMissingName,
+    /// A `malware-analysis` must set `result` or `analysis_sco_refs`.
+    #[error("malware-analysis requires result or analysis_sco_refs")]
+    MalwareAnalysisMissingResultOrScoRefs,
+    /// An `indicator` `valid_until` is not later than `valid_from`.
+    #[error("indicator valid_until must be later than valid_from")]
+    IndicatorValidUntilBeforeValidFrom,
+    /// An `observed-data` sets both `objects` and `object_refs`.
+    #[error("observed-data requires exactly one of objects or object_refs")]
+    ObservedDataObjectsXorObjectRefs,
+    /// An `observed-data` sets neither `objects` nor `object_refs`.
+    #[error("observed-data requires objects or object_refs")]
+    ObservedDataMissingScoContent,
+    /// An `observed-data` `objects` map is empty.
+    #[error("observed-data objects must contain at least one SCO")]
+    ObservedDataEmptyObjects,
+    /// An `observed-data` `object_refs` is empty.
+    #[error("observed-data object_refs must contain at least one reference")]
+    ObservedDataEmptyObjectRefs,
+    /// An `observed-data` `last_observed` is earlier than `first_observed`.
+    #[error("observed-data last_observed must be greater than or equal to first_observed")]
+    ObservedDataLastObservedBeforeFirstObserved,
+    /// An `observed-data` `number_observed` is outside `1..=999_999_999`.
+    #[error("observed-data number_observed must be between 1 and 999_999_999 inclusive")]
+    ObservedDataNumberObservedOutOfRange,
+    /// An `opinion` value is not in the opinion-enum vocabulary.
+    #[error("unknown opinion value")]
+    OpinionValueInvalid,
+    /// A `relationship` endpoint reference is not an SDO or SCO id prefix.
+    #[error("relationship source_ref and target_ref must reference SDO or SCO objects")]
+    RelationshipEndpointKindInvalid,
+    /// A `sighting` `sighting_of_ref` is not an SDO id prefix.
+    #[error("sighting_of_ref must reference an SDO object")]
+    SightingOfRefKindInvalid,
+    /// A bundle object reference does not resolve to an object in the bundle.
+    #[error("bundle reference `{ref_id}` not found in bundle")]
+    BundleReferenceMissing {
+        /// Referenced STIX id missing from the bundle.
+        ref_id: String,
+    },
+    /// Relationship endpoints violate the STIX 2.1 relationship matrix.
+    #[error(
+        "relationship `{relationship_type}` from `{source_type}` to `{target_type}` is not allowed"
+    )]
+    RelationshipEndpointMatrixInvalid {
+        /// Relationship type string.
+        relationship_type: String,
+        /// Source object type prefix.
+        source_type: String,
+        /// Target object type prefix.
+        target_type: String,
+    },
+    /// CAPEC external reference is malformed on attack-pattern.
+    #[error("attack-pattern CAPEC external reference requires external_id prefixed with CAPEC-")]
+    InvalidCapecExternalReference,
+    /// CVE external reference is malformed on vulnerability.
+    #[error("vulnerability CVE external reference requires external_id prefixed with CVE-")]
+    InvalidCveExternalReference,
+    /// Multiple malware sample_refs must reference the same binary when is_family is false.
+    #[error("malware sample_refs must reference the same binary when is_family is false")]
+    MalwareSampleRefsNotSameBinary,
+    /// Bundle id prefix is not `bundle`.
+    #[error("bundle id must use the bundle type prefix")]
+    BundleIdPrefixInvalid,
+    /// Bundle must not carry spec_version (STIX §8).
+    #[error("bundle must not include spec_version")]
+    BundleSpecVersionNotAllowed,
+    /// language-content must not set lang on common properties.
+    #[error("language-content must not set lang")]
+    LanguageContentLangNotAllowed,
+    /// language-content object_modified does not match the target object's modified time.
+    #[error("language-content object_modified does not match target object modified time")]
+    LanguageContentObjectModifiedMismatch,
+    /// marking-definition requires spec_version.
+    #[error("marking-definition requires spec_version")]
+    MarkingDefinitionSpecVersionRequired,
+    /// marking-definition requires legacy definition payload when extensions are empty.
+    #[error("marking-definition requires definition_type and definition when extensions are empty")]
+    MarkingDefinitionLegacyPayloadRequired,
+    /// extension-definition must not carry forbidden common properties on the wire.
+    #[error("extension-definition must not set {property}")]
+    ExtensionDefinitionForbiddenCommonProperty {
+        /// Forbidden property name.
+        property: String,
+    },
+    /// Predefined extension keys must not include extension_type.
+    #[error("predefined extension `{key}` must not include extension_type")]
+    ExtensionTypeOnPredefinedExtension {
+        /// Extension dictionary key.
+        key: String,
+    },
+    /// Domain name value failed basic format validation.
+    #[error("domain-name value has invalid format")]
+    DomainNameFormatInvalid,
+    /// Email address value failed basic format validation.
+    #[error("email-addr value has invalid format")]
+    EmailAddrFormatInvalid,
+    /// URL value failed basic format validation.
+    #[error("url value has invalid format")]
+    UrlFormatInvalid,
+    /// Encryption algorithm is not in the STIX closed vocabulary.
+    #[error("artifact encryption_algorithm is not in the STIX closed vocabulary")]
+    EncryptionAlgorithmInvalid,
+    /// SCO id does not match deterministic id generation from contributing properties.
+    #[error("SCO id does not match deterministic id from contributing properties")]
+    ScoDeterministicIdMismatch,
+    /// Property-extension references an extension-definition id missing from the bundle.
+    #[error("property-extension references missing extension-definition `{extension_id}`")]
+    PropertyExtensionDefinitionMissing {
+        /// Referenced extension-definition id.
+        extension_id: String,
+    },
+    /// SCO JSON includes SDO-only common properties.
+    #[error("SCO must not include SDO common property `{property}`")]
+    ScoForbiddenCommonProperty {
+        /// Forbidden property name.
+        property: String,
+    },
+    /// language-content `contents` key is not a valid RFC 5646 language tag.
+    #[error("language-content contents key is not a valid RFC 5646 language tag")]
+    LanguageContentInvalidLanguageCode,
+    /// granular-marking selector syntax is invalid (STIX §7.2.3.1).
+    #[error("granular marking selector syntax is invalid: `{selector}`")]
+    GranularSelectorSyntaxInvalid {
+        /// Invalid selector string.
+        selector: String,
+    },
 }

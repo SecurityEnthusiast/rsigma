@@ -4,6 +4,7 @@ use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTime
 use crate::model::ModelError;
 use crate::model::common::ScoCommonProps;
 use crate::model::sco::ref_types::DomainNameResolvesToRef;
+use crate::model::validate::validate_domain_name_format;
 
 /// A STIX domain name cyber-observable.
 ///
@@ -58,10 +59,7 @@ impl DomainName {
 
     /// Rejects empty `value`.
     pub fn validate(&self) -> Result<(), ModelError> {
-        if self.value.is_empty() {
-            return Err(ModelError::DomainNameValueEmpty);
-        }
-        Ok(())
+        validate_domain_name_format(&self.value)
     }
 }
 

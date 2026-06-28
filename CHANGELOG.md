@@ -4,6 +4,18 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### STIX domain objects, bundle parse, and reference validation (`rstix`) (#265)
+
+The **Data Model + Serialization** phase adds the full STIX 2.1 domain-object layer and bundle ingestion to `rstix`:
+
+* **19 SDO types** under `model::sdo` with `SdoObject` enum dispatch, per-field rustdoc, `IndicatorPattern` and `ObservedDataForm` enums, typed ref unions, and strict `"type"` deserialize on every leaf type.
+* **`StixObject`** top-level enum (SDO / SCO / SRO / Meta / Custom) with `QueryableStixObject` delegation and `x_*` top-level property capture during bundle parse.
+* **`Bundle::parse`** / `parse_bundle()` — typed bundle container, duplicate-id rejection, bundle-scoped reference existence and kind checks, relationship matrix validation, `x_*` merge on serialize, bundle id/`spec_version` rules (STIX §8), and `extra_properties()` for vendor extensions.
+* **`model/validate.rs`** — shared validators for common props, ref kinds, relationship endpoints (55 STIX 2.1 matrix entries), CAPEC/CVE external refs, and SCO format checks.
+* **Fixtures and tests:** rich spec-based fixtures for all 19 SDOs, bundle integration tests, 304 crate tests with `roundtrip_strict` coverage.
+
+Spec-audit alignment: removed stricter-than-spec empty-name and empty-collection checks; added missing ref-kind, meta-object, extension, and bundle rules documented in the crate README invariant table.
+
 ### Webhook HMAC request signing (#266)
 
 The webhook sink can now HMAC-sign every outbound request so a receiving endpoint can verify the delivery's authenticity and integrity, and reject replays. Signing is opt-in per webhook through a `signing:` block and is computed over the exact rendered body bytes. It is most useful for the custom and internal relay endpoints an operator controls; the public chat and paging services do not verify a sender HMAC, so it complements the existing per-webhook TLS and bearer-token options rather than replacing them.
@@ -23,6 +35,7 @@ A new optional post-engine daemon capability that shifts the unit of alerting fr
 * State persists across restarts when `--state-db` is set: a versioned `RiskStateSnapshot` is saved to the SQLite store in its own `rsigma_risk_state` table on the periodic and shutdown hooks beside the correlation and alert-pipeline snapshots, and restored on boot with window-aware pruning. `--clear-state` skips the restore; a version mismatch starts fresh with a warning.
 * Nine pre-registered Prometheus metrics: `rsigma_risk_annotations_total{action}`, `rsigma_risk_annotation_score`, `rsigma_risk_objects_total`, `rsigma_risk_entities_open`, `rsigma_risk_state_entries`, `rsigma_risk_evictions_total`, `rsigma_risk_incidents_emitted_total{trigger}`, `rsigma_risk_incident_results_total`, and `rsigma_risk_layer_duration_seconds`.
 * The field-selector resolver moved to a shared crate-level `rsigma_runtime::selector` module so the alert pipeline and the risk layer share one implementation; `rsigma_runtime::Selector` and `rsigma_runtime::alert_pipeline::Selector` are unchanged.
+
 
 ### Triage feedback loop: analyst dispositions and a per-rule false-positive ratio (#263)
 

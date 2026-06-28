@@ -1,0 +1,11 @@
+{
+  "type": "observed-data",
+  "spec_version": "2.1",
+  "id": "observed-data--b67d30ff-02ac-498a-92f9-32f845f448cf",
+  "created": "2016-04-06T19:58:16.000Z",
+  "modified": "2016-04-06T19:58:16.000Z",
+  "first_observed": "2015-12-21T19:00:00Z",
+  "last_observed": "2015-12-21T19:00:00Z",
+  "number_observed": 1000000000,
+  "object_refs": ["ipv4-addr--efcd5e80-570d-4131-b213-62cb18eaa6a8"]
+}

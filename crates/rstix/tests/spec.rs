@@ -7,7 +7,7 @@
 
 mod support;
 
-use rstix::core::{Confidence, QueryableStixObject, SpecVersion};
+use rstix::core::{Confidence, QueryValue, QueryableStixObject, SpecVersion};
 use rstix::model::common::{
     ExtensionMap, ExternalReference, GranularMarking, ScoCommonProps, SdoSroCommonProps,
 };
@@ -19,7 +19,13 @@ use rstix::model::sco::{
     Ipv6Addr, MacAddr, Mutex, NetworkTraffic, Process, ScoObject, Software, Url, UserAccount,
     WindowsRegistryKey, X509Certificate,
 };
+use rstix::model::sdo::{
+    AttackPattern, Campaign, CourseOfAction, Grouping, Identity, Incident, Indicator,
+    Infrastructure, IntrusionSet, Location, Malware, MalwareAnalysis, Note, ObservedData, Opinion,
+    Report, SdoObject, ThreatActor, Tool, Vulnerability,
+};
 use rstix::model::sro::{Relationship, Sighting};
+use rstix::vocab::OpinionValue;
 
 #[test]
 fn sdo_sro_round_trips_attack_pattern() {
@@ -290,7 +296,7 @@ fn sighting_round_trips_rich_spec_example() {
     let parsed = support::roundtrip_strict::<Sighting>("sro/sighting-rich.json");
     assert_eq!(parsed.sighting_of_ref.type_name(), "indicator");
     assert_eq!(parsed.count, Some(50));
-    assert_eq!(parsed.summary, Some(false));
+    assert_eq!(parsed.summary.as_deref(), Some("false"));
     assert!(parsed.description.is_some());
     assert_eq!(parsed.observed_data_refs.len(), 1);
     assert_eq!(parsed.where_sighted_refs.len(), 1);
@@ -470,4 +476,287 @@ fn sco_object_enum_delegates_queryable_stix_object() {
     assert_eq!(sco.type_name(), Url::TYPE_NAME);
     assert!(sco.created().is_none());
     assert!(sco.modified().is_none());
+}
+
+#[test]
+fn indicator_round_trips_minimal_and_rich() {
+    let minimal = support::roundtrip_strict::<Indicator>("sdo/indicator-minimal.json");
+    assert_eq!(minimal.pattern.pattern_type(), "stix");
+    assert_eq!(minimal.indicator_types, vec!["malicious-activity"]);
+
+    let rich = support::roundtrip_strict::<Indicator>("sdo/indicator-rich.json");
+    assert!(rich.valid_until.is_some());
+    assert_eq!(rich.kill_chain_phases.len(), 1);
+    assert_eq!(
+        rich.common.confidence,
+        Some(Confidence::new(85).expect("in range"))
+    );
+}
+
+#[test]
+fn indicator_rejects_invalid_fixtures() {
+    support::assert_fixture_rejects::<Indicator>("sdo/indicator-valid-until-before-from.json");
+}
+
+#[test]
+fn note_round_trips_minimal_and_rich() {
+    let minimal = support::roundtrip_strict::<Note>("sdo/note-minimal.json");
+    assert_eq!(minimal.authors, vec!["John Doe"]);
+    assert_eq!(minimal.object_refs.len(), 1);
+
+    let rich = support::roundtrip_strict::<Note>("sdo/note-rich.json");
+    assert_eq!(rich.object_refs.len(), 2);
+    assert!(rich.common.created_by_ref.is_some());
+}
+
+#[test]
+fn note_rejects_invalid_fixtures() {}
+
+#[test]
+fn opinion_round_trips_minimal_and_rich() {
+    let minimal = support::roundtrip_strict::<Opinion>("sdo/opinion-minimal.json");
+    assert_eq!(minimal.opinion, OpinionValue::StronglyDisagree);
+    assert!(minimal.explanation.is_some());
+
+    let rich = support::roundtrip_strict::<Opinion>("sdo/opinion-rich.json");
+    assert_eq!(rich.opinion, OpinionValue::Agree);
+    assert_eq!(rich.object_refs.len(), 2);
+}
+
+#[test]
+fn opinion_rejects_invalid_fixtures() {
+    support::assert_fixture_rejects::<Opinion>("sdo/opinion-invalid-value.json");
+}
+
+#[test]
+fn observed_data_round_trips_object_refs_and_objects() {
+    use rstix::model::sdo::ObservedDataForm;
+
+    let refs = support::roundtrip_strict::<ObservedData>("sdo/observed-data-object-refs.json");
+    assert_eq!(refs.number_observed, 50);
+    assert!(matches!(refs.form, ObservedDataForm::ObjectRefs(_)));
+
+    let objects = support::roundtrip_strict::<ObservedData>("sdo/observed-data-objects.json");
+    assert_eq!(objects.number_observed, 1);
+    assert!(matches!(
+        objects.form,
+        ObservedDataForm::DeprecatedObjects(_)
+    ));
+}
+
+#[test]
+fn observed_data_rejects_invalid_fixtures() {
+    support::assert_fixture_rejects::<ObservedData>("sdo/observed-data-both-content.json");
+    support::assert_fixture_rejects::<ObservedData>("sdo/observed-data-neither-content.json");
+    support::assert_fixture_rejects::<ObservedData>("sdo/observed-data-last-before-first.json");
+    support::assert_fixture_rejects::<ObservedData>("sdo/observed-data-number-out-of-range.json");
+}
+
+#[test]
+fn complex_sdo_types_reject_wrong_type_field() {
+    support::assert_fixture_rejects::<Indicator>("sdo/note-minimal.json");
+    support::assert_fixture_rejects::<Note>("sdo/opinion-minimal.json");
+    support::assert_fixture_rejects::<Opinion>("sdo/indicator-minimal.json");
+    support::assert_fixture_rejects::<ObservedData>("sdo/indicator-minimal.json");
+}
+
+#[test]
+fn sdo_object_enum_delegates_queryable_stix_object() {
+    let parsed = support::roundtrip_strict::<Indicator>("sdo/indicator-minimal.json");
+    let sdo = SdoObject::Indicator(parsed.clone());
+    assert_eq!(sdo.id(), parsed.id());
+    assert_eq!(sdo.type_name(), Indicator::TYPE_NAME);
+    assert_eq!(
+        sdo.get_field(&["pattern_type"]),
+        Some(QueryValue::Str("stix"))
+    );
+    assert!(sdo.created().is_some());
+    assert!(sdo.modified().is_some());
+}
+
+#[test]
+fn sdo_attack_pattern_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<AttackPattern>("sdo/attack-pattern-minimal.json");
+    assert_eq!(parsed.name, "Spear Phishing");
+    let rich = support::roundtrip_strict::<AttackPattern>("sdo/attack-pattern-rich.json");
+    assert!(rich.description.is_some());
+    assert_eq!(rich.common.external_references.len(), 1);
+    support::assert_fixture_rejects::<AttackPattern>(
+        "sdo/attack-pattern-kill-chain-phase-empty.json",
+    );
+}
+
+#[test]
+fn sdo_campaign_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<Campaign>("sdo/campaign-minimal.json");
+    assert_eq!(parsed.name, "Green Group Attacks Against Finance");
+    assert!(parsed.common.created_by_ref.is_none());
+    let rich = support::roundtrip_strict::<Campaign>("sdo/campaign-rich.json");
+    assert!(rich.description.is_some());
+    assert_eq!(rich.aliases, vec!["Green Group".to_string()]);
+    support::assert_fixture_rejects::<Campaign>("sdo/campaign-last-seen-before-first-seen.json");
+}
+
+#[test]
+fn sdo_course_of_action_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<CourseOfAction>("sdo/course-of-action-minimal.json");
+    assert!(parsed.name.contains("TCP port 80"));
+    let rich = support::roundtrip_strict::<CourseOfAction>("sdo/course-of-action-rich.json");
+    assert!(rich.description.is_some());
+}
+
+#[test]
+fn sdo_grouping_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<Grouping>("sdo/grouping-minimal.json");
+    assert_eq!(parsed.context, "suspicious-activity");
+    assert_eq!(parsed.object_refs.len(), 4);
+    let rich = support::roundtrip_strict::<Grouping>("sdo/grouping-rich.json");
+    assert_eq!(rich.common.labels, vec!["apt".to_string()]);
+}
+
+#[test]
+fn sdo_identity_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<Identity>("sdo/identity-minimal.json");
+    assert_eq!(parsed.name, "John Smith");
+    assert_eq!(parsed.identity_class.as_deref(), Some("individual"));
+    let rich = support::roundtrip_strict::<Identity>("sdo/identity-rich.json");
+    assert_eq!(rich.identity_class.as_deref(), Some("organization"));
+    assert_eq!(rich.sectors, vec!["technology".to_string()]);
+}
+
+#[test]
+fn sdo_incident_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<Incident>("sdo/incident-minimal.json");
+    assert_eq!(parsed.name, "Incident 43");
+    let rich = support::roundtrip_strict::<Incident>("sdo/incident-rich.json");
+    assert_eq!(rich.common.external_references.len(), 1);
+}
+
+#[test]
+fn sdo_threat_actor_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<ThreatActor>("sdo/threat-actor-minimal.json");
+    assert_eq!(parsed.name, "Evil Org");
+    assert_eq!(
+        parsed.threat_actor_types,
+        vec!["crime-syndicate".to_string()]
+    );
+    assert_eq!(
+        parsed.primary_motivation.as_deref(),
+        Some("organizational-gain")
+    );
+    let rich = support::roundtrip_strict::<ThreatActor>("sdo/threat-actor-rich.json");
+    assert_eq!(
+        rich.secondary_motivations,
+        vec!["personal-gain".to_string()]
+    );
+    assert!(rich.first_seen.is_some());
+    support::assert_fixture_rejects::<ThreatActor>(
+        "sdo/threat-actor-last-seen-before-first-seen.json",
+    );
+}
+
+#[test]
+fn sdo_tool_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<Tool>("sdo/tool-minimal.json");
+    assert_eq!(parsed.name, "VNC");
+    assert_eq!(parsed.tool_types, vec!["remote-access".to_string()]);
+    let rich = support::roundtrip_strict::<Tool>("sdo/tool-rich.json");
+    assert_eq!(rich.tool_version.as_deref(), Some("1.3.10"));
+    assert_eq!(rich.kill_chain_phases.len(), 1);
+    support::assert_fixture_rejects::<Tool>("sdo/tool-kill-chain-phase-empty.json");
+}
+
+#[test]
+fn sdo_intrusion_set_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<IntrusionSet>("sdo/intrusion-set-minimal.json");
+    assert_eq!(parsed.name, "Bobcat Breakin");
+    let rich = support::roundtrip_strict::<IntrusionSet>("sdo/intrusion-set-rich.json");
+    assert_eq!(rich.aliases, vec!["Zookeeper".to_string()]);
+    assert_eq!(rich.goals.len(), 3);
+    support::assert_fixture_rejects::<IntrusionSet>(
+        "sdo/intrusion-set-last-seen-before-first-seen.json",
+    );
+}
+
+#[test]
+fn sdo_location_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<Location>("sdo/location-minimal.json");
+    assert_eq!(parsed.region.as_deref(), Some("northern-america"));
+    let rich = support::roundtrip_strict::<Location>("sdo/location-rich.json");
+    assert_eq!(rich.country.as_deref(), Some("th"));
+    assert_eq!(rich.postal_code.as_deref(), Some("63170"));
+    support::assert_fixture_rejects::<Location>("sdo/location-missing-geo.json");
+    support::assert_fixture_rejects::<Location>("sdo/location-latitude-without-longitude.json");
+    support::assert_fixture_rejects::<Location>("sdo/location-latitude-out-of-range.json");
+}
+
+#[test]
+fn sdo_infrastructure_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<Infrastructure>("sdo/infrastructure-minimal.json");
+    assert_eq!(parsed.name, "Poison Ivy C2");
+    let rich = support::roundtrip_strict::<Infrastructure>("sdo/infrastructure-rich.json");
+    assert_eq!(
+        rich.infrastructure_types,
+        vec!["command-and-control".to_string()]
+    );
+}
+
+#[test]
+fn sdo_vulnerability_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<Vulnerability>("sdo/vulnerability-minimal.json");
+    assert_eq!(parsed.name, "CVE-2016-1234");
+    let rich = support::roundtrip_strict::<Vulnerability>("sdo/vulnerability-rich.json");
+    assert_eq!(rich.common.external_references.len(), 1);
+}
+
+#[test]
+fn sdo_report_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<Report>("sdo/report-minimal.json");
+    assert_eq!(parsed.name, "The Black Vine Cyberespionage Group");
+    assert_eq!(parsed.object_refs.len(), 1);
+    let rich = support::roundtrip_strict::<Report>("sdo/report-rich.json");
+    assert_eq!(rich.report_types, vec!["campaign".to_string()]);
+    assert_eq!(rich.object_refs.len(), 3);
+}
+
+#[test]
+fn sdo_malware_round_trips_and_rejects_invalid_fixtures() {
+    let minimal = support::roundtrip_strict::<Malware>("sdo/malware-minimal.json");
+    assert!(minimal.is_family.is_none());
+    assert!(minimal.name.is_none());
+    let rich = support::roundtrip_strict::<Malware>("sdo/malware-rich.json");
+    assert_eq!(rich.is_family, Some(false));
+    assert_eq!(rich.malware_types, vec!["ransomware".to_string()]);
+    let family = support::roundtrip_strict::<Malware>("sdo/malware-family-rich.json");
+    assert_eq!(family.is_family, Some(true));
+    support::assert_fixture_rejects::<Malware>("sdo/malware-last-seen-before-first-seen.json");
+    support::assert_fixture_rejects::<Malware>("sdo/malware-sample-ref-invalid.json");
+}
+
+#[test]
+fn sdo_malware_analysis_round_trips_and_rejects_invalid_fixtures() {
+    let parsed = support::roundtrip_strict::<MalwareAnalysis>("sdo/malware-analysis-minimal.json");
+    assert_eq!(parsed.product, "microsoft");
+    assert_eq!(parsed.result.as_deref(), Some("malicious"));
+    let rich = support::roundtrip_strict::<MalwareAnalysis>("sdo/malware-analysis-rich.json");
+    assert!(rich.sample_ref.is_some());
+    support::assert_fixture_rejects::<MalwareAnalysis>(
+        "sdo/malware-analysis-missing-result-and-sco-refs.json",
+    );
+}
+
+#[test]
+fn sdo_types_reject_wrong_type_field() {
+    support::assert_fixture_rejects::<AttackPattern>("sdo/campaign-minimal.json");
+    support::assert_fixture_rejects::<Campaign>("sdo/attack-pattern-minimal.json");
+    support::assert_fixture_rejects::<CourseOfAction>("sdo/tool-minimal.json");
+    support::assert_fixture_rejects::<Grouping>("sdo/identity-minimal.json");
+    support::assert_fixture_rejects::<Identity>("sdo/incident-minimal.json");
+    support::assert_fixture_rejects::<Incident>("sdo/threat-actor-minimal.json");
+    support::assert_fixture_rejects::<ThreatActor>("sdo/campaign-minimal.json");
+    support::assert_fixture_rejects::<Tool>("sdo/course-of-action-minimal.json");
+    support::assert_fixture_rejects::<IntrusionSet>("sdo/malware-minimal.json");
+    support::assert_fixture_rejects::<Location>("sdo/infrastructure-minimal.json");
+    support::assert_fixture_rejects::<Malware>("sdo/intrusion-set-minimal.json");
+    support::assert_fixture_rejects::<Report>("sdo/vulnerability-minimal.json");
 }

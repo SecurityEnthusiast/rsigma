@@ -109,3 +109,71 @@ pub enum OpinionValue {
     /// Strongly agree.
     StronglyAgree = 5,
 }
+
+impl OpinionValue {
+    /// The STIX `opinion-enum` string form.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::StronglyDisagree => "strongly-disagree",
+            Self::Disagree => "disagree",
+            Self::Neutral => "neutral",
+            Self::Agree => "agree",
+            Self::StronglyAgree => "strongly-agree",
+        }
+    }
+
+    /// Parse from the STIX `opinion-enum` string.
+    pub fn from_str_value(value: &str) -> Option<Self> {
+        match value {
+            "strongly-disagree" => Some(Self::StronglyDisagree),
+            "disagree" => Some(Self::Disagree),
+            "neutral" => Some(Self::Neutral),
+            "agree" => Some(Self::Agree),
+            "strongly-agree" => Some(Self::StronglyAgree),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for OpinionValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for OpinionValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = <String as serde::Deserialize>::deserialize(deserializer)?;
+        Self::from_str_value(&raw)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown opinion value: {raw}")))
+    }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod opinion_value_tests {
+    use super::*;
+
+    #[test]
+    fn opinion_value_strings_round_trip() {
+        for (variant, text) in [
+            (OpinionValue::StronglyDisagree, "\"strongly-disagree\""),
+            (OpinionValue::Disagree, "\"disagree\""),
+            (OpinionValue::Neutral, "\"neutral\""),
+            (OpinionValue::Agree, "\"agree\""),
+            (OpinionValue::StronglyAgree, "\"strongly-agree\""),
+        ] {
+            assert_eq!(serde_json::to_string(&variant).unwrap(), text);
+            let decoded: OpinionValue = serde_json::from_str(text).unwrap();
+            assert_eq!(decoded, variant);
+        }
+        assert!(serde_json::from_str::<OpinionValue>("\"unknown\"").is_err());
+    }
+}

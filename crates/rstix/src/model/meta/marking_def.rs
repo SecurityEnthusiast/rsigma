@@ -22,7 +22,9 @@ use crate::core::{
     IdentityId, MarkingDefinitionId, QueryValue, QueryableStixObject, SpecVersion, StixId,
     StixTimestamp,
 };
+use crate::model::ModelError;
 use crate::model::common::{ExtensionMap, ExternalReference, GranularMarking};
+use crate::model::validate::{validate_identity_ref, validate_marking_definition_ref};
 
 /// TLP 1.x predefined marking-definition ids (legacy **encoding** on STIX 2.1 objects).
 ///
@@ -163,6 +165,35 @@ impl MarkingDefinition {
     pub const fn is_non_versionable(&self) -> bool {
         Self::IS_NON_VERSIONABLE
     }
+
+    /// Validate marking-definition invariants.
+    pub fn validate(&self) -> Result<(), ModelError> {
+        validate_id_matches_type(&self.id, Self::TYPE_NAME)?;
+        if self.spec_version.is_none() {
+            return Err(ModelError::MarkingDefinitionSpecVersionRequired);
+        }
+        if self.extensions.is_empty()
+            && (self.definition_type.is_none() || self.definition.is_none())
+        {
+            return Err(ModelError::MarkingDefinitionLegacyPayloadRequired);
+        }
+        if let Some(created_by) = &self.created_by_ref {
+            validate_identity_ref(created_by.as_stix_id())?;
+        }
+        for marking in &self.object_marking_refs {
+            validate_marking_definition_ref(marking.as_stix_id())?;
+        }
+        for granular in &self.granular_markings {
+            if let Some(marking_ref) = &granular.marking_ref {
+                validate_marking_definition_ref(marking_ref.as_stix_id())?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validate_id_matches_type(id: &StixId, type_name: &str) -> Result<(), ModelError> {
+    crate::model::validate::validate_id_matches_type(id, type_name)
 }
 
 #[cfg(feature = "serde")]

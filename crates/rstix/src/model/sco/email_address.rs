@@ -5,6 +5,7 @@ use crate::core::{
 };
 use crate::model::ModelError;
 use crate::model::common::ScoCommonProps;
+use crate::model::validate::validate_email_addr_format;
 
 /// A STIX email address cyber-observable.
 ///
@@ -65,10 +66,7 @@ impl EmailAddr {
 
     /// Rejects empty `value`.
     pub fn validate(&self) -> Result<(), ModelError> {
-        if self.value.is_empty() {
-            return Err(ModelError::EmailAddrValueEmpty);
-        }
-        Ok(())
+        validate_email_addr_format(&self.value)
     }
 }
 

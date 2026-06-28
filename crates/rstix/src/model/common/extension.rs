@@ -110,6 +110,20 @@ impl ExtensionMap {
         self.0.is_empty()
     }
 
+    /// Validate extension map entries (predefined keys, extension_type rules).
+    pub fn validate(&self) -> Result<(), crate::model::ModelError> {
+        for (key, entry) in &self.0 {
+            if is_predefined_extension_key(key) && entry.extension_type.is_some() {
+                return Err(
+                    crate::model::ModelError::ExtensionTypeOnPredefinedExtension {
+                        key: key.clone(),
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Number of extension entries.
     pub fn len(&self) -> usize {
         self.0.len()
@@ -129,6 +143,10 @@ impl ExtensionMap {
     ) -> Option<ExtensionEntry> {
         self.0.insert(id.into(), entry)
     }
+}
+
+fn is_predefined_extension_key(key: &str) -> bool {
+    key.ends_with("-ext") || key == "extension-definition--60477d8d-78ac-1058-8160-d776f9386f83"
 }
 
 #[cfg(all(test, feature = "serde"))]

@@ -18,6 +18,16 @@ pub enum SroObject {
     Sighting(Sighting),
 }
 
+impl SroObject {
+    /// Borrow shared SDO/SRO common properties.
+    pub fn common_props(&self) -> &crate::model::common::SdoSroCommonProps {
+        match self {
+            Self::Relationship(inner) => &inner.common,
+            Self::Sighting(inner) => &inner.common,
+        }
+    }
+}
+
 impl QueryableStixObject for SroObject {
     fn id(&self) -> &StixId {
         match self {
@@ -61,6 +71,45 @@ impl QueryableStixObject for SroObject {
         }
     }
 }
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for SroObject {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Relationship(inner) => inner.serialize(serializer),
+            Self::Sighting(inner) => inner.serialize(serializer),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+pub(crate) fn deserialize_sro_object_from_value(
+    value: serde_json::Value,
+) -> Result<SroObject, serde_json::Error> {
+    let type_name = value
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "SRO object missing type field",
+            ))
+        })?;
+    match type_name {
+        "relationship" => serde_json::from_value(value).map(SroObject::Relationship),
+        "sighting" => serde_json::from_value(value).map(SroObject::Sighting),
+        _ => Err(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unknown SRO type `{type_name}`"),
+        ))),
+    }
+}
+
+crate::impl_bundle_object_cast!(Sro, Relationship, Relationship);
+crate::impl_bundle_object_cast!(Sro, Sighting, Sighting);
 
 #[cfg(all(test, feature = "serde"))]
 mod tests {

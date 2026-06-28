@@ -1,0 +1,11 @@
+{
+  "type": "indicator",
+  "spec_version": "2.1",
+  "id": "indicator--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f",
+  "created": "2016-04-06T20:03:48.000Z",
+  "modified": "2016-04-06T20:03:48.000Z",
+  "pattern": "[ipv4-addr:value = '198.51.100.3']",
+  "pattern_type": "stix",
+  "valid_from": "2016-05-01T00:00:00.000Z",
+  "valid_until": "2016-04-01T00:00:00.000Z"
+}

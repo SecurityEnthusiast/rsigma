@@ -75,6 +75,50 @@ impl QueryableStixObject for MetaObject {
     }
 }
 
+#[cfg(feature = "serde")]
+impl serde::Serialize for MetaObject {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::MarkingDefinition(inner) => inner.serialize(serializer),
+            Self::ExtensionDefinition(inner) => inner.serialize(serializer),
+            Self::LanguageContent(inner) => inner.serialize(serializer),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+pub(crate) fn deserialize_meta_object_from_value(
+    value: serde_json::Value,
+) -> Result<MetaObject, serde_json::Error> {
+    let type_name = value
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Meta object missing type field",
+            ))
+        })?;
+    match type_name {
+        "marking-definition" => serde_json::from_value(value).map(MetaObject::MarkingDefinition),
+        "extension-definition" => {
+            serde_json::from_value(value).map(MetaObject::ExtensionDefinition)
+        }
+        "language-content" => serde_json::from_value(value).map(MetaObject::LanguageContent),
+        _ => Err(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unknown Meta type `{type_name}`"),
+        ))),
+    }
+}
+
+crate::impl_bundle_object_cast!(Meta, MarkingDefinition, MarkingDefinition);
+crate::impl_bundle_object_cast!(Meta, ExtensionDefinition, ExtensionDefinition);
+crate::impl_bundle_object_cast!(Meta, LanguageContent, LanguageContent);
+
 #[cfg(all(test, feature = "serde"))]
 mod tests {
     use super::*;

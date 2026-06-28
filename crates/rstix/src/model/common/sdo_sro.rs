@@ -109,4 +109,9 @@ impl SdoSroCommonProps {
             extensions: ExtensionMap::default(),
         }
     }
+
+    /// Effective language tag (`en` when `lang` is absent).
+    pub fn effective_lang(&self) -> LanguageTag {
+        crate::model::validate::effective_lang(self.lang.as_ref())
+    }
 }

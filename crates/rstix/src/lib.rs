@@ -22,12 +22,68 @@ mod serde_impls;
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
-    /// Returned while parsing is pending a follow-up implementation phase.
-    #[error("not yet implemented")]
-    NotImplemented,
+    /// Invalid JSON at the wire boundary.
+    #[error("invalid JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    /// Model validation failed during parse.
+    #[error(transparent)]
+    Model(#[from] model::ModelError),
+    /// The document root is not a STIX bundle.
+    #[error("expected STIX type `bundle`, got `{actual_type}`")]
+    NotABundle {
+        /// `type` value from the JSON document.
+        actual_type: String,
+    },
+    /// Bundle is missing the required `id` property.
+    #[error("bundle missing required id")]
+    MissingBundleId,
+    /// A bundle object is missing the required `id` property.
+    #[error("bundle object missing required id")]
+    MissingObjectId,
+    /// Two objects in the same bundle share an `id`.
+    #[error("duplicate bundle object id `{0}`")]
+    DuplicateObjectId(String),
+    /// Bundle exceeds the configured object limit.
+    #[error("bundle object count {count} exceeds limit {max}")]
+    ObjectLimitExceeded {
+        /// Number of objects in the bundle.
+        count: usize,
+        /// Configured maximum object count.
+        max: usize,
+    },
+    /// Object `type` is not recognized and custom types are disabled.
+    #[error("unknown STIX object type `{0}`")]
+    UnknownObjectType(String),
+    /// Bundle JSON exceeds the configured byte limit while streaming.
+    #[error("bundle exceeds max_bundle_bytes limit ({max} bytes)")]
+    BundleByteLimitExceeded {
+        /// Configured byte limit.
+        max: usize,
+    },
+    /// JSON nesting exceeds `ParseOptions::max_nesting_depth`.
+    #[error("JSON nesting exceeds max_nesting_depth ({max})")]
+    JsonNestingTooDeep {
+        /// Configured nesting limit.
+        max: usize,
+    },
+    /// A JSON string exceeds `ParseOptions::max_string_length`.
+    #[error("JSON string length {len} exceeds max_string_length ({max})")]
+    JsonStringTooLong {
+        /// Observed string length.
+        len: usize,
+        /// Configured limit.
+        max: usize,
+    },
 }
 
-/// Parse a STIX bundle from a JSON string.
-pub fn parse_bundle(_json: &str) -> Result<(), ParseError> {
-    Err(ParseError::NotImplemented)
+#[cfg(feature = "serde")]
+pub use model::{
+    Bundle, BundleObjectCast, CustomStixObject, ParseOptions, QueryableContainer, SdoObject,
+    StixObject, TypeRegistry,
+};
+
+/// Parse a STIX bundle from a JSON string using default options.
+#[cfg(feature = "serde")]
+pub fn parse_bundle(json: &str) -> Result<Bundle, ParseError> {
+    Bundle::parse(json)
 }

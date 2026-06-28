@@ -2,12 +2,12 @@
 
 use crate::core::{
     IdentityId, LocationId, ObservedDataId, QueryValue, QueryableStixObject, SpecVersion, StixId,
-    StixTimestamp,
+    StixObjectKind, StixTimestamp,
 };
 use crate::model::ModelError;
 use crate::model::common::SdoSroCommonProps;
 
-/// SDO reference for [`Sighting::sighting_of_ref`] (STIX §5.2.1; SDO-only validation deferred).
+/// SDO reference for [`Sighting::sighting_of_ref`] (STIX §5.2.1).
 pub type SightingOfRef = StixId;
 
 /// Identity or location reference in [`Sighting::where_sighted_refs`] (STIX §5.2.1).
@@ -62,8 +62,8 @@ impl<'de> serde::Deserialize<'de> for WhereSightedRef {
 
 /// A STIX sighting of an SDO in an external organization or environment.
 ///
-/// `sighting_of_ref` must reference an SDO per STIX §5.2.1. SDO-only validation
-/// is deferred until `StixObject` dispatch lands (follow-up: typed bundle parse).
+/// `sighting_of_ref` must reference an SDO per STIX §5.2.1. Reference kind is
+/// validated from the id prefix at deserialize time.
 ///
 /// # Examples
 ///
@@ -122,12 +122,17 @@ pub struct Sighting {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub count: Option<u32>,
-    /// Whether the sighting is summarized from other data.
+    /// Whether the sighting is summarized from other data (STIX §5.2.1).
     #[cfg_attr(
         feature = "serde",
-        serde(default, skip_serializing_if = "Option::is_none")
+        serde(
+            default,
+            deserialize_with = "deserialize_sighting_summary",
+            serialize_with = "serialize_sighting_summary",
+            skip_serializing_if = "Option::is_none"
+        )
     )]
-    pub summary: Option<bool>,
+    pub summary: Option<String>,
     /// SDO that was sighted.
     pub sighting_of_ref: SightingOfRef,
     /// Observed-data objects that contributed to the sighting.
@@ -151,8 +156,9 @@ impl Sighting {
     /// Maximum inclusive value for [`Self::count`] (STIX §5.2.1).
     pub const COUNT_MAX: u32 = 999_999_999;
 
-    /// Check sighting-specific invariants (count range, time window ordering).
+    /// Check sighting-specific invariants (count range, time window ordering, ref kind).
     pub fn validate(&self) -> Result<(), ModelError> {
+        self.common.validate(Self::TYPE_NAME)?;
         if let Some(count) = self.count
             && count > Self::COUNT_MAX
         {
@@ -163,7 +169,43 @@ impl Sighting {
         {
             return Err(ModelError::SightingLastSeenBeforeFirstSeen);
         }
-        Ok(())
+        match StixObjectKind::from_type_str(self.sighting_of_ref.type_name()) {
+            Some(StixObjectKind::Sdo(_)) => Ok(()),
+            _ => Err(ModelError::SightingOfRefKindInvalid),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+fn serialize_sighting_summary<S>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match value.as_deref() {
+        None => serializer.serialize_none(),
+        Some("true") => serializer.serialize_bool(true),
+        Some("false") => serializer.serialize_bool(false),
+        Some(text) => serializer.serialize_str(text),
+    }
+}
+
+#[cfg(feature = "serde")]
+fn deserialize_sighting_summary<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Wire {
+        Bool(bool),
+        Str(String),
+    }
+    match Option::<Wire>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(Wire::Bool(false)) => Ok(Some("false".into())),
+        Some(Wire::Bool(true)) => Ok(Some("true".into())),
+        Some(Wire::Str(text)) => Ok(Some(text)),
     }
 }
 
@@ -195,8 +237,12 @@ impl<'de> serde::Deserialize<'de> for Sighting {
             last_seen: Option<StixTimestamp>,
             #[serde(default)]
             count: Option<u32>,
-            #[serde(default)]
-            summary: Option<bool>,
+            #[serde(
+                default,
+                deserialize_with = "deserialize_sighting_summary",
+                serialize_with = "serialize_sighting_summary"
+            )]
+            summary: Option<String>,
             sighting_of_ref: SightingOfRef,
             #[serde(default)]
             observed_data_refs: Vec<ObservedDataId>,
@@ -249,7 +295,7 @@ impl QueryableStixObject for Sighting {
             ["first_seen"] => self.first_seen.as_ref().map(QueryValue::Timestamp),
             ["last_seen"] => self.last_seen.as_ref().map(QueryValue::Timestamp),
             ["count"] => self.count.map(|count| QueryValue::Int(i64::from(count))),
-            ["summary"] => self.summary.map(QueryValue::Bool),
+            ["summary"] => self.summary.as_deref().map(QueryValue::Str),
             ["sighting_of_ref"] => Some(QueryValue::Id(&self.sighting_of_ref)),
             ["created_by_ref"] => self
                 .common
