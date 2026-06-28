@@ -484,6 +484,9 @@ mod tests {
         permanent: bool,
         delivered: Arc<AtomicUsize>,
         attempts: Arc<AtomicUsize>,
+        // Records the delivery-context id seen on each attempt, to prove the
+        // worker reuses one context across retries.
+        ctx_ids: Arc<std::sync::Mutex<Vec<String>>>,
         // A latching gate: deliveries block until the watch value is `true`,
         // after which every delivery (including later ones) proceeds. A plain
         // `Notify` would only wake waiters parked at the instant it fires.
@@ -499,6 +502,7 @@ mod tests {
                 permanent: false,
                 delivered: Arc::new(AtomicUsize::new(0)),
                 attempts: Arc::new(AtomicUsize::new(0)),
+                ctx_ids: Arc::new(std::sync::Mutex::new(Vec::new())),
                 gate: None,
             }
         }
@@ -508,7 +512,7 @@ mod tests {
         fn deliver<'a>(
             &'a mut self,
             _result: &'a ProcessResult,
-            _ctx: &'a DeliveryContext,
+            ctx: &'a DeliveryContext,
         ) -> DeliveryFuture<'a> {
             let fail_first = self.fail_first.clone();
             let delivered = self.delivered.clone();
@@ -516,7 +520,10 @@ mod tests {
             let always_fail = self.always_fail;
             let permanent = self.permanent;
             let gate = self.gate.clone();
+            let ctx_ids = self.ctx_ids.clone();
+            let ctx_id = ctx.id_base.clone();
             Box::pin(async move {
+                ctx_ids.lock().unwrap().push(ctx_id);
                 if let Some(mut rx) = gate {
                     loop {
                         if *rx.borrow() {
@@ -571,6 +578,34 @@ mod tests {
             acks += 1;
         }
         assert_eq!(acks, 10, "every dispatched event must be acked");
+    }
+
+    #[tokio::test]
+    async fn retry_reuses_the_same_delivery_context() {
+        let (ack_tx, _ack_rx) = mpsc::unbounded_channel();
+        let sink = MockSink::new("mock");
+        sink.fail_first.store(2, Ordering::SeqCst); // two failures, then success
+        let ctx_ids = sink.ctx_ids.clone();
+        let dispatcher = Dispatcher::spawn(
+            vec![(sink, OnFull::Block, fast_cfg())],
+            None,
+            ack_tx,
+            noop_metrics(),
+        );
+
+        dispatcher.dispatch(result(), vec![AckToken::Noop]).await;
+        dispatcher.shutdown().await;
+
+        let ids = ctx_ids.lock().unwrap().clone();
+        assert_eq!(
+            ids.len(),
+            3,
+            "two failures then success means three attempts"
+        );
+        assert!(
+            ids.iter().all(|id| *id == ids[0]),
+            "the delivery context id must be stable across retries: {ids:?}",
+        );
     }
 
     #[tokio::test]

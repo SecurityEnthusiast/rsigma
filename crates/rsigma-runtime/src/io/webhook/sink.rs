@@ -319,11 +319,16 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use hmac::{Hmac, KeyInit, Mac};
     use rsigma_eval::result::{DetectionBody, ResultBody, RuleHeader};
     use rsigma_parser::Level;
+    use sha2::Sha256;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    use super::super::signing::SigningScheme;
     use crate::metrics::NoopMetrics;
 
     fn detection(title: &str) -> EvaluationResult {
@@ -363,6 +368,23 @@ mod tests {
 
     fn ctx() -> DeliveryContext {
         DeliveryContext::new()
+    }
+
+    fn signed_sink_to(url: String, signer: WebhookSigner) -> WebhookSink {
+        WebhookSink::new(
+            "test".to_string(),
+            WebhookKind::Detection,
+            reqwest::Method::POST,
+            url,
+            vec![("Content-Type".to_string(), "application/json".to_string())],
+            Some(r#"{"text":"${detection.rule.title}"}"#.to_string()),
+            Duration::from_secs(5),
+            crate::enrichment::Scope::default(),
+            None,
+            crate::enrichment::build_default_http_client().unwrap(),
+            Arc::new(NoopMetrics),
+            Some(signer),
+        )
     }
 
     #[tokio::test]
@@ -456,6 +478,81 @@ mod tests {
         );
         // The escaped body must parse as JSON despite the embedded quotes.
         let _: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
+    }
+
+    #[tokio::test]
+    async fn signed_request_carries_a_verifiable_signature() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let secret = b"shared-secret".to_vec();
+        let signer = WebhookSigner::new(SigningScheme::Standard, vec![secret.clone()]);
+        let mut sink = signed_sink_to(format!("{}/hook", server.uri()), signer);
+        sink.send(&vec![detection("hi")], &ctx()).await.unwrap();
+
+        let reqs = server.received_requests().await.unwrap();
+        let req = &reqs[0];
+        let header = |name: &str| {
+            req.headers
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let id = header("webhook-id");
+        let ts = header("webhook-timestamp");
+        let sig = header("webhook-signature");
+        assert!(id.starts_with("msg_"), "id should be msg_<uuid>: {id}");
+
+        // Recompute the HMAC over the exact bytes the receiver would: the
+        // signed content is "{id}.{timestamp}.{body}" and body is the wire body.
+        let body = std::str::from_utf8(&req.body).unwrap();
+        let signed = format!("{id}.{ts}.{body}");
+        let mut mac = Hmac::<Sha256>::new_from_slice(&secret).unwrap();
+        mac.update(signed.as_bytes());
+        let expected = format!("v1,{}", BASE64.encode(mac.finalize().into_bytes()));
+        assert_eq!(sig, expected, "signature must verify over the wire body");
+    }
+
+    #[tokio::test]
+    async fn retries_with_the_same_context_reproduce_the_signature() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let signer = WebhookSigner::new(SigningScheme::Standard, vec![b"k".to_vec()]);
+        let mut sink = signed_sink_to(format!("{}/hook", server.uri()), signer);
+        let result: ProcessResult = vec![detection("hi")];
+
+        // The delivery worker reuses one context across retries; emulate that by
+        // sending twice with the same context.
+        let context = ctx();
+        sink.send(&result, &context).await.unwrap();
+        sink.send(&result, &context).await.unwrap();
+
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(reqs.len(), 2);
+        let pick = |i: usize, name: &str| {
+            reqs[i]
+                .headers
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_string()
+        };
+        for name in ["webhook-id", "webhook-timestamp", "webhook-signature"] {
+            assert_eq!(
+                pick(0, name),
+                pick(1, name),
+                "{name} must be identical across retries"
+            );
+        }
     }
 
     #[tokio::test]
