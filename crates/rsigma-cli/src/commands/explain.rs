@@ -38,6 +38,11 @@ pub(crate) struct ExplainArgs {
     /// Only explain the rule with this id (falling back to an exact title).
     #[arg(long = "rule-id", value_name = "ID")]
     pub rule_id: Option<String>,
+
+    /// Print the pipeline transformation summary before each trace (human
+    /// output). Has no effect without `-p/--pipeline`.
+    #[arg(long = "show-pipeline")]
+    pub show_pipeline: bool,
 }
 
 pub(crate) fn cmd_explain(args: ExplainArgs, ctx: OutputCtx) {
@@ -66,8 +71,19 @@ pub(crate) fn cmd_explain(args: ExplainArgs, ctx: OutputCtx) {
     }
 
     let event = JsonEvent::borrow(&event_value);
+    let show_pipeline = args.show_pipeline && !pipelines.is_empty();
     let mut explanations: Vec<RuleExplanation> = Vec::with_capacity(rules.len());
+    let mut diffs: Vec<super::pipeline_diff::RuleDiff> = Vec::new();
     for rule in rules {
+        if show_pipeline {
+            match super::pipeline_diff::diff_rule(rule, &pipelines) {
+                Ok(d) => diffs.push(d),
+                Err(e) => {
+                    eprintln!("Pipeline error for rule {:?}: {e}", rule.title);
+                    process::exit(crate::exit_code::RULE_ERROR);
+                }
+            }
+        }
         let mut owned = rule.clone();
         if !pipelines.is_empty()
             && let Err(e) = apply_pipelines(&pipelines, &mut owned)
@@ -85,7 +101,12 @@ pub(crate) fn cmd_explain(args: ExplainArgs, ctx: OutputCtx) {
         explanations.push(explain_rule(&compiled, &event));
     }
 
-    render(&explanations, &ctx);
+    let summaries = if show_pipeline {
+        Some(diffs.as_slice())
+    } else {
+        None
+    };
+    render(&explanations, summaries, &ctx);
 }
 
 /// Read the single event to explain from the inline argument, a `@file`, or
@@ -117,7 +138,11 @@ fn load_event(arg: Option<&str>) -> Result<serde_json::Value, String> {
 // Rendering
 // ---------------------------------------------------------------------------
 
-fn render(explanations: &[RuleExplanation], ctx: &OutputCtx) {
+fn render(
+    explanations: &[RuleExplanation],
+    summaries: Option<&[super::pipeline_diff::RuleDiff]>,
+    ctx: &OutputCtx,
+) {
     // Human tree is the default; an explicit machine format overrides it.
     let effective = if ctx.explicit_format {
         ctx.format
@@ -133,11 +158,15 @@ fn render(explanations: &[RuleExplanation], ctx: &OutputCtx) {
         }
         OutputFormat::Csv => render_delimited(explanations, ','),
         OutputFormat::Tsv => render_delimited(explanations, '\t'),
-        OutputFormat::Table => render_human(explanations, ctx),
+        OutputFormat::Table => render_human(explanations, summaries, ctx),
     }
 }
 
-fn render_human(explanations: &[RuleExplanation], ctx: &OutputCtx) {
+fn render_human(
+    explanations: &[RuleExplanation],
+    summaries: Option<&[super::pipeline_diff::RuleDiff]>,
+    ctx: &OutputCtx,
+) {
     let p = Painter::new(ctx.color);
     for (i, exp) in explanations.iter().enumerate() {
         if i > 0 {
@@ -154,6 +183,11 @@ fn render_human(explanations: &[RuleExplanation], ctx: &OutputCtx) {
             .map(|id| format!(" ({id})"))
             .unwrap_or_default();
         println!("{}{}: {verdict}", p.bold(&exp.rule_title), p.dim(&id));
+        if let Some(diffs) = summaries
+            && let Some(d) = diffs.get(i)
+        {
+            super::pipeline_diff::print_applied(d, &p);
+        }
         for (ci, cond) in exp.conditions.iter().enumerate() {
             if exp.conditions.len() > 1 {
                 println!("  condition {}:", ci + 1);
