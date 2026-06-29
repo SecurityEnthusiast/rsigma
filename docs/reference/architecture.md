@@ -96,6 +96,10 @@ flowchart TD
 
 `*` feature-gated. `**` requires the `daachorse-index` feature.
 
+## rstix
+
+STIX 2.1 bundle parsing, semantic validation, and patterning live in the [`rstix`](https://github.com/timescale/rsigma/tree/main/crates/rstix) crate. Data model, Pattern Engine (STIX §9), API, tests, and feature flags are documented on the [rstix library page](../library/rstix.md#pattern-engine-stix-9) and in the [crate README](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#pattern-engine-stix-9).
+
 ## Crate responsibilities
 
 The dependency direction goes left to right in the diagram above. Higher crates depend on lower crates; the reverse is never true.
@@ -108,7 +112,7 @@ The dependency direction goes left to right in the diagram above. Higher crates 
 | [`rsigma-runtime`](https://docs.rs/rsigma-runtime) | Streaming runtime. Input adapters, post-evaluation enrichment, sinks, dynamic-source resolver, NATS/OTLP plumbing, hot-reload. | `LogProcessor`, `RuntimeEngine`, `EventSource`, `Sink`, `EnrichmentPipeline`, `SourceResolver`, `SourceCache`, `TemplateExpander`, `EvtxFileReader` | `nats`, `otlp`, `logfmt`, `cef`, `evtx`, `daachorse-index` |
 | [`rsigma-lsp`](https://docs.rs/rsigma-lsp) | Language Server Protocol for editors. Diagnostics from the linter + parser + compiler, plus completions, hovers, and symbols. | `Backend` (tower-lsp impl), `Diagnostic` mapping | — |
 | [`rsigma-mcp`](https://docs.rs/rsigma-mcp) | Model Context Protocol server. Exposes the parser, linter, fixer, evaluator, converter, field extraction, and pipeline resolution as MCP tools and resources for AI agents, returning structured JSON. | `RsigmaMcp` handler, `serve_stdio` | `http` |
-| `rstix` | STIX 2.1 + TAXII 2.1 library crate (**Data Model + Serialization** complete). | `Bundle::parse` / `parse_reader`, `Bundle::validate`, `ParseOptions` + typed `TypeRegistry`, 42 typed object families, `model::validate` invariants, deterministic SCO IDs, vocabulary tables | `serde` |
+| `rstix` | STIX 2.1 + TAXII 2.1 library crate (**Data Model + Serialization** complete; **Pattern Engine** parse + type-check behind `pattern`). | `Bundle::parse` / `parse_reader`, `Bundle::validate`, `ParseOptions` + typed `TypeRegistry`, 42 typed object families, `Pattern::parse` (`pattern`), `model::validate` invariants, deterministic SCO IDs, vocabulary tables | `serde`, `pattern` |
 | `rsigma-cli` | The `rsigma` binary. Wires the other crates into a CLI and the streaming daemon. | `engine eval`, `engine daemon`, `rule *`, `backend *`, `pipeline resolve` | `daemon`, `daemon-nats`, `daemon-otlp`, plus all eval/runtime feature flags. |
 
 `rsigma-parser` has no Rust dependencies on the others. `rsigma-eval`, `rsigma-convert`, and `rsigma-lsp` depend on `rsigma-parser` and nothing else above it. `rsigma-runtime` depends on `rsigma-parser` and `rsigma-eval`. `rsigma-mcp` depends on `rsigma-parser`, `rsigma-eval`, `rsigma-convert`, and `rsigma-runtime`. `rsigma-cli` depends on everything.

@@ -4,6 +4,17 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix Pattern Engine: parse and type-check (Levels 1–3)
+
+Adds the `pattern` feature to `rstix` with a hand-written lexer, recursive-descent parser for STIX patterning Levels 1–3, and an SCO schema type-checker for all 18 cyber-observable types:
+
+* **`Pattern::parse`** — lex, parse, and type-check a pattern string; returns `PatternError` with byte offset (lex/parse) or path (type-check).
+* **Grammar** — single observations, top-level `AND` / `OR` / `FOLLOWEDBY`, and Level 3 `WITHIN`, `REPEATS`, and `START`/`STOP` qualifiers.
+* **Type-checker** — validates property paths (including `extensions.'…'`, `_ref.type`, dictionary dot keys, custom SCO types), comparison operators, and constant types against per-SCO schemas.
+* **Tests** — STIX §9.8 fixture files under `tests/fixtures/pattern/`, acceptance test modules, gap-table regression coverage.
+
+Evaluation, canonical printer, and `IndicatorPattern` AST wiring are **deferred** to later Pattern Engine work (documented in `crates/rstix/README.md` and `docs/library/rstix.md`).
+
 ### Complete rstix Data Model + Serialization phase (#268)
 
 Closes the **Data Model + Serialization** phase for `rstix` with semantic validation, spec-audit alignment on MUST vs SHOULD rules, and remaining model gaps:

@@ -4093,6 +4093,7 @@ dependencies = [
 name = "rstix"
 version = "0.17.0"
 dependencies = [
+ "base64",
  "phf",
  "serde",
  "serde_jcs",

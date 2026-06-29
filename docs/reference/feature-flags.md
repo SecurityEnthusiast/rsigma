@@ -52,13 +52,14 @@ The Model Context Protocol server library. No Cargo features of its own; it is g
 
 ## `rstix`
 
-STIX 2.1 library crate. **Data Model + Serialization** is complete (typed objects, bundle parse/stream, semantic validation). **Pattern Engine**, graph/store, and TAXII client are later phases.
+STIX 2.1 library crate. **Data Model + Serialization** is complete (typed objects, bundle parse/stream, semantic validation). **Pattern Engine** parse + type-check is complete behind `pattern`; evaluation and printer are deferred — see [rstix Pattern Engine](../library/rstix.md#pattern-engine-stix-9).
 
 | Feature | Default | Pulls in | What it enables |
 |---------|---------|----------|-----------------|
 | `serde` | yes | `serde`, `serde_json` | `Bundle::parse`, `parse_reader`, `serde` on all model types, `Bundle::validate`. |
+| `pattern` | no | `base64` | `Pattern::parse`, `PatternAst`, `PatternScoType`, `PatternError`, `PatternMatchError` — STIX Specification §9 Levels 1–3 parse and type-check. See [rstix Pattern Engine](../library/rstix.md#pattern-engine-stix-9). |
 
-Without `serde`, only `core`, `id`, and `vocab` modules are available (no bundle parsing).
+Without `serde`, only `core`, `id`, and `vocab` modules are available (no bundle parsing). Enable `pattern` for STIX patterning (`cargo build -p rstix --features pattern`).
 
 ## Building with features
 
