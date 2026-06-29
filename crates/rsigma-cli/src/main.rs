@@ -15,8 +15,9 @@ use std::process;
 use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
 use commands::{
     BacktestArgs, ClassifyArgs, ConditionArgs, ConvertArgs, CoverageArgs, DocArgs, EvalArgs,
-    FieldsArgs, HygieneArgs, LintArgs, LintCounts, ListFormatsArgs, MigrateSourcesArgs, ParseArgs,
-    ScorecardArgs, StatusArgs, StdinArgs, TailArgs, TapArgs, ValidateArgs, VisibilityArgs,
+    ExplainArgs, FieldsArgs, HygieneArgs, LintArgs, LintCounts, ListFormatsArgs,
+    MigrateSourcesArgs, ParseArgs, ScorecardArgs, StatusArgs, StdinArgs, TailArgs, TapArgs,
+    ValidateArgs, VisibilityArgs,
 };
 // `pipeline resolve` resolves dynamic sources, which needs the async runtime
 // (tokio) and the source resolver from rsigma-runtime. Both ship with the
@@ -205,6 +206,9 @@ enum Commands {
 enum EngineCommands {
     /// Evaluate events against Sigma rules
     Eval(EvalArgs),
+
+    /// Explain why a rule did or did not match a single event
+    Explain(ExplainArgs),
 
     /// Report which schema each event matches (content-based recognition)
     Classify(ClassifyArgs),
@@ -455,6 +459,7 @@ fn dispatch_engine(cmd: EngineCommands, matches: &ArgMatches, ctx: output::Outpu
                 .expect("engine eval submatches present");
             run_eval(args, em, ctx);
         }
+        EngineCommands::Explain(args) => commands::cmd_explain(args, ctx),
         EngineCommands::Classify(args) => commands::cmd_classify(args, ctx),
         EngineCommands::Status(args) => commands::cmd_status(args, ctx),
         EngineCommands::Tap(args) => commands::cmd_tap(args, ctx),
