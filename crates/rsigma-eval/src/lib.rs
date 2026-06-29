@@ -116,8 +116,9 @@ pub use correlation::{
     GroupKey, WindowState,
 };
 pub use correlation_engine::{
-    CorrelationAction, CorrelationConfig, CorrelationEngine, CorrelationEventMode,
-    CorrelationSnapshot, ProcessResult, TimestampFallback,
+    CorrelationAction, CorrelationConfig, CorrelationEngine, CorrelationEventMode, CorrelationInfo,
+    CorrelationSnapshot, CorrelationStateSnapshot, GroupKeyPart, GroupStateInfo, ProcessResult,
+    TimestampFallback,
 };
 pub use engine::Engine;
 pub use error::{EvalError, Result};
