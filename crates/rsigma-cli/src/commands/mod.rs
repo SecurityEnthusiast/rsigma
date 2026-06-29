@@ -16,6 +16,7 @@ mod mcp;
 mod migrate_sources;
 mod navigator;
 mod parse;
+mod pipeline_diff;
 // Shared serializable report shapes for the detection-as-code `rule` commands:
 // `backtest`/`coverage` produce them, `scorecard` consumes them.
 pub(crate) mod reports;
@@ -50,6 +51,7 @@ pub(crate) use lint::{LintArgs, LintCounts, cmd_lint};
 pub(crate) use mcp::{McpCommands, dispatch_mcp};
 pub(crate) use migrate_sources::{MigrateSourcesArgs, cmd_migrate_sources};
 pub(crate) use parse::{ConditionArgs, ParseArgs, StdinArgs, cmd_condition, cmd_parse, cmd_stdin};
+pub(crate) use pipeline_diff::{PipelineDiffArgs, cmd_pipeline_diff};
 #[cfg(feature = "daemon")]
 pub(crate) use resolve::{ResolveArgs, cmd_resolve};
 pub(crate) use scorecard::{ScorecardArgs, apply_scorecard_config, cmd_scorecard};
