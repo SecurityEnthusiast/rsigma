@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Unix domain socket support for the daemon (input source, output sink, API listener)
+### Unix domain socket support for the daemon (input source, output sink, API listener) (#273)
 
 The daemon now speaks `unix://` on three surfaces (Unix targets only; gated behind the new runtime `uds` feature, which the `daemon` feature enables):
 
