@@ -482,11 +482,14 @@ From there, the AST can go in three directions depending on what you need:
 
 When running as a streaming detection engine, `rsigma-eval` feeds into `rsigma-runtime`:
 
-- **Input:** Format adapters parse raw log lines (JSON, syslog, logfmt\*, CEF\*, plain text, with auto-detection) into `EventInputDecoded`. EVTX\* files are parsed directly from binary via `EvtxFileReader`. Sources include stdin, HTTP POST, NATS JetStream, and OTLP\* (HTTP protobuf/JSON and gRPC).
+- **Input:** Format adapters parse raw log lines (JSON, syslog, logfmt\*, CEF\*, plain text, with auto-detection) into `EventInputDecoded`. EVTX\* files are parsed directly from binary via `EvtxFileReader`. Sources include stdin, HTTP POST, NATS JetStream, OTLP\* (HTTP protobuf/JSON and gRPC), and a `unix://` domain socket\* (Unix only) for co-located log shippers.
 - **Dynamic sources:** `SourceResolver` fetches data from files, commands, HTTP APIs, and NATS subjects. Resolved values are injected into pipelines via `TemplateExpander`. A `SourceCache` (in-memory + optional SQLite) provides fallback data. `RefreshScheduler` manages auto-refresh (interval, file watch, NATS push, on-demand). Extraction supports jq, JSONPath, and CEL. `DaemonSourceRegistry` unifies sources from external files (`--source`) and pipeline-embedded declarations with collision-error semantics.
-- **Processing:** `LogProcessor` runs batch evaluation with parallel detection and sequential correlation. `RuntimeEngine` wraps `Engine` and `CorrelationEngine` with rule loading and `ArcSwap` hot-reload.
+- **Processing:** `LogProcessor` runs batch evaluation with parallel detection and sequential correlation. `RuntimeEngine` wraps `Engine` and `CorrelationEngine` with rule loading and `ArcSwap` hot-reload. Optional schema-aware routing builds one engine per pipeline set and dispatches each classified event to its engine, feeding one shared correlation store; optional conflict-based logsource pruning skips rules whose `product`/`service`/`category` cannot match the event.
 - **Enrichment:** `EnrichmentPipeline` runs between the engine and the sinks, injecting context (asset info, IP reputation, identity, GeoIP, KEV flags, runbook URLs, ...) into each result's `RuleHeader.enrichments` map. Four primitives (`template`, `lookup`, `http`, `command`) compose into recipes. Kind-aware template namespaces (`${detection.*}` for detection-kind enrichers, `${correlation.*}` for correlation-kind) are validated at config-load time. Optional HTTP response cache, scope filtering by rule glob, tag set, and severity, and `on_error` policies (`skip`, `null`, `drop`).
-- **Output:** Sinks write evaluation results to stdout, files, NATS, or an OTLP\* collector as one flat JSON object per result; the webhook sink instead renders a templated HTTP request per result (Slack, Teams, Discord, PagerDuty, or any endpoint). Sinks fan out through a shared async delivery layer where each sink runs its own bounded queue and worker with bounded retry and backoff, routing a result to the DLQ only after retries are exhausted. The output type is `EvaluationResult` (a composition of `RuleHeader` + `ResultBody::Detection|Correlation`), carrying rule title, id, level, tags, the `enrichments` map written by the enrichment pipeline, matched selections, field matches, aggregated values, and optionally the triggering events.
+- **Post-engine layers:** Two opt-in stages run after enrichment and before the sinks, leaving the evaluation hot path untouched. A risk layer scores each firing per entity and emits per-entity risk incidents; an alert pipeline silences, inhibits, and deduplicates results, then groups the survivors into incidents (modeled on Alertmanager). When both run the order is enrichment, risk, alert pipeline, sinks. A separate triage feedback loop ingests analyst dispositions off the result stream into a per-rule false-positive ratio. All three persist versioned snapshots into the shared `--state-db` store.
+- **Output:** Sinks write evaluation results to stdout, files, NATS, an OTLP\* collector, or a `unix://` socket\* as one flat JSON object per result; the webhook sink instead renders a templated HTTP request per result (Slack, Teams, Discord, PagerDuty, or any endpoint). Sinks fan out through a shared async delivery layer where each sink runs its own bounded queue and worker with bounded retry and backoff, routing a result to the DLQ only after retries are exhausted. The output type is `EvaluationResult` (a composition of `RuleHeader` + `ResultBody::Detection|Correlation`), carrying rule title, id, level, tags, the `enrichments` map written by the enrichment pipeline, matched selections, field matches, aggregated values, and optionally the triggering events.
+
+Cutting across all of these is an agent-facing surface. `rsigma-mcp` exposes the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio and Streamable HTTP\* (bearer-token auth, TLS). Driven by `rsigma mcp serve`, the `RsigmaMcp` handler wraps `rsigma-parser`, `rsigma-eval`, `rsigma-convert`, and `rsigma-runtime` behind 12 tools (parse, lint, fix, validate, evaluate, convert, list backends and fields, resolve and list pipelines, and author ADS metadata) and 4 resources (the lint catalogue, the ADS schema, the modifier reference, and MITRE tactics), returning structured JSON.
 
 Feature-gated items are marked with \* in the diagram.
 
@@ -549,6 +552,8 @@ Feature-gated items are marked with \* in the diagram.
     │    + bloom prefilter*   │
     │    + cross-rule AC**    │
     │      (daachorse)        │
+    │    + logsource prune    │
+    │      (conflict-based)   │
     │                         │
     │  correlation/ ──>       │
     │    sliding windows,     │
@@ -591,6 +596,8 @@ Feature-gated items are marked with \* in the diagram.
     │                                          │
     │  RuntimeEngine ──> wraps Engine +        │
     │    CorrelationEngine with rule loading   │
+    │    schema routing*: per-schema engines   │
+    │      + one shared correlation store      │
     │                                          │
     │  enrichment/ ──> post-eval pipeline:     │
     │    primitives: template, lookup,         │
@@ -602,15 +609,23 @@ Feature-gated items are marked with \* in the diagram.
     │    └──> writes RuleHeader.enrichments    │
     │         between engine and sinks         │
     │                                          │
-    │  io/ ──> EventSource (stdin, HTTP, NATS) │
+    │  risk/ + alert_pipeline/ (post-engine,   │
+    │    opt-in, between enrichment and sinks):│
+    │    risk: per-entity score + incidents    │
+    │    alert pipeline: silence, inhibit,     │
+    │      dedup, incident grouping            │
+    │    dispositions: per-rule FP ratio       │
+    │                                          │
+    │  io/ ──> EventSource (stdin, HTTP,       │
+    │            NATS, unix*)                  │
     │          OTLP* (HTTP + gRPC)             │
     │          TLS* termination (mTLS, cert    │
     │            hot-reload) on shared API     │
-    │            listener                      │
+    │            listener (TCP or unix*)       │
     │          Sink (stdout, file, NATS,       │
-    │            OTLP*, webhook); async        │
-    │            delivery: per-sink workers,   │
-    │            retry/backoff                 │
+    │            OTLP*, webhook, unix*);       │
+    │            async delivery: per-sink      │
+    │            workers, retry/backoff        │
     │          DLQ (failed events)             │
     └──────────────────────────────────────────┘
               │       (*  = feature-gated)

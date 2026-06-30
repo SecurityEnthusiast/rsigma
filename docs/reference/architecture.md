@@ -34,11 +34,11 @@ flowchart TD
 
     subgraph rsigma-eval
         direction TB
-        ETRAIT["Event trait<br/>JsonEvent · KvEvent · PlainEvent"]
+        ETRAIT["Event trait<br/>JsonEvent · KvEvent · PlainEvent<br/>schema classify (content signatures)"]
         ETRAIT --> EPIPE["pipeline/<br/>Pipeline · conditions · transformations<br/>state · finalizers<br/>builtin: ecs_windows · sysmon<br/>dynamic: ${source.*} template expansion"]
         EPIPE --> ECOMP["compiler/<br/>compile_rule → CompiledRule<br/>matcher optimizer (AnyOf):<br/>Aho-Corasick batching (|contains)<br/>RegexSet batching (|re)<br/>CaseInsensitiveGroup"]
-        ECOMP --> EENG["engine/<br/>Engine (stateless)<br/>prefilters:<br/>RuleIndex (exact-value pruning)<br/>bloom trigram filter* (substring)<br/>cross-rule AC index** (daachorse)"]
-        EENG --> ECORR["correlation/<br/>sliding windows · group-by<br/>chaining · suppression"]
+        ECOMP --> EENG["engine/<br/>Engine (stateless)<br/>prefilters:<br/>RuleIndex (exact-value pruning)<br/>bloom trigram filter* (substring)<br/>cross-rule AC index** (daachorse)<br/>logsource pruning (conflict-based, product-partitioned)"]
+        EENG --> ECORR["correlation/<br/>sliding windows · group-by<br/>chaining · suppression · introspect snapshot"]
         ECORR --> ECUST["rsigma.* custom attributes"]
     end
 
@@ -62,16 +62,17 @@ flowchart TD
         direction TB
         RINPUT["input/ format adapters:<br/>JSON · syslog · logfmt* · CEF* · EVTX*<br/>plain text · auto-detect<br/>raw line → EventInputDecoded"]
         RINPUT --> RPROC["LogProcessor<br/>batch evaluation<br/>ArcSwap hot-reload (rules + pipelines)<br/>MetricsHook · EventFilter"]
-        RPROC --> RENG["RuntimeEngine<br/>wraps Engine + CorrelationEngine<br/>with rule loading"]
+        RPROC --> RENG["RuntimeEngine<br/>wraps Engine + CorrelationEngine<br/>with rule loading<br/>schema routing*: per-schema engines<br/>+ one shared correlation store"]
         RENG --> RENRICH["enrichment/ post-eval pipeline<br/>primitives: template · lookup · http · command<br/>kind-aware: ${detection.*} · ${correlation.*}<br/>scope filter · HTTP response cache · on_error<br/>writes RuleHeader.enrichments"]
-        RENRICH --> RIO["io/<br/>EventSource (stdin · HTTP · NATS)<br/>OTLP* (HTTP + gRPC)<br/>TLS* termination (mTLS · cert hot-reload)<br/>on shared API listener<br/>Sink (stdout · file · NATS · OTLP* · webhook)<br/>async delivery: per-sink workers · retry/backoff · DLQ"]
+        RENRICH --> RPOST["post-engine layers (opt-in)<br/>risk/ per-entity scoring + risk incidents<br/>alert pipeline/ silence · inhibit ·<br/>dedup · incident grouping<br/>dispositions/ per-rule false-positive ratio"]
+        RPOST --> RIO["io/<br/>EventSource (stdin · HTTP · NATS · unix*)<br/>OTLP* (HTTP + gRPC)<br/>TLS* termination (mTLS · cert hot-reload)<br/>on shared API listener (TCP or unix*)<br/>Sink (stdout · file · NATS · OTLP* · webhook · unix*)<br/>async delivery: per-sink workers · retry/backoff · DLQ"]
         RSRC["sources/ (dynamic pipelines)<br/>DaemonSourceRegistry: external (--source) +<br/>pipeline-embedded (deprecated) · collision-error<br/>SourceResolver: HTTP · command · file · NATS<br/>TemplateExpander · SourceCache (SQLite TTL)<br/>RefreshScheduler: interval · watch · push<br/>SIGHUP · NATS control · includes<br/>extract: jq · JSONPath · CEL"]
     end
 
     subgraph rsigma-mcp
         direction TB
         MCPSERVE["rsigma mcp serve<br/>stdio · Streamable HTTP (bearer auth · TLS)"]
-        MCPSERVE --> MCPH["RsigmaMcp handler<br/>11 tools: parse_rule · parse_condition · lint_rules<br/>validate_rules · evaluate_events · convert_rules<br/>list_backends · list_fields · resolve_pipeline<br/>list_builtin_pipelines · fix_rules<br/>3 resources: lint catalogue · modifiers · MITRE tactics"]
+        MCPSERVE --> MCPH["RsigmaMcp handler<br/>12 tools: parse_rule · parse_condition · lint_rules<br/>validate_rules · evaluate_events · convert_rules<br/>list_backends · list_fields · resolve_pipeline<br/>list_builtin_pipelines · fix_rules · author_ads<br/>4 resources: lint catalogue · ADS schema · modifiers · MITRE tactics"]
     end
 
     YAML -->|"Raw YAML Value"| SERDE
@@ -143,14 +144,17 @@ No I/O, no thread spawning, no async runtime. The same `Engine` struct backs eve
 
 `rsigma-cli`'s `daemon` subcommand wires `rsigma-runtime`'s `LogProcessor` around `RuntimeEngine` (which embeds `Engine` + `CorrelationEngine`). Adds:
 
-- One `EventSource` (stdin, HTTP, NATS).
+- One `EventSource` (stdin, HTTP, NATS, or a `unix://` domain socket on Unix targets behind the `uds` feature).
 - A post-evaluation `EnrichmentPipeline` that injects context into each result before it reaches the sinks.
-- One or more `Sink`s (stdout, file, NATS, OTLP, webhook), fanned out through a per-sink async delivery layer (bounded queue + worker, retry/backoff), plus an optional DLQ.
+- Optional post-engine layers in the sink path, all off by default: a risk layer (`--risk`) that scores firings per entity and emits risk incidents, and an alert pipeline (`--alert-pipeline`) that silences, inhibits, deduplicates, and groups results into incidents. When both run the order is enrichment, risk, alert pipeline, sinks.
+- An optional triage feedback loop (`--enable-dispositions`) that ingests analyst verdicts off the result stream and maintains a per-rule false-positive ratio. It is orthogonal to the eval and sink paths.
+- Optional schema-aware routing (`--schema-routing`) that classifies each event and dispatches it to a per-schema `Engine`, feeding one shared correlation store; and optional conflict-based logsource pruning (`--logsource-routing`).
+- One or more `Sink`s (stdout, file, NATS, OTLP, webhook, or a `unix://` socket), fanned out through a per-sink async delivery layer (bounded queue + worker, retry/backoff), plus an optional DLQ.
 - Hot-reload via `ArcSwap` (file watcher + `SIGHUP` + `POST /api/v1/reload`).
-- Optional SQLite-backed correlation state (`--state-db`).
+- Optional SQLite-backed state (`--state-db`) for correlation, alert-pipeline, risk, and disposition snapshots.
 - Optional OTLP receiver (HTTP + gRPC) when built with `daemon-otlp`.
-- Optional in-process TLS termination (mTLS, cert hot-reload) on the shared API listener when built with `daemon-tls`.
-- Prometheus `/metrics`, REST control endpoints (status, reload, plus the opt-in tap and tail streams), health probes.
+- Optional in-process TLS termination (mTLS, cert hot-reload) on the shared API listener when built with `daemon-tls` (TCP only; a `unix://` listener is the trust boundary instead).
+- Prometheus `/metrics`, REST control endpoints (status, reload, the opt-in tap and tail streams, and read-only `correlations`, `incidents`, `silences`, `risk`, and `dispositions` views), health probes.
 
 See [Streaming Detection](../guide/streaming-detection.md) and the [`engine daemon`](../cli/engine/daemon.md) flag table.
 
@@ -166,7 +170,7 @@ PostgreSQL/TimescaleDB, LynxDB, and Fibratus (rule YAML for Windows EDR sensors)
 
 ### Plus: MCP
 
-`rsigma-mcp` exposes the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio, and over Streamable HTTP (with bearer-token auth and TLS) behind the `http` feature. The `RsigmaMcp` handler wraps `rsigma-parser`, `rsigma-eval`, `rsigma-convert`, and `rsigma-runtime` behind 11 tools (parse, lint, fix, validate, evaluate, convert, list backends and fields, resolve and list pipelines) and 3 resources (the lint catalogue, modifier reference, and MITRE tactics), returning structured JSON. It is driven by `rsigma mcp serve`. See the [MCP server guide](../guide/mcp-server.md).
+`rsigma-mcp` exposes the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio, and over Streamable HTTP (with bearer-token auth and TLS) behind the `http` feature. The `RsigmaMcp` handler wraps `rsigma-parser`, `rsigma-eval`, `rsigma-convert`, and `rsigma-runtime` behind 12 tools (parse, lint, fix, validate, evaluate, convert, list backends and fields, resolve and list pipelines, and author ADS metadata) and 4 resources (the lint catalogue, the ADS schema, the modifier reference, and MITRE tactics), returning structured JSON. It is driven by `rsigma mcp serve`. See the [MCP server guide](../guide/mcp-server.md).
 
 ## Data flow
 
@@ -204,6 +208,7 @@ For each event:
 
 1. Apply opt-in pre-filters in order:
    - `RuleIndex` exact-value pruning (always on).
+   - Conflict-based logsource pruning (`set_logsource_extractor`), backed by a product-partitioned rule index, when logsource routing is enabled.
    - Bloom trigram filter (`set_bloom_prefilter(true)`).
    - Cross-rule Aho-Corasick (`set_cross_rule_ac(true)`, requires `daachorse-index` build feature).
 2. For each candidate rule, walk the matcher tree against the event.
@@ -212,18 +217,21 @@ For each event:
 
 The engine itself is stateless. Correlation state lives on the `CorrelationEngine`, with a hard cap (`max_state_entries`, default 100,000; 10% eviction on overrun). See [Performance Tuning: memory pressure and correlation state](../guide/performance-tuning.md#memory-pressure-and-correlation-state).
 
+With schema-aware routing the daemon classifies each event by its content signature and builds one `Engine` per distinct pipeline set, dispatching the event to the engine bound to its schema. Detections from every per-schema engine feed one shared `CorrelationEngine`, and group-by extraction is schema-aware, so the same entity correlates across schemas even when each names the field differently. See [Schema Routing](../guide/schema-routing.md) and [Logsource Routing](../guide/logsource-routing.md).
+
 ### Streaming pipeline (`rsigma-runtime`)
 
 The streaming runtime wraps the synchronous `Engine` in an async pipeline:
 
 ```text
-EventSource ──► mpsc ──► LogProcessor ──► EnrichmentPipeline ──► async sink layer ──► Sinks
-   (stdin,                 (batch            (asset · GeoIP ·       (per-sink queue       (stdout,
-    HTTP,                   evaluation,       reputation ·           + worker,             file,
-    NATS,                   ArcSwap           runbook · ...)         retry/backoff)        NATS,
-    OTLP)                   hot-reload)                                                     OTLP,
-                                                                                           webhook,
-                                                                                           DLQ)
+EventSource ──► mpsc ──► LogProcessor ──► EnrichmentPipeline ──► post-engine ──► async sink layer ──► Sinks
+   (stdin,                 (batch            (asset · GeoIP ·       layers           (per-sink queue       (stdout,
+    HTTP,                   evaluation,       reputation ·          (risk · alert     + worker,             file,
+    NATS,                   ArcSwap           runbook · ...)         pipeline,        retry/backoff)        NATS,
+    OTLP,                   hot-reload)                              opt-in)                                OTLP,
+    unix)                                                                                                  webhook,
+                                                                                                           unix,
+                                                                                                           DLQ)
 ```
 
 The bounded mpsc channels apply back-pressure: when the engine cannot keep up, the source blocks instead of dropping events. `rsigma_back_pressure_events_total` counts how often that happens. See [Observability](../guide/observability.md#prometheus-metrics).
@@ -233,6 +241,10 @@ The bounded mpsc channels apply back-pressure: when the engine cannot keep up, t
 ### Post-evaluation enrichment (`rsigma-runtime::enrichment`)
 
 Between the engine and the sinks, the `EnrichmentPipeline` injects context (asset info, IP reputation, identity, GeoIP, KEV flags, runbook URLs, ...) into each result's `RuleHeader.enrichments` map. Four primitives (`template`, `lookup`, `http`, `command`) compose into recipes. Kind-aware template namespaces (`${detection.*}` for detection-kind enrichers, `${correlation.*}` for correlation-kind) are validated at config-load time. An optional HTTP response cache, scope filtering by rule glob, tag set, and severity, and `on_error` policies (`skip`, `null`, `drop`) round it out. See [Enrichment](../guide/enrichers.md).
+
+### Post-engine layers (`rsigma-runtime::risk`, `::alert_pipeline`, `::dispositions`)
+
+After enrichment and before the sinks, two opt-in layers reshape the result stream while leaving the evaluation hot path untouched. The risk layer annotates each firing with a per-entity risk score and risk objects (drawn from a shared field-selector namespace), accumulates risk per entity over a sliding window, and emits a `RiskIncidentResult` when an entity crosses a score or ATT&CK-tactic-count threshold. The alert pipeline then silences, inhibits, and deduplicates results (modeled on Alertmanager) and groups the survivors into `IncidentResult`s. When both run the order is enrichment, risk, alert pipeline, sinks, since risk must accrue on every firing including the ones the alert pipeline is about to fold, silence, or inhibit. A separate triage feedback loop ingests analyst dispositions off the result stream to maintain a per-rule false-positive ratio; it is orthogonal to the sink path. All three persist versioned snapshots into the shared `--state-db` store, each in its own table. See [Risk-Based Alerting](../guide/risk-based-alerting.md), [Alert Pipeline](../guide/alert-pipeline.md), and [Triage Feedback](../guide/triage-feedback.md).
 
 ### Dynamic source resolution (`rsigma-runtime::sources`)
 

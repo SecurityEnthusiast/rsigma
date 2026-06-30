@@ -18,11 +18,11 @@ flowchart TD
 
     subgraph rsigma-eval
         direction TB
-        ETRAIT["Event trait\nJsonEvent · KvEvent · PlainEvent"]
+        ETRAIT["Event trait\nJsonEvent · KvEvent · PlainEvent\nschema classify (content signatures)"]
         ETRAIT --> EPIPE["pipeline/\nPipeline · conditions · transformations\nstate · finalizers\nbuiltin: ecs_windows · sysmon\ndynamic: ${source.*} template expansion"]
         EPIPE --> ECOMP["compiler/\ncompile_rule → CompiledRule\nmatcher optimizer (AnyOf):\nAho-Corasick batching (|contains)\nRegexSet batching (|re)\nCaseInsensitiveGroup"]
-        ECOMP --> EENG["engine/\nEngine (stateless)\nprefilters:\nRuleIndex (exact-value pruning)\nbloom trigram filter* (substring)\ncross-rule AC index** (daachorse)"]
-        EENG --> ECORR["correlation/\nsliding windows · group-by\nchaining · suppression"]
+        ECOMP --> EENG["engine/\nEngine (stateless)\nprefilters:\nRuleIndex (exact-value pruning)\nbloom trigram filter* (substring)\ncross-rule AC index** (daachorse)\nlogsource pruning (conflict-based, product-partitioned)"]
+        EENG --> ECORR["correlation/\nsliding windows · group-by\nchaining · suppression · introspect snapshot"]
         ECORR --> ECUST["rsigma.* custom attributes"]
     end
 
@@ -46,16 +46,17 @@ flowchart TD
         direction TB
         RINPUT["input/ format adapters:\nJSON · syslog · logfmt* · CEF* · EVTX*\nplain text · auto-detect\nraw line → EventInputDecoded"]
         RINPUT --> RPROC["LogProcessor\nbatch evaluation\nArcSwap hot-reload (rules + pipelines)\nMetricsHook · EventFilter"]
-        RPROC --> RENG["RuntimeEngine\nwraps Engine + CorrelationEngine\nwith rule loading"]
+        RPROC --> RENG["RuntimeEngine\nwraps Engine + CorrelationEngine\nwith rule loading\nschema routing*: per-schema engines\n+ one shared correlation store"]
         RENG --> RENRICH["enrichment/ post-eval pipeline\nprimitives: template · lookup · http · command\nkind-aware: ${detection.*} · ${correlation.*}\nscope filter · HTTP response cache · on_error\nwrites RuleHeader.enrichments"]
-        RENRICH --> RIO["io/\nEventSource (stdin · HTTP · NATS)\nOTLP* (HTTP + gRPC)\nTLS* termination (mTLS · cert hot-reload)\non shared API listener\nSink (stdout · file · NATS · OTLP* · webhook)\nasync delivery: per-sink workers · retry/backoff · DLQ"]
+        RENRICH --> RPOST["post-engine layers (opt-in)\nrisk/ per-entity scoring + risk incidents\nalert pipeline/ silence · inhibit ·\ndedup · incident grouping\ndispositions/ per-rule false-positive ratio"]
+        RPOST --> RIO["io/\nEventSource (stdin · HTTP · NATS · unix*)\nOTLP* (HTTP + gRPC)\nTLS* termination (mTLS · cert hot-reload)\non shared API listener (TCP or unix*)\nSink (stdout · file · NATS · OTLP* · webhook · unix*)\nasync delivery: per-sink workers · retry/backoff · DLQ"]
         RSRC["sources/ (dynamic pipelines)\nDaemonSourceRegistry: external (--source) +\npipeline-embedded (deprecated) · collision-error\nSourceResolver: HTTP · command · file · NATS\nTemplateExpander · SourceCache (SQLite TTL)\nRefreshScheduler: interval · watch · push\nSIGHUP · NATS control · includes\nextract: jq · JSONPath · CEL"]
     end
 
     subgraph rsigma-mcp
         direction TB
         MCPSERVE["rsigma mcp serve\nstdio · Streamable HTTP (bearer auth · TLS)"]
-        MCPSERVE --> MCPH["RsigmaMcp handler\n11 tools: parse_rule · parse_condition · lint_rules\nvalidate_rules · evaluate_events · convert_rules\nlist_backends · list_fields · resolve_pipeline\nlist_builtin_pipelines · fix_rules\n3 resources: lint catalogue · modifiers · MITRE tactics"]
+        MCPSERVE --> MCPH["RsigmaMcp handler\n12 tools: parse_rule · parse_condition · lint_rules\nvalidate_rules · evaluate_events · convert_rules\nlist_backends · list_fields · resolve_pipeline\nlist_builtin_pipelines · fix_rules · author_ads\n4 resources: lint catalogue · ADS schema · modifiers · MITRE tactics"]
     end
 
     YAML -->|"Raw YAML Value"| SERDE
