@@ -12,6 +12,10 @@ pub mod id;
 /// STIX vocabulary tables.
 pub mod vocab;
 
+/// STIX 2.1 patterning engine (STIX Specification §9).
+#[cfg(feature = "pattern")]
+pub mod pattern;
+
 /// STIX 2.1 data model: typed objects and common properties.
 pub mod model;
 
@@ -75,6 +79,9 @@ pub enum ParseError {
         max: usize,
     },
 }
+
+#[cfg(feature = "pattern")]
+pub use pattern::{Pattern, PatternAst, PatternError, PatternMatchError, PatternScoType};
 
 #[cfg(feature = "serde")]
 pub use model::{
