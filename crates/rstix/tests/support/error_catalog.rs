@@ -40,6 +40,10 @@ error_cases! {
         msg: "property `image_ref` is absent or not a reference".into(),
     },
     "not-single-observation" => PatternMatchError::NotSingleObservation,
+    "too-many-observations" => PatternMatchError::TooManyObservations {
+        count: 257,
+        max: rstix::pattern::MAX_OBSERVATIONS,
+    },
     "observed-data-missing-object" => PatternMatchError::RefResolution {
         path: "observed-data.object_refs".into(),
         msg: "missing object `ipv4-addr--00000000-0000-0000-0000-000000009999`".into(),

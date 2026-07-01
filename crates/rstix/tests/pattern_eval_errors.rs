@@ -22,7 +22,7 @@ use sco_json::parse_sco_json;
 fn error_catalog_variants_are_constructible() {
     for case in ERROR_CATALOG {
         let err = (case.make_error)();
-        assert_eq!(format!("{err}").is_empty(), false, "case `{}`", case.id);
+        assert!(!format!("{err}").is_empty(), "case `{}`", case.id);
     }
 }
 

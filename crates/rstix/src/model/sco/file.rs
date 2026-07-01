@@ -236,7 +236,7 @@ impl QueryableStixObject for File {
                 .parse::<usize>()
                 .ok()
                 .and_then(|i| self.contains_refs.get(i))
-                .map(|id| QueryValue::Id(id)),
+                .map(QueryValue::Id),
             ["content_ref"] => self
                 .content_ref
                 .as_ref()

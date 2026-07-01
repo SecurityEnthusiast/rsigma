@@ -571,49 +571,54 @@ fn read_sco_terminal(
             return Ok(vec![FieldValue::Bool(defanged)]);
         }
     }
-    if name == "name" {
-        if let ScoObject::Process(process) = sco {
-            if let Some(values) = process_name_values(process, bundle)? {
-                return Ok(values);
-            }
-        }
+    if name == "name"
+        && let ScoObject::Process(process) = sco
+        && let Some(values) = process_name_values(process, bundle)?
+    {
+        return Ok(values);
     }
+    finish_read_sco_terminal(sco, name)
+}
+
+fn finish_read_sco_terminal(
+    sco: &ScoObject,
+    name: &str,
+) -> Result<Vec<FieldValue>, PatternMatchError> {
     if name == "payload_bin" {
-        if let ScoObject::Artifact(artifact) = sco {
-            if let Some(raw) = &artifact.payload_bin {
-                if let Some(decoded) = decode_payload_bin(raw) {
-                    return Ok(vec![FieldValue::Bytes(decoded)]);
-                }
-            }
-        }
+        let ScoObject::Artifact(artifact) = sco else {
+            return Ok(Vec::new());
+        };
+        let Some(raw) = &artifact.payload_bin else {
+            return Ok(Vec::new());
+        };
+        let Some(decoded) = decode_payload_bin(raw) else {
+            return Ok(Vec::new());
+        };
+        return Ok(vec![FieldValue::Bytes(decoded)]);
     }
     if name == "values" {
-        if let ScoObject::WindowsRegistryKey(key) = sco {
-            if !key.values.is_empty() {
-                return Ok(vec![FieldValue::Bool(true)]);
-            }
+        let ScoObject::WindowsRegistryKey(key) = sco else {
+            return Ok(Vec::new());
+        };
+        if key.values.is_empty() {
+            return Ok(Vec::new());
         }
+        return Ok(vec![FieldValue::Bool(true)]);
     }
-    if name == "extensions" {
-        if !sco.common_props().extensions.is_empty() {
-            return Ok(vec![FieldValue::Bool(true)]);
-        }
+    if name == "extensions" && !sco.common_props().extensions.is_empty() {
+        return Ok(vec![FieldValue::Bool(true)]);
     }
-    if name == "hashes" {
-        if hash_map_nonempty(sco) {
-            return Ok(vec![FieldValue::Bool(true)]);
-        }
+    if name == "hashes" && hash_map_nonempty(sco) {
+        return Ok(vec![FieldValue::Bool(true)]);
     }
     if name.ends_with("_refs") && !ref_list_ids(sco, name).is_empty() {
         return Ok(vec![FieldValue::Bool(true)]);
     }
     if let Some(value) = QueryableStixObject::get_field(sco, &[name]) {
-        if matches!(value, QueryValue::Null) {
-            return Ok(vec![FieldValue::Bool(true)]);
-        }
-        if let Some(field) = query_to_field(value) {
-            return Ok(vec![field]);
-        }
+        return Ok(match value {
+            QueryValue::Null => vec![FieldValue::Bool(true)],
+            other => query_to_field(other).into_iter().collect(),
+        });
     }
     Ok(Vec::new())
 }
@@ -622,21 +627,17 @@ fn process_name_values(
     process: &crate::model::sco::Process,
     bundle: Option<&Bundle>,
 ) -> Result<Option<Vec<FieldValue>>, PatternMatchError> {
-    if let Some(image_ref) = &process.image_ref {
-        if let Some(bundle) = bundle {
-            if let Some(obj) = bundle.get(image_ref.as_stix_id()) {
-                if let crate::model::StixObject::Sco(ScoObject::File(file)) = obj {
-                    if let Some(name) = &file.name {
-                        return Ok(Some(vec![FieldValue::Str(name.clone())]));
-                    }
-                }
-            }
-        }
+    if let (Some(image_ref), Some(bundle)) = (&process.image_ref, bundle)
+        && let Some(crate::model::StixObject::Sco(ScoObject::File(file))) =
+            bundle.get(image_ref.as_stix_id())
+        && let Some(name) = &file.name
+    {
+        return Ok(Some(vec![FieldValue::Str(name.clone())]));
     }
-    if let Some(cmd) = &process.command_line {
-        if let Some(name) = executable_from_command_line(cmd) {
-            return Ok(Some(vec![FieldValue::Str(name)]));
-        }
+    if let Some(cmd) = &process.command_line
+        && let Some(name) = executable_from_command_line(cmd)
+    {
+        return Ok(Some(vec![FieldValue::Str(name)]));
     }
     Ok(None)
 }
@@ -877,10 +878,10 @@ fn resolve_ref_property<'a>(
     };
 
     if name.ends_with("_refs") {
-        return Ok(ref_list_ids(sco, name)
+        return ref_list_ids(sco, name)
             .into_iter()
             .map(|id| resolve_id(bundle, id, path_str))
-            .collect::<Result<Vec<_>, _>>()?);
+            .collect::<Result<Vec<_>, _>>();
     }
 
     let id = ref_id_for_property(sco, name).ok_or_else(|| PatternMatchError::RefResolution {
@@ -960,16 +961,6 @@ pub(crate) fn format_object_path(path: &ObjectPath) -> String {
         }
     }
     out
-}
-
-pub(crate) fn cidr_contains(value: &str, network: &str) -> bool {
-    let Ok(ip) = value.parse::<IpAddr>() else {
-        return false;
-    };
-    let Some(net) = parse_ip_net(network) else {
-        return false;
-    };
-    net.contains(&ip)
 }
 
 pub(crate) fn cidr_subset(value: &str, network: &str) -> bool {

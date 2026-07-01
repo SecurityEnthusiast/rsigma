@@ -84,4 +84,12 @@ pub enum PatternMatchError {
         "matches_single requires a single observation expression without temporal or multi-observation operators"
     )]
     NotSingleObservation,
+    /// Evaluation context exceeds the observation cap (aligned with [`crate::pattern::lexer::MAX_OBSERVATIONS`]).
+    #[error("evaluation context contains {count} observations; maximum is {max}")]
+    TooManyObservations {
+        /// Actual observation count supplied.
+        count: usize,
+        /// Configured maximum.
+        max: usize,
+    },
 }

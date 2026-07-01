@@ -51,6 +51,7 @@ pub(crate) fn build_observations_from_observed_data<'a>(
     let at = observed_data.first_observed.clone();
     match &observed_data.form {
         ObservedDataForm::ObjectRefs(refs) => {
+            ensure_observation_capacity(refs.len())?;
             for id in refs {
                 let Some(obj) = bundle.get(id) else {
                     return Err(ObservedDataContextError::MissingObject { id: id.clone() });
@@ -68,6 +69,11 @@ pub(crate) fn build_observations_from_observed_data<'a>(
             }
         }
         ObservedDataForm::DeprecatedObjects(objects) => {
+            let sco_count = objects
+                .values()
+                .filter(|embedded| matches!(embedded, ObservedDataEmbeddedObject::Sco(_)))
+                .count();
+            ensure_observation_capacity(sco_count)?;
             for embedded in objects.values() {
                 let sco = match embedded {
                     ObservedDataEmbeddedObject::Sco(sco) => sco,
@@ -81,6 +87,16 @@ pub(crate) fn build_observations_from_observed_data<'a>(
         }
     }
     Ok(observations)
+}
+
+fn ensure_observation_capacity(count: usize) -> Result<(), ObservedDataContextError> {
+    if count > crate::pattern::lexer::MAX_OBSERVATIONS {
+        return Err(ObservedDataContextError::TooManyObservations {
+            count,
+            max: crate::pattern::lexer::MAX_OBSERVATIONS,
+        });
+    }
+    Ok(())
 }
 
 use crate::core::QueryableStixObject;
@@ -105,6 +121,14 @@ pub enum ObservedDataContextError {
     /// Deprecated embedded SRO members are skipped (not included in observations).
     #[error("observed-data embedded SRO objects are not supported for pattern evaluation")]
     EmbeddedSroNotSupported,
+    /// Observation count exceeds the evaluation cap.
+    #[error("observed-data yields {count} SCO observations; maximum is {max}")]
+    TooManyObservations {
+        /// Resolved SCO count.
+        count: usize,
+        /// Configured maximum.
+        max: usize,
+    },
 }
 
 impl From<ObservedDataContextError> for crate::pattern::error::PatternMatchError {
@@ -122,6 +146,9 @@ impl From<ObservedDataContextError> for crate::pattern::error::PatternMatchError
                 path: "observed-data.objects".into(),
                 msg: "embedded SRO objects are not supported".into(),
             },
+            ObservedDataContextError::TooManyObservations { count, max } => {
+                Self::TooManyObservations { count, max }
+            }
         }
     }
 }

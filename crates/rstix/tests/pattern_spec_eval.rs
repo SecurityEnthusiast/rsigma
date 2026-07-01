@@ -110,7 +110,8 @@ const SPEC_LEVEL1_EVAL: &[EvalCase] = &[
     },
     EvalCase {
         id: "L1-11-network-dst-ref",
-        pattern: "[network-traffic:dst_ref.type = 'ipv4-addr' AND network-traffic:dst_ref.value = '203.0.113.33/32']",
+        // PR #276: `=` is exact; dst ipv4 value is `203.0.113.33` (no /32 suffix in bundle).
+        pattern: "[network-traffic:dst_ref.type = 'ipv4-addr' AND network-traffic:dst_ref.value = '203.0.113.33']",
         expect: true,
         scos: &[include_str!(
             "fixtures/pattern/eval/spec-9-8-network-traffic.json"
@@ -122,7 +123,8 @@ const SPEC_LEVEL1_EVAL: &[EvalCase] = &[
     },
     EvalCase {
         id: "L1-12-domain-resolves-to",
-        pattern: "[domain-name:value = 'www.5z8.info' AND domain-name:resolves_to_refs[*].value = '198.51.100.1/32']",
+        // PR #276: `=` is exact; resolved ipv4 value is `198.51.100.1` (no /32 suffix in bundle).
+        pattern: "[domain-name:value = 'www.5z8.info' AND domain-name:resolves_to_refs[*].value = '198.51.100.1']",
         expect: true,
         scos: &[include_str!(
             "fixtures/pattern/eval/spec-9-8-domain-name.json"

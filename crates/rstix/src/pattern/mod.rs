@@ -13,7 +13,7 @@ mod typeck;
 pub use ast::{PatternAst, PatternScoType, Span};
 pub use context::{ObservationContext, TimestampedObservation};
 pub use error::{PatternError, PatternMatchError};
-pub use lexer::MAX_PATTERN_BYTES;
+pub use lexer::{MAX_OBSERVATIONS, MAX_PATTERN_BYTES};
 
 use crate::core::ScoKind;
 use crate::model::Bundle;

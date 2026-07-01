@@ -12,6 +12,7 @@ use crate::pattern::ast::{
 };
 use crate::pattern::context::{ObservationContext, TimestampedObservation};
 use crate::pattern::error::PatternMatchError;
+use crate::pattern::lexer::MAX_OBSERVATIONS;
 use crate::pattern::path::{self, FieldValue};
 use crate::pattern::security;
 
@@ -23,6 +24,7 @@ pub fn evaluate(ast: &PatternAst, ctx: &ObservationContext<'_>) -> Result<bool, 
         }
         return Ok(false);
     }
+    ensure_observation_count(ctx)?;
     ensure_observation_timestamps(ast, ctx)?;
     eval_node(ast, ctx, None, None)
 }
@@ -62,6 +64,16 @@ fn requires_timestamps(ast: &PatternAst) -> bool {
         }
         PatternAst::Observation(_) => false,
     }
+}
+
+fn ensure_observation_count(ctx: &ObservationContext<'_>) -> Result<(), PatternMatchError> {
+    if ctx.observations.len() > MAX_OBSERVATIONS {
+        return Err(PatternMatchError::TooManyObservations {
+            count: ctx.observations.len(),
+            max: MAX_OBSERVATIONS,
+        });
+    }
+    Ok(())
 }
 
 fn ensure_observation_timestamps(
@@ -132,10 +144,13 @@ fn eval_node(
             window_start,
             window_stop,
         ),
-        PatternAst::Repeats { inner, count, .. } => {
-            let witnesses = collect_witnesses(inner, ctx, window_start, window_stop)?;
-            Ok(witnesses.len() >= *count as usize)
-        }
+        PatternAst::Repeats { inner, count, .. } => Ok(witness_count_at_least(
+            inner,
+            ctx,
+            *count as usize,
+            window_start,
+            window_stop,
+        )?),
         PatternAst::StartStop {
             inner, start, stop, ..
         } => eval_node(inner, ctx, Some(start), Some(stop)),
@@ -206,12 +221,132 @@ fn eval_within(
     window_start: Option<&StixTimestamp>,
     window_stop: Option<&StixTimestamp>,
 ) -> Result<bool, PatternMatchError> {
-    for witness in collect_witnesses(inner, ctx, window_start, window_stop)? {
-        if witness_timestamp_span(&witness, ctx)? <= max_secs {
-            return Ok(true);
+    any_witness_within(inner, ctx, max_secs, window_start, window_stop)
+}
+
+/// Short-circuit witness search for WITHIN (existence + span check, no cartesian enumeration).
+fn any_witness_within(
+    ast: &PatternAst,
+    ctx: &ObservationContext<'_>,
+    max_secs: f64,
+    window_start: Option<&StixTimestamp>,
+    window_stop: Option<&StixTimestamp>,
+) -> Result<bool, PatternMatchError> {
+    match ast {
+        PatternAst::Observation(_) => {
+            for i in 0..ctx.observations.len() {
+                if !matches_at_index(ast, ctx, i, window_start, window_stop)? {
+                    continue;
+                }
+                if witness_timestamp_span(&[i], ctx)? <= max_secs {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        PatternAst::And { left, right, .. } => {
+            for i in 0..ctx.observations.len() {
+                if !matches_at_index(left, ctx, i, window_start, window_stop)? {
+                    continue;
+                }
+                for j in 0..ctx.observations.len() {
+                    if i == j {
+                        continue;
+                    }
+                    if !matches_at_index(right, ctx, j, window_start, window_stop)? {
+                        continue;
+                    }
+                    if witness_timestamp_span(&[i, j], ctx)? <= max_secs {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
+        }
+        PatternAst::Or { left, right, .. } => {
+            Ok(
+                any_witness_within(left, ctx, max_secs, window_start, window_stop)?
+                    || any_witness_within(right, ctx, max_secs, window_start, window_stop)?,
+            )
+        }
+        PatternAst::FollowedBy { .. } => {
+            for witness in collect_witnesses(ast, ctx, window_start, window_stop)? {
+                if witness_timestamp_span(&witness, ctx)? <= max_secs {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        PatternAst::Within { inner, .. } | PatternAst::Repeats { inner, .. } => {
+            any_witness_within(inner, ctx, max_secs, window_start, window_stop)
+        }
+        PatternAst::StartStop {
+            inner, start, stop, ..
+        } => any_witness_within(inner, ctx, max_secs, Some(start), Some(stop)),
+    }
+}
+
+/// Count disjoint witnesses up to `need`, stopping early once the threshold is met.
+fn witness_count_at_least(
+    ast: &PatternAst,
+    ctx: &ObservationContext<'_>,
+    need: usize,
+    window_start: Option<&StixTimestamp>,
+    window_stop: Option<&StixTimestamp>,
+) -> Result<bool, PatternMatchError> {
+    if need == 0 {
+        return Ok(true);
+    }
+    match ast {
+        PatternAst::Observation(_) => {
+            let mut found = 0usize;
+            for i in 0..ctx.observations.len() {
+                if matches_at_index(ast, ctx, i, window_start, window_stop)? {
+                    found += 1;
+                    if found >= need {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
+        }
+        PatternAst::And { left, right, .. } => {
+            let mut found = 0usize;
+            for i in 0..ctx.observations.len() {
+                if !matches_at_index(left, ctx, i, window_start, window_stop)? {
+                    continue;
+                }
+                for j in 0..ctx.observations.len() {
+                    if i == j {
+                        continue;
+                    }
+                    if matches_at_index(right, ctx, j, window_start, window_stop)? {
+                        found += 1;
+                        if found >= need {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+            Ok(false)
+        }
+        PatternAst::Or { left, right, .. } => {
+            Ok(
+                witness_count_at_least(left, ctx, need, window_start, window_stop)?
+                    || witness_count_at_least(right, ctx, need, window_start, window_stop)?,
+            )
+        }
+        PatternAst::Within { inner, .. } | PatternAst::Repeats { inner, .. } => {
+            witness_count_at_least(inner, ctx, need, window_start, window_stop)
+        }
+        PatternAst::StartStop {
+            inner, start, stop, ..
+        } => witness_count_at_least(inner, ctx, need, Some(start), Some(stop)),
+        PatternAst::FollowedBy { .. } => {
+            let witnesses = collect_witnesses(ast, ctx, window_start, window_stop)?;
+            Ok(witnesses.len() >= need)
         }
     }
-    Ok(false)
 }
 
 fn collect_witnesses(
@@ -372,7 +507,10 @@ fn matches_at_index(
     }
     match ast {
         PatternAst::Observation(obs) => Ok(observation_matches(obs, entry.sco, ctx.bundle)?),
-        PatternAst::And { .. } | PatternAst::FollowedBy { .. } => {
+        PatternAst::And { left, right, .. } => {
+            witness_includes_index_and(left, right, ctx, idx, window_start, window_stop)
+        }
+        PatternAst::FollowedBy { .. } => {
             Ok(collect_witnesses(ast, ctx, window_start, window_stop)?
                 .iter()
                 .any(|w| w.contains(&idx)))
@@ -388,6 +526,31 @@ fn matches_at_index(
             inner, start, stop, ..
         } => matches_at_index(inner, ctx, idx, Some(start), Some(stop)),
     }
+}
+
+fn witness_includes_index_and(
+    left: &PatternAst,
+    right: &PatternAst,
+    ctx: &ObservationContext<'_>,
+    idx: usize,
+    window_start: Option<&StixTimestamp>,
+    window_stop: Option<&StixTimestamp>,
+) -> Result<bool, PatternMatchError> {
+    if matches_at_index(left, ctx, idx, window_start, window_stop)? {
+        for j in 0..ctx.observations.len() {
+            if j != idx && matches_at_index(right, ctx, j, window_start, window_stop)? {
+                return Ok(true);
+            }
+        }
+    }
+    if matches_at_index(right, ctx, idx, window_start, window_stop)? {
+        for j in 0..ctx.observations.len() {
+            if j != idx && matches_at_index(left, ctx, j, window_start, window_stop)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 fn duration_seconds(duration: &Duration) -> f64 {
@@ -551,12 +714,8 @@ fn field_value_str(field: &FieldValue) -> Option<&str> {
 
 fn equals_str(s: &str, right: &PatternConstant) -> bool {
     match right {
-        PatternConstant::String(v) => {
-            if v.contains('/') && (s.contains('.') || s.contains(':')) {
-                return s == v || path::cidr_contains(s, v) || path::cidr_contains(v, s);
-            }
-            s == v
-        }
+        // STIX §9.6: `=` is exact string equality; CIDR containment is ISSUBSET/ISSUPERSET only.
+        PatternConstant::String(v) => s == v,
         PatternConstant::Hex(h) => hex_string_eq(s, h),
         PatternConstant::Binary(b) => base64_decode(s).is_some_and(|decoded| decoded == *b),
         _ => false,
@@ -623,31 +782,40 @@ fn like_match(value: &str, pattern: &str) -> bool {
     like_bytes(value.as_bytes(), pattern.as_bytes())
 }
 
+/// Iterative `%`/`_` wildcard match (O(n·m), constant space). Recursive backtracking on
+/// `%` is exponential and is a DoS vector for untrusted Indicator patterns.
 fn like_bytes(value: &[u8], pattern: &[u8]) -> bool {
-    if pattern.is_empty() {
-        return value.is_empty();
-    }
-    if pattern[0] == b'%' {
-        if pattern.len() == 1 {
-            return true;
+    let mut value_idx = 0usize;
+    let mut pattern_idx = 0usize;
+    let mut star_pattern: Option<usize> = None;
+    let mut star_value: usize = 0;
+
+    while value_idx < value.len() {
+        if pattern_idx < pattern.len()
+            && (pattern[pattern_idx] == b'_' || pattern[pattern_idx] == value[value_idx])
+        {
+            value_idx += 1;
+            pattern_idx += 1;
+            continue;
         }
-        for i in 0..=value.len() {
-            if like_bytes(&value[i..], &pattern[1..]) {
-                return true;
-            }
+        if pattern_idx < pattern.len() && pattern[pattern_idx] == b'%' {
+            star_pattern = Some(pattern_idx);
+            star_value = value_idx;
+            pattern_idx += 1;
+            continue;
         }
-        return false;
+        let Some(star) = star_pattern else {
+            return false;
+        };
+        pattern_idx = star + 1;
+        star_value += 1;
+        value_idx = star_value;
     }
-    if value.is_empty() {
-        return false;
+
+    while pattern_idx < pattern.len() && pattern[pattern_idx] == b'%' {
+        pattern_idx += 1;
     }
-    if pattern[0] == b'_' {
-        return like_bytes(&value[1..], &pattern[1..]);
-    }
-    if value[0] == pattern[0] {
-        return like_bytes(&value[1..], &pattern[1..]);
-    }
-    false
+    pattern_idx == pattern.len()
 }
 
 #[cfg(all(test, feature = "serde"))]
