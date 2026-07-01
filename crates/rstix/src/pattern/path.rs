@@ -72,33 +72,35 @@ fn walk<'a>(
     let rest = &steps[1..];
 
     if let PathStep::Property(name) = step {
-        if name.ends_with("_refs") {
-            if let Some(PathStep::Index(idx)) = rest.first() {
-                if matches!(rest.get(1), Some(PathStep::Reference)) {
-                    let mut next = Vec::new();
-                    for target in targets {
-                        let WalkTarget::Sco(sco) = target else {
-                            continue;
-                        };
-                        if let Some(id) = ref_list_ids(sco, name).into_iter().nth(*idx) {
-                            next.push(WalkTarget::PendingRef(id));
-                        }
-                    }
-                    return walk(next, &rest[2..], bundle, path_str);
-                }
-                if rest.len() == 1 {
-                    let mut values = Vec::new();
-                    for target in targets {
-                        let WalkTarget::Sco(sco) = target else {
-                            continue;
-                        };
-                        if let Some(id) = ref_list_ids(sco, name).into_iter().nth(*idx) {
-                            values.push(FieldValue::Str(id.to_string()));
-                        }
-                    }
-                    return Ok(values);
+        if name.ends_with("_refs")
+            && let Some(PathStep::Index(idx)) = rest.first()
+            && matches!(rest.get(1), Some(PathStep::Reference))
+        {
+            let mut next = Vec::new();
+            for target in targets {
+                let WalkTarget::Sco(sco) = target else {
+                    continue;
+                };
+                if let Some(id) = ref_list_ids(sco, name).into_iter().nth(*idx) {
+                    next.push(WalkTarget::PendingRef(id));
                 }
             }
+            return walk(next, &rest[2..], bundle, path_str);
+        }
+        if name.ends_with("_refs")
+            && let Some(PathStep::Index(idx)) = rest.first()
+            && rest.len() == 1
+        {
+            let mut values = Vec::new();
+            for target in targets {
+                let WalkTarget::Sco(sco) = target else {
+                    continue;
+                };
+                if let Some(id) = ref_list_ids(sco, name).into_iter().nth(*idx) {
+                    values.push(FieldValue::Str(id.to_string()));
+                }
+            }
+            return Ok(values);
         }
 
         if name.ends_with("_refs") && matches!(rest.first(), Some(PathStep::AnyIndex)) {
@@ -264,18 +266,18 @@ fn walk<'a>(
             }
         }
 
-        if name == "values" {
-            if let Some(PathStep::Index(idx)) = rest.first() {
-                let mut next = Vec::new();
-                for target in targets {
-                    if let WalkTarget::Sco(ScoObject::WindowsRegistryKey(key)) = target
-                        && key.values.len() > *idx
-                    {
-                        next.push(WalkTarget::RegistryValuePart { key, index: *idx });
-                    }
+        if name == "values"
+            && let Some(PathStep::Index(idx)) = rest.first()
+        {
+            let mut next = Vec::new();
+            for target in targets {
+                if let WalkTarget::Sco(ScoObject::WindowsRegistryKey(key)) = target
+                    && key.values.len() > *idx
+                {
+                    next.push(WalkTarget::RegistryValuePart { key, index: *idx });
                 }
-                return walk(next, &rest[1..], bundle, path_str);
             }
+            return walk(next, &rest[1..], bundle, path_str);
         }
 
         if name == "sections"
@@ -357,10 +359,10 @@ fn walk<'a>(
                     WalkTarget::Sco(sco) => {
                         if let Some(props) = extension_entry_props(sco, key) {
                             next.push(WalkTarget::ExtProps(props));
-                        } else if let ScoObject::Custom(custom) = sco {
-                            if let Some(v) = custom.common.extra.get(key) {
-                                next.push(WalkTarget::Json(v));
-                            }
+                        } else if let ScoObject::Custom(custom) = sco
+                            && let Some(v) = custom.common.extra.get(key)
+                        {
+                            next.push(WalkTarget::Json(v));
                         }
                     }
                     WalkTarget::ExtProps(props) => {
@@ -424,10 +426,10 @@ fn navigate_property<'a>(
 ) -> Result<Vec<WalkTarget<'a>>, PatternMatchError> {
     match target {
         WalkTarget::Sco(sco) => {
-            if let ScoObject::Custom(custom) = sco {
-                if let Some(v) = custom.common.extra.get(name) {
-                    return Ok(vec![WalkTarget::Json(v)]);
-                }
+            if let ScoObject::Custom(custom) = sco
+                && let Some(v) = custom.common.extra.get(name)
+            {
+                return Ok(vec![WalkTarget::Json(v)]);
             }
             if let Some(props) = extension_entry_props(sco, name) {
                 return Ok(vec![WalkTarget::ExtProps(props)]);
@@ -561,15 +563,15 @@ fn read_sco_terminal(
     if name == "id" {
         return Ok(vec![FieldValue::Str(sco.id().to_string())]);
     }
-    if name == "spec_version" {
-        if let Some(version) = sco.spec_version() {
-            return Ok(vec![FieldValue::Str(version.as_str().to_owned())]);
-        }
+    if name == "spec_version"
+        && let Some(version) = sco.spec_version()
+    {
+        return Ok(vec![FieldValue::Str(version.as_str().to_owned())]);
     }
-    if name == "defanged" {
-        if let Some(defanged) = sco.common_props().defanged {
-            return Ok(vec![FieldValue::Bool(defanged)]);
-        }
+    if name == "defanged"
+        && let Some(defanged) = sco.common_props().defanged
+    {
+        return Ok(vec![FieldValue::Bool(defanged)]);
     }
     if name == "name"
         && let ScoObject::Process(process) = sco

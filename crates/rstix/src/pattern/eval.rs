@@ -477,15 +477,15 @@ fn timestamp_in_window(
     let Some(at) = at else {
         return false;
     };
-    if let Some(start) = start {
-        if at < start {
-            return false;
-        }
+    if let Some(start) = start
+        && at < start
+    {
+        return false;
     }
-    if let Some(stop) = stop {
-        if at >= stop {
-            return false;
-        }
+    if let Some(stop) = stop
+        && at >= stop
+    {
+        return false;
     }
     true
 }
@@ -746,7 +746,7 @@ fn hex_string_eq(value: &str, expected: &[u8]) -> bool {
 }
 
 fn decode_hex(value: &str) -> Option<Vec<u8>> {
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return None;
     }
     value
