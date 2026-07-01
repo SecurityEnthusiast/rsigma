@@ -62,6 +62,12 @@ pub enum PatternMatchError {
     /// Operator is parsed but not supported at evaluation time.
     #[error("operator {0:?} is not supported at evaluation time")]
     UnsupportedOperator(ComparisonOp),
+    /// Regular expression in a `MATCHES` comparison failed to compile.
+    #[error("invalid MATCHES regular expression: {msg}")]
+    RegexCompile {
+        /// Detail from the regex engine.
+        msg: String,
+    },
     /// Non-STIX indicator pattern language.
     #[error("pattern type {0} cannot be evaluated by the STIX evaluator")]
     NonStixPattern(String),
@@ -73,4 +79,9 @@ pub enum PatternMatchError {
         /// Human-readable detail.
         msg: String,
     },
+    /// [`crate::Pattern::matches_single`] requires a single observation without temporal qualifiers.
+    #[error(
+        "matches_single requires a single observation expression without temporal or multi-observation operators"
+    )]
+    NotSingleObservation,
 }
