@@ -43,7 +43,7 @@ Adds the `pattern` feature to `rstix` with a hand-written lexer, recursive-desce
 * **Type-checker** — validates property paths (including `extensions.'…'`, `_ref.type`, dictionary dot keys, custom SCO types), comparison operators, and constant types against per-SCO schemas.
 * **Tests** — STIX §9.8 fixture files under `tests/fixtures/pattern/`, acceptance test modules, gap-table regression coverage.
 
-Evaluation, canonical printer, and `IndicatorPattern` AST wiring ship in follow-on Pattern Engine work (see evaluation entry above).
+Evaluation, canonical printer, and `IndicatorPattern` AST wiring are **deferred** to later Pattern Engine work (documented in `crates/rstix/README.md` and `docs/library/rstix.md`).
 
 ### Unix domain socket support for the daemon (input source, output sink, API listener) (#273)
 
