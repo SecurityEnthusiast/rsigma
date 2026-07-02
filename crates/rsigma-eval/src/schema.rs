@@ -35,6 +35,30 @@ use serde::Deserialize;
 
 use crate::event::Event;
 
+/// Numeric comparison operator for [`SchemaPredicate::Compare`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompareOp {
+    /// Strictly greater than.
+    Gt,
+    /// Greater than or equal.
+    Gte,
+    /// Strictly less than.
+    Lt,
+    /// Less than or equal.
+    Lte,
+}
+
+impl CompareOp {
+    fn apply(self, lhs: f64, rhs: f64) -> bool {
+        match self {
+            CompareOp::Gt => lhs > rhs,
+            CompareOp::Gte => lhs >= rhs,
+            CompareOp::Lt => lhs < rhs,
+            CompareOp::Lte => lhs <= rhs,
+        }
+    }
+}
+
 /// A single condition over a parsed event used to recognize a schema.
 ///
 /// Field names use the same dot-notation as [`Event::get_field`], so nested
@@ -53,6 +77,25 @@ pub enum SchemaPredicate {
     Equals { field: String, value: String },
     /// The field is present and its string-coerced value matches `regex`.
     Matches { field: String, regex: Regex },
+    /// The field is present, numeric-coercible, and compares to `value` under
+    /// `op`. A non-numeric or absent field fails closed (no match).
+    Compare {
+        field: String,
+        op: CompareOp,
+        value: f64,
+    },
+    /// The field is present and its string-coerced value equals one of
+    /// `values` (ASCII case-insensitive). The multi-value form of `Equals`.
+    In { field: String, values: Vec<String> },
+    /// Both fields are present, string-coercible, and equal (case-insensitive).
+    FieldEqualsField { left: String, right: String },
+    /// Logical negation of the inner predicate.
+    Not(Box<SchemaPredicate>),
+    /// At least one of the inner predicates holds (logical OR).
+    Any(Vec<SchemaPredicate>),
+    /// All of the inner predicates hold (logical AND). Useful as a group under
+    /// `Not` or `Any`.
+    All(Vec<SchemaPredicate>),
     /// The event has at least one structured field. Used by the
     /// `generic_json` fallback to distinguish structured events from
     /// field-less ones (raw text, empty objects), which stay "unknown".
@@ -73,6 +116,33 @@ impl SchemaPredicate {
                 .get_field(field)
                 .and_then(|v| v.as_str().map(|s| regex.is_match(s.as_ref())))
                 .unwrap_or(false),
+            SchemaPredicate::Compare { field, op, value } => event
+                .get_field(field)
+                .and_then(|v| v.as_f64())
+                .map(|n| op.apply(n, *value))
+                .unwrap_or(false),
+            SchemaPredicate::In { field, values } => event
+                .get_field(field)
+                .and_then(|v| {
+                    v.as_str().map(|s| {
+                        values
+                            .iter()
+                            .any(|val| s.as_ref().eq_ignore_ascii_case(val))
+                    })
+                })
+                .unwrap_or(false),
+            SchemaPredicate::FieldEqualsField { left, right } => {
+                let l = event
+                    .get_field(left)
+                    .and_then(|v| v.as_str().map(|s| s.into_owned()));
+                let r = event
+                    .get_field(right)
+                    .and_then(|v| v.as_str().map(|s| s.into_owned()));
+                matches!((l, r), (Some(a), Some(b)) if a.eq_ignore_ascii_case(&b))
+            }
+            SchemaPredicate::Not(inner) => !inner.eval(event),
+            SchemaPredicate::Any(preds) => preds.iter().any(|p| p.eval(event)),
+            SchemaPredicate::All(preds) => preds.iter().all(|p| p.eval(event)),
             SchemaPredicate::HasAnyField => !event.field_keys().is_empty(),
         }
     }
@@ -306,9 +376,35 @@ pub struct FieldValueConfig {
     pub value: String,
 }
 
+/// A `{ field: ..., value: <number> }` pair used by the numeric comparison
+/// predicate forms (`gt`, `gte`, `lt`, `lte`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldNumberConfig {
+    pub field: String,
+    pub value: f64,
+}
+
+/// A `{ field: ..., values: [...] }` pair used by the `in` predicate form.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldValuesConfig {
+    pub field: String,
+    pub values: Vec<String>,
+}
+
+/// A `{ left: ..., right: ... }` pair used by the `field_equals_field` form.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldPairConfig {
+    pub left: String,
+    pub right: String,
+}
+
 /// A predicate as written in YAML: a single-key map, for example
 /// `field_present: ecs.version` or `equals: { field: type, value: alert }`.
-/// Exactly one form must be set per list entry.
+/// Exactly one form must be set per list entry. The `not`/`any`/`all` group
+/// forms nest predicate lists to express OR and NOT within one signature.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SchemaPredicateConfig {
@@ -327,6 +423,33 @@ pub struct SchemaPredicateConfig {
     /// `matches: { field: <field>, value: <regex> }`
     #[serde(default)]
     pub matches: Option<FieldValueConfig>,
+    /// `gt: { field: <field>, value: <number> }`
+    #[serde(default)]
+    pub gt: Option<FieldNumberConfig>,
+    /// `gte: { field: <field>, value: <number> }`
+    #[serde(default)]
+    pub gte: Option<FieldNumberConfig>,
+    /// `lt: { field: <field>, value: <number> }`
+    #[serde(default)]
+    pub lt: Option<FieldNumberConfig>,
+    /// `lte: { field: <field>, value: <number> }`
+    #[serde(default)]
+    pub lte: Option<FieldNumberConfig>,
+    /// `in: { field: <field>, values: [...] }`
+    #[serde(default, rename = "in")]
+    pub in_set: Option<FieldValuesConfig>,
+    /// `field_equals_field: { left: <field>, right: <field> }`
+    #[serde(default)]
+    pub field_equals_field: Option<FieldPairConfig>,
+    /// `not: <predicate>`
+    #[serde(default)]
+    pub not: Option<Box<SchemaPredicateConfig>>,
+    /// `any: [<predicate>, ...]`
+    #[serde(default)]
+    pub any: Option<Vec<SchemaPredicateConfig>>,
+    /// `all: [<predicate>, ...]`
+    #[serde(default)]
+    pub all: Option<Vec<SchemaPredicateConfig>>,
 }
 
 impl SchemaPredicateConfig {
@@ -362,17 +485,73 @@ impl SchemaPredicateConfig {
                 })?,
             });
         }
+        for (op, cfg) in [
+            (CompareOp::Gt, self.gt),
+            (CompareOp::Gte, self.gte),
+            (CompareOp::Lt, self.lt),
+            (CompareOp::Lte, self.lte),
+        ] {
+            if let Some(fv) = cfg {
+                set += 1;
+                chosen = Some(SchemaPredicate::Compare {
+                    field: fv.field,
+                    op,
+                    value: fv.value,
+                });
+            }
+        }
+        if let Some(fv) = self.in_set {
+            set += 1;
+            chosen = Some(SchemaPredicate::In {
+                field: fv.field,
+                values: fv.values,
+            });
+        }
+        if let Some(fp) = self.field_equals_field {
+            set += 1;
+            chosen = Some(SchemaPredicate::FieldEqualsField {
+                left: fp.left,
+                right: fp.right,
+            });
+        }
+        if let Some(inner) = self.not {
+            set += 1;
+            chosen = Some(SchemaPredicate::Not(Box::new(inner.build(schema_name)?)));
+        }
+        if let Some(list) = self.any {
+            set += 1;
+            chosen = Some(SchemaPredicate::Any(build_group(list, schema_name, "any")?));
+        }
+        if let Some(list) = self.all {
+            set += 1;
+            chosen = Some(SchemaPredicate::All(build_group(list, schema_name, "all")?));
+        }
         match (set, chosen) {
             (1, Some(p)) => Ok(p),
             (0, _) => Err(SchemaError::Parse(format!(
                 "schema '{schema_name}': a predicate has no condition (expected one of \
-                 field_present, field_absent, any_of, equals, matches)"
+                 field_present, field_absent, any_of, equals, matches, gt, gte, lt, lte, \
+                 in, field_equals_field, not, any, all)"
             ))),
             _ => Err(SchemaError::Parse(format!(
                 "schema '{schema_name}': a predicate sets multiple conditions; use one per list item"
             ))),
         }
     }
+}
+
+/// Build a non-empty list of sub-predicates for the `any`/`all` group forms.
+fn build_group(
+    list: Vec<SchemaPredicateConfig>,
+    schema_name: &str,
+    kind: &str,
+) -> Result<Vec<SchemaPredicate>, SchemaError> {
+    if list.is_empty() {
+        return Err(SchemaError::Parse(format!(
+            "schema '{schema_name}': '{kind}' needs at least one sub-predicate"
+        )));
+    }
+    list.into_iter().map(|p| p.build(schema_name)).collect()
 }
 
 /// A signature as written in YAML.
@@ -896,6 +1075,103 @@ schemas:
                 .map(|m| m.name)
                 .as_deref(),
             Some("cef_raw")
+        );
+    }
+
+    /// Build a single-signature classifier from a `match:` YAML body.
+    fn classifier_from_match(match_body: &str) -> SchemaClassifier {
+        let yaml = format!("schemas:\n  - name: t\n    specificity: 70\n    match:\n{match_body}");
+        let sigs = parse_schema_signatures(&yaml).expect("parse");
+        SchemaClassifier::new(sigs)
+    }
+
+    fn matches_t(match_body: &str, event: &serde_json::Value) -> bool {
+        classifier_from_match(match_body)
+            .classify(&JsonEvent::borrow(event))
+            .is_some()
+    }
+
+    #[test]
+    fn numeric_comparisons() {
+        let body = "      - gte: { field: EventID, value: 4000 }\n";
+        assert!(matches_t(body, &json!({"EventID": 4688})));
+        assert!(matches_t(body, &json!({"EventID": 4000})));
+        assert!(!matches_t(body, &json!({"EventID": 1})));
+        // String-coercible numeric values work too.
+        assert!(matches_t(body, &json!({"EventID": "4688"})));
+        // A non-numeric field fails closed.
+        assert!(!matches_t(body, &json!({"EventID": "not-a-number"})));
+        // lt / gt / lte round out the operators.
+        assert!(matches_t(
+            "      - lt: { field: score, value: 10 }\n",
+            &json!({"score": 9.5})
+        ));
+        assert!(matches_t(
+            "      - gt: { field: score, value: 10 }\n",
+            &json!({"score": 10.1})
+        ));
+    }
+
+    #[test]
+    fn in_set_membership_is_case_insensitive() {
+        let body = "      - in: { field: event_type, values: [alert, alarm] }\n";
+        assert!(matches_t(body, &json!({"event_type": "ALERT"})));
+        assert!(matches_t(body, &json!({"event_type": "alarm"})));
+        assert!(!matches_t(body, &json!({"event_type": "info"})));
+        assert!(!matches_t(body, &json!({})));
+    }
+
+    #[test]
+    fn field_equals_field_compares_two_fields() {
+        let body = "      - field_equals_field: { left: a, right: b }\n";
+        assert!(matches_t(body, &json!({"a": "X", "b": "x"})));
+        assert!(!matches_t(body, &json!({"a": "X", "b": "y"})));
+        // A missing side fails closed.
+        assert!(!matches_t(body, &json!({"a": "X"})));
+    }
+
+    #[test]
+    fn recursive_not_any_all_groups() {
+        // any: OR of two field-presence predicates.
+        let any_body = "      - any:\n          - field_present: winlog.channel\n          - equals: { field: host.os.type, value: windows }\n";
+        assert!(matches_t(
+            any_body,
+            &json!({"winlog": {"channel": "Security"}})
+        ));
+        assert!(matches_t(
+            any_body,
+            &json!({"host": {"os": {"type": "windows"}}})
+        ));
+        assert!(!matches_t(any_body, &json!({"unrelated": 1})));
+
+        // not: negation of a presence predicate.
+        let not_body = "      - not: { field_present: ecs.version }\n";
+        assert!(matches_t(not_body, &json!({"CommandLine": "whoami"})));
+        assert!(!matches_t(not_body, &json!({"ecs.version": "8.0.0"})));
+
+        // all: nested AND, usable under not/any.
+        let all_body = "      - all:\n          - field_present: a\n          - field_present: b\n";
+        assert!(matches_t(all_body, &json!({"a": 1, "b": 2})));
+        assert!(!matches_t(all_body, &json!({"a": 1})));
+    }
+
+    #[test]
+    fn empty_group_is_rejected() {
+        let yaml = "schemas:\n  - name: t\n    match:\n      - any: []\n";
+        let err = parse_schema_signatures(yaml).unwrap_err();
+        assert!(
+            matches!(&err, SchemaError::Parse(m) if m.contains("'any' needs at least one")),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn predicate_with_two_conditions_is_rejected() {
+        let yaml = "schemas:\n  - name: t\n    match:\n      - field_present: a\n        field_absent: b\n";
+        let err = parse_schema_signatures(yaml).unwrap_err();
+        assert!(
+            matches!(&err, SchemaError::Parse(m) if m.contains("multiple conditions")),
+            "got: {err}"
         );
     }
 
