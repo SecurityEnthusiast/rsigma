@@ -75,6 +75,31 @@ eval:
     on_unknown: drop
 ```
 
+## Schema-derived logsource
+
+When schema routing is combined with [logsource routing](logsource-routing.md), the schema rsigma recognizes supplies the event's logsource for [conflict-based pruning](logsource-routing.md#conflict-based-not-subset), even when the event carries no explicit `product`/`service`/`category` field. So an event recognized as `sysmon` implies `product: windows, service: sysmon`, and a Cisco or Linux rule is pruned instead of false-positive matching on a mapped field.
+
+Built-in implied logsources cover only the platform-locked schemas: `sysmon` (windows/sysmon) and `windows_eventlog` (windows). The cross-platform schemas (`ecs`, `ocsf`, `cef`, `generic_json`) imply nothing, because they carry events from many platforms. For ECS specifically, either bind a narrower signature that carries the platform (an `ecs_windows` signature keyed on `ecs.version` plus a Windows marker) with an implied `logsource:`, or point the logsource extractor at the event's own OS field (`--logsource-field-map product=host.os.type`).
+
+Attach or override a schema's implied logsource per binding:
+
+```yaml
+routing:
+  bindings:
+    - schema: ecs_windows
+      pipelines: [ecs_windows]
+      logsource:
+        product: windows
+    - schema: my_vendor
+      pipelines: [my_vendor_map.yml]
+      logsource:
+        product: linux
+        custom:
+          tenant: acme
+```
+
+Resolution per event is explicit event field, then the static `--event-logsource`, then the schema-derived logsource, then any format default, then unset (fail-open). This prunes only at product/service granularity; category-level pruning inside one product (for example `process_creation` versus `ps_script`) still needs the event to assert a category or a pipeline to derive it.
+
 ## Cross-schema correlation
 
 Correlation works across schemas. Detections from each per-schema engine feed one shared correlation store, and the group-by extraction is schema-aware: a correlation grouped by `User` matches an ECS event's `user.name` and a Sigma-native event's `User` to the same entity, so the two correlate together. Window state, suppression, chaining, and snapshots are unchanged; only the group-key extraction becomes schema-aware.
@@ -82,3 +107,5 @@ Correlation works across schemas. Detections from each per-schema engine feed on
 ## Unknown schemas
 
 An event that matches no signature is "unknown". The `on_unknown` policy decides its fate: `warn` and `passthrough` evaluate it against the default pipeline-set (the difference is a logged warning), `drop` skips it, and `error` skips it and flags an error. Pair routing with [`--observe-schemas`](../cli/engine/daemon.md) (daemon) or [`engine classify`](../cli/engine/classify.md) to find sources whose schema is not yet recognized, then add a signature and a binding.
+
+With `--observe-schemas`, the daemon's `GET /api/v1/schemas` endpoint reports a bounded, redacted sample of the field-key shapes of unknown events (`unknown_shapes`), so you can see exactly which key sets are unrecognized and author a signature for them without inspecting raw event values. The same endpoint reports a per-schema routing pruning summary (`routing_pruning`, eligible versus pruned rules) and an `ambiguous` count for events where two different-name signatures tied at the winning specificity. `engine classify` surfaces the same ambiguity per event; resolve it by giving one signature a distinguishing predicate or a higher `specificity`.

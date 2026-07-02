@@ -4,6 +4,17 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Schema and logsource routing v2
+
+Extends the shipped schema routing and logsource-aware evaluation with richer signatures, schema-derived logsource correctness, authoring tooling, and hardening. All additive and opt-in; existing schema configs and `--logsource-*` invocations behave identically.
+
+* **Schema-derived logsource pruning** — a recognized schema now supplies an event's logsource for conflict-based pruning even when the event carries no explicit `product`/`service`/`category` field, so a Sysmon-classified event prunes Cisco/Linux rules instead of false-positive matching on a mapped field. Built-in implied logsources for the platform-locked `sysmon` and `windows_eventlog` schemas, overridable per binding with a `logsource:` block. Resolved per event in `SchemaRouter` (explicit fields, then the schema's implied logsource) and fed to a new conflict-based `Engine::evaluate_pruned`.
+* **Richer signature predicates** — numeric comparisons (`gt`/`gte`/`lt`/`lte`), set membership (`in`), cross-field equality (`field_equals_field`), and recursive boolean groups (`not`/`any`/`all`) so a signature can express OR/NOT and value ranges, not only AND of string/presence forms.
+* **Custom logsource dimensions** — `logsource_compatible` and `LogSourceExtractor` handle arbitrary `LogSource.custom` dimensions; the `--logsource-field-map` / `--event-logsource` flags and config block accept `custom.<name>=...` entries.
+* **`engine classify` tooling** — `--explain` shows per-predicate pass/fail for the matched signature (or the closest near-miss for an unknown event), `--check` statically validates a schema config (unreachable signatures, unknown or duplicate bindings, missing pipeline files) and exits non-zero on findings, and a routing section triggers a per-event routing dry-run.
+* **Hardening and visibility** — ambiguous classifications (two different-name signatures tied at the winning specificity) are surfaced in `engine classify` and the `rsigma_events_ambiguous_schema_total` counter; the schema observer samples bounded, redacted field-key shapes of unknown events; `GET /api/v1/schemas` gains `unknown_shapes` and a per-schema `routing_pruning` summary; and new `rsigma_schema_rules_eligible{schema}` / `rsigma_schema_rules_pruned{schema}` gauges plus an `engine eval` end-of-run summary report per-schema pruning.
+* **Docs** — a new Schema Signatures reference enumerating every predicate form and its semantics, plus updates across the schema-routing and logsource-routing guides, the classify page, and the configuration, metrics, HTTP API, and library references.
+
 ### rstix Pattern Engine: evaluation (Levels 1–3) (#276)
 
 Adds STIX pattern evaluation to the `pattern` feature:

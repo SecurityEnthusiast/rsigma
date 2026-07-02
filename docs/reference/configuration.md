@@ -87,8 +87,12 @@ daemon:
     enabled: false          # opt-in: conflict-based logsource pruning (or --logsource-routing)
     # field_map:            # event field names per dimension (default product/service/category)
     #   product: product
+    #   custom:             # extra dimensions: dimension name -> event field name
+    #     tenant: org
     # event_logsource:      # static logsource when the field is absent (--event-logsource)
     #   product: windows
+    #   custom:             # extra dimensions: dimension name -> literal value
+    #     tenant: acme
     strict: false           # reserved for a future strict subset-routing mode
 
 eval:

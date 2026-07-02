@@ -574,17 +574,24 @@ curl -sS http://127.0.0.1:9090/api/v1/schemas
     "events_observed": 1248,
     "classified": 1203,
     "unknown": 45,
+    "ambiguous": 0,
     "uptime_seconds": 612.4
   },
   "by_schema": [
     {"schema": "ecs", "count": 900},
     {"schema": "sysmon", "count": 250},
     {"schema": "generic_json", "count": 53}
+  ],
+  "unknown_shapes": [
+    {"keys": ["deviceModel", "vendorField", "widgetId"], "count": 45}
+  ],
+  "routing_pruning": [
+    {"schema": "sysmon", "eligible": 120, "pruned": 380}
   ]
 }
 ```
 
-The same signal is exposed as the `rsigma_events_by_schema_total{schema}` and `rsigma_events_unknown_schema_total` Prometheus counters. A rising unknown rate flags a source whose schema RSigma does not recognize; add a signature with `--schema-config`.
+`unknown_shapes` is a bounded, redacted sample of the field-key sets (key names only, never values) of unknown events, so you can author a signature for what is unrecognized. `routing_pruning` is the per-schema eligible-versus-pruned rule count, present when schema routing and logsource routing are both active. The same signals are exposed as the `rsigma_events_by_schema_total{schema}`, `rsigma_events_unknown_schema_total`, `rsigma_events_ambiguous_schema_total`, and `rsigma_schema_rules_eligible{schema}` / `rsigma_schema_rules_pruned{schema}` Prometheus metrics. A rising unknown rate flags a source whose schema RSigma does not recognize; add a signature with `--schema-config`.
 
 ## Live event tap
 

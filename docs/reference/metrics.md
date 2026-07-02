@@ -141,23 +141,26 @@ Exposed unconditionally; values stay at zero unless the daemon was started with 
 | `rsigma_fields_observer_unique_keys` | gauge | — | Distinct field names currently tracked. Saturates at `--observe-fields-max-keys` (default `10000`). |
 | `rsigma_fields_observer_overflow_dropped_total` | counter | — | New-key insert attempts dropped because the observer was at capacity. A persistent positive rate signals that `--observe-fields-max-keys` is too low for the deployment. |
 
-## Schema observability (2 metrics)
+## Schema observability (3 metrics)
 
-Exposed unconditionally; values stay at zero unless the daemon was started with `--observe-schemas`. Both refresh on every `/metrics` scrape and on every `GET /api/v1/schemas` call. See [HTTP API: Schema observability](http-api.md#schema-observability) for the matching endpoint.
+Exposed unconditionally; values stay at zero unless the daemon was started with `--observe-schemas`. All refresh on every `/metrics` scrape and on every `GET /api/v1/schemas` call. See [HTTP API: Schema observability](http-api.md#schema-observability) for the matching endpoint.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `rsigma_events_by_schema_total` | counter | `schema` | Events classified into each recognized schema (`ecs`, `sysmon`, `windows_eventlog`, `cef`, `ocsf`, `generic_json`, or a user-defined name). |
 | `rsigma_events_unknown_schema_total` | counter | — | Events that matched no schema signature. A rising rate signals a source whose schema RSigma does not recognize; add a signature with `--schema-config`. |
+| `rsigma_events_ambiguous_schema_total` | counter | — | Events where two different-name signatures tied at the winning specificity, so the name tie-break decided routing. Resolve by giving one signature a distinguishing predicate or a higher specificity. |
 
-## Logsource-aware evaluation (2 metrics)
+## Logsource-aware evaluation (4 metrics)
 
-Exposed unconditionally; values stay at zero unless the daemon was started with `--logsource-routing`. Both refresh on every `/metrics` scrape. See [Logsource-Aware Evaluation](../guide/logsource-routing.md).
+Exposed unconditionally; values stay at zero unless the daemon was started with `--logsource-routing`. All refresh on every `/metrics` scrape. See [Logsource-Aware Evaluation](../guide/logsource-routing.md).
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `rsigma_rules_pruned_by_logsource_total` | counter | — | Always-evaluated rules skipped because their product conflicts with the event's logsource. The scaling signal: it rises with the conflicting fraction of a mixed-product ruleset. |
 | `rsigma_events_without_logsource_total` | counter | — | Events with no extractable logsource, evaluated against every rule (fail-open). A high rate means events are not carrying a logsource tag and no static override or field map is set. |
+| `rsigma_schema_rules_eligible` | gauge | `schema` | Rules a schema's events evaluate after logsource pruning. Set when both schema routing and logsource routing are active; refreshed on scrape and reload. |
+| `rsigma_schema_rules_pruned` | gauge | `schema` | Rules pruned for a schema by its implied logsource. The higher this is relative to eligible, the less of the ruleset that schema exercises. |
 
 ## Live event tap (4 metrics)
 
