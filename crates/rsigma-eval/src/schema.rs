@@ -324,6 +324,34 @@ impl SchemaClassifier {
             })
     }
 
+    /// Classify and also report ambiguity: `true` when another signature with a
+    /// different name matches at the same (winning) specificity, so the winner
+    /// was chosen by the name tie-break rather than by specificity. Ambiguity
+    /// signals that routing intent may be nondeterministic and a signature
+    /// wants a distinguishing predicate or a specificity bump.
+    pub fn classify_with_ambiguity<E: Event + ?Sized>(
+        &self,
+        event: &E,
+    ) -> (Option<SchemaMatch>, bool) {
+        // Signatures are sorted specificity-descending, so the first match is
+        // the winner and any following match with equal specificity but a
+        // different name is a genuine tie.
+        let mut matching = self.signatures.iter().filter(|s| s.matches(event));
+        let Some(winner) = matching.next() else {
+            return (None, false);
+        };
+        let ambiguous = matching
+            .take_while(|s| s.specificity == winner.specificity)
+            .any(|s| s.name != winner.name);
+        (
+            Some(SchemaMatch {
+                name: winner.name.clone(),
+                specificity: winner.specificity,
+            }),
+            ambiguous,
+        )
+    }
+
     /// All matching schema names for an event, most specific first. Useful for
     /// tuning signatures (seeing what else an event could match). Deduplicated
     /// by name while preserving order.
@@ -1080,6 +1108,21 @@ pub struct SchemaCountEntry {
     pub count: u64,
 }
 
+/// A redacted field-key shape of unknown events, for signature authoring.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownShapeEntry {
+    /// The sorted, deduplicated field keys of the unknown events (values are
+    /// never captured, only key names).
+    pub keys: Vec<String>,
+    /// Number of unknown events with this exact key shape since the last reset.
+    pub count: u64,
+}
+
+/// Maximum distinct unknown-event shapes retained, to bound memory.
+const UNKNOWN_SHAPE_CAP: usize = 200;
+/// Maximum field keys kept per shape, to bound a single shape's size.
+const UNKNOWN_SHAPE_MAX_KEYS: usize = 64;
+
 /// Immutable snapshot of a [`SchemaObserver`] at one moment.
 #[derive(Debug, Clone, Default)]
 pub struct SchemaObservation {
@@ -1089,6 +1132,12 @@ pub struct SchemaObservation {
     pub classified: u64,
     /// Events that matched no signature since the last reset.
     pub unknown: u64,
+    /// Events where two different-name signatures tied at the winning
+    /// specificity since the last reset (the name tie-break decided routing).
+    pub ambiguous: u64,
+    /// Redacted field-key shapes of unknown events, most frequent first, to
+    /// help author signatures for what is currently unrecognized.
+    pub unknown_shapes: Vec<UnknownShapeEntry>,
     /// Total events observed since the last reset (`classified + unknown`).
     pub events_observed: u64,
     /// Lifetime total of classified events, ignoring resets. Monotonic, so it
@@ -1096,6 +1145,8 @@ pub struct SchemaObservation {
     pub lifetime_classified: u64,
     /// Lifetime total of unknown events, ignoring resets. Monotonic.
     pub lifetime_unknown: u64,
+    /// Lifetime total of ambiguous classifications, ignoring resets. Monotonic.
+    pub lifetime_ambiguous: u64,
     /// Seconds since the observer was created (or last reset).
     pub uptime_seconds: f64,
 }
@@ -1109,9 +1160,14 @@ pub struct SchemaObserver {
     classifier: SchemaClassifier,
     counts: Mutex<HashMap<String, u64>>,
     unknown: AtomicU64,
+    ambiguous: AtomicU64,
+    /// Redacted field-key shapes of unknown events (bounded by
+    /// [`UNKNOWN_SHAPE_CAP`]).
+    unknown_shapes: Mutex<HashMap<Vec<String>, u64>>,
     events_observed: AtomicU64,
     lifetime_classified: AtomicU64,
     lifetime_unknown: AtomicU64,
+    lifetime_ambiguous: AtomicU64,
     start: Mutex<Instant>,
 }
 
@@ -1122,9 +1178,12 @@ impl SchemaObserver {
             classifier,
             counts: Mutex::new(HashMap::new()),
             unknown: AtomicU64::new(0),
+            ambiguous: AtomicU64::new(0),
+            unknown_shapes: Mutex::new(HashMap::new()),
             events_observed: AtomicU64::new(0),
             lifetime_classified: AtomicU64::new(0),
             lifetime_unknown: AtomicU64::new(0),
+            lifetime_ambiguous: AtomicU64::new(0),
             start: Mutex::new(Instant::now()),
         }
     }
@@ -1138,7 +1197,12 @@ impl SchemaObserver {
     /// observer can be shared behind an `Arc`.
     pub fn observe<E: Event + ?Sized>(&self, event: &E) {
         self.events_observed.fetch_add(1, Ordering::Relaxed);
-        match self.classifier.classify(event) {
+        let (matched, ambiguous) = self.classifier.classify_with_ambiguity(event);
+        if ambiguous {
+            self.ambiguous.fetch_add(1, Ordering::Relaxed);
+            self.lifetime_ambiguous.fetch_add(1, Ordering::Relaxed);
+        }
+        match matched {
             Some(m) => {
                 self.lifetime_classified.fetch_add(1, Ordering::Relaxed);
                 let mut counts = self.counts.lock().expect("schema observer mutex poisoned");
@@ -1147,7 +1211,25 @@ impl SchemaObserver {
             None => {
                 self.unknown.fetch_add(1, Ordering::Relaxed);
                 self.lifetime_unknown.fetch_add(1, Ordering::Relaxed);
+                self.record_unknown_shape(event);
             }
+        }
+    }
+
+    /// Record the redacted field-key shape of one unknown event, capped in both
+    /// distinct-shape count and per-shape key count.
+    fn record_unknown_shape<E: Event + ?Sized>(&self, event: &E) {
+        let mut keys: Vec<String> = event.field_keys().iter().map(|k| k.to_string()).collect();
+        keys.sort();
+        keys.dedup();
+        keys.truncate(UNKNOWN_SHAPE_MAX_KEYS);
+        let mut shapes = self
+            .unknown_shapes
+            .lock()
+            .expect("schema observer shapes mutex poisoned");
+        // Only add a new shape when under the cap; always count a known one.
+        if shapes.contains_key(&keys) || shapes.len() < UNKNOWN_SHAPE_CAP {
+            *shapes.entry(keys).or_insert(0) += 1;
         }
     }
 
@@ -1164,14 +1246,32 @@ impl SchemaObserver {
         let classified: u64 = counts.values().sum();
         drop(counts);
         by_schema.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.schema.cmp(&b.schema)));
+
+        let shapes = self
+            .unknown_shapes
+            .lock()
+            .expect("schema observer shapes mutex poisoned");
+        let mut unknown_shapes: Vec<UnknownShapeEntry> = shapes
+            .iter()
+            .map(|(keys, count)| UnknownShapeEntry {
+                keys: keys.clone(),
+                count: *count,
+            })
+            .collect();
+        drop(shapes);
+        unknown_shapes.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.keys.cmp(&b.keys)));
+
         let unknown = self.unknown.load(Ordering::Relaxed);
         SchemaObservation {
             by_schema,
             classified,
             unknown,
+            ambiguous: self.ambiguous.load(Ordering::Relaxed),
+            unknown_shapes,
             events_observed: self.events_observed.load(Ordering::Relaxed),
             lifetime_classified: self.lifetime_classified.load(Ordering::Relaxed),
             lifetime_unknown: self.lifetime_unknown.load(Ordering::Relaxed),
+            lifetime_ambiguous: self.lifetime_ambiguous.load(Ordering::Relaxed),
             uptime_seconds: self
                 .start
                 .lock()
@@ -1188,7 +1288,12 @@ impl SchemaObserver {
         let previous_classified: u64 = counts.values().sum();
         counts.clear();
         drop(counts);
+        self.unknown_shapes
+            .lock()
+            .expect("schema observer shapes mutex poisoned")
+            .clear();
         let previous_unknown = self.unknown.swap(0, Ordering::Relaxed);
+        self.ambiguous.store(0, Ordering::Relaxed);
         self.events_observed.store(0, Ordering::Relaxed);
         *self
             .start
@@ -1205,6 +1310,11 @@ impl SchemaObserver {
     /// Lifetime unknown total, ignoring resets. Monotonic.
     pub fn lifetime_unknown(&self) -> u64 {
         self.lifetime_unknown.load(Ordering::Relaxed)
+    }
+
+    /// Lifetime ambiguous total, ignoring resets. Monotonic.
+    pub fn lifetime_ambiguous(&self) -> u64 {
+        self.lifetime_ambiguous.load(Ordering::Relaxed)
     }
 }
 
@@ -1744,5 +1854,62 @@ routing:
         // Lifetime totals survive the reset for the Prometheus bridge.
         assert_eq!(snap.lifetime_classified, 1);
         assert_eq!(snap.lifetime_unknown, 1);
+    }
+
+    #[test]
+    fn classify_with_ambiguity_flags_equal_specificity_ties() {
+        // Two different-name signatures at the same specificity that both match.
+        let sigs = vec![
+            SchemaSignature {
+                name: "alpha".to_string(),
+                specificity: 70,
+                predicates: vec![SchemaPredicate::FieldPresent("a".to_string())],
+            },
+            SchemaSignature {
+                name: "beta".to_string(),
+                specificity: 70,
+                predicates: vec![SchemaPredicate::FieldPresent("a".to_string())],
+            },
+        ];
+        let cls = SchemaClassifier::new(sigs);
+        let (m, ambiguous) = cls.classify_with_ambiguity(&JsonEvent::borrow(&json!({"a": 1})));
+        assert!(m.is_some());
+        assert!(
+            ambiguous,
+            "equal-specificity different-name match is ambiguous"
+        );
+        // A single match is not ambiguous.
+        let cls = SchemaClassifier::builtin();
+        let (_, ambiguous) =
+            cls.classify_with_ambiguity(&JsonEvent::borrow(&json!({"ecs.version": "8.0.0"})));
+        assert!(!ambiguous);
+    }
+
+    #[test]
+    fn observer_records_ambiguity_and_unknown_shapes() {
+        let sigs = vec![
+            SchemaSignature {
+                name: "alpha".to_string(),
+                specificity: 70,
+                predicates: vec![SchemaPredicate::FieldPresent("a".to_string())],
+            },
+            SchemaSignature {
+                name: "beta".to_string(),
+                specificity: 70,
+                predicates: vec![SchemaPredicate::FieldPresent("a".to_string())],
+            },
+        ];
+        let observer = SchemaObserver::new(SchemaClassifier::new(sigs));
+        observer.observe(&JsonEvent::borrow(&json!({"a": 1}))); // ambiguous, classified
+        observer.observe(&JsonEvent::borrow(&json!({"weird": 1, "shape": 2}))); // unknown
+        observer.observe(&JsonEvent::borrow(&json!({"shape": 3, "weird": 4}))); // same shape
+
+        let snap = observer.snapshot();
+        assert_eq!(snap.ambiguous, 1);
+        assert_eq!(snap.unknown, 2);
+        // Both unknown events share one redacted key shape [shape, weird].
+        assert_eq!(snap.unknown_shapes.len(), 1);
+        assert_eq!(snap.unknown_shapes[0].count, 2);
+        assert_eq!(snap.unknown_shapes[0].keys, vec!["shape", "weird"]);
     }
 }

@@ -58,6 +58,7 @@ pub struct Metrics {
     pub fields_observer_overflow_dropped_total: IntCounter,
     pub events_by_schema: IntCounterVec,
     pub events_unknown_schema: IntCounter,
+    pub events_ambiguous_schema: IntCounter,
     pub rules_pruned_by_logsource: IntCounter,
     pub events_without_logsource: IntCounter,
     pub schema_rules_eligible: IntGaugeVec,
@@ -545,11 +546,19 @@ impl Metrics {
             "Events that matched no schema signature (--observe-schemas)",
         ))
         .unwrap();
+        let events_ambiguous_schema = IntCounter::with_opts(Opts::new(
+            "rsigma_events_ambiguous_schema_total",
+            "Events where two different-name signatures tied at the winning specificity (--observe-schemas)",
+        ))
+        .unwrap();
         registry
             .register(Box::new(events_by_schema.clone()))
             .unwrap();
         registry
             .register(Box::new(events_unknown_schema.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(events_ambiguous_schema.clone()))
             .unwrap();
 
         let rules_pruned_by_logsource = IntCounter::with_opts(Opts::new(
@@ -1004,6 +1013,7 @@ impl Metrics {
             fields_observer_unique_keys,
             fields_observer_overflow_dropped_total,
             events_by_schema,
+            events_ambiguous_schema,
             schema_rules_eligible,
             schema_rules_pruned,
             events_unknown_schema,
@@ -1093,6 +1103,12 @@ impl Metrics {
         if unknown_now > unknown_prev {
             self.events_unknown_schema
                 .inc_by(unknown_now - unknown_prev);
+        }
+        let ambiguous_now = snapshot.lifetime_ambiguous;
+        let ambiguous_prev = self.events_ambiguous_schema.get();
+        if ambiguous_now > ambiguous_prev {
+            self.events_ambiguous_schema
+                .inc_by(ambiguous_now - ambiguous_prev);
         }
     }
 

@@ -2896,14 +2896,36 @@ async fn schemas_full(State(state): State<AppState>) -> Response {
         .map(|e| serde_json::json!({ "schema": e.schema, "count": e.count }))
         .collect();
 
+    let unknown_shapes: Vec<serde_json::Value> = snapshot
+        .unknown_shapes
+        .iter()
+        .map(|s| serde_json::json!({ "keys": s.keys, "count": s.count }))
+        .collect();
+
+    let routing_pruning: Vec<serde_json::Value> = state
+        .processor
+        .schema_pruning_summary()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "schema": p.schema,
+                "eligible": p.eligible,
+                "pruned": p.pruned,
+            })
+        })
+        .collect();
+
     let body = serde_json::json!({
         "summary": {
             "events_observed": snapshot.events_observed,
             "classified": snapshot.classified,
             "unknown": snapshot.unknown,
+            "ambiguous": snapshot.ambiguous,
             "uptime_seconds": snapshot.uptime_seconds,
         },
         "by_schema": by_schema,
+        "unknown_shapes": unknown_shapes,
+        "routing_pruning": routing_pruning,
     });
 
     (StatusCode::OK, Json(body)).into_response()

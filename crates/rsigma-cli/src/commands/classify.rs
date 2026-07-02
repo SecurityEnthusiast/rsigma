@@ -142,10 +142,16 @@ struct ClassifySummary {
     classified: usize,
     /// Events that matched no signature.
     unknown: usize,
+    /// Events where a different-name signature tied at the winning specificity.
+    ambiguous: usize,
     /// Lines that were not valid JSON.
     parse_errors: usize,
     /// Per-schema counts for recognized schemas (excludes `unknown`).
     by_schema: BTreeMap<String, usize>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Debug, Serialize)]
@@ -154,6 +160,10 @@ struct ClassifyRecord {
     /// `None` means the event matched no signature ("unknown").
     schema: Option<String>,
     specificity: Option<u32>,
+    /// True when a different-name signature tied at the winning specificity, so
+    /// the name tie-break decided the schema. Omitted when false.
+    #[serde(skip_serializing_if = "is_false")]
+    ambiguous: bool,
     /// Present with `--explain`: why the event classified as it did.
     #[serde(skip_serializing_if = "Option::is_none")]
     explanation: Option<SchemaExplanation>,
@@ -185,6 +195,7 @@ struct Accumulator<'a> {
     by_schema: BTreeMap<String, usize>,
     classified: usize,
     unknown: usize,
+    ambiguous: usize,
     parse_errors: usize,
     index: usize,
     explain: bool,
@@ -198,6 +209,7 @@ impl<'a> Accumulator<'a> {
             by_schema: BTreeMap::new(),
             classified: 0,
             unknown: 0,
+            ambiguous: 0,
             parse_errors: 0,
             index: 0,
             explain,
@@ -207,7 +219,10 @@ impl<'a> Accumulator<'a> {
 
     fn classify_value(&mut self, classifier: &SchemaClassifier, value: &serde_json::Value) {
         let event = JsonEvent::borrow(value);
-        let matched = classifier.classify(&event);
+        let (matched, ambiguous) = classifier.classify_with_ambiguity(&event);
+        if ambiguous {
+            self.ambiguous += 1;
+        }
         match &matched {
             Some(m) => {
                 self.classified += 1;
@@ -240,6 +255,7 @@ impl<'a> Accumulator<'a> {
             index: self.index,
             schema: matched.as_ref().map(|m| m.name.clone()),
             specificity: matched.as_ref().map(|m| m.specificity),
+            ambiguous,
             explanation,
             route,
         });
@@ -262,6 +278,7 @@ impl<'a> Accumulator<'a> {
                 total_events: self.classified + self.unknown,
                 classified: self.classified,
                 unknown: self.unknown,
+                ambiguous: self.ambiguous,
                 parse_errors: self.parse_errors,
                 by_schema: self.by_schema,
             },
@@ -347,8 +364,13 @@ fn summary_line(report: &ClassifyReport) -> String {
             .collect();
         format!(" | {}", parts.join(", "))
     };
+    let ambiguous = if s.ambiguous > 0 {
+        format!(", {} ambiguous", s.ambiguous)
+    } else {
+        String::new()
+    };
     format!(
-        "Events: {} classified, {} unknown, {} parse errors{breakdown}",
+        "Events: {} classified, {} unknown{ambiguous}, {} parse errors{breakdown}",
         s.classified, s.unknown, s.parse_errors,
     )
 }
