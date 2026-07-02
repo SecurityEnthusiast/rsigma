@@ -42,6 +42,10 @@ pub struct LogSourceExtractor {
     product_field: String,
     service_field: String,
     category_field: String,
+    /// Extra dimensions: `(logsource custom key, event field name)`. Each
+    /// resolves into [`LogSource::custom`] for conflict-based pruning beyond
+    /// the standard three dimensions.
+    custom_fields: Vec<(String, String)>,
     defaults: LogSource,
 }
 
@@ -53,6 +57,7 @@ impl LogSourceExtractor {
             product_field: "product".to_string(),
             service_field: "service".to_string(),
             category_field: "category".to_string(),
+            custom_fields: Vec::new(),
             defaults: LogSource::default(),
         }
     }
@@ -71,8 +76,18 @@ impl LogSourceExtractor {
         self
     }
 
+    /// Set the extra `(custom dimension, event field)` mappings read into
+    /// [`LogSource::custom`]. Each pair reads the event field and stores it
+    /// under the custom dimension key; absent fields fall back to the static
+    /// custom default (if any) and are otherwise omitted (fail-open).
+    #[must_use]
+    pub fn with_custom_fields(mut self, custom_fields: Vec<(String, String)>) -> Self {
+        self.custom_fields = custom_fields;
+        self
+    }
+
     /// Set the static per-dimension defaults applied when a field is absent.
-    /// Only `product`, `service`, and `category` are consulted.
+    /// `product`, `service`, `category`, and the `custom` map are consulted.
     #[must_use]
     pub fn with_defaults(mut self, defaults: LogSource) -> Self {
         self.defaults = defaults;
@@ -80,12 +95,26 @@ impl LogSourceExtractor {
     }
 
     /// Extract the event's logsource. Each dimension resolves to the configured
-    /// field value, then the static default, then `None` (fail-open).
+    /// field value, then the static default, then `None`/absent (fail-open).
     pub fn extract<E: Event>(&self, event: &E) -> LogSource {
+        // Start from the static custom defaults, then let event-field values
+        // win per key.
+        let mut custom = self.defaults.custom.clone();
+        for (dimension, field) in &self.custom_fields {
+            if let Some(value) = event.get_field(field)
+                && let Some(s) = value.as_str()
+            {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    custom.insert(dimension.clone(), trimmed.to_string());
+                }
+            }
+        }
         LogSource {
             product: self.resolve(event, &self.product_field, &self.defaults.product),
             service: self.resolve(event, &self.service_field, &self.defaults.service),
             category: self.resolve(event, &self.category_field, &self.defaults.category),
+            custom,
             ..LogSource::default()
         }
     }

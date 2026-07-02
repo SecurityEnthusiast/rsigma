@@ -1276,6 +1276,7 @@ fn apply_daemon_config(
                 fm.product.as_deref(),
                 fm.service.as_deref(),
                 fm.category.as_deref(),
+                fm.custom.as_ref(),
             )
         {
             args.logsource_field_map = Some(s);
@@ -1286,6 +1287,7 @@ fn apply_daemon_config(
                 el.product.as_deref(),
                 el.service.as_deref(),
                 el.category.as_deref(),
+                el.custom.as_ref(),
             )
         {
             args.event_logsource = Some(s);

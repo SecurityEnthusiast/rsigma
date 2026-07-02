@@ -9,6 +9,7 @@
 //! TLS key password) are deliberately absent: they stay env/flag-only so that
 //! a version-controlled config file never carries secrets.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use schemars::JsonSchema;
@@ -668,8 +669,10 @@ impl Merge for LogsourcePartial {
     }
 }
 
-/// A `{ product, service, category }` triple, used for both the logsource
-/// field-name map and the static event-logsource override.
+/// A `{ product, service, category }` triple plus optional `custom` dimensions,
+/// used for both the logsource field-name map and the static event-logsource
+/// override. Custom entries map a dimension name to an event field name (in
+/// `field_map`) or to a literal value (in `event_logsource`).
 #[derive(Debug, Default, Clone, Deserialize, Serialize, JsonSchema)]
 pub(crate) struct LogsourceDimensionsPartial {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -678,6 +681,8 @@ pub(crate) struct LogsourceDimensionsPartial {
     pub service: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<HashMap<String, String>>,
 }
 
 impl Merge for LogsourceDimensionsPartial {
@@ -686,6 +691,7 @@ impl Merge for LogsourceDimensionsPartial {
             product: over.product.or(self.product),
             service: over.service.or(self.service),
             category: over.category.or(self.category),
+            custom: over.custom.or(self.custom),
         }
     }
 }

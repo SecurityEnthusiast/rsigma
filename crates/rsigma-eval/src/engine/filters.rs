@@ -51,10 +51,12 @@ pub(super) fn rewrite_condition_identifiers(expr: &ConditionExpr, counter: usize
 
 /// Conflict-based compatibility check for hot-path logsource pruning.
 ///
-/// Returns `false` only when a dimension (`product`, `service`, or
-/// `category`) is set on BOTH the rule and the event and the two values
-/// differ (case-insensitive). A dimension unset on either side is a wildcard,
-/// so the rule is kept. `definition` and `custom` are ignored.
+/// Returns `false` only when a dimension is set on BOTH the rule and the
+/// event and the two values differ (case-insensitive). A dimension unset on
+/// either side is a wildcard, so the rule is kept. The standard `product`,
+/// `service`, and `category` dimensions are checked, plus any custom dimension
+/// keys present on both sides (a rule custom key the event does not assert is a
+/// wildcard, and vice versa). `definition` is ignored.
 ///
 /// This is deliberately distinct from the subset [`logsource_matches`] (and
 /// the filter-side [`filter_logsource_contains`]): subset semantics require
@@ -72,9 +74,19 @@ pub(super) fn logsource_compatible(rule_ls: &LogSource, event_ls: &LogSource) ->
         }
     }
 
+    // A custom dimension conflicts only when the same key is present on both
+    // sides with differing values; keys on one side only are wildcards.
+    let custom_conflict = rule_ls.custom.iter().any(|(key, rule_value)| {
+        event_ls
+            .custom
+            .get(key)
+            .is_some_and(|event_value| !rule_value.eq_ignore_ascii_case(event_value))
+    });
+
     !(conflicts(&rule_ls.product, &event_ls.product)
         || conflicts(&rule_ls.service, &event_ls.service)
-        || conflicts(&rule_ls.category, &event_ls.category))
+        || conflicts(&rule_ls.category, &event_ls.category)
+        || custom_conflict)
 }
 
 /// Asymmetric check: every field specified in `rule_ls` must be present and
@@ -99,4 +111,50 @@ pub(super) fn logsource_matches(rule_ls: &LogSource, event_ls: &LogSource) -> bo
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn ls(product: Option<&str>, custom: &[(&str, &str)]) -> LogSource {
+        LogSource {
+            product: product.map(str::to_string),
+            custom: custom
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<HashMap<_, _>>(),
+            ..LogSource::default()
+        }
+    }
+
+    #[test]
+    fn custom_dimension_conflict_prunes_only_on_disagreement() {
+        // Same custom key, differing values -> conflict (skip).
+        assert!(!logsource_compatible(
+            &ls(None, &[("tenant", "acme")]),
+            &ls(None, &[("tenant", "globex")]),
+        ));
+        // Same custom key, same value (case-insensitive) -> keep.
+        assert!(logsource_compatible(
+            &ls(None, &[("tenant", "ACME")]),
+            &ls(None, &[("tenant", "acme")]),
+        ));
+        // Key only on the rule side -> wildcard, keep.
+        assert!(logsource_compatible(
+            &ls(None, &[("tenant", "acme")]),
+            &ls(None, &[]),
+        ));
+        // Key only on the event side -> wildcard, keep.
+        assert!(logsource_compatible(
+            &ls(None, &[]),
+            &ls(None, &[("tenant", "acme")]),
+        ));
+        // Standard-dimension conflict still prunes alongside custom.
+        assert!(!logsource_compatible(
+            &ls(Some("linux"), &[]),
+            &ls(Some("windows"), &[("tenant", "acme")]),
+        ));
+    }
 }
