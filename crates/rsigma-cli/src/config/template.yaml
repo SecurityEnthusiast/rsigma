@@ -221,8 +221,12 @@ daemon:
     #   product: product
     #   service: service
     #   category: category
+    #   custom:            # extra dimensions: dimension name -> event field name
+    #     tenant: org
     # event_logsource:
     #   product: windows
+    #   custom:            # extra dimensions: dimension name -> literal value
+    #     tenant: acme
     strict: false
 
   # NATS secrets (creds/token/password/nkey) are NOT configurable here by

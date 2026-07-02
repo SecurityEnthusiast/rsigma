@@ -24,7 +24,8 @@ This library is part of [rsigma].
 | `extend_compiled_rules(rules)` | Batched add of pre-compiled rules; rebuilds engine indexes once |
 | `apply_filter(filter: &FilterRule)` | Inject filter as `AND NOT` into referenced rules |
 | `evaluate(event: &Event)` | Evaluate all rules against an event |
-| `evaluate_with_logsource(event, logsource)` | Evaluate with logsource-based pre-filtering |
+| `evaluate_with_logsource(event, logsource)` | Evaluate with subset logsource pre-filtering |
+| `evaluate_pruned(event, logsource)` | Evaluate with a caller-resolved logsource for conflict-based pruning (used by `SchemaRouter`) |
 | `evaluate_batch(events: &[&Event])` | Evaluate all rules against multiple events (parallel with `parallel` feature) |
 | `set_bloom_prefilter(enabled: bool)` | Enable opt-in bloom-filter pre-filtering of positive substring matchers (off by default; see [Bloom Pre-Filter](#bloom-pre-filter-opt-in)) |
 | `bloom_prefilter_enabled()` | Whether bloom pre-filtering is currently enabled |
@@ -116,7 +117,8 @@ Opt-in counter that records every observed field name and surfaces gap and broke
 ## Detection Engine
 
 - **Compiled matchers**: optimized matching for all 30 modifier combinations — exact, contains, startswith, endswith, regex, CIDR, numeric comparison, base64 offset (3 alignment variants), windash expansion (5 replacement characters), field references, placeholder expansion, timestamp part extraction
-- **Logsource-aware evaluation**: opt-in `LogSourceExtractor` plus conflict-based pruning (`set_logsource_extractor`) skips rules whose `product`/`service`/`category` conflicts with the event's logsource, backed by a product-partitioned rule index; off by default and fail-open
+- **Logsource-aware evaluation**: opt-in `LogSourceExtractor` plus conflict-based pruning (`set_logsource_extractor`) skips rules whose `product`/`service`/`category` (and custom dimensions) conflict with the event's logsource, backed by a product-partitioned rule index; off by default and fail-open
+- **Schema classification and routing**: `SchemaClassifier` recognizes an event's schema from declarative field predicates (`explain`/`classify_with_ambiguity` for tuning), and `SchemaRouter` routes each event to its schema's pipeline engine, derives the event's logsource from the recognized schema for pruning, and feeds one shared correlation store
 - **Condition tree evaluation**: short-circuit boolean logic, selector patterns with quantifiers (`1 of selection_*`, `all of them`)
 - **Filter application**: runtime injection of filter rules as `AND NOT` conditions on referenced rules
 
