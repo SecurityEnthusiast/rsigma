@@ -111,6 +111,7 @@ Recognize each event's schema and evaluate it against the pipeline-set bound to 
 |------|---------|-------------|
 | `--schema-routing` | off | Classify each event and route it to its schema's bound pipeline-set; detections feed one shared correlation store. |
 | `--schema-config <PATH>` | unset | YAML with the `schemas:` signatures and `routing:` bindings (`bindings`, `default_pipelines`, `on_unknown`). |
+| `--schema-partition-rules` | off | Gated: compile each platform-locked per-schema engine with only the rules whose product can apply. See [Per-schema rule partitioning](../../guide/schema-routing.md#per-schema-rule-partitioning). |
 | `--on-unknown <POLICY>` | `warn` | Policy for events that match no schema: `warn`, `drop`, `passthrough`, or `error`. Overrides the config value. |
 
 These flags may also be supplied via the `eval.schema` block in a [config file](../../reference/configuration.md) (`routing`, `config`, `on_unknown`); a flag always wins over the file.

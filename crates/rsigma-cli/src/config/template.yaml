@@ -204,6 +204,7 @@ daemon:
   schema:
     observe: false
     routing: false
+    # partition_rules: false   # gated: compile each platform-locked per-schema engine with only its applicable rules
     # config: ./schema.yml
     on_unknown: warn
 
@@ -247,6 +248,7 @@ eval:
   # has no effect here; eval has no schema observer.
   schema:
     routing: false
+    # partition_rules: false
     # config: ./schema.yml
     on_unknown: warn
   # Logsource-aware evaluation for `engine eval` (see daemon.logsource_routing).

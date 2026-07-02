@@ -366,6 +366,12 @@ pub(crate) struct DaemonArgs {
     #[arg(long = "schema-routing")]
     pub schema_routing: bool,
 
+    /// Opt-in, gated per-schema rule partitioning (with `--schema-routing`):
+    /// compile each platform-locked per-schema engine with only the rules whose
+    /// product can apply, cutting the N-copies memory cost. Off by default.
+    #[arg(long = "schema-partition-rules")]
+    pub schema_partition_rules: bool,
+
     /// Override the `on_unknown` policy for events that match no schema:
     /// `warn`, `drop`, `passthrough`, or `error`. Defaults to the config value
     /// (or `warn`). Used with `--schema-routing`.
@@ -686,6 +692,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         observe_schemas,
         schema_config,
         schema_routing,
+        schema_partition_rules,
         on_unknown,
         logsource_routing,
         logsource_field_map,
@@ -822,6 +829,7 @@ pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
         observe_schemas,
         schema_config,
         schema_routing,
+        schema_partition_rules,
         on_unknown,
         logsource_routing,
         logsource_field_map,
@@ -1253,6 +1261,11 @@ fn apply_daemon_config(
         {
             args.schema_routing = v;
         }
+        if !explicit("schema_partition_rules")
+            && let Some(v) = schema.partition_rules
+        {
+            args.schema_partition_rules = v;
+        }
         if !explicit("schema_config")
             && let Some(v) = schema.config
         {
@@ -1358,6 +1371,7 @@ fn run_daemon(
     observe_schemas: bool,
     schema_config: Option<PathBuf>,
     schema_routing: bool,
+    schema_partition_rules: bool,
     on_unknown: Option<String>,
     logsource_routing: bool,
     logsource_field_map: Option<String>,
@@ -1515,6 +1529,7 @@ fn run_daemon(
         observe_schemas,
         schema_config,
         schema_routing,
+        schema_partition_rules,
         on_unknown,
         logsource_routing,
         logsource_field_map,

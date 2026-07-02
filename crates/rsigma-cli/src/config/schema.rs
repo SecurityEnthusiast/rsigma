@@ -618,6 +618,9 @@ pub(crate) struct SchemaPartial {
     /// Enable schema routing (`--schema-routing`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routing: Option<bool>,
+    /// Enable gated per-schema rule partitioning (`--schema-partition-rules`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition_rules: Option<bool>,
     /// Path to the schema config file with signatures and routing bindings
     /// (`--schema-config`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -633,6 +636,7 @@ impl Merge for SchemaPartial {
         Self {
             observe: over.observe.or(self.observe),
             routing: over.routing.or(self.routing),
+            partition_rules: over.partition_rules.or(self.partition_rules),
             config: over.config.or(self.config),
             on_unknown: over.on_unknown.or(self.on_unknown),
         }

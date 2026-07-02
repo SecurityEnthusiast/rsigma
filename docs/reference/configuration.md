@@ -81,6 +81,7 @@ daemon:
   schema:
     observe: false          # opt-in: count events per recognized schema (or --observe-schemas)
     routing: false          # opt-in: route each event to its schema's pipeline-set (or --schema-routing)
+    partition_rules: false  # gated: compile platform-locked per-schema engines with only applicable rules (or --schema-partition-rules)
     # config: /etc/rsigma/schema.yml   # user schema signatures + routing bindings (--schema-config)
     on_unknown: warn        # warn | drop | passthrough | error, for events matching no schema
   logsource_routing:

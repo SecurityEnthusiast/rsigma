@@ -1152,6 +1152,63 @@ impl RoutingPlan {
         names
     }
 
+    /// For each pipeline-set index, the set of lowercased products whose rules
+    /// are safe to keep when partitioning per-schema engines, or `None` to keep
+    /// the full ruleset.
+    ///
+    /// A set is partitionable only when every schema that can route to it
+    /// (direct bindings plus aliases) implies a product; if any routing schema
+    /// is product-less (cross-platform), the set keeps all rules. The default
+    /// set (index 0) is never partitioned, because unbound and unknown events
+    /// route there and could be any product. Callers still apply their own
+    /// pipeline-safety check (a product-setting `change_logsource` disables
+    /// partitioning for that set).
+    pub fn set_product_partition(&self) -> Vec<Option<std::collections::HashSet<String>>> {
+        use std::collections::HashSet;
+        let n = self.pipeline_sets.len();
+        let mut out: Vec<Option<HashSet<String>>> = (0..n).map(|_| Some(HashSet::new())).collect();
+        if let Some(first) = out.get_mut(0) {
+            *first = None;
+        }
+
+        // (set index, schema) pairs: direct bindings, plus aliases whose
+        // canonical is bound and which are not themselves directly bound.
+        let mut routes: Vec<(usize, &str)> = self
+            .schema_to_set
+            .iter()
+            .map(|(s, &set)| (set, s.as_str()))
+            .collect();
+        for (alias, canonical) in &self.aliases {
+            if !self.schema_to_set.contains_key(alias)
+                && let Some(&set) = self.schema_to_set.get(canonical)
+            {
+                routes.push((set, alias.as_str()));
+            }
+        }
+
+        for (set, schema) in routes {
+            if set == 0 {
+                continue;
+            }
+            let product = self
+                .schema_logsource
+                .get(schema)
+                .and_then(|ls| ls.product.as_deref());
+            let Some(slot) = out.get_mut(set) else {
+                continue;
+            };
+            match product {
+                Some(p) => {
+                    if let Some(products) = slot {
+                        products.insert(p.to_ascii_lowercase());
+                    }
+                }
+                None => *slot = None,
+            }
+        }
+        out
+    }
+
     /// Decide how to route an event given its classified schema (or `None`
     /// when nothing matched).
     pub fn decide(&self, schema: Option<&str>) -> RouteDecision {
@@ -1580,6 +1637,43 @@ routing:
             plan.decide(Some("my_win")),
             RouteDecision::Evaluate { unknown: false, .. }
         ));
+    }
+
+    #[test]
+    fn set_product_partition_only_for_platform_locked_sets() {
+        let config = RoutingConfig {
+            on_unknown: OnUnknown::Warn,
+            default_pipelines: vec![],
+            aliases: HashMap::new(),
+            bindings: vec![
+                SchemaBinding {
+                    schema: "sysmon".to_string(),
+                    pipelines: vec!["p_sysmon".to_string()],
+                    logsource: None,
+                },
+                SchemaBinding {
+                    schema: "ecs".to_string(),
+                    pipelines: vec!["p_ecs".to_string()],
+                    logsource: None,
+                },
+            ],
+        };
+        let plan = RoutingPlan::from_config(&config);
+        let part = plan.set_product_partition();
+        assert!(part[0].is_none(), "default set is never partitioned");
+
+        let set_of = |schema| match plan.decide(Some(schema)) {
+            RouteDecision::Evaluate { set, .. } => set,
+            other => panic!("unexpected: {other:?}"),
+        };
+        // sysmon set: only windows (platform-locked) -> partitionable.
+        let sysmon_set = set_of("sysmon");
+        assert_eq!(
+            part[sysmon_set].as_ref().map(|s| s.contains("windows")),
+            Some(true)
+        );
+        // ecs set: ecs is cross-platform (no implied product) -> keep all.
+        assert!(part[set_of("ecs")].is_none());
     }
 
     #[test]

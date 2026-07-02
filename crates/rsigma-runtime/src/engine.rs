@@ -60,6 +60,9 @@ pub struct RoutingSpec {
     pub classifier: SchemaClassifier,
     pub plan: RoutingPlan,
     pub pipeline_sets: Vec<Vec<Pipeline>>,
+    /// Opt-in, gated per-schema rule partitioning: compile each platform-locked
+    /// per-schema engine with only the rules whose product can apply.
+    pub partition_rules: bool,
 }
 
 enum EngineVariant {
@@ -400,6 +403,7 @@ impl RuntimeEngine {
                 }
             }
 
+            let partition_rules = spec.partition_rules;
             let mut router = SchemaRouter::build(
                 &collection,
                 spec.classifier,
@@ -409,6 +413,7 @@ impl RuntimeEngine {
                 self.include_event,
                 self.match_detail,
                 self.logsource_extractor.clone(),
+                partition_rules,
             )
             .map_err(|e| format!("Error building schema router: {e}"))?;
 

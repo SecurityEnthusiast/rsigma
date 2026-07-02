@@ -117,6 +117,18 @@ routing:
 
 Resolution per event is explicit event field, then the static `--event-logsource`, then the schema-derived logsource, then any format default, then unset (fail-open). This prunes only at product/service granularity; category-level pruning inside one product (for example `process_creation` versus `ps_script`) still needs the event to assert a category or a pipeline to derive it.
 
+## Per-schema rule partitioning
+
+By default every per-schema engine compiles the full ruleset (N copies for N pipeline-sets). `--schema-partition-rules` (or `schema.partition_rules: true`) is a gated, opt-in optimization that compiles each platform-locked per-schema engine with only the rules whose product can apply, cutting that memory cost.
+
+It applies conservatively and only where it is safe:
+
+- The default pipeline-set is never partitioned (unbound and unknown events route there and could be any product).
+- A set is partitioned only when every schema that routes to it (direct bindings plus aliases) implies a product; a set reachable by a cross-platform schema such as `ecs` keeps the full ruleset. A set bound only to `sysmon`, `windows_eventlog`, or `ecs_windows`, for example, keeps only Windows and product-less rules.
+- A set whose pipelines rewrite product via `change_logsource` keeps the full ruleset (the pre-pipeline product is not authoritative there).
+
+Caveat, and why it is off by default: partitioning removes rules at compile time based on the schema's implied product, so an event that is classified as one platform but carries an explicit, contradicting `product` field would not see the removed rules (with the full ruleset, per-event conflict pruning would still keep them). Validate against your corpus before enabling it in production.
+
 ## Cross-schema correlation
 
 Correlation works across schemas. Detections from each per-schema engine feed one shared correlation store, and the group-by extraction is schema-aware: a correlation grouped by `User` matches an ECS event's `user.name` and a Sigma-native event's `User` to the same entity, so the two correlate together. Window state, suppression, chaining, and snapshots are unchanged; only the group-key extraction becomes schema-aware.
