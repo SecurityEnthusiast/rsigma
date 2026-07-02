@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use rsigma_parser::SigmaCollection;
+use rsigma_parser::{LogSource, SigmaCollection};
 
 use crate::correlation_engine::{
     CorrelationConfig, CorrelationEngine, CorrelationSnapshot, CorrelationStateSnapshot,
@@ -92,21 +92,62 @@ enum Routed1 {
     },
 }
 
+/// Resolve an event's logsource for conflict-based pruning: the extractor's
+/// value (explicit event fields, then static/format defaults) wins, and the
+/// recognized schema's implied logsource fills any dimension left unset. This
+/// is what lets a `product`-less event still prune cross-product rules once its
+/// schema is known (for example a `sysmon`-classified event implies
+/// `product: windows`).
+fn resolve_event_logsource<E: Event>(
+    extractor: &LogSourceExtractor,
+    implied: Option<&LogSource>,
+    event: &E,
+) -> LogSource {
+    let mut ls = extractor.extract(event);
+    if let Some(implied) = implied {
+        if ls.product.is_none() {
+            ls.product = implied.product.clone();
+        }
+        if ls.service.is_none() {
+            ls.service = implied.service.clone();
+        }
+        if ls.category.is_none() {
+            ls.category = implied.category.clone();
+        }
+        for (key, value) in &implied.custom {
+            ls.custom
+                .entry(key.clone())
+                .or_insert_with(|| value.clone());
+        }
+    }
+    ls
+}
+
 /// Stateless detection for one event: classify, decide, evaluate. Borrows only
-/// shared state so it can run in parallel across a batch.
+/// shared state so it can run in parallel across a batch. When a logsource
+/// extractor is configured, the event's logsource is resolved (explicit fields
+/// plus the schema's implied logsource) and fed into conflict-based pruning.
 fn detect_one<E: Event>(
     classifier: &SchemaClassifier,
     plan: &RoutingPlan,
     engines: &[Engine],
+    extractor: Option<&LogSourceExtractor>,
     event: &E,
 ) -> Routed1 {
     let schema = classifier.classify(event).map(|m| m.name);
     match plan.decide(schema.as_deref()) {
         RouteDecision::Drop | RouteDecision::Error => Routed1::Skip,
-        RouteDecision::Evaluate { set, .. } => Routed1::Eval {
-            set,
-            detections: engines[set].evaluate(event),
-        },
+        RouteDecision::Evaluate { set, .. } => {
+            let detections = match extractor {
+                Some(ex) => {
+                    let implied = schema.as_deref().and_then(|s| plan.schema_logsource(s));
+                    let ls = resolve_event_logsource(ex, implied, event);
+                    engines[set].evaluate_pruned(event, &ls)
+                }
+                None => engines[set].evaluate(event),
+            };
+            Routed1::Eval { set, detections }
+        }
     }
 }
 
@@ -121,6 +162,10 @@ pub struct SchemaRouter {
     field_maps: Vec<HashMap<String, Vec<String>>>,
     /// Shared correlation store; `None` when there are no correlation rules.
     correlation: Option<CorrelationEngine>,
+    /// Event-logsource extractor for conflict-based pruning; `None` disables
+    /// pruning. Resolution happens per event in the router (extractor value
+    /// plus the schema's implied logsource), so it is not set on the engines.
+    logsource_extractor: Option<LogSourceExtractor>,
 }
 
 impl SchemaRouter {
@@ -143,7 +188,6 @@ impl SchemaRouter {
             let mut engine = Engine::new();
             engine.set_include_event(include_event);
             engine.set_match_detail(match_detail);
-            engine.set_logsource_extractor(logsource_extractor.clone());
             for p in set {
                 engine.add_pipeline(p.clone());
             }
@@ -171,6 +215,7 @@ impl SchemaRouter {
             engines,
             field_maps,
             correlation,
+            logsource_extractor,
         })
     }
 
@@ -259,20 +304,21 @@ impl SchemaRouter {
         let classifier = &self.classifier;
         let plan = &self.plan;
         let engines = &self.engines;
+        let extractor = self.logsource_extractor.as_ref();
         let phase1: Vec<Routed1> = {
             #[cfg(feature = "parallel")]
             {
                 use rayon::prelude::*;
                 events
                     .par_iter()
-                    .map(|e| detect_one(classifier, plan, engines, *e))
+                    .map(|e| detect_one(classifier, plan, engines, extractor, *e))
                     .collect()
             }
             #[cfg(not(feature = "parallel"))]
             {
                 events
                     .iter()
-                    .map(|e| detect_one(classifier, plan, engines, *e))
+                    .map(|e| detect_one(classifier, plan, engines, extractor, *e))
                     .collect()
             }
         };
@@ -313,7 +359,16 @@ impl SchemaRouter {
                 outcome: RouteOutcome::Errored,
             },
             RouteDecision::Evaluate { set, unknown } => {
-                let detections = self.engines[set].evaluate(event);
+                let detections = match self.logsource_extractor.as_ref() {
+                    Some(ex) => {
+                        let implied = schema
+                            .as_deref()
+                            .and_then(|s| self.plan.schema_logsource(s));
+                        let ls = resolve_event_logsource(ex, implied, event);
+                        self.engines[set].evaluate_pruned(event, &ls)
+                    }
+                    None => self.engines[set].evaluate(event),
+                };
                 let results = match &mut self.correlation {
                     Some(ce) => {
                         let mapped = MappedEvent::new(event, &self.field_maps[set]);
@@ -377,6 +432,7 @@ transformations:
                 .map(|(s, ps)| crate::schema::SchemaBinding {
                     schema: (*s).to_string(),
                     pipelines: ps.iter().map(|p| (*p).to_string()).collect(),
+                    logsource: None,
                 })
                 .collect(),
         };
@@ -520,5 +576,81 @@ level: high
         assert_eq!(r.schema, None);
         assert_eq!(r.outcome, RouteOutcome::Dropped);
         assert!(r.results.is_empty());
+    }
+
+    #[test]
+    fn schema_derived_logsource_prunes_cross_product_rules() {
+        // A Windows rule and a Linux rule that both match the same CommandLine.
+        let rules = r#"
+title: Win whoami
+id: win-whoami
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+level: high
+---
+title: Linux whoami
+id: linux-whoami
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+level: high
+"#;
+        let collection = parse_sigma_yaml(rules).unwrap();
+        // A flat Sysmon event with no explicit `product` field. It classifies
+        // as `sysmon`, whose built-in implied logsource is product: windows.
+        let event = json!({
+            "EventID": 1,
+            "ProcessGuid": "{abc}",
+            "Image": "C:/Windows/System32/cmd.exe",
+            "CommandLine": "cmd /c whoami"
+        });
+
+        // Without an extractor, no pruning: both rules fire.
+        let mut plain = SchemaRouter::build(
+            &collection,
+            SchemaClassifier::builtin(),
+            plan(&[]),
+            vec![vec![]],
+            CorrelationConfig::default(),
+            false,
+            MatchDetailLevel::Off,
+            None,
+        )
+        .unwrap();
+        let r = plain.route(&JsonEvent::borrow(&event));
+        assert_eq!(r.schema.as_deref(), Some("sysmon"));
+        assert_eq!(r.results.len(), 2, "no pruning without an extractor");
+
+        // With an extractor, the schema-derived product (windows) prunes the
+        // Linux rule while keeping the Windows rule, even though the event
+        // carries no explicit product field.
+        let mut pruned = SchemaRouter::build(
+            &collection,
+            SchemaClassifier::builtin(),
+            plan(&[]),
+            vec![vec![]],
+            CorrelationConfig::default(),
+            false,
+            MatchDetailLevel::Off,
+            Some(LogSourceExtractor::new()),
+        )
+        .unwrap();
+        let r = pruned.route(&JsonEvent::borrow(&event));
+        assert_eq!(r.schema.as_deref(), Some("sysmon"));
+        assert_eq!(
+            r.results.len(),
+            1,
+            "schema-derived product prunes the Linux rule"
+        );
+        assert_eq!(pruned.logsource_pruned_total(), 1);
     }
 }

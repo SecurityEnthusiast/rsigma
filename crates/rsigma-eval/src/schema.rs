@@ -31,6 +31,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use regex::Regex;
+use rsigma_parser::LogSource;
 use serde::Deserialize;
 
 use crate::event::Event;
@@ -660,6 +661,34 @@ pub enum OnUnknown {
     Error,
 }
 
+/// The logsource a recognized schema implies, used to fill gaps in an event's
+/// logsource for conflict-based pruning when the event carries no explicit
+/// `product`/`service`/`category` field.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SchemaLogsource {
+    #[serde(default)]
+    pub product: Option<String>,
+    #[serde(default)]
+    pub service: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub custom: HashMap<String, String>,
+}
+
+impl SchemaLogsource {
+    fn to_logsource(&self) -> LogSource {
+        LogSource {
+            product: self.product.clone(),
+            service: self.service.clone(),
+            category: self.category.clone(),
+            custom: self.custom.clone(),
+            ..LogSource::default()
+        }
+    }
+}
+
 /// A `schema -> pipelines` binding: events recognized as `schema` are
 /// evaluated against the engine built from `pipelines`.
 #[derive(Debug, Clone, Deserialize)]
@@ -668,6 +697,30 @@ pub struct SchemaBinding {
     /// Pipeline names or file paths, resolved by the caller.
     #[serde(default)]
     pub pipelines: Vec<String>,
+    /// Optional logsource this schema implies. Overrides any built-in default
+    /// for the schema and fills gaps in an event's logsource at pruning time.
+    #[serde(default)]
+    pub logsource: Option<SchemaLogsource>,
+}
+
+/// Built-in schema-to-logsource defaults for the platform-locked schemas.
+///
+/// Only schemas that unambiguously imply a platform are listed. Cross-platform
+/// schemas (`ecs`, `ocsf`, `cef`, `generic_json`) are intentionally omitted:
+/// they must not imply a product, since doing so would prune correct rules for
+/// the other platforms those schemas also carry.
+fn builtin_schema_logsource() -> HashMap<String, LogSource> {
+    fn ls(product: &str, service: Option<&str>) -> LogSource {
+        LogSource {
+            product: Some(product.to_string()),
+            service: service.map(str::to_string),
+            ..LogSource::default()
+        }
+    }
+    HashMap::from([
+        ("sysmon".to_string(), ls("windows", Some("sysmon"))),
+        ("windows_eventlog".to_string(), ls("windows", None)),
+    ])
 }
 
 /// The `routing:` section of a schema config file.
@@ -707,6 +760,10 @@ pub struct RoutingPlan {
     pipeline_sets: Vec<Vec<String>>,
     /// Recognized schema name -> pipeline-set index.
     schema_to_set: HashMap<String, usize>,
+    /// Recognized schema name -> the logsource it implies (built-in defaults
+    /// plus per-binding overrides). Used to fill gaps in an event's logsource
+    /// for conflict-based pruning.
+    schema_logsource: HashMap<String, LogSource>,
     on_unknown: OnUnknown,
 }
 
@@ -717,6 +774,9 @@ impl RoutingPlan {
         // Index 0 is always the default set.
         let mut pipeline_sets: Vec<Vec<String>> = vec![config.default_pipelines.clone()];
         let mut schema_to_set: HashMap<String, usize> = HashMap::new();
+        // Seed the built-in platform-locked defaults, then let bindings
+        // override or add per-schema logsources.
+        let mut schema_logsource = builtin_schema_logsource();
 
         for binding in &config.bindings {
             let idx = pipeline_sets
@@ -727,11 +787,15 @@ impl RoutingPlan {
                     pipeline_sets.len() - 1
                 });
             schema_to_set.insert(binding.schema.clone(), idx);
+            if let Some(ls) = &binding.logsource {
+                schema_logsource.insert(binding.schema.clone(), ls.to_logsource());
+            }
         }
 
         RoutingPlan {
             pipeline_sets,
             schema_to_set,
+            schema_logsource,
             on_unknown: config.on_unknown,
         }
     }
@@ -745,6 +809,13 @@ impl RoutingPlan {
     /// The configured unknown-handling policy.
     pub fn on_unknown(&self) -> OnUnknown {
         self.on_unknown
+    }
+
+    /// The logsource a recognized schema implies, if any (built-in default or
+    /// binding override). Used by the router to fill gaps in an event's
+    /// logsource before conflict-based pruning.
+    pub fn schema_logsource(&self, schema: &str) -> Option<&LogSource> {
+        self.schema_logsource.get(schema)
     }
 
     /// Decide how to route an event given its classified schema (or `None`
@@ -1205,14 +1276,17 @@ schemas:
                 SchemaBinding {
                     schema: "ecs".to_string(),
                     pipelines: vec!["ecs_windows".to_string()],
+                    logsource: None,
                 },
                 SchemaBinding {
                     schema: "winlogbeat".to_string(),
                     pipelines: vec!["ecs_windows".to_string()],
+                    logsource: None,
                 },
                 SchemaBinding {
                     schema: "sysmon".to_string(),
                     pipelines: vec!["sysmon".to_string()],
+                    logsource: None,
                 },
             ],
         };
@@ -1239,6 +1313,7 @@ schemas:
             bindings: vec![SchemaBinding {
                 schema: "ecs".to_string(),
                 pipelines: vec!["ecs_windows".to_string()],
+                logsource: None,
             }],
         };
         let plan = RoutingPlan::from_config(&config);
@@ -1315,6 +1390,57 @@ routing:
         // default [base], ecs [ecs_windows], my_vendor [vendor_map, base] = 3.
         assert_eq!(plan.pipeline_sets().len(), 3);
         assert_eq!(plan.decide(None), RouteDecision::Drop);
+    }
+
+    #[test]
+    fn schema_logsource_builtin_defaults_and_overrides() {
+        // Built-in platform-locked defaults apply even without bindings.
+        let plan = RoutingPlan::from_config(&RoutingConfig::default());
+        let sysmon = plan.schema_logsource("sysmon").expect("sysmon default");
+        assert_eq!(sysmon.product.as_deref(), Some("windows"));
+        assert_eq!(sysmon.service.as_deref(), Some("sysmon"));
+        assert_eq!(
+            plan.schema_logsource("windows_eventlog")
+                .and_then(|l| l.product.as_deref()),
+            Some("windows")
+        );
+        // Cross-platform schemas imply nothing.
+        assert!(plan.schema_logsource("ecs").is_none());
+        assert!(plan.schema_logsource("cef").is_none());
+
+        // A binding can attach or override a schema's implied logsource.
+        let yaml = r#"
+schemas:
+  - name: ecs_windows
+    match:
+      - field_present: ecs.version
+      - field_present: winlog.channel
+routing:
+  bindings:
+    - schema: ecs_windows
+      pipelines: [ecs_windows]
+      logsource:
+        product: windows
+    - schema: sysmon
+      pipelines: [sysmon]
+      logsource:
+        product: windows
+        service: sysmon
+        custom:
+          tenant: acme
+"#;
+        let (_sigs, routing) = parse_schema_config(yaml).expect("parse");
+        let plan = RoutingPlan::from_config(&routing.expect("routing"));
+        assert_eq!(
+            plan.schema_logsource("ecs_windows")
+                .and_then(|l| l.product.as_deref()),
+            Some("windows")
+        );
+        let sysmon = plan.schema_logsource("sysmon").expect("sysmon override");
+        assert_eq!(
+            sysmon.custom.get("tenant").map(String::as_str),
+            Some("acme")
+        );
     }
 
     #[test]
