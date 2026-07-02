@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use rsigma_parser::SigmaCollection;
+use rsigma_parser::{LogSource, SigmaCollection, SigmaRule};
 
 use crate::correlation_engine::{
     CorrelationConfig, CorrelationEngine, CorrelationSnapshot, CorrelationStateSnapshot,
@@ -38,6 +38,19 @@ use crate::pipeline::transformations::Transformation;
 use crate::result::EvaluationResult;
 use crate::result::MatchDetailLevel;
 use crate::schema::{OnUnknown, RouteDecision, RoutingPlan, SchemaClassifier};
+
+/// Per-schema logsource pruning summary: how many rules a schema's events
+/// evaluate versus how many are pruned by its implied logsource. A static view
+/// (independent of any specific event's field values) for operator visibility.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaPruning {
+    /// The recognized schema name.
+    pub schema: String,
+    /// Rules evaluated for this schema (logsource-compatible).
+    pub eligible: usize,
+    /// Rules pruned for this schema (logsource-conflicting).
+    pub pruned: usize,
+}
 
 /// What the router did with an event, for reporting and `on_unknown` handling.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,21 +105,87 @@ enum Routed1 {
     },
 }
 
+/// Keep a detection rule when partitioning a per-schema engine: rules with no
+/// product apply to every platform; a product-tagged rule is kept only when its
+/// product is among the set's allowed products (lowercased).
+fn rule_product_kept(rule: &SigmaRule, products: &std::collections::HashSet<String>) -> bool {
+    match &rule.logsource.product {
+        None => true,
+        Some(p) => products.contains(&p.to_ascii_lowercase()),
+    }
+}
+
+/// Whether a pipeline rewrites a rule's product via `change_logsource`, which
+/// makes pre-pipeline product partitioning unsafe (a rule could be re-producted
+/// at compile time). Such a set keeps its full ruleset.
+fn pipeline_changes_product(pipeline: &Pipeline) -> bool {
+    pipeline.transformations.iter().any(|item| {
+        matches!(
+            &item.transformation,
+            Transformation::ChangeLogsource {
+                product: Some(_),
+                ..
+            }
+        )
+    })
+}
+
+/// Resolve an event's logsource for conflict-based pruning: the extractor's
+/// value (explicit event fields, then static/format defaults) wins, and the
+/// recognized schema's implied logsource fills any dimension left unset. This
+/// is what lets a `product`-less event still prune cross-product rules once its
+/// schema is known (for example a `sysmon`-classified event implies
+/// `product: windows`).
+fn resolve_event_logsource<E: Event>(
+    extractor: &LogSourceExtractor,
+    implied: Option<&LogSource>,
+    event: &E,
+) -> LogSource {
+    let mut ls = extractor.extract(event);
+    if let Some(implied) = implied {
+        if ls.product.is_none() {
+            ls.product = implied.product.clone();
+        }
+        if ls.service.is_none() {
+            ls.service = implied.service.clone();
+        }
+        if ls.category.is_none() {
+            ls.category = implied.category.clone();
+        }
+        for (key, value) in &implied.custom {
+            ls.custom
+                .entry(key.clone())
+                .or_insert_with(|| value.clone());
+        }
+    }
+    ls
+}
+
 /// Stateless detection for one event: classify, decide, evaluate. Borrows only
-/// shared state so it can run in parallel across a batch.
+/// shared state so it can run in parallel across a batch. When a logsource
+/// extractor is configured, the event's logsource is resolved (explicit fields
+/// plus the schema's implied logsource) and fed into conflict-based pruning.
 fn detect_one<E: Event>(
     classifier: &SchemaClassifier,
     plan: &RoutingPlan,
     engines: &[Engine],
+    extractor: Option<&LogSourceExtractor>,
     event: &E,
 ) -> Routed1 {
     let schema = classifier.classify(event).map(|m| m.name);
     match plan.decide(schema.as_deref()) {
         RouteDecision::Drop | RouteDecision::Error => Routed1::Skip,
-        RouteDecision::Evaluate { set, .. } => Routed1::Eval {
-            set,
-            detections: engines[set].evaluate(event),
-        },
+        RouteDecision::Evaluate { set, .. } => {
+            let detections = match extractor {
+                Some(ex) => {
+                    let implied = schema.as_deref().and_then(|s| plan.schema_logsource(s));
+                    let ls = resolve_event_logsource(ex, implied, event);
+                    engines[set].evaluate_pruned(event, &ls)
+                }
+                None => engines[set].evaluate(event),
+            };
+            Routed1::Eval { set, detections }
+        }
     }
 }
 
@@ -121,6 +200,10 @@ pub struct SchemaRouter {
     field_maps: Vec<HashMap<String, Vec<String>>>,
     /// Shared correlation store; `None` when there are no correlation rules.
     correlation: Option<CorrelationEngine>,
+    /// Event-logsource extractor for conflict-based pruning; `None` disables
+    /// pruning. Resolution happens per event in the router (extractor value
+    /// plus the schema's implied logsource), so it is not set on the engines.
+    logsource_extractor: Option<LogSourceExtractor>,
 }
 
 impl SchemaRouter {
@@ -136,18 +219,41 @@ impl SchemaRouter {
         include_event: bool,
         match_detail: MatchDetailLevel,
         logsource_extractor: Option<LogSourceExtractor>,
+        partition_rules: bool,
     ) -> Result<Self> {
+        // Optional, gated per-schema rule partitioning: each engine bound only
+        // to platform-locked schemas compiles just the rules whose product can
+        // apply, cutting the N-copies memory cost. Off by default and disabled
+        // for any set whose pipelines rewrite product.
+        let partition = if partition_rules {
+            plan.set_product_partition()
+        } else {
+            vec![None; pipeline_sets.len()]
+        };
+
         let mut engines = Vec::with_capacity(pipeline_sets.len());
         let mut field_maps = Vec::with_capacity(pipeline_sets.len());
-        for set in &pipeline_sets {
+        for (idx, set) in pipeline_sets.iter().enumerate() {
             let mut engine = Engine::new();
             engine.set_include_event(include_event);
             engine.set_match_detail(match_detail);
-            engine.set_logsource_extractor(logsource_extractor.clone());
             for p in set {
                 engine.add_pipeline(p.clone());
             }
-            engine.add_collection(collection)?;
+            // Partition only when the set has an allowed-product set and no
+            // pipeline rewrites product; otherwise compile the full ruleset.
+            let partitioned = partition
+                .get(idx)
+                .and_then(|o| o.as_ref())
+                .filter(|_| !set.iter().any(pipeline_changes_product));
+            match partitioned {
+                Some(products) => {
+                    let mut filtered = collection.clone();
+                    filtered.rules.retain(|r| rule_product_kept(r, products));
+                    engine.add_collection(&filtered)?;
+                }
+                None => engine.add_collection(collection)?,
+            }
             engines.push(engine);
             field_maps.push(collect_field_map(set));
         }
@@ -171,6 +277,7 @@ impl SchemaRouter {
             engines,
             field_maps,
             correlation,
+            logsource_extractor,
         })
     }
 
@@ -184,9 +291,19 @@ impl SchemaRouter {
         self.correlation.is_some()
     }
 
-    /// Number of detection rules (same across every per-schema engine).
+    /// Number of detection rules (same across every per-schema engine, unless
+    /// per-schema rule partitioning is enabled; see [`engine_rule_counts`]).
+    ///
+    /// [`engine_rule_counts`]: SchemaRouter::engine_rule_counts
     pub fn detection_rule_count(&self) -> usize {
         self.engines.first().map(|e| e.rule_count()).unwrap_or(0)
+    }
+
+    /// Per-pipeline-set detection rule counts, in set order. Equal across sets
+    /// unless per-schema rule partitioning is enabled, in which case
+    /// platform-locked sets carry fewer rules than the default set.
+    pub fn engine_rule_counts(&self) -> Vec<usize> {
+        self.engines.iter().map(Engine::rule_count).collect()
     }
 
     /// Total rule candidates pruned by logsource across every per-schema
@@ -205,6 +322,38 @@ impl SchemaRouter {
             .iter()
             .map(Engine::logsource_absent_total)
             .sum()
+    }
+
+    /// Static per-schema pruning summary: for each schema with an implied
+    /// logsource, how many rules its events evaluate versus prune. Empty when
+    /// logsource routing is disabled (no extractor). Sorted by descending
+    /// pruned count, then schema name.
+    pub fn schema_pruning_summary(&self) -> Vec<SchemaPruning> {
+        if self.logsource_extractor.is_none() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for schema in self.plan.schemas_with_logsource() {
+            let Some(implied) = self.plan.schema_logsource(&schema) else {
+                continue;
+            };
+            let set = match self.plan.decide(Some(&schema)) {
+                RouteDecision::Evaluate { set, .. } => set,
+                RouteDecision::Drop | RouteDecision::Error => 0,
+            };
+            let (eligible, pruned) = self.engines[set].logsource_eligibility(implied);
+            out.push(SchemaPruning {
+                schema,
+                eligible,
+                pruned,
+            });
+        }
+        out.sort_by(|a, b| {
+            b.pruned
+                .cmp(&a.pruned)
+                .then_with(|| a.schema.cmp(&b.schema))
+        });
+        out
     }
 
     /// Number of correlation rules in the shared store (0 when none).
@@ -259,20 +408,21 @@ impl SchemaRouter {
         let classifier = &self.classifier;
         let plan = &self.plan;
         let engines = &self.engines;
+        let extractor = self.logsource_extractor.as_ref();
         let phase1: Vec<Routed1> = {
             #[cfg(feature = "parallel")]
             {
                 use rayon::prelude::*;
                 events
                     .par_iter()
-                    .map(|e| detect_one(classifier, plan, engines, *e))
+                    .map(|e| detect_one(classifier, plan, engines, extractor, *e))
                     .collect()
             }
             #[cfg(not(feature = "parallel"))]
             {
                 events
                     .iter()
-                    .map(|e| detect_one(classifier, plan, engines, *e))
+                    .map(|e| detect_one(classifier, plan, engines, extractor, *e))
                     .collect()
             }
         };
@@ -313,7 +463,16 @@ impl SchemaRouter {
                 outcome: RouteOutcome::Errored,
             },
             RouteDecision::Evaluate { set, unknown } => {
-                let detections = self.engines[set].evaluate(event);
+                let detections = match self.logsource_extractor.as_ref() {
+                    Some(ex) => {
+                        let implied = schema
+                            .as_deref()
+                            .and_then(|s| self.plan.schema_logsource(s));
+                        let ls = resolve_event_logsource(ex, implied, event);
+                        self.engines[set].evaluate_pruned(event, &ls)
+                    }
+                    None => self.engines[set].evaluate(event),
+                };
                 let results = match &mut self.correlation {
                     Some(ce) => {
                         let mapped = MappedEvent::new(event, &self.field_maps[set]);
@@ -372,11 +531,13 @@ transformations:
         let config = RoutingConfig {
             on_unknown: OnUnknown::Warn,
             default_pipelines: vec![],
+            aliases: std::collections::HashMap::new(),
             bindings: bindings
                 .iter()
                 .map(|(s, ps)| crate::schema::SchemaBinding {
                     schema: (*s).to_string(),
                     pipelines: ps.iter().map(|p| (*p).to_string()).collect(),
+                    logsource: None,
                 })
                 .collect(),
         };
@@ -398,6 +559,7 @@ transformations:
             false,
             MatchDetailLevel::Off,
             None,
+            false,
         )
         .unwrap();
 
@@ -466,6 +628,7 @@ level: high
             false,
             MatchDetailLevel::Off,
             None,
+            false,
         )
         .unwrap();
 
@@ -497,6 +660,7 @@ level: high
         let config = RoutingConfig {
             on_unknown: OnUnknown::Drop,
             default_pipelines: vec![],
+            aliases: std::collections::HashMap::new(),
             // Bind generic_json away so a plain event is truly unknown.
             bindings: vec![],
         };
@@ -512,6 +676,7 @@ level: high
             false,
             MatchDetailLevel::Off,
             None,
+            false,
         )
         .unwrap();
 
@@ -520,5 +685,202 @@ level: high
         assert_eq!(r.schema, None);
         assert_eq!(r.outcome, RouteOutcome::Dropped);
         assert!(r.results.is_empty());
+    }
+
+    #[test]
+    fn schema_derived_logsource_prunes_cross_product_rules() {
+        // A Windows rule and a Linux rule that both match the same CommandLine.
+        let rules = r#"
+title: Win whoami
+id: win-whoami
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+level: high
+---
+title: Linux whoami
+id: linux-whoami
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+level: high
+"#;
+        let collection = parse_sigma_yaml(rules).unwrap();
+        // A flat Sysmon event with no explicit `product` field. It classifies
+        // as `sysmon`, whose built-in implied logsource is product: windows.
+        let event = json!({
+            "EventID": 1,
+            "ProcessGuid": "{abc}",
+            "Image": "C:/Windows/System32/cmd.exe",
+            "CommandLine": "cmd /c whoami"
+        });
+
+        // Without an extractor, no pruning: both rules fire.
+        let mut plain = SchemaRouter::build(
+            &collection,
+            SchemaClassifier::builtin(),
+            plan(&[]),
+            vec![vec![]],
+            CorrelationConfig::default(),
+            false,
+            MatchDetailLevel::Off,
+            None,
+            false,
+        )
+        .unwrap();
+        let r = plain.route(&JsonEvent::borrow(&event));
+        assert_eq!(r.schema.as_deref(), Some("sysmon"));
+        assert_eq!(r.results.len(), 2, "no pruning without an extractor");
+
+        // With an extractor, the schema-derived product (windows) prunes the
+        // Linux rule while keeping the Windows rule, even though the event
+        // carries no explicit product field.
+        let mut pruned = SchemaRouter::build(
+            &collection,
+            SchemaClassifier::builtin(),
+            plan(&[]),
+            vec![vec![]],
+            CorrelationConfig::default(),
+            false,
+            MatchDetailLevel::Off,
+            Some(LogSourceExtractor::new()),
+            false,
+        )
+        .unwrap();
+        let r = pruned.route(&JsonEvent::borrow(&event));
+        assert_eq!(r.schema.as_deref(), Some("sysmon"));
+        assert_eq!(
+            r.results.len(),
+            1,
+            "schema-derived product prunes the Linux rule"
+        );
+        assert_eq!(pruned.logsource_pruned_total(), 1);
+
+        // The static per-schema summary reflects the same eligibility: for the
+        // sysmon schema (product: windows) the Linux rule is pruned and the
+        // Windows rule stays eligible. Cross-platform schemas are absent, and
+        // the summary is empty without an extractor.
+        let summary = pruned.schema_pruning_summary();
+        let sysmon = summary
+            .iter()
+            .find(|s| s.schema == "sysmon")
+            .expect("sysmon in summary");
+        assert_eq!(sysmon.eligible, 1);
+        assert_eq!(sysmon.pruned, 1);
+        assert!(!summary.iter().any(|s| s.schema == "ecs"));
+        assert!(plain.schema_pruning_summary().is_empty());
+    }
+
+    #[test]
+    fn partition_rules_compiles_only_applicable_rules_per_set() {
+        // Windows, Linux, and a product-less rule that all match `whoami`.
+        let rules = r#"
+title: Win whoami
+id: win-whoami
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+level: high
+---
+title: Linux whoami
+id: linux-whoami
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+level: high
+---
+title: Any whoami
+id: any-whoami
+logsource:
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+level: high
+"#;
+        let collection = parse_sigma_yaml(rules).unwrap();
+        // Bind sysmon (implied product: windows) to a non-default pipeline-set
+        // (a no-op field mapping so the set differs from the default set).
+        let passthrough = parse_pipeline(
+            "name: passthrough\npriority: 10\ntransformations:\n  - id: noop\n    type: field_name_mapping\n    mapping:\n      __unused_a: __unused_b\n",
+        )
+        .unwrap();
+        let plan = plan(&[("sysmon", &["passthrough"])]);
+
+        let router = SchemaRouter::build(
+            &collection,
+            SchemaClassifier::builtin(),
+            plan,
+            vec![vec![], vec![passthrough]],
+            CorrelationConfig::default(),
+            false,
+            MatchDetailLevel::Off,
+            None,
+            true, // partition rules
+        )
+        .unwrap();
+
+        // Default set keeps all 3; the sysmon set drops the Linux rule and
+        // keeps the Windows and product-less rules.
+        assert_eq!(router.engine_rule_counts(), vec![3, 2]);
+    }
+
+    #[test]
+    fn partition_rules_off_keeps_full_ruleset() {
+        let rules = r#"
+title: Win whoami
+id: win-whoami
+logsource:
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+---
+title: Linux whoami
+id: linux-whoami
+logsource:
+    product: linux
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+"#;
+        let collection = parse_sigma_yaml(rules).unwrap();
+        let passthrough = parse_pipeline(
+            "name: passthrough\npriority: 10\ntransformations:\n  - id: noop\n    type: field_name_mapping\n    mapping:\n      __unused_a: __unused_b\n",
+        )
+        .unwrap();
+        let plan = plan(&[("sysmon", &["passthrough"])]);
+        let router = SchemaRouter::build(
+            &collection,
+            SchemaClassifier::builtin(),
+            plan,
+            vec![vec![], vec![passthrough]],
+            CorrelationConfig::default(),
+            false,
+            MatchDetailLevel::Off,
+            None,
+            false, // partitioning off
+        )
+        .unwrap();
+        assert_eq!(router.engine_rule_counts(), vec![2, 2]);
     }
 }

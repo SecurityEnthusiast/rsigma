@@ -81,14 +81,19 @@ daemon:
   schema:
     observe: false          # opt-in: count events per recognized schema (or --observe-schemas)
     routing: false          # opt-in: route each event to its schema's pipeline-set (or --schema-routing)
+    partition_rules: false  # gated: compile platform-locked per-schema engines with only applicable rules (or --schema-partition-rules)
     # config: /etc/rsigma/schema.yml   # user schema signatures + routing bindings (--schema-config)
     on_unknown: warn        # warn | drop | passthrough | error, for events matching no schema
   logsource_routing:
     enabled: false          # opt-in: conflict-based logsource pruning (or --logsource-routing)
     # field_map:            # event field names per dimension (default product/service/category)
     #   product: product
+    #   custom:             # extra dimensions: dimension name -> event field name
+    #     tenant: org
     # event_logsource:      # static logsource when the field is absent (--event-logsource)
     #   product: windows
+    #   custom:             # extra dimensions: dimension name -> literal value
+    #     tenant: acme
     strict: false           # reserved for a future strict subset-routing mode
 
 eval:

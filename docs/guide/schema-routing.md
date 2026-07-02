@@ -75,6 +75,60 @@ eval:
     on_unknown: drop
 ```
 
+## Schema-derived logsource
+
+When schema routing is combined with [logsource routing](logsource-routing.md), the schema rsigma recognizes supplies the event's logsource for [conflict-based pruning](logsource-routing.md#conflict-based-not-subset), even when the event carries no explicit `product`/`service`/`category` field. So an event recognized as `sysmon` implies `product: windows, service: sysmon`, and a Cisco or Linux rule is pruned instead of false-positive matching on a mapped field.
+
+Built-in implied logsources cover the platform-locked schemas: `sysmon` (windows/sysmon), `windows_eventlog` (windows), and the two ECS platform specializations `ecs_windows` (windows) and `ecs_linux` (linux). The plain cross-platform schemas (`ecs`, `ocsf`, `cef`, `generic_json`) imply nothing, because they carry events from many platforms.
+
+An ECS event that also carries a platform marker (`winlog.*`, `host.os.type`) classifies as `ecs_windows`/`ecs_linux` and gets the platform for pruning automatically. These specializations are aliases of `ecs` (see below), so an existing `ecs` binding still matches them, no config change needed. For a source ECS routes without a marker, point the logsource extractor at the event's own OS field instead (`--logsource-field-map product=host.os.type`).
+
+### Schema aliases
+
+An alias makes one schema route as another: an event classified as the alias is dispatched as though it were the canonical schema, so a single binding covers a family of related schemas. The built-in `ecs_windows` and `ecs_linux` alias to `ecs`. Declare your own under `routing.aliases`:
+
+```yaml
+routing:
+  aliases:
+    my_vendor_win: my_vendor
+  bindings:
+    - schema: my_vendor
+      pipelines: [my_vendor_map.yml]
+```
+
+Aliasing affects routing only: the alias keeps its own classification label and implied logsource (so `ecs_windows` still contributes `product: windows`), but binds where its canonical binds. A direct binding for the alias itself always takes precedence over the alias.
+
+Attach or override a schema's implied logsource per binding:
+
+```yaml
+routing:
+  bindings:
+    - schema: ecs_windows
+      pipelines: [ecs_windows]
+      logsource:
+        product: windows
+    - schema: my_vendor
+      pipelines: [my_vendor_map.yml]
+      logsource:
+        product: linux
+        custom:
+          tenant: acme
+```
+
+Resolution per event is explicit event field, then the static `--event-logsource`, then the schema-derived logsource, then any format default, then unset (fail-open). This prunes only at product/service granularity; category-level pruning inside one product (for example `process_creation` versus `ps_script`) still needs the event to assert a category or a pipeline to derive it.
+
+## Per-schema rule partitioning
+
+By default every per-schema engine compiles the full ruleset (N copies for N pipeline-sets). `--schema-partition-rules` (or `schema.partition_rules: true`) is a gated, opt-in optimization that compiles each platform-locked per-schema engine with only the rules whose product can apply, cutting that memory cost.
+
+It applies conservatively and only where it is safe:
+
+- The default pipeline-set is never partitioned (unbound and unknown events route there and could be any product).
+- A set is partitioned only when every schema that routes to it (direct bindings plus aliases) implies a product; a set reachable by a cross-platform schema such as `ecs` keeps the full ruleset. A set bound only to `sysmon`, `windows_eventlog`, or `ecs_windows`, for example, keeps only Windows and product-less rules.
+- A set whose pipelines rewrite product via `change_logsource` keeps the full ruleset (the pre-pipeline product is not authoritative there).
+
+Caveat, and why it is off by default: partitioning removes rules at compile time based on the schema's implied product, so an event that is classified as one platform but carries an explicit, contradicting `product` field would not see the removed rules (with the full ruleset, per-event conflict pruning would still keep them). Validate against your corpus before enabling it in production.
+
 ## Cross-schema correlation
 
 Correlation works across schemas. Detections from each per-schema engine feed one shared correlation store, and the group-by extraction is schema-aware: a correlation grouped by `User` matches an ECS event's `user.name` and a Sigma-native event's `User` to the same entity, so the two correlate together. Window state, suppression, chaining, and snapshots are unchanged; only the group-key extraction becomes schema-aware.
@@ -82,3 +136,5 @@ Correlation works across schemas. Detections from each per-schema engine feed on
 ## Unknown schemas
 
 An event that matches no signature is "unknown". The `on_unknown` policy decides its fate: `warn` and `passthrough` evaluate it against the default pipeline-set (the difference is a logged warning), `drop` skips it, and `error` skips it and flags an error. Pair routing with [`--observe-schemas`](../cli/engine/daemon.md) (daemon) or [`engine classify`](../cli/engine/classify.md) to find sources whose schema is not yet recognized, then add a signature and a binding.
+
+With `--observe-schemas`, the daemon's `GET /api/v1/schemas` endpoint reports a bounded, redacted sample of the field-key shapes of unknown events (`unknown_shapes`), so you can see exactly which key sets are unrecognized and author a signature for them without inspecting raw event values. The same endpoint reports a per-schema routing pruning summary (`routing_pruning`, eligible versus pruned rules) and an `ambiguous` count for events where two different-name signatures tied at the winning specificity. `engine classify` surfaces the same ambiguity per event; resolve it by giving one signature a distinguishing predicate or a higher `specificity`.

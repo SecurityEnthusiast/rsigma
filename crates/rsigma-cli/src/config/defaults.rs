@@ -60,6 +60,7 @@ pub(crate) const DISPOSITIONS_MIN_SAMPLE: u64 = 5;
 /// policy defaults to `warn` (log and evaluate against every set).
 pub(crate) const SCHEMA_OBSERVE: bool = false;
 pub(crate) const SCHEMA_ROUTING: bool = false;
+pub(crate) const SCHEMA_PARTITION_RULES: bool = false;
 pub(crate) const SCHEMA_ON_UNKNOWN: &str = "warn";
 /// Logsource-aware evaluation defaults (`daemon.logsource_routing.*`,
 /// `eval.logsource_routing.*`). Opt-in; off by default, as is the reserved
@@ -201,6 +202,7 @@ pub(crate) fn defaults_partial() -> RsigmaConfigPartial {
             schema: Some(SchemaPartial {
                 observe: Some(SCHEMA_OBSERVE),
                 routing: Some(SCHEMA_ROUTING),
+                partition_rules: Some(SCHEMA_PARTITION_RULES),
                 config: None,
                 on_unknown: Some(SCHEMA_ON_UNKNOWN.to_string()),
             }),
@@ -221,6 +223,7 @@ pub(crate) fn defaults_partial() -> RsigmaConfigPartial {
             schema: Some(SchemaPartial {
                 observe: None,
                 routing: Some(SCHEMA_ROUTING),
+                partition_rules: Some(SCHEMA_PARTITION_RULES),
                 config: None,
                 on_unknown: Some(SCHEMA_ON_UNKNOWN.to_string()),
             }),

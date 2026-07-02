@@ -214,6 +214,12 @@ pub(crate) struct EvalArgs {
     #[arg(long = "schema-routing")]
     pub schema_routing: bool,
 
+    /// Opt-in, gated per-schema rule partitioning (with `--schema-routing`):
+    /// compile each platform-locked per-schema engine with only the rules whose
+    /// product can apply. Off by default.
+    #[arg(long = "schema-partition-rules")]
+    pub schema_partition_rules: bool,
+
     /// Path to a YAML file of schema signatures and routing bindings (the
     /// `schemas:` and `routing:` sections). Used with `--schema-routing`.
     #[arg(long = "schema-config", value_name = "PATH")]
@@ -354,6 +360,11 @@ fn overlay_eval_config(
             {
                 args.schema_routing = v;
             }
+            if !explicit("schema_partition_rules")
+                && let Some(v) = schema.partition_rules
+            {
+                args.schema_partition_rules = v;
+            }
             if !explicit("schema_config")
                 && let Some(v) = schema.config
             {
@@ -377,6 +388,7 @@ fn overlay_eval_config(
                     fm.product.as_deref(),
                     fm.service.as_deref(),
                     fm.category.as_deref(),
+                    fm.custom.as_ref(),
                 )
             {
                 args.logsource_field_map = Some(s);
@@ -387,6 +399,7 @@ fn overlay_eval_config(
                     el.product.as_deref(),
                     el.service.as_deref(),
                     el.category.as_deref(),
+                    el.custom.as_ref(),
                 )
             {
                 args.event_logsource = Some(s);
@@ -428,6 +441,7 @@ pub(crate) fn cmd_eval(args: EvalArgs, ctx: OutputCtx) -> bool {
         observe_fields_max_keys,
         observe_fields_report,
         schema_routing,
+        schema_partition_rules,
         schema_config,
         on_unknown,
         logsource_routing,
@@ -538,6 +552,7 @@ pub(crate) fn cmd_eval(args: EvalArgs, ctx: OutputCtx) -> bool {
             include_event,
             match_detail,
             logsource_extractor,
+            schema_partition_rules,
         );
         let had_matches = cmd_eval_routed(
             event_source,
@@ -627,6 +642,7 @@ fn parse_on_unknown(s: &str) -> OnUnknown {
 
 /// Build a [`SchemaRouter`] from the schema config (signatures + routing
 /// bindings) and the resolved pipeline-sets.
+#[allow(clippy::too_many_arguments)]
 fn build_schema_router(
     collection: &SigmaCollection,
     schema_config: Option<&Path>,
@@ -635,6 +651,7 @@ fn build_schema_router(
     include_event: bool,
     match_detail: MatchDetailLevel,
     logsource_extractor: Option<LogSourceExtractor>,
+    partition_rules: bool,
 ) -> SchemaRouter {
     let (signatures, routing) = match schema_config {
         Some(path) => match load_schema_config(path) {
@@ -683,6 +700,7 @@ fn build_schema_router(
         include_event,
         match_detail,
         logsource_extractor,
+        partition_rules,
     ) {
         Ok(r) => r,
         Err(e) => {
@@ -815,6 +833,16 @@ fn cmd_eval_routed(
         eprintln!(
             "Processed {events} events, {det_count} detection matches, {corr_count} correlation matches, {unknown} unknown schema, {dropped} dropped."
         );
+        let pruning = router.schema_pruning_summary();
+        if !pruning.is_empty() {
+            eprintln!("Logsource pruning by schema (eligible/pruned rules):");
+            for entry in pruning {
+                eprintln!(
+                    "  {}: {} eligible, {} pruned",
+                    entry.schema, entry.eligible, entry.pruned
+                );
+            }
+        }
     }
     det_count > 0 || corr_count > 0
 }

@@ -143,11 +143,12 @@ pub use result::{
     CorrelationBody, DetectionBody, EvaluationResult, FieldMatch, MatchDetailLevel, MatcherKind,
     ProcessResultExt, ResultBody, RuleHeader,
 };
-pub use router::{RouteOutcome, RouteResult, SchemaRouter};
+pub use router::{RouteOutcome, RouteResult, SchemaPruning, SchemaRouter};
 pub use schema::{
-    FieldValueConfig, OnUnknown, RouteDecision, RoutingConfig, RoutingPlan, SchemaBinding,
-    SchemaClassifier, SchemaCountEntry, SchemaError, SchemaMatch, SchemaObservation,
-    SchemaObserver, SchemaPredicate, SchemaPredicateConfig, SchemaSignature, SchemaSignatureConfig,
-    SchemaSignaturesFile, builtin_schema_names, load_schema_config, load_schema_signatures,
-    parse_schema_config, parse_schema_signatures,
+    FieldValueConfig, OnUnknown, PredicateOutcome, RouteDecision, RoutingConfig, RoutingPlan,
+    SchemaBinding, SchemaClassifier, SchemaCountEntry, SchemaError, SchemaExplanation, SchemaMatch,
+    SchemaObservation, SchemaObserver, SchemaPredicate, SchemaPredicateConfig, SchemaSignature,
+    SchemaSignatureConfig, SchemaSignaturesFile, SignatureExplanation, UnknownShapeEntry,
+    builtin_schema_names, load_schema_config, load_schema_signatures, parse_schema_config,
+    parse_schema_signatures, validate_schema_config,
 };

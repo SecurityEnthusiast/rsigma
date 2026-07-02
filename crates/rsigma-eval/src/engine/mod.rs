@@ -263,6 +263,24 @@ impl Engine {
         self.logsource_absent.load(Ordering::Relaxed)
     }
 
+    /// Static view of how many loaded rules are eligible (logsource-compatible)
+    /// versus pruned (conflicting) for `event_logsource`, returned as
+    /// `(eligible, pruned)`. Used to report how much of a ruleset a given
+    /// logsource (for example a schema's implied logsource) actually evaluates,
+    /// independent of any specific event's field values.
+    pub fn logsource_eligibility(&self, event_logsource: &LogSource) -> (usize, usize) {
+        let mut eligible = 0;
+        let mut pruned = 0;
+        for rule in &self.rules {
+            if logsource_compatible(&rule.logsource, event_logsource) {
+                eligible += 1;
+            } else {
+                pruned += 1;
+            }
+        }
+        (eligible, pruned)
+    }
+
     /// Enable or disable the cross-rule Aho-Corasick pre-filter.
     ///
     /// When enabled, the engine builds a single per-field
@@ -591,11 +609,44 @@ impl Engine {
     }
 
     /// Evaluate an event against candidate rules using the inverted index.
+    ///
+    /// When a logsource extractor is configured (see
+    /// [`Engine::set_logsource_extractor`]) the event's logsource is derived
+    /// from it and used for conflict-based pruning.
     pub fn evaluate<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
+        let event_logsource = self
+            .logsource_extractor
+            .as_ref()
+            .map(|ex| ex.extract(event));
+        self.evaluate_inner(event, event_logsource.as_ref())
+    }
+
+    /// Evaluate an event with a caller-resolved event logsource for
+    /// conflict-based pruning, bypassing the engine's own extractor.
+    ///
+    /// The schema router uses this to feed a per-event logsource resolved from
+    /// the event's explicit fields plus the recognized schema's implied
+    /// logsource, so cross-product rules are pruned even when the event carries
+    /// no explicit `product`/`service`/`category` field. Pruning is
+    /// conflict-based: a rule is skipped only when a dimension is set on both
+    /// the rule and `event_logsource` and the values differ.
+    pub fn evaluate_pruned<E: Event>(
+        &self,
+        event: &E,
+        event_logsource: &LogSource,
+    ) -> Vec<EvaluationResult> {
+        self.evaluate_inner(event, Some(event_logsource))
+    }
+
+    fn evaluate_inner<E: Event>(
+        &self,
+        event: &E,
+        event_logsource: Option<&LogSource>,
+    ) -> Vec<EvaluationResult> {
         if self.bloom_prefilter {
-            self.evaluate_with_bloom_path(event)
+            self.evaluate_with_bloom_path(event, event_logsource)
         } else {
-            self.evaluate_no_bloom_path(event)
+            self.evaluate_no_bloom_path(event, event_logsource)
         }
     }
 
@@ -663,18 +714,18 @@ impl Engine {
         }
     }
 
-    fn evaluate_no_bloom_path<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
+    fn evaluate_no_bloom_path<E: Event>(
+        &self,
+        event: &E,
+        event_logsource: Option<&LogSource>,
+    ) -> Vec<EvaluationResult> {
         // Pass the zero-sized `NoBloom` lookup so this monomorphizes to the
         // same straight-line code as the pre-bloom engine while still
         // threading the configured match-detail level.
         let keep = self.cross_rule_ac_keep_mask(event);
-        // Extract the event logsource once when pruning is enabled; `None`
-        // (the default) leaves the loop's behaviour unchanged.
-        let event_logsource = self
-            .logsource_extractor
-            .as_ref()
-            .map(|ex| ex.extract(event));
-        let candidates = self.logsource_candidates(event, event_logsource.as_ref());
+        // `event_logsource` is `None` (the default) unless pruning is enabled,
+        // leaving the loop's behaviour unchanged.
+        let candidates = self.logsource_candidates(event, event_logsource);
         let mut results = Vec::new();
         for idx in candidates {
             if let Some(ref mask) = keep
@@ -683,7 +734,7 @@ impl Engine {
                 continue;
             }
             let rule = &self.rules[idx];
-            if let Some(ref event_ls) = event_logsource
+            if let Some(event_ls) = event_logsource
                 && !logsource_compatible(&rule.logsource, event_ls)
             {
                 continue;
@@ -703,16 +754,16 @@ impl Engine {
         results
     }
 
-    fn evaluate_with_bloom_path<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
+    fn evaluate_with_bloom_path<E: Event>(
+        &self,
+        event: &E,
+        event_logsource: Option<&LogSource>,
+    ) -> Vec<EvaluationResult> {
         let bloom = BloomCache::new(&self.bloom_index, event);
         let keep = self.cross_rule_ac_keep_mask(event);
-        // Extract the event logsource once when pruning is enabled; `None`
-        // (the default) leaves the loop's behaviour unchanged.
-        let event_logsource = self
-            .logsource_extractor
-            .as_ref()
-            .map(|ex| ex.extract(event));
-        let candidates = self.logsource_candidates(event, event_logsource.as_ref());
+        // `event_logsource` is `None` (the default) unless pruning is enabled,
+        // leaving the loop's behaviour unchanged.
+        let candidates = self.logsource_candidates(event, event_logsource);
         let mut results = Vec::new();
         for idx in candidates {
             if let Some(ref mask) = keep
@@ -721,7 +772,7 @@ impl Engine {
                 continue;
             }
             let rule = &self.rules[idx];
-            if let Some(ref event_ls) = event_logsource
+            if let Some(event_ls) = event_logsource
                 && !logsource_compatible(&rule.logsource, event_ls)
             {
                 continue;

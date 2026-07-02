@@ -215,6 +215,10 @@ pub struct DaemonConfig {
     /// pipeline-set bound to its schema, feeding a single shared correlation
     /// store. Bindings come from the `routing:` section of `schema_config`.
     pub schema_routing: bool,
+    /// Opt-in, gated per-schema rule partitioning: compile each platform-locked
+    /// per-schema engine with only the rules whose product can apply, cutting
+    /// the N-copies memory cost. Off by default.
+    pub schema_partition_rules: bool,
     /// Override for the `on_unknown` policy (`warn`/`drop`/`passthrough`/`error`).
     pub on_unknown: Option<String>,
     /// Enable conflict-based logsource pruning on the detection engine(s).
@@ -332,6 +336,7 @@ pub async fn run_daemon(config: DaemonConfig) {
         engine.set_routing(Some(build_routing_spec(
             config.schema_config.as_deref(),
             config.on_unknown.as_deref(),
+            config.schema_partition_rules,
         )));
         tracing::info!("Schema routing enabled");
     }
@@ -2364,6 +2369,9 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
         state.processor.logsource_pruned_total(),
         state.processor.logsource_absent_total(),
     );
+    state
+        .metrics
+        .update_schema_pruning_metrics(&state.processor.schema_pruning_summary());
 
     (
         [(
@@ -2815,6 +2823,7 @@ fn parse_on_unknown_policy(s: &str) -> OnUnknown {
 fn build_routing_spec(
     schema_config: Option<&Path>,
     on_unknown_override: Option<&str>,
+    partition_rules: bool,
 ) -> RoutingSpec {
     let (signatures, routing) = match schema_config {
         Some(path) => match load_schema_config(path) {
@@ -2857,6 +2866,7 @@ fn build_routing_spec(
         classifier,
         plan,
         pipeline_sets,
+        partition_rules,
     }
 }
 
@@ -2893,14 +2903,36 @@ async fn schemas_full(State(state): State<AppState>) -> Response {
         .map(|e| serde_json::json!({ "schema": e.schema, "count": e.count }))
         .collect();
 
+    let unknown_shapes: Vec<serde_json::Value> = snapshot
+        .unknown_shapes
+        .iter()
+        .map(|s| serde_json::json!({ "keys": s.keys, "count": s.count }))
+        .collect();
+
+    let routing_pruning: Vec<serde_json::Value> = state
+        .processor
+        .schema_pruning_summary()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "schema": p.schema,
+                "eligible": p.eligible,
+                "pruned": p.pruned,
+            })
+        })
+        .collect();
+
     let body = serde_json::json!({
         "summary": {
             "events_observed": snapshot.events_observed,
             "classified": snapshot.classified,
             "unknown": snapshot.unknown,
+            "ambiguous": snapshot.ambiguous,
             "uptime_seconds": snapshot.uptime_seconds,
         },
         "by_schema": by_schema,
+        "unknown_shapes": unknown_shapes,
+        "routing_pruning": routing_pruning,
     });
 
     (StatusCode::OK, Json(body)).into_response()

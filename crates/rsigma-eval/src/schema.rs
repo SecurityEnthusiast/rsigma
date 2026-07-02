@@ -31,9 +31,43 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use regex::Regex;
-use serde::Deserialize;
+use rsigma_parser::LogSource;
+use serde::{Deserialize, Serialize};
 
 use crate::event::Event;
+
+/// Numeric comparison operator for [`SchemaPredicate::Compare`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompareOp {
+    /// Strictly greater than.
+    Gt,
+    /// Greater than or equal.
+    Gte,
+    /// Strictly less than.
+    Lt,
+    /// Less than or equal.
+    Lte,
+}
+
+impl CompareOp {
+    fn apply(self, lhs: f64, rhs: f64) -> bool {
+        match self {
+            CompareOp::Gt => lhs > rhs,
+            CompareOp::Gte => lhs >= rhs,
+            CompareOp::Lt => lhs < rhs,
+            CompareOp::Lte => lhs <= rhs,
+        }
+    }
+
+    fn symbol(self) -> &'static str {
+        match self {
+            CompareOp::Gt => ">",
+            CompareOp::Gte => ">=",
+            CompareOp::Lt => "<",
+            CompareOp::Lte => "<=",
+        }
+    }
+}
 
 /// A single condition over a parsed event used to recognize a schema.
 ///
@@ -53,6 +87,25 @@ pub enum SchemaPredicate {
     Equals { field: String, value: String },
     /// The field is present and its string-coerced value matches `regex`.
     Matches { field: String, regex: Regex },
+    /// The field is present, numeric-coercible, and compares to `value` under
+    /// `op`. A non-numeric or absent field fails closed (no match).
+    Compare {
+        field: String,
+        op: CompareOp,
+        value: f64,
+    },
+    /// The field is present and its string-coerced value equals one of
+    /// `values` (ASCII case-insensitive). The multi-value form of `Equals`.
+    In { field: String, values: Vec<String> },
+    /// Both fields are present, string-coercible, and equal (case-insensitive).
+    FieldEqualsField { left: String, right: String },
+    /// Logical negation of the inner predicate.
+    Not(Box<SchemaPredicate>),
+    /// At least one of the inner predicates holds (logical OR).
+    Any(Vec<SchemaPredicate>),
+    /// All of the inner predicates hold (logical AND). Useful as a group under
+    /// `Not` or `Any`.
+    All(Vec<SchemaPredicate>),
     /// The event has at least one structured field. Used by the
     /// `generic_json` fallback to distinguish structured events from
     /// field-less ones (raw text, empty objects), which stay "unknown".
@@ -73,7 +126,68 @@ impl SchemaPredicate {
                 .get_field(field)
                 .and_then(|v| v.as_str().map(|s| regex.is_match(s.as_ref())))
                 .unwrap_or(false),
+            SchemaPredicate::Compare { field, op, value } => event
+                .get_field(field)
+                .and_then(|v| v.as_f64())
+                .map(|n| op.apply(n, *value))
+                .unwrap_or(false),
+            SchemaPredicate::In { field, values } => event
+                .get_field(field)
+                .and_then(|v| {
+                    v.as_str().map(|s| {
+                        values
+                            .iter()
+                            .any(|val| s.as_ref().eq_ignore_ascii_case(val))
+                    })
+                })
+                .unwrap_or(false),
+            SchemaPredicate::FieldEqualsField { left, right } => {
+                let l = event
+                    .get_field(left)
+                    .and_then(|v| v.as_str().map(|s| s.into_owned()));
+                let r = event
+                    .get_field(right)
+                    .and_then(|v| v.as_str().map(|s| s.into_owned()));
+                matches!((l, r), (Some(a), Some(b)) if a.eq_ignore_ascii_case(&b))
+            }
+            SchemaPredicate::Not(inner) => !inner.eval(event),
+            SchemaPredicate::Any(preds) => preds.iter().any(|p| p.eval(event)),
+            SchemaPredicate::All(preds) => preds.iter().all(|p| p.eval(event)),
             SchemaPredicate::HasAnyField => !event.field_keys().is_empty(),
+        }
+    }
+
+    /// A compact human description of the predicate, for `explain` output.
+    fn describe(&self) -> String {
+        match self {
+            SchemaPredicate::FieldPresent(f) => format!("field_present({f})"),
+            SchemaPredicate::FieldAbsent(f) => format!("field_absent({f})"),
+            SchemaPredicate::AnyOf(fs) => format!("any_of([{}])", fs.join(", ")),
+            SchemaPredicate::Equals { field, value } => format!("{field} == \"{value}\""),
+            SchemaPredicate::Matches { field, regex } => {
+                format!("{field} matches /{}/", regex.as_str())
+            }
+            SchemaPredicate::Compare { field, op, value } => {
+                format!("{field} {} {value}", op.symbol())
+            }
+            SchemaPredicate::In { field, values } => format!("{field} in [{}]", values.join(", ")),
+            SchemaPredicate::FieldEqualsField { left, right } => format!("{left} == {right}"),
+            SchemaPredicate::Not(inner) => format!("not({})", inner.describe()),
+            SchemaPredicate::Any(ps) => format!(
+                "any({})",
+                ps.iter()
+                    .map(|p| p.describe())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ),
+            SchemaPredicate::All(ps) => format!(
+                "all({})",
+                ps.iter()
+                    .map(|p| p.describe())
+                    .collect::<Vec<_>>()
+                    .join(" & ")
+            ),
+            SchemaPredicate::HasAnyField => "has_any_field".to_string(),
         }
     }
 }
@@ -98,6 +212,61 @@ impl SchemaSignature {
     fn matches<E: Event + ?Sized>(&self, event: &E) -> bool {
         self.predicates.iter().all(|p| p.eval(event))
     }
+
+    fn explain<E: Event + ?Sized>(&self, event: &E) -> SignatureExplanation {
+        let predicates: Vec<PredicateOutcome> = self
+            .predicates
+            .iter()
+            .map(|p| PredicateOutcome {
+                predicate: p.describe(),
+                matched: p.eval(event),
+            })
+            .collect();
+        let predicates_matched = predicates.iter().all(|p| p.matched);
+        SignatureExplanation {
+            name: self.name.clone(),
+            specificity: self.specificity,
+            predicates_matched,
+            predicates,
+        }
+    }
+}
+
+/// The outcome of one predicate within a [`SignatureExplanation`].
+#[derive(Debug, Clone, Serialize)]
+pub struct PredicateOutcome {
+    /// Human description of the predicate (for example `field_present(ecs.version)`).
+    pub predicate: String,
+    /// Whether the predicate held for the event.
+    pub matched: bool,
+}
+
+/// Per-signature detail produced by [`SchemaClassifier::explain`].
+#[derive(Debug, Clone, Serialize)]
+pub struct SignatureExplanation {
+    /// The signature's schema name.
+    pub name: String,
+    /// The signature's tie-breaking specificity.
+    pub specificity: u32,
+    /// Whether every predicate held (the signature matched).
+    pub predicates_matched: bool,
+    /// Per-predicate outcomes, in signature order.
+    pub predicates: Vec<PredicateOutcome>,
+}
+
+/// Why an event classified (or did not) as reported by
+/// [`SchemaClassifier::explain`]: the winning schema (if any) plus the
+/// signature that explains the outcome (the winning signature, or for an
+/// unknown event the closest near-miss).
+#[derive(Debug, Clone, Serialize)]
+pub struct SchemaExplanation {
+    /// The classified schema name, or `None` when the event matched none.
+    pub matched: Option<String>,
+    /// The winning signature's specificity, when matched.
+    pub specificity: Option<u32>,
+    /// The explaining signature: the winner when matched, otherwise the
+    /// highest-scoring near-miss (most predicates passing).
+    pub signature: Option<SignatureExplanation>,
 }
 
 /// The result of classifying an event: the matched schema name and the
@@ -155,6 +324,34 @@ impl SchemaClassifier {
             })
     }
 
+    /// Classify and also report ambiguity: `true` when another signature with a
+    /// different name matches at the same (winning) specificity, so the winner
+    /// was chosen by the name tie-break rather than by specificity. Ambiguity
+    /// signals that routing intent may be nondeterministic and a signature
+    /// wants a distinguishing predicate or a specificity bump.
+    pub fn classify_with_ambiguity<E: Event + ?Sized>(
+        &self,
+        event: &E,
+    ) -> (Option<SchemaMatch>, bool) {
+        // Signatures are sorted specificity-descending, so the first match is
+        // the winner and any following match with equal specificity but a
+        // different name is a genuine tie.
+        let mut matching = self.signatures.iter().filter(|s| s.matches(event));
+        let Some(winner) = matching.next() else {
+            return (None, false);
+        };
+        let ambiguous = matching
+            .take_while(|s| s.specificity == winner.specificity)
+            .any(|s| s.name != winner.name);
+        (
+            Some(SchemaMatch {
+                name: winner.name.clone(),
+                specificity: winner.specificity,
+            }),
+            ambiguous,
+        )
+    }
+
     /// All matching schema names for an event, most specific first. Useful for
     /// tuning signatures (seeing what else an event could match). Deduplicated
     /// by name while preserving order.
@@ -166,6 +363,37 @@ impl SchemaClassifier {
             }
         }
         out
+    }
+
+    /// Explain how an event classifies: the winning schema (if any) plus the
+    /// signature that explains it (the winning signature, or for an unknown
+    /// event the closest near-miss, the non-matching signature with the most
+    /// passing predicates). For tuning signatures.
+    pub fn explain<E: Event + ?Sized>(&self, event: &E) -> SchemaExplanation {
+        let mut best_near: Option<SignatureExplanation> = None;
+        let mut best_near_passing = 0usize;
+        for sig in &self.signatures {
+            let ex = sig.explain(event);
+            if ex.predicates_matched {
+                return SchemaExplanation {
+                    matched: Some(ex.name.clone()),
+                    specificity: Some(ex.specificity),
+                    signature: Some(ex),
+                };
+            }
+            // Signatures are sorted specificity-descending, so the first
+            // signature reaching a given passing count wins the tie-break.
+            let passing = ex.predicates.iter().filter(|p| p.matched).count();
+            if best_near.is_none() || passing > best_near_passing {
+                best_near_passing = passing;
+                best_near = Some(ex);
+            }
+        }
+        SchemaExplanation {
+            matched: None,
+            specificity: None,
+            signature: best_near,
+        }
     }
 
     /// Distinct schema names this classifier can produce, most specific first.
@@ -191,6 +419,49 @@ impl Default for SchemaClassifier {
 /// Sysmon, and the ArcSight CEF spec.
 fn builtin_signatures() -> Vec<SchemaSignature> {
     vec![
+        // ECS on Windows: ECS plus a Windows marker. More specific than plain
+        // `ecs` so it wins, and it aliases to `ecs` for routing (see
+        // `builtin_schema_aliases`) while carrying an implied `product:
+        // windows` for logsource pruning.
+        SchemaSignature {
+            name: "ecs_windows".to_string(),
+            specificity: 105,
+            predicates: vec![
+                SchemaPredicate::FieldPresent("ecs.version".to_string()),
+                SchemaPredicate::Any(vec![
+                    SchemaPredicate::FieldPresent("winlog.channel".to_string()),
+                    SchemaPredicate::FieldPresent("winlog.event_id".to_string()),
+                    SchemaPredicate::Equals {
+                        field: "host.os.type".to_string(),
+                        value: "windows".to_string(),
+                    },
+                    SchemaPredicate::Equals {
+                        field: "os.type".to_string(),
+                        value: "windows".to_string(),
+                    },
+                ]),
+            ],
+        },
+        // ECS on Linux: ECS plus a Linux marker. Aliases to `ecs`, implies
+        // `product: linux`.
+        SchemaSignature {
+            name: "ecs_linux".to_string(),
+            specificity: 105,
+            predicates: vec![
+                SchemaPredicate::FieldPresent("ecs.version".to_string()),
+                SchemaPredicate::Any(vec![
+                    SchemaPredicate::Equals {
+                        field: "host.os.type".to_string(),
+                        value: "linux".to_string(),
+                    },
+                    SchemaPredicate::Equals {
+                        field: "os.type".to_string(),
+                        value: "linux".to_string(),
+                    },
+                    SchemaPredicate::FieldPresent("host.os.kernel".to_string()),
+                ]),
+            ],
+        },
         // ECS (Elastic Common Schema): `ecs.version` is the canonical marker.
         SchemaSignature {
             name: "ecs".to_string(),
@@ -266,6 +537,8 @@ fn builtin_signatures() -> Vec<SchemaSignature> {
 /// Distinct built-in schema names, most specific first.
 pub fn builtin_schema_names() -> Vec<&'static str> {
     vec![
+        "ecs_windows",
+        "ecs_linux",
         "ecs",
         "ocsf",
         "windows_eventlog",
@@ -273,6 +546,18 @@ pub fn builtin_schema_names() -> Vec<&'static str> {
         "cef",
         "generic_json",
     ]
+}
+
+/// Built-in schema aliases: a specialized schema that routes as another schema.
+///
+/// `ecs_windows` and `ecs_linux` are ECS specializations that carry a platform
+/// (and thus an implied logsource for pruning) but route as `ecs`, so an
+/// existing `ecs` binding still matches them.
+fn builtin_schema_aliases() -> HashMap<String, String> {
+    HashMap::from([
+        ("ecs_windows".to_string(), "ecs".to_string()),
+        ("ecs_linux".to_string(), "ecs".to_string()),
+    ])
 }
 
 // =============================================================================
@@ -306,9 +591,35 @@ pub struct FieldValueConfig {
     pub value: String,
 }
 
+/// A `{ field: ..., value: <number> }` pair used by the numeric comparison
+/// predicate forms (`gt`, `gte`, `lt`, `lte`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldNumberConfig {
+    pub field: String,
+    pub value: f64,
+}
+
+/// A `{ field: ..., values: [...] }` pair used by the `in` predicate form.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldValuesConfig {
+    pub field: String,
+    pub values: Vec<String>,
+}
+
+/// A `{ left: ..., right: ... }` pair used by the `field_equals_field` form.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldPairConfig {
+    pub left: String,
+    pub right: String,
+}
+
 /// A predicate as written in YAML: a single-key map, for example
 /// `field_present: ecs.version` or `equals: { field: type, value: alert }`.
-/// Exactly one form must be set per list entry.
+/// Exactly one form must be set per list entry. The `not`/`any`/`all` group
+/// forms nest predicate lists to express OR and NOT within one signature.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SchemaPredicateConfig {
@@ -327,6 +638,33 @@ pub struct SchemaPredicateConfig {
     /// `matches: { field: <field>, value: <regex> }`
     #[serde(default)]
     pub matches: Option<FieldValueConfig>,
+    /// `gt: { field: <field>, value: <number> }`
+    #[serde(default)]
+    pub gt: Option<FieldNumberConfig>,
+    /// `gte: { field: <field>, value: <number> }`
+    #[serde(default)]
+    pub gte: Option<FieldNumberConfig>,
+    /// `lt: { field: <field>, value: <number> }`
+    #[serde(default)]
+    pub lt: Option<FieldNumberConfig>,
+    /// `lte: { field: <field>, value: <number> }`
+    #[serde(default)]
+    pub lte: Option<FieldNumberConfig>,
+    /// `in: { field: <field>, values: [...] }`
+    #[serde(default, rename = "in")]
+    pub in_set: Option<FieldValuesConfig>,
+    /// `field_equals_field: { left: <field>, right: <field> }`
+    #[serde(default)]
+    pub field_equals_field: Option<FieldPairConfig>,
+    /// `not: <predicate>`
+    #[serde(default)]
+    pub not: Option<Box<SchemaPredicateConfig>>,
+    /// `any: [<predicate>, ...]`
+    #[serde(default)]
+    pub any: Option<Vec<SchemaPredicateConfig>>,
+    /// `all: [<predicate>, ...]`
+    #[serde(default)]
+    pub all: Option<Vec<SchemaPredicateConfig>>,
 }
 
 impl SchemaPredicateConfig {
@@ -362,17 +700,73 @@ impl SchemaPredicateConfig {
                 })?,
             });
         }
+        for (op, cfg) in [
+            (CompareOp::Gt, self.gt),
+            (CompareOp::Gte, self.gte),
+            (CompareOp::Lt, self.lt),
+            (CompareOp::Lte, self.lte),
+        ] {
+            if let Some(fv) = cfg {
+                set += 1;
+                chosen = Some(SchemaPredicate::Compare {
+                    field: fv.field,
+                    op,
+                    value: fv.value,
+                });
+            }
+        }
+        if let Some(fv) = self.in_set {
+            set += 1;
+            chosen = Some(SchemaPredicate::In {
+                field: fv.field,
+                values: fv.values,
+            });
+        }
+        if let Some(fp) = self.field_equals_field {
+            set += 1;
+            chosen = Some(SchemaPredicate::FieldEqualsField {
+                left: fp.left,
+                right: fp.right,
+            });
+        }
+        if let Some(inner) = self.not {
+            set += 1;
+            chosen = Some(SchemaPredicate::Not(Box::new(inner.build(schema_name)?)));
+        }
+        if let Some(list) = self.any {
+            set += 1;
+            chosen = Some(SchemaPredicate::Any(build_group(list, schema_name, "any")?));
+        }
+        if let Some(list) = self.all {
+            set += 1;
+            chosen = Some(SchemaPredicate::All(build_group(list, schema_name, "all")?));
+        }
         match (set, chosen) {
             (1, Some(p)) => Ok(p),
             (0, _) => Err(SchemaError::Parse(format!(
                 "schema '{schema_name}': a predicate has no condition (expected one of \
-                 field_present, field_absent, any_of, equals, matches)"
+                 field_present, field_absent, any_of, equals, matches, gt, gte, lt, lte, \
+                 in, field_equals_field, not, any, all)"
             ))),
             _ => Err(SchemaError::Parse(format!(
                 "schema '{schema_name}': a predicate sets multiple conditions; use one per list item"
             ))),
         }
     }
+}
+
+/// Build a non-empty list of sub-predicates for the `any`/`all` group forms.
+fn build_group(
+    list: Vec<SchemaPredicateConfig>,
+    schema_name: &str,
+    kind: &str,
+) -> Result<Vec<SchemaPredicate>, SchemaError> {
+    if list.is_empty() {
+        return Err(SchemaError::Parse(format!(
+            "schema '{schema_name}': '{kind}' needs at least one sub-predicate"
+        )));
+    }
+    list.into_iter().map(|p| p.build(schema_name)).collect()
 }
 
 /// A signature as written in YAML.
@@ -462,6 +856,98 @@ pub fn load_schema_config(
     parse_schema_config(&content)
 }
 
+/// Validate a parsed schema config for common authoring mistakes, returning a
+/// list of human-readable findings (empty means clean). Static checks only, no
+/// event data:
+///
+/// - duplicate user signatures (same name and identical predicates);
+/// - unreachable signatures shadowed by a strictly-higher-specificity
+///   signature whose predicates are a subset (so the shadowed one can never be
+///   the top match);
+/// - routing bindings referencing a schema no signature can produce;
+/// - duplicate routing bindings for the same schema.
+///
+/// Pipeline-name resolvability is checked by the caller (the CLI), which owns
+/// pipeline resolution.
+pub fn validate_schema_config(
+    user_signatures: &[SchemaSignature],
+    routing: Option<&RoutingConfig>,
+) -> Vec<String> {
+    let mut findings = Vec::new();
+
+    // The full effective signature set (built-ins plus user).
+    let mut all = builtin_signatures();
+    all.extend(user_signatures.iter().cloned());
+    let preds = |s: &SchemaSignature| -> Vec<String> {
+        s.predicates.iter().map(|p| p.describe()).collect()
+    };
+
+    // Duplicate user signatures (same name, identical predicate set).
+    for i in 0..user_signatures.len() {
+        for j in (i + 1)..user_signatures.len() {
+            if user_signatures[i].name == user_signatures[j].name
+                && preds(&user_signatures[i]) == preds(&user_signatures[j])
+            {
+                findings.push(format!(
+                    "duplicate signature '{}' with identical predicates",
+                    user_signatures[i].name
+                ));
+            }
+        }
+    }
+
+    // Unreachable (shadowed) signatures.
+    for b in &all {
+        let b_preds = preds(b);
+        for a in &all {
+            if a.name != b.name
+                && a.specificity > b.specificity
+                && !a.predicates.is_empty()
+                && preds(a).iter().all(|p| b_preds.contains(p))
+            {
+                findings.push(format!(
+                    "signature '{}' (specificity {}) is unreachable: shadowed by '{}' (specificity {}) whose predicates are a subset",
+                    b.name, b.specificity, a.name, a.specificity
+                ));
+                break;
+            }
+        }
+    }
+
+    // Routing binding checks.
+    if let Some(routing) = routing {
+        let mut known: std::collections::HashSet<&str> =
+            builtin_schema_names().into_iter().collect();
+        for s in user_signatures {
+            known.insert(s.name.as_str());
+        }
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for binding in &routing.bindings {
+            if !known.contains(binding.schema.as_str()) {
+                findings.push(format!(
+                    "routing binding references unknown schema '{}' (no built-in or user signature produces it)",
+                    binding.schema
+                ));
+            }
+            if !seen.insert(binding.schema.as_str()) {
+                findings.push(format!(
+                    "duplicate routing binding for schema '{}'",
+                    binding.schema
+                ));
+            }
+        }
+        for (alias, canonical) in &routing.aliases {
+            if !known.contains(canonical.as_str()) {
+                findings.push(format!(
+                    "alias '{alias}' targets unknown schema '{canonical}' (no built-in or user signature produces it)"
+                ));
+            }
+        }
+    }
+
+    findings
+}
+
 // =============================================================================
 // Routing: schema -> pipeline-set bindings and the dispatch plan
 // =============================================================================
@@ -481,6 +967,34 @@ pub enum OnUnknown {
     Error,
 }
 
+/// The logsource a recognized schema implies, used to fill gaps in an event's
+/// logsource for conflict-based pruning when the event carries no explicit
+/// `product`/`service`/`category` field.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SchemaLogsource {
+    #[serde(default)]
+    pub product: Option<String>,
+    #[serde(default)]
+    pub service: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub custom: HashMap<String, String>,
+}
+
+impl SchemaLogsource {
+    fn to_logsource(&self) -> LogSource {
+        LogSource {
+            product: self.product.clone(),
+            service: self.service.clone(),
+            category: self.category.clone(),
+            custom: self.custom.clone(),
+            ..LogSource::default()
+        }
+    }
+}
+
 /// A `schema -> pipelines` binding: events recognized as `schema` are
 /// evaluated against the engine built from `pipelines`.
 #[derive(Debug, Clone, Deserialize)]
@@ -489,6 +1003,34 @@ pub struct SchemaBinding {
     /// Pipeline names or file paths, resolved by the caller.
     #[serde(default)]
     pub pipelines: Vec<String>,
+    /// Optional logsource this schema implies. Overrides any built-in default
+    /// for the schema and fills gaps in an event's logsource at pruning time.
+    #[serde(default)]
+    pub logsource: Option<SchemaLogsource>,
+}
+
+/// Built-in schema-to-logsource defaults for the platform-locked schemas.
+///
+/// Only schemas that unambiguously imply a platform are listed. The plain
+/// cross-platform schemas (`ecs`, `ocsf`, `cef`, `generic_json`) are omitted:
+/// they must not imply a product, since doing so would prune correct rules for
+/// the other platforms those schemas also carry. The `ecs_windows` and
+/// `ecs_linux` specializations do carry a platform (and route as `ecs` via
+/// [`builtin_schema_aliases`]).
+fn builtin_schema_logsource() -> HashMap<String, LogSource> {
+    fn ls(product: &str, service: Option<&str>) -> LogSource {
+        LogSource {
+            product: Some(product.to_string()),
+            service: service.map(str::to_string),
+            ..LogSource::default()
+        }
+    }
+    HashMap::from([
+        ("sysmon".to_string(), ls("windows", Some("sysmon"))),
+        ("windows_eventlog".to_string(), ls("windows", None)),
+        ("ecs_windows".to_string(), ls("windows", None)),
+        ("ecs_linux".to_string(), ls("linux", None)),
+    ])
 }
 
 /// The `routing:` section of a schema config file.
@@ -502,6 +1044,12 @@ pub struct RoutingConfig {
     /// unknown-fallback path. Empty means "rules with no pipeline".
     #[serde(default)]
     pub default_pipelines: Vec<String>,
+    /// User-defined schema aliases (`schema -> canonical schema`): an event
+    /// classified as an alias routes as though it were the canonical schema,
+    /// so one binding covers a family of related schemas. Merged over the
+    /// built-in `ecs_windows`/`ecs_linux` -> `ecs` aliases.
+    #[serde(default)]
+    pub aliases: HashMap<String, String>,
 }
 
 /// The decision for one event, produced by [`RoutingPlan::decide`].
@@ -528,6 +1076,14 @@ pub struct RoutingPlan {
     pipeline_sets: Vec<Vec<String>>,
     /// Recognized schema name -> pipeline-set index.
     schema_to_set: HashMap<String, usize>,
+    /// Recognized schema name -> the logsource it implies (built-in defaults
+    /// plus per-binding overrides). Used to fill gaps in an event's logsource
+    /// for conflict-based pruning.
+    schema_logsource: HashMap<String, LogSource>,
+    /// Schema aliases (`schema -> canonical schema`): built-in ECS platform
+    /// specializations plus any from the config. An aliased schema routes as
+    /// its canonical when the canonical is bound and the alias itself is not.
+    aliases: HashMap<String, String>,
     on_unknown: OnUnknown,
 }
 
@@ -538,6 +1094,14 @@ impl RoutingPlan {
         // Index 0 is always the default set.
         let mut pipeline_sets: Vec<Vec<String>> = vec![config.default_pipelines.clone()];
         let mut schema_to_set: HashMap<String, usize> = HashMap::new();
+        // Seed the built-in platform-locked defaults, then let bindings
+        // override or add per-schema logsources.
+        let mut schema_logsource = builtin_schema_logsource();
+        // Seed built-in aliases, then merge any from the config.
+        let mut aliases = builtin_schema_aliases();
+        for (alias, canonical) in &config.aliases {
+            aliases.insert(alias.clone(), canonical.clone());
+        }
 
         for binding in &config.bindings {
             let idx = pipeline_sets
@@ -548,11 +1112,16 @@ impl RoutingPlan {
                     pipeline_sets.len() - 1
                 });
             schema_to_set.insert(binding.schema.clone(), idx);
+            if let Some(ls) = &binding.logsource {
+                schema_logsource.insert(binding.schema.clone(), ls.to_logsource());
+            }
         }
 
         RoutingPlan {
             pipeline_sets,
             schema_to_set,
+            schema_logsource,
+            aliases,
             on_unknown: config.on_unknown,
         }
     }
@@ -568,6 +1137,78 @@ impl RoutingPlan {
         self.on_unknown
     }
 
+    /// The logsource a recognized schema implies, if any (built-in default or
+    /// binding override). Used by the router to fill gaps in an event's
+    /// logsource before conflict-based pruning.
+    pub fn schema_logsource(&self, schema: &str) -> Option<&LogSource> {
+        self.schema_logsource.get(schema)
+    }
+
+    /// The recognized schema names that carry an implied logsource (built-in
+    /// defaults plus binding overrides), sorted for deterministic output.
+    pub fn schemas_with_logsource(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.schema_logsource.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    /// For each pipeline-set index, the set of lowercased products whose rules
+    /// are safe to keep when partitioning per-schema engines, or `None` to keep
+    /// the full ruleset.
+    ///
+    /// A set is partitionable only when every schema that can route to it
+    /// (direct bindings plus aliases) implies a product; if any routing schema
+    /// is product-less (cross-platform), the set keeps all rules. The default
+    /// set (index 0) is never partitioned, because unbound and unknown events
+    /// route there and could be any product. Callers still apply their own
+    /// pipeline-safety check (a product-setting `change_logsource` disables
+    /// partitioning for that set).
+    pub fn set_product_partition(&self) -> Vec<Option<std::collections::HashSet<String>>> {
+        use std::collections::HashSet;
+        let n = self.pipeline_sets.len();
+        let mut out: Vec<Option<HashSet<String>>> = (0..n).map(|_| Some(HashSet::new())).collect();
+        if let Some(first) = out.get_mut(0) {
+            *first = None;
+        }
+
+        // (set index, schema) pairs: direct bindings, plus aliases whose
+        // canonical is bound and which are not themselves directly bound.
+        let mut routes: Vec<(usize, &str)> = self
+            .schema_to_set
+            .iter()
+            .map(|(s, &set)| (set, s.as_str()))
+            .collect();
+        for (alias, canonical) in &self.aliases {
+            if !self.schema_to_set.contains_key(alias)
+                && let Some(&set) = self.schema_to_set.get(canonical)
+            {
+                routes.push((set, alias.as_str()));
+            }
+        }
+
+        for (set, schema) in routes {
+            if set == 0 {
+                continue;
+            }
+            let product = self
+                .schema_logsource
+                .get(schema)
+                .and_then(|ls| ls.product.as_deref());
+            let Some(slot) = out.get_mut(set) else {
+                continue;
+            };
+            match product {
+                Some(p) => {
+                    if let Some(products) = slot {
+                        products.insert(p.to_ascii_lowercase());
+                    }
+                }
+                None => *slot = None,
+            }
+        }
+        out
+    }
+
     /// Decide how to route an event given its classified schema (or `None`
     /// when nothing matched).
     pub fn decide(&self, schema: Option<&str>) -> RouteDecision {
@@ -577,6 +1218,22 @@ impl RoutingPlan {
                 set: self.schema_to_set[s],
                 unknown: false,
             },
+            // Recognized but unbound: route as the canonical schema if this is
+            // an alias whose canonical is bound (for example `ecs_windows` ->
+            // `ecs`), otherwise the default set. Not flagged unknown.
+            Some(s)
+                if self
+                    .aliases
+                    .get(s)
+                    .and_then(|canonical| self.schema_to_set.get(canonical))
+                    .is_some() =>
+            {
+                let canonical = &self.aliases[s];
+                RouteDecision::Evaluate {
+                    set: self.schema_to_set[canonical],
+                    unknown: false,
+                }
+            }
             // Recognized but unbound: the default set, not flagged unknown.
             Some(_) => RouteDecision::Evaluate {
                 set: 0,
@@ -608,6 +1265,21 @@ pub struct SchemaCountEntry {
     pub count: u64,
 }
 
+/// A redacted field-key shape of unknown events, for signature authoring.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownShapeEntry {
+    /// The sorted, deduplicated field keys of the unknown events (values are
+    /// never captured, only key names).
+    pub keys: Vec<String>,
+    /// Number of unknown events with this exact key shape since the last reset.
+    pub count: u64,
+}
+
+/// Maximum distinct unknown-event shapes retained, to bound memory.
+const UNKNOWN_SHAPE_CAP: usize = 200;
+/// Maximum field keys kept per shape, to bound a single shape's size.
+const UNKNOWN_SHAPE_MAX_KEYS: usize = 64;
+
 /// Immutable snapshot of a [`SchemaObserver`] at one moment.
 #[derive(Debug, Clone, Default)]
 pub struct SchemaObservation {
@@ -617,6 +1289,12 @@ pub struct SchemaObservation {
     pub classified: u64,
     /// Events that matched no signature since the last reset.
     pub unknown: u64,
+    /// Events where two different-name signatures tied at the winning
+    /// specificity since the last reset (the name tie-break decided routing).
+    pub ambiguous: u64,
+    /// Redacted field-key shapes of unknown events, most frequent first, to
+    /// help author signatures for what is currently unrecognized.
+    pub unknown_shapes: Vec<UnknownShapeEntry>,
     /// Total events observed since the last reset (`classified + unknown`).
     pub events_observed: u64,
     /// Lifetime total of classified events, ignoring resets. Monotonic, so it
@@ -624,6 +1302,8 @@ pub struct SchemaObservation {
     pub lifetime_classified: u64,
     /// Lifetime total of unknown events, ignoring resets. Monotonic.
     pub lifetime_unknown: u64,
+    /// Lifetime total of ambiguous classifications, ignoring resets. Monotonic.
+    pub lifetime_ambiguous: u64,
     /// Seconds since the observer was created (or last reset).
     pub uptime_seconds: f64,
 }
@@ -637,9 +1317,14 @@ pub struct SchemaObserver {
     classifier: SchemaClassifier,
     counts: Mutex<HashMap<String, u64>>,
     unknown: AtomicU64,
+    ambiguous: AtomicU64,
+    /// Redacted field-key shapes of unknown events (bounded by
+    /// [`UNKNOWN_SHAPE_CAP`]).
+    unknown_shapes: Mutex<HashMap<Vec<String>, u64>>,
     events_observed: AtomicU64,
     lifetime_classified: AtomicU64,
     lifetime_unknown: AtomicU64,
+    lifetime_ambiguous: AtomicU64,
     start: Mutex<Instant>,
 }
 
@@ -650,9 +1335,12 @@ impl SchemaObserver {
             classifier,
             counts: Mutex::new(HashMap::new()),
             unknown: AtomicU64::new(0),
+            ambiguous: AtomicU64::new(0),
+            unknown_shapes: Mutex::new(HashMap::new()),
             events_observed: AtomicU64::new(0),
             lifetime_classified: AtomicU64::new(0),
             lifetime_unknown: AtomicU64::new(0),
+            lifetime_ambiguous: AtomicU64::new(0),
             start: Mutex::new(Instant::now()),
         }
     }
@@ -666,7 +1354,12 @@ impl SchemaObserver {
     /// observer can be shared behind an `Arc`.
     pub fn observe<E: Event + ?Sized>(&self, event: &E) {
         self.events_observed.fetch_add(1, Ordering::Relaxed);
-        match self.classifier.classify(event) {
+        let (matched, ambiguous) = self.classifier.classify_with_ambiguity(event);
+        if ambiguous {
+            self.ambiguous.fetch_add(1, Ordering::Relaxed);
+            self.lifetime_ambiguous.fetch_add(1, Ordering::Relaxed);
+        }
+        match matched {
             Some(m) => {
                 self.lifetime_classified.fetch_add(1, Ordering::Relaxed);
                 let mut counts = self.counts.lock().expect("schema observer mutex poisoned");
@@ -675,7 +1368,25 @@ impl SchemaObserver {
             None => {
                 self.unknown.fetch_add(1, Ordering::Relaxed);
                 self.lifetime_unknown.fetch_add(1, Ordering::Relaxed);
+                self.record_unknown_shape(event);
             }
+        }
+    }
+
+    /// Record the redacted field-key shape of one unknown event, capped in both
+    /// distinct-shape count and per-shape key count.
+    fn record_unknown_shape<E: Event + ?Sized>(&self, event: &E) {
+        let mut keys: Vec<String> = event.field_keys().iter().map(|k| k.to_string()).collect();
+        keys.sort();
+        keys.dedup();
+        keys.truncate(UNKNOWN_SHAPE_MAX_KEYS);
+        let mut shapes = self
+            .unknown_shapes
+            .lock()
+            .expect("schema observer shapes mutex poisoned");
+        // Only add a new shape when under the cap; always count a known one.
+        if shapes.contains_key(&keys) || shapes.len() < UNKNOWN_SHAPE_CAP {
+            *shapes.entry(keys).or_insert(0) += 1;
         }
     }
 
@@ -692,14 +1403,32 @@ impl SchemaObserver {
         let classified: u64 = counts.values().sum();
         drop(counts);
         by_schema.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.schema.cmp(&b.schema)));
+
+        let shapes = self
+            .unknown_shapes
+            .lock()
+            .expect("schema observer shapes mutex poisoned");
+        let mut unknown_shapes: Vec<UnknownShapeEntry> = shapes
+            .iter()
+            .map(|(keys, count)| UnknownShapeEntry {
+                keys: keys.clone(),
+                count: *count,
+            })
+            .collect();
+        drop(shapes);
+        unknown_shapes.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.keys.cmp(&b.keys)));
+
         let unknown = self.unknown.load(Ordering::Relaxed);
         SchemaObservation {
             by_schema,
             classified,
             unknown,
+            ambiguous: self.ambiguous.load(Ordering::Relaxed),
+            unknown_shapes,
             events_observed: self.events_observed.load(Ordering::Relaxed),
             lifetime_classified: self.lifetime_classified.load(Ordering::Relaxed),
             lifetime_unknown: self.lifetime_unknown.load(Ordering::Relaxed),
+            lifetime_ambiguous: self.lifetime_ambiguous.load(Ordering::Relaxed),
             uptime_seconds: self
                 .start
                 .lock()
@@ -716,7 +1445,12 @@ impl SchemaObserver {
         let previous_classified: u64 = counts.values().sum();
         counts.clear();
         drop(counts);
+        self.unknown_shapes
+            .lock()
+            .expect("schema observer shapes mutex poisoned")
+            .clear();
         let previous_unknown = self.unknown.swap(0, Ordering::Relaxed);
+        self.ambiguous.store(0, Ordering::Relaxed);
         self.events_observed.store(0, Ordering::Relaxed);
         *self
             .start
@@ -733,6 +1467,11 @@ impl SchemaObserver {
     /// Lifetime unknown total, ignoring resets. Monotonic.
     pub fn lifetime_unknown(&self) -> u64 {
         self.lifetime_unknown.load(Ordering::Relaxed)
+    }
+
+    /// Lifetime ambiguous total, ignoring resets. Monotonic.
+    pub fn lifetime_ambiguous(&self) -> u64 {
+        self.lifetime_ambiguous.load(Ordering::Relaxed)
     }
 }
 
@@ -828,10 +1567,113 @@ mod tests {
     fn schema_names_lists_builtins_most_specific_first() {
         let classifier = SchemaClassifier::builtin();
         let names = classifier.schema_names();
-        assert_eq!(names.first(), Some(&"ecs"));
+        // The ECS platform specializations (specificity 105) sort ahead of
+        // plain `ecs` (100); the two 105s tie-break by name (ecs_linux first).
+        assert_eq!(names.first(), Some(&"ecs_linux"));
+        assert!(names.contains(&"ecs_windows"));
+        assert!(names.contains(&"ecs"));
         assert!(names.contains(&"generic_json"));
         // generic_json is the lowest-specificity, so it sorts last.
         assert_eq!(names.last(), Some(&"generic_json"));
+    }
+
+    #[test]
+    fn ecs_windows_specialization_classifies_and_aliases_to_ecs() {
+        // An ECS event carrying a Windows marker classifies as the more
+        // specific ecs_windows, not plain ecs.
+        let v = json!({"ecs.version": "8.11.0", "winlog": {"channel": "Security"}});
+        assert_eq!(classify(&v).as_deref(), Some("ecs_windows"));
+        // A plain ECS event (no platform marker) stays ecs.
+        let plain = json!({"ecs.version": "8.11.0", "process": {"command_line": "whoami"}});
+        assert_eq!(classify(&plain).as_deref(), Some("ecs"));
+
+        // ecs_windows implies product: windows for pruning, and aliases to ecs
+        // for routing, so an `ecs` binding matches an ecs_windows event.
+        let config = RoutingConfig {
+            on_unknown: OnUnknown::Warn,
+            default_pipelines: vec![],
+            aliases: HashMap::new(),
+            bindings: vec![SchemaBinding {
+                schema: "ecs".to_string(),
+                pipelines: vec!["ecs_windows".to_string()],
+                logsource: None,
+            }],
+        };
+        let plan = RoutingPlan::from_config(&config);
+        let ecs_set = match plan.decide(Some("ecs")) {
+            RouteDecision::Evaluate { set, .. } => set,
+            other => panic!("unexpected: {other:?}"),
+        };
+        // ecs_windows routes to the same set as ecs via the built-in alias.
+        assert_eq!(plan.decide(Some("ecs_windows")), plan.decide(Some("ecs")));
+        assert_ne!(ecs_set, 0, "ecs binding is a non-default set");
+        assert_eq!(
+            plan.schema_logsource("ecs_windows")
+                .and_then(|l| l.product.as_deref()),
+            Some("windows")
+        );
+    }
+
+    #[test]
+    fn user_alias_routes_as_canonical() {
+        let yaml = r#"
+schemas:
+  - name: my_win
+    specificity: 70
+    match:
+      - field_present: vendor.win_marker
+routing:
+  aliases:
+    my_win: ecs
+  bindings:
+    - schema: ecs
+      pipelines: [ecs_windows]
+"#;
+        let (_sigs, routing) = parse_schema_config(yaml).unwrap();
+        let plan = RoutingPlan::from_config(&routing.expect("routing"));
+        // my_win aliases to ecs, so it routes to the ecs binding's set.
+        assert_eq!(plan.decide(Some("my_win")), plan.decide(Some("ecs")));
+        assert!(matches!(
+            plan.decide(Some("my_win")),
+            RouteDecision::Evaluate { unknown: false, .. }
+        ));
+    }
+
+    #[test]
+    fn set_product_partition_only_for_platform_locked_sets() {
+        let config = RoutingConfig {
+            on_unknown: OnUnknown::Warn,
+            default_pipelines: vec![],
+            aliases: HashMap::new(),
+            bindings: vec![
+                SchemaBinding {
+                    schema: "sysmon".to_string(),
+                    pipelines: vec!["p_sysmon".to_string()],
+                    logsource: None,
+                },
+                SchemaBinding {
+                    schema: "ecs".to_string(),
+                    pipelines: vec!["p_ecs".to_string()],
+                    logsource: None,
+                },
+            ],
+        };
+        let plan = RoutingPlan::from_config(&config);
+        let part = plan.set_product_partition();
+        assert!(part[0].is_none(), "default set is never partitioned");
+
+        let set_of = |schema| match plan.decide(Some(schema)) {
+            RouteDecision::Evaluate { set, .. } => set,
+            other => panic!("unexpected: {other:?}"),
+        };
+        // sysmon set: only windows (platform-locked) -> partitionable.
+        let sysmon_set = set_of("sysmon");
+        assert_eq!(
+            part[sysmon_set].as_ref().map(|s| s.contains("windows")),
+            Some(true)
+        );
+        // ecs set: ecs is cross-platform (no implied product) -> keep all.
+        assert!(part[set_of("ecs")].is_none());
     }
 
     #[test]
@@ -899,6 +1741,166 @@ schemas:
         );
     }
 
+    /// Build a single-signature classifier from a `match:` YAML body.
+    fn classifier_from_match(match_body: &str) -> SchemaClassifier {
+        let yaml = format!("schemas:\n  - name: t\n    specificity: 70\n    match:\n{match_body}");
+        let sigs = parse_schema_signatures(&yaml).expect("parse");
+        SchemaClassifier::new(sigs)
+    }
+
+    fn matches_t(match_body: &str, event: &serde_json::Value) -> bool {
+        classifier_from_match(match_body)
+            .classify(&JsonEvent::borrow(event))
+            .is_some()
+    }
+
+    #[test]
+    fn numeric_comparisons() {
+        let body = "      - gte: { field: EventID, value: 4000 }\n";
+        assert!(matches_t(body, &json!({"EventID": 4688})));
+        assert!(matches_t(body, &json!({"EventID": 4000})));
+        assert!(!matches_t(body, &json!({"EventID": 1})));
+        // String-coercible numeric values work too.
+        assert!(matches_t(body, &json!({"EventID": "4688"})));
+        // A non-numeric field fails closed.
+        assert!(!matches_t(body, &json!({"EventID": "not-a-number"})));
+        // lt / gt / lte round out the operators.
+        assert!(matches_t(
+            "      - lt: { field: score, value: 10 }\n",
+            &json!({"score": 9.5})
+        ));
+        assert!(matches_t(
+            "      - gt: { field: score, value: 10 }\n",
+            &json!({"score": 10.1})
+        ));
+    }
+
+    #[test]
+    fn in_set_membership_is_case_insensitive() {
+        let body = "      - in: { field: event_type, values: [alert, alarm] }\n";
+        assert!(matches_t(body, &json!({"event_type": "ALERT"})));
+        assert!(matches_t(body, &json!({"event_type": "alarm"})));
+        assert!(!matches_t(body, &json!({"event_type": "info"})));
+        assert!(!matches_t(body, &json!({})));
+    }
+
+    #[test]
+    fn field_equals_field_compares_two_fields() {
+        let body = "      - field_equals_field: { left: a, right: b }\n";
+        assert!(matches_t(body, &json!({"a": "X", "b": "x"})));
+        assert!(!matches_t(body, &json!({"a": "X", "b": "y"})));
+        // A missing side fails closed.
+        assert!(!matches_t(body, &json!({"a": "X"})));
+    }
+
+    #[test]
+    fn recursive_not_any_all_groups() {
+        // any: OR of two field-presence predicates.
+        let any_body = "      - any:\n          - field_present: winlog.channel\n          - equals: { field: host.os.type, value: windows }\n";
+        assert!(matches_t(
+            any_body,
+            &json!({"winlog": {"channel": "Security"}})
+        ));
+        assert!(matches_t(
+            any_body,
+            &json!({"host": {"os": {"type": "windows"}}})
+        ));
+        assert!(!matches_t(any_body, &json!({"unrelated": 1})));
+
+        // not: negation of a presence predicate.
+        let not_body = "      - not: { field_present: ecs.version }\n";
+        assert!(matches_t(not_body, &json!({"CommandLine": "whoami"})));
+        assert!(!matches_t(not_body, &json!({"ecs.version": "8.0.0"})));
+
+        // all: nested AND, usable under not/any.
+        let all_body = "      - all:\n          - field_present: a\n          - field_present: b\n";
+        assert!(matches_t(all_body, &json!({"a": 1, "b": 2})));
+        assert!(!matches_t(all_body, &json!({"a": 1})));
+    }
+
+    #[test]
+    fn empty_group_is_rejected() {
+        let yaml = "schemas:\n  - name: t\n    match:\n      - any: []\n";
+        let err = parse_schema_signatures(yaml).unwrap_err();
+        assert!(
+            matches!(&err, SchemaError::Parse(m) if m.contains("'any' needs at least one")),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn predicate_with_two_conditions_is_rejected() {
+        let yaml = "schemas:\n  - name: t\n    match:\n      - field_present: a\n        field_absent: b\n";
+        let err = parse_schema_signatures(yaml).unwrap_err();
+        assert!(
+            matches!(&err, SchemaError::Parse(m) if m.contains("multiple conditions")),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn explain_reports_matched_signature() {
+        let cls = SchemaClassifier::builtin();
+        let v = json!({"ecs.version": "8.0.0"});
+        let ex = cls.explain(&JsonEvent::borrow(&v));
+        assert_eq!(ex.matched.as_deref(), Some("ecs"));
+        let sig = ex.signature.expect("signature");
+        assert!(sig.predicates_matched);
+        assert!(sig.predicates.iter().all(|p| p.matched));
+    }
+
+    #[test]
+    fn explain_reports_near_miss_for_unknown() {
+        // Drop generic_json so a structured non-match is genuinely unknown.
+        let sigs = builtin_signatures()
+            .into_iter()
+            .filter(|s| s.name != "generic_json")
+            .collect();
+        let cls = SchemaClassifier::new(sigs);
+        // Sysmon-ish but missing ProcessGuid: unknown, near-miss is sysmon.
+        let v = json!({"EventID": 1, "Image": "C:/cmd.exe"});
+        let ex = cls.explain(&JsonEvent::borrow(&v));
+        assert_eq!(ex.matched, None);
+        let sig = ex.signature.expect("near-miss");
+        assert_eq!(sig.name, "sysmon");
+        assert!(!sig.predicates_matched);
+        assert!(sig.predicates.iter().any(|p| !p.matched));
+    }
+
+    #[test]
+    fn validate_flags_unknown_binding_and_shadow() {
+        let yaml = r#"
+schemas:
+  - name: shadowed
+    specificity: 40
+    match:
+      - field_present: ecs.version
+      - field_present: extra.marker
+routing:
+  bindings:
+    - schema: ecs
+      pipelines: [ecs_windows]
+    - schema: nonexistent
+      pipelines: [x]
+"#;
+        let (sigs, routing) = parse_schema_config(yaml).unwrap();
+        let findings = validate_schema_config(&sigs, routing.as_ref());
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.contains("unknown schema 'nonexistent'")),
+            "findings: {findings:?}"
+        );
+        // `shadowed` needs ecs.version + extra.marker; the built-in ecs (spec
+        // 100) needs only ecs.version (a subset), so `shadowed` is unreachable.
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.contains("'shadowed'") && f.contains("unreachable")),
+            "findings: {findings:?}"
+        );
+    }
+
     #[test]
     fn observer_counts_per_schema_and_unknown() {
         let observer = SchemaObserver::builtin();
@@ -925,18 +1927,22 @@ schemas:
         let config = RoutingConfig {
             on_unknown: OnUnknown::Warn,
             default_pipelines: vec![],
+            aliases: HashMap::new(),
             bindings: vec![
                 SchemaBinding {
                     schema: "ecs".to_string(),
                     pipelines: vec!["ecs_windows".to_string()],
+                    logsource: None,
                 },
                 SchemaBinding {
                     schema: "winlogbeat".to_string(),
                     pipelines: vec!["ecs_windows".to_string()],
+                    logsource: None,
                 },
                 SchemaBinding {
                     schema: "sysmon".to_string(),
                     pipelines: vec!["sysmon".to_string()],
+                    logsource: None,
                 },
             ],
         };
@@ -960,9 +1966,11 @@ schemas:
         let config = RoutingConfig {
             on_unknown: OnUnknown::Warn,
             default_pipelines: vec![],
+            aliases: HashMap::new(),
             bindings: vec![SchemaBinding {
                 schema: "ecs".to_string(),
                 pipelines: vec!["ecs_windows".to_string()],
+                logsource: None,
             }],
         };
         let plan = RoutingPlan::from_config(&config);
@@ -994,6 +2002,7 @@ schemas:
         let base = |policy| RoutingConfig {
             on_unknown: policy,
             default_pipelines: vec![],
+            aliases: HashMap::new(),
             bindings: vec![],
         };
         assert_eq!(
@@ -1042,6 +2051,57 @@ routing:
     }
 
     #[test]
+    fn schema_logsource_builtin_defaults_and_overrides() {
+        // Built-in platform-locked defaults apply even without bindings.
+        let plan = RoutingPlan::from_config(&RoutingConfig::default());
+        let sysmon = plan.schema_logsource("sysmon").expect("sysmon default");
+        assert_eq!(sysmon.product.as_deref(), Some("windows"));
+        assert_eq!(sysmon.service.as_deref(), Some("sysmon"));
+        assert_eq!(
+            plan.schema_logsource("windows_eventlog")
+                .and_then(|l| l.product.as_deref()),
+            Some("windows")
+        );
+        // Cross-platform schemas imply nothing.
+        assert!(plan.schema_logsource("ecs").is_none());
+        assert!(plan.schema_logsource("cef").is_none());
+
+        // A binding can attach or override a schema's implied logsource.
+        let yaml = r#"
+schemas:
+  - name: ecs_windows
+    match:
+      - field_present: ecs.version
+      - field_present: winlog.channel
+routing:
+  bindings:
+    - schema: ecs_windows
+      pipelines: [ecs_windows]
+      logsource:
+        product: windows
+    - schema: sysmon
+      pipelines: [sysmon]
+      logsource:
+        product: windows
+        service: sysmon
+        custom:
+          tenant: acme
+"#;
+        let (_sigs, routing) = parse_schema_config(yaml).expect("parse");
+        let plan = RoutingPlan::from_config(&routing.expect("routing"));
+        assert_eq!(
+            plan.schema_logsource("ecs_windows")
+                .and_then(|l| l.product.as_deref()),
+            Some("windows")
+        );
+        let sysmon = plan.schema_logsource("sysmon").expect("sysmon override");
+        assert_eq!(
+            sysmon.custom.get("tenant").map(String::as_str),
+            Some("acme")
+        );
+    }
+
+    #[test]
     fn observer_reset_preserves_lifetime_counters() {
         let observer = SchemaObserver::builtin();
         observer.observe(&JsonEvent::borrow(&json!({"ecs.version": "8.0.0"})));
@@ -1057,5 +2117,62 @@ routing:
         // Lifetime totals survive the reset for the Prometheus bridge.
         assert_eq!(snap.lifetime_classified, 1);
         assert_eq!(snap.lifetime_unknown, 1);
+    }
+
+    #[test]
+    fn classify_with_ambiguity_flags_equal_specificity_ties() {
+        // Two different-name signatures at the same specificity that both match.
+        let sigs = vec![
+            SchemaSignature {
+                name: "alpha".to_string(),
+                specificity: 70,
+                predicates: vec![SchemaPredicate::FieldPresent("a".to_string())],
+            },
+            SchemaSignature {
+                name: "beta".to_string(),
+                specificity: 70,
+                predicates: vec![SchemaPredicate::FieldPresent("a".to_string())],
+            },
+        ];
+        let cls = SchemaClassifier::new(sigs);
+        let (m, ambiguous) = cls.classify_with_ambiguity(&JsonEvent::borrow(&json!({"a": 1})));
+        assert!(m.is_some());
+        assert!(
+            ambiguous,
+            "equal-specificity different-name match is ambiguous"
+        );
+        // A single match is not ambiguous.
+        let cls = SchemaClassifier::builtin();
+        let (_, ambiguous) =
+            cls.classify_with_ambiguity(&JsonEvent::borrow(&json!({"ecs.version": "8.0.0"})));
+        assert!(!ambiguous);
+    }
+
+    #[test]
+    fn observer_records_ambiguity_and_unknown_shapes() {
+        let sigs = vec![
+            SchemaSignature {
+                name: "alpha".to_string(),
+                specificity: 70,
+                predicates: vec![SchemaPredicate::FieldPresent("a".to_string())],
+            },
+            SchemaSignature {
+                name: "beta".to_string(),
+                specificity: 70,
+                predicates: vec![SchemaPredicate::FieldPresent("a".to_string())],
+            },
+        ];
+        let observer = SchemaObserver::new(SchemaClassifier::new(sigs));
+        observer.observe(&JsonEvent::borrow(&json!({"a": 1}))); // ambiguous, classified
+        observer.observe(&JsonEvent::borrow(&json!({"weird": 1, "shape": 2}))); // unknown
+        observer.observe(&JsonEvent::borrow(&json!({"shape": 3, "weird": 4}))); // same shape
+
+        let snap = observer.snapshot();
+        assert_eq!(snap.ambiguous, 1);
+        assert_eq!(snap.unknown, 2);
+        // Both unknown events share one redacted key shape [shape, weird].
+        assert_eq!(snap.unknown_shapes.len(), 1);
+        assert_eq!(snap.unknown_shapes[0].count, 2);
+        assert_eq!(snap.unknown_shapes[0].keys, vec!["shape", "weird"]);
     }
 }

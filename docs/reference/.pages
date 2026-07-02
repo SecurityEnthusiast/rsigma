@@ -1,5 +1,6 @@
 nav:
   - Lint Rules: lint-rules.md
+  - Schema Signatures: schema-signatures.md
   - Configuration: configuration.md
   - Output Formats: output.md
   - Backends: backends

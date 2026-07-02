@@ -63,6 +63,34 @@ eval:
     enabled: true
 ```
 
+## Custom dimensions
+
+Beyond the standard `product`/`service`/`category`, rules and events can carry custom logsource dimensions, and pruning conflicts on them the same way: a rule is skipped only when a custom key is set on both the rule and the event and the values differ. Configure extra dimensions with a `custom.<name>=...` entry in the field map or static override (bare non-standard keys remain an error, to catch typos):
+
+```bash
+# Read a custom `tenant` dimension from the event's `org` field.
+rsigma engine eval -r rules/ --logsource-routing --logsource-field-map custom.tenant=org -e @events.ndjson
+
+# Pin a static custom dimension for a single-tenant pipeline.
+rsigma engine daemon -r rules/ --input http --logsource-routing --event-logsource product=windows,custom.tenant=acme
+```
+
+In a config file, custom dimensions live under a `custom:` map:
+
+```yaml
+eval:
+  logsource_routing:
+    enabled: true
+    field_map:
+      custom:
+        tenant: org
+    event_logsource:
+      custom:
+        region: eu
+```
+
+When [schema routing](schema-routing.md#schema-derived-logsource) is also enabled, a recognized schema can supply the logsource (including custom dimensions) for events that carry no explicit field.
+
 ## Scaling and the index
 
 Pruning is backed by a product-partitioned rule index. The rules that the value index cannot narrow away (the always-evaluated set) are bucketed by `product`, so an event with product `P` iterates only the product-less bucket and the `P` bucket, never a conflicting bucket. `service` and `category` remain a cheap residual filter on the returned candidates. Evaluation of a product-tagged event against a ruleset split across products drops roughly in proportion to the conflicting fraction.
@@ -71,10 +99,11 @@ This is a scaling lever for large mixed-product rulesets, not a fix for low thro
 
 ## Observability
 
-The daemon exposes two counters (see [metrics](../reference/metrics.md)):
+The daemon exposes these metrics (see [metrics](../reference/metrics.md)):
 
 - `rsigma_rules_pruned_by_logsource_total`: always-evaluated rules skipped by product conflict.
 - `rsigma_events_without_logsource_total`: events with no extractable logsource, evaluated against every rule (fail-open visibility).
+- `rsigma_schema_rules_eligible{schema}` and `rsigma_schema_rules_pruned{schema}`: per-schema eligible-versus-pruned rule counts, set when [schema routing](schema-routing.md) is also active. `engine eval` prints the same per-schema summary at the end of a run.
 
 ## Guarantees
 

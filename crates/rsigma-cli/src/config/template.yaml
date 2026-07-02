@@ -204,6 +204,7 @@ daemon:
   schema:
     observe: false
     routing: false
+    # partition_rules: false   # gated: compile each platform-locked per-schema engine with only its applicable rules
     # config: ./schema.yml
     on_unknown: warn
 
@@ -221,8 +222,12 @@ daemon:
     #   product: product
     #   service: service
     #   category: category
+    #   custom:            # extra dimensions: dimension name -> event field name
+    #     tenant: org
     # event_logsource:
     #   product: windows
+    #   custom:            # extra dimensions: dimension name -> literal value
+    #     tenant: acme
     strict: false
 
   # NATS secrets (creds/token/password/nkey) are NOT configurable here by
@@ -243,6 +248,7 @@ eval:
   # has no effect here; eval has no schema observer.
   schema:
     routing: false
+    # partition_rules: false
     # config: ./schema.yml
     on_unknown: warn
   # Logsource-aware evaluation for `engine eval` (see daemon.logsource_routing).

@@ -19,7 +19,9 @@ This is a diagnostic for understanding a mixed dataset and for tuning schema sig
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-e, --event <EVENT>` | stdin | A single event as a JSON string, or `@path` to read NDJSON from a file. Without this flag, reads NDJSON from stdin. |
-| `--schema-config <PATH>` | unset | YAML file of user-defined schema signatures, merged over the built-ins. |
+| `--schema-config <PATH>` | unset | YAML file of user-defined schema signatures (and optional `routing:` bindings), merged over the built-ins. |
+| `--explain` | off | Show, per event, why it classified as it did: the matched signature's per-predicate pass/fail, or for an unknown event the closest near-miss. |
+| `--check` | off | Validate the `--schema-config` and exit (does not read events). Reports unreachable signatures, unknown or duplicate routing bindings, and missing pipeline files; exits non-zero on any finding. |
 
 The global [`--output-format`](../../reference/output.md) flag selects `json`, `ndjson`, `table`, `csv`, or `tsv`.
 
@@ -27,6 +29,8 @@ The global [`--output-format`](../../reference/output.md) flag selects `json`, `
 
 | Schema | Recognized by |
 |--------|---------------|
+| `ecs_windows` | `ecs.version` present plus a Windows marker (`winlog.*`, `host.os.type: windows`). Implies `product: windows`; routes as `ecs`. |
+| `ecs_linux` | `ecs.version` present plus a Linux marker (`host.os.type: linux`, `host.os.kernel`). Implies `product: linux`; routes as `ecs`. |
 | `ecs` | `ecs.version` present |
 | `ocsf` | `class_uid` and `metadata.version` present |
 | `windows_eventlog` | `Event.System.EventID` or `Event.System.Provider` present (rendered EVTX) |
@@ -54,7 +58,30 @@ schemas:
           field: message
           value: "^CEF:\\d"
       - field_absent: ecs.version
+      - gte: { field: severity, value: 3 }
+      - in: { field: action, values: [alert, block] }
+      - any:
+          - field_present: winlog.channel
+          - equals: { field: host.os.type, value: windows }
 ```
+
+The full grammar, every predicate form (including the numeric, set-membership, cross-field, and `not`/`any`/`all` group forms), and their exact semantics are in the [Schema Signatures reference](../../reference/schema-signatures.md).
+
+## Explaining and validating
+
+`--explain` prints, per event, why it classified as it did, the matched signature's predicates or the closest near-miss for an unknown event:
+
+```bash
+rsigma engine classify -e '{"EventID":1,"Image":"C:/cmd.exe"}' --explain
+```
+
+`--check` statically validates a config (unreachable signatures, unknown or duplicate routing bindings, missing pipeline files) and exits non-zero on findings, for CI:
+
+```bash
+rsigma engine classify --check --schema-config schemas.yml
+```
+
+When the config has a `routing:` section, classify also shows, per event, which pipeline-set it would route to, a dry-run of [schema routing](../../guide/schema-routing.md) without loading rules.
 
 ## Examples
 
