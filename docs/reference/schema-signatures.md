@@ -18,7 +18,9 @@ schemas:
 
 When several signatures match one event, the highest `specificity` wins; ties break by name (ascending) for determinism. A tie between two different-name signatures at the winning specificity is reported as ambiguous by `engine classify` and the `rsigma_events_ambiguous_schema_total` daemon counter, since the name tie-break, not the specificity, decided the result.
 
-User signatures default to specificity 50. The built-ins are `ecs` (100), `ocsf` (95), `windows_eventlog` (90), `sysmon` (88 and 80), `cef` (85), and `generic_json` (0, the structured-event fallback). Set a user signature above 100 to win over a built-in, or below the built-ins to act only as a fallback.
+User signatures default to specificity 50. The built-ins are `ecs_windows` and `ecs_linux` (105), `ecs` (100), `ocsf` (95), `windows_eventlog` (90), `sysmon` (88 and 80), `cef` (85), and `generic_json` (0, the structured-event fallback). Set a user signature above 105 to win over a built-in, or below the built-ins to act only as a fallback.
+
+The `ecs_windows` and `ecs_linux` specializations recognize an ECS event that also carries a platform marker, so they win over plain `ecs` and can attach a platform-specific implied logsource. They are aliases of `ecs` for routing (see [schema aliases](../guide/schema-routing.md#schema-aliases)), so an existing `ecs` binding still matches them.
 
 ## Field names
 
@@ -57,16 +59,16 @@ Each list item under `match` is exactly one predicate. Setting more than one for
 
 ```yaml
 schemas:
-  - name: ecs_windows
-    specificity: 105
+  - name: my_vendor_windows
+    specificity: 110
     match:
-      - field_present: ecs.version
+      - field_present: vendor.id
       - any:
           - field_present: winlog.channel
           - equals: { field: host.os.type, value: windows }
 ```
 
-This recognizes ECS events that also carry a Windows marker, letting [schema-derived logsource pruning](../guide/schema-routing.md#schema-derived-logsource) attach `product: windows` to them.
+This recognizes a vendor schema that also carries a Windows marker; bind it with an implied `logsource:` (or alias it) so [schema-derived logsource pruning](../guide/schema-routing.md#schema-derived-logsource) attaches `product: windows`. The built-in `ecs_windows`/`ecs_linux` signatures do exactly this for ECS.
 
 ## Expressiveness ceiling
 

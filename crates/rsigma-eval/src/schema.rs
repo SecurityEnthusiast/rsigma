@@ -419,6 +419,49 @@ impl Default for SchemaClassifier {
 /// Sysmon, and the ArcSight CEF spec.
 fn builtin_signatures() -> Vec<SchemaSignature> {
     vec![
+        // ECS on Windows: ECS plus a Windows marker. More specific than plain
+        // `ecs` so it wins, and it aliases to `ecs` for routing (see
+        // `builtin_schema_aliases`) while carrying an implied `product:
+        // windows` for logsource pruning.
+        SchemaSignature {
+            name: "ecs_windows".to_string(),
+            specificity: 105,
+            predicates: vec![
+                SchemaPredicate::FieldPresent("ecs.version".to_string()),
+                SchemaPredicate::Any(vec![
+                    SchemaPredicate::FieldPresent("winlog.channel".to_string()),
+                    SchemaPredicate::FieldPresent("winlog.event_id".to_string()),
+                    SchemaPredicate::Equals {
+                        field: "host.os.type".to_string(),
+                        value: "windows".to_string(),
+                    },
+                    SchemaPredicate::Equals {
+                        field: "os.type".to_string(),
+                        value: "windows".to_string(),
+                    },
+                ]),
+            ],
+        },
+        // ECS on Linux: ECS plus a Linux marker. Aliases to `ecs`, implies
+        // `product: linux`.
+        SchemaSignature {
+            name: "ecs_linux".to_string(),
+            specificity: 105,
+            predicates: vec![
+                SchemaPredicate::FieldPresent("ecs.version".to_string()),
+                SchemaPredicate::Any(vec![
+                    SchemaPredicate::Equals {
+                        field: "host.os.type".to_string(),
+                        value: "linux".to_string(),
+                    },
+                    SchemaPredicate::Equals {
+                        field: "os.type".to_string(),
+                        value: "linux".to_string(),
+                    },
+                    SchemaPredicate::FieldPresent("host.os.kernel".to_string()),
+                ]),
+            ],
+        },
         // ECS (Elastic Common Schema): `ecs.version` is the canonical marker.
         SchemaSignature {
             name: "ecs".to_string(),
@@ -494,6 +537,8 @@ fn builtin_signatures() -> Vec<SchemaSignature> {
 /// Distinct built-in schema names, most specific first.
 pub fn builtin_schema_names() -> Vec<&'static str> {
     vec![
+        "ecs_windows",
+        "ecs_linux",
         "ecs",
         "ocsf",
         "windows_eventlog",
@@ -501,6 +546,18 @@ pub fn builtin_schema_names() -> Vec<&'static str> {
         "cef",
         "generic_json",
     ]
+}
+
+/// Built-in schema aliases: a specialized schema that routes as another schema.
+///
+/// `ecs_windows` and `ecs_linux` are ECS specializations that carry a platform
+/// (and thus an implied logsource for pruning) but route as `ecs`, so an
+/// existing `ecs` binding still matches them.
+fn builtin_schema_aliases() -> HashMap<String, String> {
+    HashMap::from([
+        ("ecs_windows".to_string(), "ecs".to_string()),
+        ("ecs_linux".to_string(), "ecs".to_string()),
+    ])
 }
 
 // =============================================================================
@@ -879,6 +936,13 @@ pub fn validate_schema_config(
                 ));
             }
         }
+        for (alias, canonical) in &routing.aliases {
+            if !known.contains(canonical.as_str()) {
+                findings.push(format!(
+                    "alias '{alias}' targets unknown schema '{canonical}' (no built-in or user signature produces it)"
+                ));
+            }
+        }
     }
 
     findings
@@ -947,10 +1011,12 @@ pub struct SchemaBinding {
 
 /// Built-in schema-to-logsource defaults for the platform-locked schemas.
 ///
-/// Only schemas that unambiguously imply a platform are listed. Cross-platform
-/// schemas (`ecs`, `ocsf`, `cef`, `generic_json`) are intentionally omitted:
+/// Only schemas that unambiguously imply a platform are listed. The plain
+/// cross-platform schemas (`ecs`, `ocsf`, `cef`, `generic_json`) are omitted:
 /// they must not imply a product, since doing so would prune correct rules for
-/// the other platforms those schemas also carry.
+/// the other platforms those schemas also carry. The `ecs_windows` and
+/// `ecs_linux` specializations do carry a platform (and route as `ecs` via
+/// [`builtin_schema_aliases`]).
 fn builtin_schema_logsource() -> HashMap<String, LogSource> {
     fn ls(product: &str, service: Option<&str>) -> LogSource {
         LogSource {
@@ -962,6 +1028,8 @@ fn builtin_schema_logsource() -> HashMap<String, LogSource> {
     HashMap::from([
         ("sysmon".to_string(), ls("windows", Some("sysmon"))),
         ("windows_eventlog".to_string(), ls("windows", None)),
+        ("ecs_windows".to_string(), ls("windows", None)),
+        ("ecs_linux".to_string(), ls("linux", None)),
     ])
 }
 
@@ -976,6 +1044,12 @@ pub struct RoutingConfig {
     /// unknown-fallback path. Empty means "rules with no pipeline".
     #[serde(default)]
     pub default_pipelines: Vec<String>,
+    /// User-defined schema aliases (`schema -> canonical schema`): an event
+    /// classified as an alias routes as though it were the canonical schema,
+    /// so one binding covers a family of related schemas. Merged over the
+    /// built-in `ecs_windows`/`ecs_linux` -> `ecs` aliases.
+    #[serde(default)]
+    pub aliases: HashMap<String, String>,
 }
 
 /// The decision for one event, produced by [`RoutingPlan::decide`].
@@ -1006,6 +1080,10 @@ pub struct RoutingPlan {
     /// plus per-binding overrides). Used to fill gaps in an event's logsource
     /// for conflict-based pruning.
     schema_logsource: HashMap<String, LogSource>,
+    /// Schema aliases (`schema -> canonical schema`): built-in ECS platform
+    /// specializations plus any from the config. An aliased schema routes as
+    /// its canonical when the canonical is bound and the alias itself is not.
+    aliases: HashMap<String, String>,
     on_unknown: OnUnknown,
 }
 
@@ -1019,6 +1097,11 @@ impl RoutingPlan {
         // Seed the built-in platform-locked defaults, then let bindings
         // override or add per-schema logsources.
         let mut schema_logsource = builtin_schema_logsource();
+        // Seed built-in aliases, then merge any from the config.
+        let mut aliases = builtin_schema_aliases();
+        for (alias, canonical) in &config.aliases {
+            aliases.insert(alias.clone(), canonical.clone());
+        }
 
         for binding in &config.bindings {
             let idx = pipeline_sets
@@ -1038,6 +1121,7 @@ impl RoutingPlan {
             pipeline_sets,
             schema_to_set,
             schema_logsource,
+            aliases,
             on_unknown: config.on_unknown,
         }
     }
@@ -1077,6 +1161,22 @@ impl RoutingPlan {
                 set: self.schema_to_set[s],
                 unknown: false,
             },
+            // Recognized but unbound: route as the canonical schema if this is
+            // an alias whose canonical is bound (for example `ecs_windows` ->
+            // `ecs`), otherwise the default set. Not flagged unknown.
+            Some(s)
+                if self
+                    .aliases
+                    .get(s)
+                    .and_then(|canonical| self.schema_to_set.get(canonical))
+                    .is_some() =>
+            {
+                let canonical = &self.aliases[s];
+                RouteDecision::Evaluate {
+                    set: self.schema_to_set[canonical],
+                    unknown: false,
+                }
+            }
             // Recognized but unbound: the default set, not flagged unknown.
             Some(_) => RouteDecision::Evaluate {
                 set: 0,
@@ -1410,10 +1510,76 @@ mod tests {
     fn schema_names_lists_builtins_most_specific_first() {
         let classifier = SchemaClassifier::builtin();
         let names = classifier.schema_names();
-        assert_eq!(names.first(), Some(&"ecs"));
+        // The ECS platform specializations (specificity 105) sort ahead of
+        // plain `ecs` (100); the two 105s tie-break by name (ecs_linux first).
+        assert_eq!(names.first(), Some(&"ecs_linux"));
+        assert!(names.contains(&"ecs_windows"));
+        assert!(names.contains(&"ecs"));
         assert!(names.contains(&"generic_json"));
         // generic_json is the lowest-specificity, so it sorts last.
         assert_eq!(names.last(), Some(&"generic_json"));
+    }
+
+    #[test]
+    fn ecs_windows_specialization_classifies_and_aliases_to_ecs() {
+        // An ECS event carrying a Windows marker classifies as the more
+        // specific ecs_windows, not plain ecs.
+        let v = json!({"ecs.version": "8.11.0", "winlog": {"channel": "Security"}});
+        assert_eq!(classify(&v).as_deref(), Some("ecs_windows"));
+        // A plain ECS event (no platform marker) stays ecs.
+        let plain = json!({"ecs.version": "8.11.0", "process": {"command_line": "whoami"}});
+        assert_eq!(classify(&plain).as_deref(), Some("ecs"));
+
+        // ecs_windows implies product: windows for pruning, and aliases to ecs
+        // for routing, so an `ecs` binding matches an ecs_windows event.
+        let config = RoutingConfig {
+            on_unknown: OnUnknown::Warn,
+            default_pipelines: vec![],
+            aliases: HashMap::new(),
+            bindings: vec![SchemaBinding {
+                schema: "ecs".to_string(),
+                pipelines: vec!["ecs_windows".to_string()],
+                logsource: None,
+            }],
+        };
+        let plan = RoutingPlan::from_config(&config);
+        let ecs_set = match plan.decide(Some("ecs")) {
+            RouteDecision::Evaluate { set, .. } => set,
+            other => panic!("unexpected: {other:?}"),
+        };
+        // ecs_windows routes to the same set as ecs via the built-in alias.
+        assert_eq!(plan.decide(Some("ecs_windows")), plan.decide(Some("ecs")));
+        assert_ne!(ecs_set, 0, "ecs binding is a non-default set");
+        assert_eq!(
+            plan.schema_logsource("ecs_windows")
+                .and_then(|l| l.product.as_deref()),
+            Some("windows")
+        );
+    }
+
+    #[test]
+    fn user_alias_routes_as_canonical() {
+        let yaml = r#"
+schemas:
+  - name: my_win
+    specificity: 70
+    match:
+      - field_present: vendor.win_marker
+routing:
+  aliases:
+    my_win: ecs
+  bindings:
+    - schema: ecs
+      pipelines: [ecs_windows]
+"#;
+        let (_sigs, routing) = parse_schema_config(yaml).unwrap();
+        let plan = RoutingPlan::from_config(&routing.expect("routing"));
+        // my_win aliases to ecs, so it routes to the ecs binding's set.
+        assert_eq!(plan.decide(Some("my_win")), plan.decide(Some("ecs")));
+        assert!(matches!(
+            plan.decide(Some("my_win")),
+            RouteDecision::Evaluate { unknown: false, .. }
+        ));
     }
 
     #[test]
@@ -1667,6 +1833,7 @@ routing:
         let config = RoutingConfig {
             on_unknown: OnUnknown::Warn,
             default_pipelines: vec![],
+            aliases: HashMap::new(),
             bindings: vec![
                 SchemaBinding {
                     schema: "ecs".to_string(),
@@ -1705,6 +1872,7 @@ routing:
         let config = RoutingConfig {
             on_unknown: OnUnknown::Warn,
             default_pipelines: vec![],
+            aliases: HashMap::new(),
             bindings: vec![SchemaBinding {
                 schema: "ecs".to_string(),
                 pipelines: vec!["ecs_windows".to_string()],
@@ -1740,6 +1908,7 @@ routing:
         let base = |policy| RoutingConfig {
             on_unknown: policy,
             default_pipelines: vec![],
+            aliases: HashMap::new(),
             bindings: vec![],
         };
         assert_eq!(

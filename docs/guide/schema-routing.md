@@ -79,7 +79,24 @@ eval:
 
 When schema routing is combined with [logsource routing](logsource-routing.md), the schema rsigma recognizes supplies the event's logsource for [conflict-based pruning](logsource-routing.md#conflict-based-not-subset), even when the event carries no explicit `product`/`service`/`category` field. So an event recognized as `sysmon` implies `product: windows, service: sysmon`, and a Cisco or Linux rule is pruned instead of false-positive matching on a mapped field.
 
-Built-in implied logsources cover only the platform-locked schemas: `sysmon` (windows/sysmon) and `windows_eventlog` (windows). The cross-platform schemas (`ecs`, `ocsf`, `cef`, `generic_json`) imply nothing, because they carry events from many platforms. For ECS specifically, either bind a narrower signature that carries the platform (an `ecs_windows` signature keyed on `ecs.version` plus a Windows marker) with an implied `logsource:`, or point the logsource extractor at the event's own OS field (`--logsource-field-map product=host.os.type`).
+Built-in implied logsources cover the platform-locked schemas: `sysmon` (windows/sysmon), `windows_eventlog` (windows), and the two ECS platform specializations `ecs_windows` (windows) and `ecs_linux` (linux). The plain cross-platform schemas (`ecs`, `ocsf`, `cef`, `generic_json`) imply nothing, because they carry events from many platforms.
+
+An ECS event that also carries a platform marker (`winlog.*`, `host.os.type`) classifies as `ecs_windows`/`ecs_linux` and gets the platform for pruning automatically. These specializations are aliases of `ecs` (see below), so an existing `ecs` binding still matches them, no config change needed. For a source ECS routes without a marker, point the logsource extractor at the event's own OS field instead (`--logsource-field-map product=host.os.type`).
+
+### Schema aliases
+
+An alias makes one schema route as another: an event classified as the alias is dispatched as though it were the canonical schema, so a single binding covers a family of related schemas. The built-in `ecs_windows` and `ecs_linux` alias to `ecs`. Declare your own under `routing.aliases`:
+
+```yaml
+routing:
+  aliases:
+    my_vendor_win: my_vendor
+  bindings:
+    - schema: my_vendor
+      pipelines: [my_vendor_map.yml]
+```
+
+Aliasing affects routing only: the alias keeps its own classification label and implied logsource (so `ecs_windows` still contributes `product: windows`), but binds where its canonical binds. A direct binding for the alias itself always takes precedence over the alias.
 
 Attach or override a schema's implied logsource per binding:
 

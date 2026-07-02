@@ -472,6 +472,7 @@ transformations:
         let config = RoutingConfig {
             on_unknown: OnUnknown::Warn,
             default_pipelines: vec![],
+            aliases: std::collections::HashMap::new(),
             bindings: bindings
                 .iter()
                 .map(|(s, ps)| crate::schema::SchemaBinding {
@@ -598,6 +599,7 @@ level: high
         let config = RoutingConfig {
             on_unknown: OnUnknown::Drop,
             default_pipelines: vec![],
+            aliases: std::collections::HashMap::new(),
             // Bind generic_json away so a plain event is truly unknown.
             bindings: vec![],
         };
