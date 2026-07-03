@@ -684,15 +684,25 @@ fn classify_stability(
 
 /// Field names that denote per-event bookkeeping rather than content.
 fn is_volatile_name(field: &str) -> bool {
-    let last = field.rsplit('.').next().unwrap_or(field).to_lowercase();
+    let segment = field.rsplit('.').next().unwrap_or(field);
+    let last = segment.to_lowercase();
     let normalized: String = last.chars().filter(|c| *c != '_' && *c != '-').collect();
     if last == "@timestamp" || normalized == "ts" {
         return true;
     }
-    if normalized.contains("time") || normalized.contains("date") {
+    // Match time/date at word granularity (camelCase and separators), so
+    // `UtcTime` and `created_date` are volatile while `runtime`, `update`, and
+    // `candidate` are not mistaken for timestamps.
+    if segment_words(segment)
+        .iter()
+        .any(|w| matches!(w.as_str(), "time" | "date" | "datetime" | "timestamp"))
+    {
         return true;
     }
-    if normalized.contains("guid") || normalized.contains("uuid") {
+    if normalized.contains("timestamp")
+        || normalized.contains("guid")
+        || normalized.contains("uuid")
+    {
         return true;
     }
     matches!(
@@ -714,6 +724,38 @@ fn is_volatile_name(field: &str) -> bool {
             | "executionprocessid"
             | "executionthreadid"
     )
+}
+
+/// Split a field segment into lowercase words on non-alphanumeric separators and
+/// camelCase boundaries, so `UtcTime` -> `[utc, time]` and `created_date` ->
+/// `[created, date]`, while `runtime` stays a single word.
+fn segment_words(segment: &str) -> Vec<String> {
+    let mut words: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut prev: Option<char> = None;
+    for c in segment.chars() {
+        if !c.is_ascii_alphanumeric() {
+            if !cur.is_empty() {
+                words.push(std::mem::take(&mut cur));
+            }
+            prev = None;
+            continue;
+        }
+        // A lower/digit to upper transition starts a new camelCase word.
+        if let Some(p) = prev
+            && c.is_ascii_uppercase()
+            && (p.is_ascii_lowercase() || p.is_ascii_digit())
+            && !cur.is_empty()
+        {
+            words.push(std::mem::take(&mut cur));
+        }
+        cur.push(c.to_ascii_lowercase());
+        prev = Some(c);
+    }
+    if !cur.is_empty() {
+        words.push(cur);
+    }
+    words
 }
 
 /// Values that look like timestamps, UUIDs, or epoch counters.
@@ -803,6 +845,11 @@ fn shared_prefix(values: &[&str], min_len: usize) -> Option<String> {
     for v in &values[1..] {
         len = len.min(common_prefix_len(first, v));
     }
+    // The byte overlap may end inside a multibyte character; snap down to a
+    // char boundary so slicing never panics on non-ASCII values.
+    while len > 0 && !first.is_char_boundary(len) {
+        len -= 1;
+    }
     // Don't call a full-equality overlap a "prefix".
     if len >= min_len && values.iter().any(|v| v.len() > len) {
         Some(first[..len].to_string())
@@ -817,8 +864,15 @@ fn shared_suffix(values: &[&str], min_len: usize) -> Option<String> {
     for v in &values[1..] {
         len = len.min(common_suffix_len(first, v));
     }
+    // Snap the suffix start up to a char boundary so the byte overlap never
+    // splits a multibyte character (which would panic when sliced).
+    let mut start = first.len() - len;
+    while start < first.len() && !first.is_char_boundary(start) {
+        start += 1;
+    }
+    let len = first.len() - start;
     if len >= min_len && values.iter().any(|v| v.len() > len) {
-        Some(first[first.len() - len..].to_string())
+        Some(first[start..].to_string())
     } else {
         None
     }
@@ -1562,6 +1616,40 @@ mod tests {
         assert!(is_epoch_number(1_751_500_000.0)); // seconds
         assert!(is_epoch_number(1_751_500_000_000.0)); // milliseconds
         assert!(!is_epoch_number(4688.0)); // an EventID is not an epoch
+    }
+
+    #[test]
+    fn time_date_name_match_is_word_bounded() {
+        // Real timestamp fields are volatile...
+        assert!(is_volatile_name("EventTime"));
+        assert!(is_volatile_name("event_date"));
+        assert!(is_volatile_name("datetime"));
+        // ...but content fields that merely contain "time"/"date" as a
+        // substring are not (regression: substring matching dropped these).
+        assert!(!is_volatile_name("runtime"));
+        assert!(!is_volatile_name("update"));
+        assert!(!is_volatile_name("candidate"));
+        assert!(!is_volatile_name("CommandLine"));
+        assert!(!is_volatile_name("validate_action"));
+    }
+
+    #[test]
+    fn shared_affix_never_splits_a_multibyte_char() {
+        // The common byte run ends inside 'é' (both é and è start 0xC3), so the
+        // prefix must snap to a char boundary rather than panic on the slice.
+        assert_eq!(
+            shared_prefix(&["abcé1", "abcè2"], 3).as_deref(),
+            Some("abc")
+        );
+        assert_eq!(shared_prefix(&["abcé1", "abcè2"], 4), None);
+        // Suffix: 'Ω' and 'é' both end in the continuation byte 0xA9, so the
+        // overlap starts mid-character; snapping up yields no suffix and no panic.
+        assert_eq!(shared_suffix(&["x\u{03a9}", "y\u{00e9}"], 1), None);
+        // A fully-shared multibyte affix is preserved intact.
+        assert_eq!(
+            shared_suffix(&["1éabc", "2éabc"], 3).as_deref(),
+            Some("éabc")
+        );
     }
 
     #[test]
