@@ -181,7 +181,12 @@ fn inline_exemplar_and_file_exemplars_work() {
     // @file NDJSON.
     let file = temp_file(".ndjson", SYSMON_EXEMPLARS);
     rsigma()
-        .args(["rule", "draft", "-e", &format!("@{}", file.path().display())])
+        .args([
+            "rule",
+            "draft",
+            "-e",
+            &format!("@{}", file.path().display()),
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("Image|endswith"));
@@ -212,7 +217,14 @@ fn logsource_and_title_overrides_win() {
 #[test]
 fn report_table_lists_volatile_fields_unselected() {
     rsigma()
-        .args(["rule", "draft", "--emit", "report", "--output-format", "table"])
+        .args([
+            "rule",
+            "draft",
+            "--emit",
+            "report",
+            "--output-format",
+            "table",
+        ])
         .write_stdin(SYSMON_EXEMPLARS)
         .assert()
         .success()

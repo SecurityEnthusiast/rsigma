@@ -4,6 +4,15 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Rule drafting from logs
+
+Turns exemplar events into a complete draft Sigma rule, the detection-authoring sibling of schema signature discovery: feed the malicious or noteworthy events (optionally contrasted against a baseline corpus of normal traffic) and get back paste-ready standard Sigma YAML to review, edit, and commit. The tool proposes, a human decides; metadata stays as explicit `TODO` placeholders.
+
+* **Drafting core** — a new `rsigma_eval::rule_draft` module profiles every field across the exemplars, drops volatile fields (timestamp-shaped names and values, UUID/GUID shapes, per-event counters, high-entropy unique values), scores the survivors by value stability times baseline rarity, infers a value form and modifier per field (plain equals, OR value list, `endswith`/`startswith` from a shared path tail/prefix, `contains`/`contains|all` from shared tokens with a minimum token length and baseline-generic rejection), escapes literal Sigma wildcards in observed values, splits exemplar variants into `selection_*` groups with `1 of selection_*` when the split is earned, and infers the logsource from the built-in schema classifier (a shared Sysmon EventID maps to its Sigma category). The core is pure and deterministic: the rule `id` is caller-supplied and repeated runs are byte-identical.
+* **Verified before emitted** — the draft is parsed and compiled through the real evaluation engine and must match every exemplar (fields that break the match are dropped, bounded by a minimum-field floor; below it the command errors instead of emitting an over-broad rule), the lint catalogue runs over the YAML with findings surfaced as warnings, and the baseline hit count and rate are reported as the estimated false-positive rate.
+* **`rule draft`** — the offline command: exemplars via inline JSON, `@file` NDJSON, `@file.evtx` (with the `evtx` feature), or stdin, plus `--baseline @file`. Flags: `--max-fields`, `--min-prevalence`, `--include-field`/`--exclude-field`, `--logsource-category`/`--logsource-product`/`--logsource-service`, `--title`, `--skip-baseline-eval`, and `--emit yaml|report` (default `yaml` prints the rule with the field report on stderr; `report` renders the full analysis through the global output formats). The UUIDv4 `id` is generated at the CLI layer.
+* **Docs** — a new `rule draft` CLI page and a Drafting Rules from Logs guide, including the schema-native note: the draft uses the exemplars' native field names, so evaluate it without a mapping pipeline.
+
 ### Schema signature discovery (#285)
 
 Turns the unknown-schema signal the schema tooling surfaces into ranked candidate declarative signatures, so operators stop hand-writing every signature from scratch. Pure-Rust, glass-box mining (clustering plus discriminative feature selection); the output is the same `schemas:` YAML the classifier already consumes, so every proposed predicate is human-readable and reviewable. Additive and opt-in throughout; no black-box model, and nothing is applied automatically.
