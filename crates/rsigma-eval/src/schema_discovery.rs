@@ -669,24 +669,22 @@ fn select_candidate(
 /// Choose the predicate for one field: a value predicate when the field is a
 /// safe low-cardinality marker (offline only), otherwise field-presence.
 fn field_predicate(cluster: &Cluster, field: &str, config: &DiscoveryConfig) -> SchemaPredicate {
-    if config.value_markers {
-        if let Some(acc) = cluster.values.get(field) {
-            if acc.usable(cluster.total, config.core_presence)
-                && acc.values.len() <= config.max_value_cardinality
-            {
-                let values: Vec<String> = acc.values.iter().cloned().collect();
-                if values.len() == 1 {
-                    return SchemaPredicate::Equals {
-                        field: field.to_string(),
-                        value: values.into_iter().next().unwrap(),
-                    };
-                }
-                return SchemaPredicate::In {
-                    field: field.to_string(),
-                    values,
-                };
-            }
+    if config.value_markers
+        && let Some(acc) = cluster.values.get(field)
+        && acc.usable(cluster.total, config.core_presence)
+        && acc.values.len() <= config.max_value_cardinality
+    {
+        let values: Vec<String> = acc.values.iter().cloned().collect();
+        if values.len() == 1 {
+            return SchemaPredicate::Equals {
+                field: field.to_string(),
+                value: values.into_iter().next().unwrap(),
+            };
         }
+        return SchemaPredicate::In {
+            field: field.to_string(),
+            values,
+        };
     }
     SchemaPredicate::FieldPresent(field.to_string())
 }
