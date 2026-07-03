@@ -117,6 +117,21 @@ pub(crate) fn cmd_draft(args: DraftArgs, ctx: OutputCtx) {
         None => Corpus::default(),
     };
 
+    // Unparseable input lines are skipped, but a draft mined from a partial
+    // corpus is misleading, so say so loudly regardless of the emit mode.
+    if exemplars.parse_errors > 0 {
+        eprintln!(
+            "warning: {} exemplar line(s) failed to parse as JSON and were skipped",
+            exemplars.parse_errors
+        );
+    }
+    if baseline.parse_errors > 0 {
+        eprintln!(
+            "warning: {} baseline line(s) failed to parse as JSON and were skipped",
+            baseline.parse_errors
+        );
+    }
+
     let config = DraftConfig {
         max_fields: args.max_fields,
         min_prevalence: args.min_prevalence,

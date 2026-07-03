@@ -135,6 +135,17 @@ pub enum DraftError {
         floor: usize,
         failing: Vec<usize>,
     },
+    /// A field forced via `include_fields` is absent from some exemplars, so
+    /// no draft containing it can match them. Forced fields are user intent
+    /// and are never dropped by relaxation.
+    #[error(
+        "forced field(s) {fields:?} are absent from exemplar(s) {failing:?}; \
+         remove the --include-field or drop those exemplars"
+    )]
+    ForcedFieldMismatch {
+        fields: Vec<String>,
+        failing: Vec<usize>,
+    },
     /// The emitted YAML failed to parse or compile (a bug, surfaced honestly).
     #[error("internal error: emitted draft failed to {stage}: {message}")]
     Internal { stage: String, message: String },
@@ -290,10 +301,10 @@ impl ValueForm {
         }
     }
 
-    /// Would this form match the given string value? Mirrors Sigma's default
-    /// case-insensitive matching; used only for baseline prevalence scoring.
-    fn matches_str(&self, value: &str) -> bool {
-        let lv = value.to_lowercase();
+    /// Would this form match the given already-lowercased string value?
+    /// Mirrors Sigma's default case-insensitive matching; used only for
+    /// baseline prevalence scoring.
+    fn matches_lower(&self, lv: &str) -> bool {
         match self {
             ValueForm::Exact(v) => lv == v.as_match_str().to_lowercase(),
             ValueForm::OneOf(vs) => vs.iter().any(|v| lv == v.as_match_str().to_lowercase()),
@@ -429,6 +440,28 @@ pub fn draft_rule<E: Event>(
         if failing.is_empty() {
             break (yaml, exemplars.len(), failing);
         }
+
+        // A field is a provable culprit when it is absent from a failing
+        // exemplar (the common case: partial-prevalence fields admitted by
+        // `min_prevalence`).
+        let absent_in_failing =
+            |i: usize| failing.iter().any(|&idx| profiles[i].values[idx].is_none());
+
+        // A forced field that provably breaks the match is a user decision we
+        // refuse to override; dropping other fields could never fix it, so
+        // error out immediately with the culprit named.
+        let forced_culprits: Vec<String> = selected
+            .iter()
+            .filter(|&&i| profiles[i].forced && absent_in_failing(i))
+            .map(|&i| profiles[i].field().to_string())
+            .collect();
+        if !forced_culprits.is_empty() {
+            return Err(DraftError::ForcedFieldMismatch {
+                fields: forced_culprits,
+                failing,
+            });
+        }
+
         if selected.len() <= floor {
             return Err(DraftError::CannotMatchExemplars {
                 matched: exemplars.len() - failing.len(),
@@ -437,8 +470,22 @@ pub fn draft_rule<E: Event>(
                 failing,
             });
         }
-        // Drop the lowest-ranked selected field and retry.
-        let dropped = selected.pop().expect("selected is non-empty");
+
+        // Drop the lowest-ranked non-forced culprit; when no field is provably
+        // at fault (a value-form edge case), shed the weakest non-forced field.
+        let drop_pos = selected
+            .iter()
+            .rposition(|&i| !profiles[i].forced && absent_in_failing(i))
+            .or_else(|| selected.iter().rposition(|&i| !profiles[i].forced));
+        let Some(pos) = drop_pos else {
+            return Err(DraftError::CannotMatchExemplars {
+                matched: exemplars.len() - failing.len(),
+                total: exemplars.len(),
+                floor,
+                failing,
+            });
+        };
+        let dropped = selected.remove(pos);
         warnings.push(format!(
             "relaxed: dropped field '{}' because the draft did not match every exemplar with it",
             profiles[dropped].field()
@@ -997,23 +1044,28 @@ fn apply_baseline<E: Event>(profile: &mut DraftFieldProfile, baseline: &[E], con
     let Some(form) = profile.form.clone() else {
         return;
     };
+    // Extract the field once per baseline event; the guard and prevalence
+    // counts below then run over the in-memory values instead of re-walking
+    // the events per token.
     let field = profile.field().to_string();
-    let match_count = |f: &ValueForm| {
-        baseline
-            .iter()
-            .filter(|e| {
-                e.get_field(&field)
-                    .and_then(|v| v.as_str().map(|s| f.matches_str(s.as_ref())))
-                    .unwrap_or(false)
-            })
-            .count()
+    let values: Vec<String> = baseline
+        .iter()
+        .filter_map(|e| {
+            e.get_field(&field)
+                .and_then(|v| v.as_str().map(|s| s.to_lowercase()))
+        })
+        .collect();
+    let match_count = |f: &ValueForm| values.iter().filter(|lv| f.matches_lower(lv)).count();
+    let token_is_generic = |t: &str| {
+        let lt = t.to_lowercase();
+        let hits = values.iter().filter(|lv| lv.contains(&lt)).count();
+        hits as f64 / baseline.len() as f64 > config.max_baseline_token_prevalence
     };
 
     // Token guard: drop `contains` tokens that are generic in the baseline.
     let guarded = match form {
         ValueForm::Contains(ref t) => {
-            let frac = match_count(&ValueForm::Contains(t.clone())) as f64 / baseline.len() as f64;
-            if frac > config.max_baseline_token_prevalence {
+            if token_is_generic(t) {
                 profile.form = None;
                 profile.stability = Stability::Volatile;
                 return;
@@ -1023,11 +1075,7 @@ fn apply_baseline<E: Event>(profile: &mut DraftFieldProfile, baseline: &[E], con
         ValueForm::ContainsAll(ref ts) => {
             let kept: Vec<String> = ts
                 .iter()
-                .filter(|t| {
-                    let frac = match_count(&ValueForm::Contains((*t).clone())) as f64
-                        / baseline.len() as f64;
-                    frac <= config.max_baseline_token_prevalence
-                })
+                .filter(|t| !token_is_generic(t))
                 .cloned()
                 .collect();
             match kept.len() {
@@ -2035,6 +2083,30 @@ mod tests {
             matches!(err, DraftError::CannotMatchExemplars { floor: 2, .. }),
             "expected the floor error, got: {err}"
         );
+    }
+
+    #[test]
+    fn forced_field_absent_from_exemplars_errors_immediately() {
+        // "extra" is forced but absent from half the exemplars: relaxation
+        // must not strip the useful fields around it, it must name the
+        // culprit and stop.
+        let mut exemplars: Vec<Value> = (0..2)
+            .map(|_| json!({"vendor": "acme", "action": "alert", "extra": "x"}))
+            .collect();
+        exemplars.extend((0..2).map(|_| json!({"vendor": "acme", "action": "alert"})));
+        let cfg = DraftConfig {
+            include_fields: vec!["extra".to_string()],
+            min_prevalence: 0.4,
+            ..fixed_config()
+        };
+        let err = draft(&exemplars, &[], &cfg).unwrap_err();
+        match err {
+            DraftError::ForcedFieldMismatch { fields, failing } => {
+                assert_eq!(fields, vec!["extra".to_string()]);
+                assert_eq!(failing, vec![2, 3]);
+            }
+            other => panic!("expected ForcedFieldMismatch, got: {other}"),
+        }
     }
 
     #[test]

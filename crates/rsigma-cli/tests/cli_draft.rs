@@ -234,6 +234,43 @@ fn report_table_lists_volatile_fields_unselected() {
 }
 
 #[test]
+fn unparseable_lines_warn_loudly() {
+    let input = format!("not json at all\n{SYSMON_EXEMPLARS}");
+    rsigma()
+        .args(["rule", "draft"])
+        .write_stdin(input)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "1 exemplar line(s) failed to parse",
+        ));
+}
+
+#[test]
+fn forced_field_absent_from_exemplars_names_the_culprit() {
+    let input = concat!(
+        r#"{"vendor":"acme","action":"alert","extra":"x"}"#,
+        "\n",
+        r#"{"vendor":"acme","action":"alert"}"#,
+        "\n",
+    );
+    rsigma()
+        .args([
+            "rule",
+            "draft",
+            "--include-field",
+            "extra",
+            "--min-prevalence",
+            "0.4",
+        ])
+        .write_stdin(input)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("forced field(s)"))
+        .stderr(predicate::str::contains("extra"));
+}
+
+#[test]
 fn missing_exemplar_file_fails() {
     rsigma()
         .args(["rule", "draft", "-e", "@/nonexistent/exemplars.ndjson"])
