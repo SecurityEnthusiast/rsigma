@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Rule drafting from logs
+### Rule drafting from logs (#286)
 
 Turns exemplar events into a complete draft Sigma rule, the detection-authoring sibling of schema signature discovery: feed the malicious or noteworthy events (optionally contrasted against a baseline corpus of normal traffic) and get back paste-ready standard Sigma YAML to review, edit, and commit. The tool proposes, a human decides; metadata stays as explicit `TODO` placeholders.
 
