@@ -23,7 +23,7 @@
 //!   values are retained in-process so candidates can carry `equals`/`in` value
 //!   predicates.
 //! - **Online** ([`mine_shapes`]): the daemon's already-captured
-//!   [`UnknownShapeEntry`](crate::UnknownShapeEntry) sample. That sample is
+//!   [`UnknownShapeEntry`] sample. That sample is
 //!   keys-only by construction (values are never retained), so online proposals
 //!   use presence predicates only and are tagged [`CandidateSource::KeysOnly`].
 //!

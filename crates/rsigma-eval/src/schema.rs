@@ -1369,7 +1369,8 @@ impl SchemaObserver {
         }
     }
 
-    /// Whether the discovery sampler ([`Self::unrecognized_shapes`]) is on.
+    /// Whether the discovery sampler (recording unrecognized-event shapes into
+    /// [`SchemaObservation::unrecognized_shapes`]) is on.
     pub fn discovery_sampling(&self) -> bool {
         self.discovery_sampling
     }
