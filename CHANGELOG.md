@@ -4,6 +4,14 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Benchmark refresh and two new suites
+
+Reran every benchmark suite on current main (Apple M4 Pro, 2026-07-05) and rewrote `BENCHMARKS.md` from the results, replacing the 0.9.0-era figures and their freshness disclaimer. The refreshed doc now also covers suites that existed but were never documented: the bloom prefilter rejection sweep, logsource pruning, and result serialization.
+
+* **New `schema` bench (`rsigma-eval`)** measures per-event `SchemaClassifier::classify` cost against the built-in signature set (early match, mid-list match, full-scan unknown, and the ambiguity-aware variant): 216-548 ns per event, so `--schema-routing` and `--observe-schemas` are effectively free at pipeline throughputs.
+* **New `enrichment` bench (`rsigma-runtime`)** measures the CPU-only floor of the post-evaluation enrichment pipeline with the `template` primitive over 1,000-result batches at one and four enrichers (~0.6-0.9 us per result per enricher).
+* **Fixed the `dynamic_pipelines` bench**, which panicked since `load_rules` gained fail-closed dynamic-source re-resolution: the engine-build and reload benchmarks now run inside the tokio runtime context they require.
+
 ### MCP sigma-cli delegation: reach the pySigma backends from `convert_rules` (#290)
 
 Extends the native-first sigma-cli delegation that `rsigma backend convert` gained in #241 to the MCP server: when `rsigma mcp serve` runs with the new `--allow-sigma-cli` flag (config key `mcp.allow_sigma_cli`), the `convert_rules` tool delegates any target without a native backend to an installed [sigma-cli](https://github.com/SigmaHQ/sigma-cli), so an agent can convert to `splunk`, `elasticsearch`, `kusto`, `qradar`, `loki`, and the rest of the pySigma backend set. The `rsigma_convert` library API stays native-only by design.
