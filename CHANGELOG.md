@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Benchmark refresh and two new suites
+### Benchmark refresh and two new suites (#291)
 
 Reran every benchmark suite on current main (Apple M4 Pro, 2026-07-05) and rewrote `BENCHMARKS.md` from the results, replacing the 0.9.0-era figures and their freshness disclaimer. The refreshed doc now also covers suites that existed but were never documented: the bloom prefilter rejection sweep, logsource pruning, and result serialization.
 
