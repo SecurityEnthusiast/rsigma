@@ -234,6 +234,65 @@ pub(crate) fn handler() -> RsigmaMcp {
     RsigmaMcp::new(None, LintConfig::default(), false)
 }
 
+/// A handler with sigma-cli delegation enabled and an optional rules root.
+#[cfg(test)]
+pub(crate) fn delegating_handler(root: Option<PathBuf>) -> RsigmaMcp {
+    RsigmaMcp::new(root, LintConfig::default(), true)
+}
+
+/// Run a future on a fresh current-thread runtime (the per-tool tests are
+/// plain `#[test]` functions).
+#[cfg(test)]
+pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(future)
+}
+
+/// Write a fake `sigma` executable into `dir` that prints `stdout_body`,
+/// prints `stderr_body` to stderr, sleeps `sleep_secs`, and exits with
+/// `exit_code`. Returns the executable path (a shell script on Unix, a `.cmd`
+/// batch file on Windows).
+#[cfg(test)]
+pub(crate) fn fake_sigma(
+    dir: &Path,
+    stdout_body: &str,
+    stderr_body: &str,
+    sleep_secs: u32,
+    exit_code: i32,
+) -> PathBuf {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("sigma");
+        let script = format!(
+            "#!/bin/sh\nprintf '%s' '{stdout_body}'\nprintf '%s' '{stderr_body}' >&2\nsleep {sleep_secs}\nexit {exit_code}\n"
+        );
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+    #[cfg(windows)]
+    {
+        let path = dir.join("sigma.cmd");
+        let mut script = String::from("@echo off\r\n");
+        if !stdout_body.is_empty() {
+            script.push_str(&format!("echo {stdout_body}\r\n"));
+        }
+        if !stderr_body.is_empty() {
+            script.push_str(&format!("echo {stderr_body} 1>&2\r\n"));
+        }
+        if sleep_secs > 0 {
+            script.push_str(&format!("ping -n {} 127.0.0.1 > nul\r\n", sleep_secs + 1));
+        }
+        script.push_str(&format!("exit /b {exit_code}\r\n"));
+        std::fs::write(&path, script).unwrap();
+        path
+    }
+}
+
 /// Wrap inline YAML as a [`shared::SourceInput`].
 #[cfg(test)]
 pub(crate) fn src(yaml: &str) -> shared::SourceInput {

@@ -27,10 +27,10 @@ use super::RsigmaMcp;
 use super::shared::{NATIVE_TARGETS, get_backend, invalid, json_result, try_native_backend};
 use crate::input::resolve_path;
 
-/// How long a delegated sigma-cli conversion may run before the subprocess is
+/// How long a delegated sigma-cli invocation may run before the subprocess is
 /// killed. pySigma cold-start alone can take seconds; a plugin-heavy convert
 /// over a rule directory can take tens of seconds.
-const DELEGATE_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const DELEGATE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Input for `convert_rules`.
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -41,7 +41,9 @@ pub struct ConvertInput {
     /// Path to a Sigma file or directory. Mutually exclusive with `yaml`.
     #[serde(default)]
     pub path: Option<String>,
-    /// Backend target: `postgres` (aliases `postgresql`, `pg`), `lynxdb`, or `fibratus`.
+    /// Backend target: `postgres` (aliases `postgresql`, `pg`), `lynxdb`, or
+    /// `fibratus` convert natively; any other target is delegated to an
+    /// installed sigma-cli when the server runs with `--allow-sigma-cli`.
     pub target: String,
     /// Backend-specific output format. Defaults to `default`.
     #[serde(default)]
@@ -332,8 +334,7 @@ impl RsigmaMcp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::{GOLDEN_RULE, VALID_RULE, handler};
-    use rsigma_parser::LintConfig;
+    use crate::tools::{GOLDEN_RULE, VALID_RULE, block_on, delegating_handler, fake_sigma, handler};
 
     fn convert_input(target: &str) -> ConvertInput {
         ConvertInput {
@@ -345,59 +346,6 @@ mod tests {
             options: HashMap::new(),
             skip_unsupported: false,
         }
-    }
-
-    /// A handler with delegation enabled and an optional rules root.
-    fn delegating_handler(root: Option<std::path::PathBuf>) -> RsigmaMcp {
-        RsigmaMcp::new(root, LintConfig::default(), true)
-    }
-
-    /// Write a fake `sigma` executable into `dir` that prints `stdout_body`,
-    /// prints `stderr_body` to stderr, sleeps `sleep_secs`, and exits with
-    /// `exit_code`. Returns the executable path.
-    fn fake_sigma(
-        dir: &std::path::Path,
-        stdout_body: &str,
-        stderr_body: &str,
-        sleep_secs: u32,
-        exit_code: i32,
-    ) -> std::path::PathBuf {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let path = dir.join("sigma");
-            let script = format!(
-                "#!/bin/sh\nprintf '%s' '{stdout_body}'\nprintf '%s' '{stderr_body}' >&2\nsleep {sleep_secs}\nexit {exit_code}\n"
-            );
-            std::fs::write(&path, script).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            path
-        }
-        #[cfg(windows)]
-        {
-            let path = dir.join("sigma.cmd");
-            let mut script = String::from("@echo off\r\n");
-            if !stdout_body.is_empty() {
-                script.push_str(&format!("echo {stdout_body}\r\n"));
-            }
-            if !stderr_body.is_empty() {
-                script.push_str(&format!("echo {stderr_body} 1>&2\r\n"));
-            }
-            if sleep_secs > 0 {
-                script.push_str(&format!("ping -n {} 127.0.0.1 > nul\r\n", sleep_secs + 1));
-            }
-            script.push_str(&format!("exit /b {exit_code}\r\n"));
-            std::fs::write(&path, script).unwrap();
-            path
-        }
-    }
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
     }
 
     #[test]
@@ -446,6 +394,17 @@ mod tests {
         insta::with_settings!({sort_maps => true}, {
             insta::assert_json_snapshot!("convert_rules_postgres", v);
         });
+    }
+
+    #[test]
+    fn delegation_off_unknown_target_error_mentions_allow_flag() {
+        // The regression guard for the default posture: an unknown target is
+        // still an invalid-params error, now carrying the enablement hint.
+        let err = block_on(handler().convert_rules(Parameters(convert_input("splunk"))))
+            .unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("unknown target 'splunk'"));
+        assert!(msg.contains("--allow-sigma-cli"));
     }
 
     #[test]

@@ -102,6 +102,11 @@ fn apply_mcp_config(args: &mut McpServeArgs) {
     if args.rules_dir.is_none() {
         args.rules_dir = mcp.rules_dir;
     }
+    // A bool flag cannot distinguish "absent" from "false", so the config only
+    // ever turns delegation on; an explicit --allow-sigma-cli already wins.
+    if !args.allow_sigma_cli && let Some(allow) = mcp.allow_sigma_cli {
+        args.allow_sigma_cli = allow;
+    }
 }
 
 /// Run the MCP server. Builds a multi-thread tokio runtime (same pattern as the

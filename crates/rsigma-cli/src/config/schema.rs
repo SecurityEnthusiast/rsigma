@@ -950,6 +950,11 @@ pub(crate) struct McpPartial {
     /// Default root for relative path-based tool calls (maps to `--rules-dir`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rules_dir: Option<PathBuf>,
+    /// Allow the `convert_rules` tool to delegate targets without a native
+    /// backend to an installed sigma-cli (maps to `--allow-sigma-cli`).
+    /// Defaults to off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_sigma_cli: Option<bool>,
 }
 
 impl Merge for McpPartial {
@@ -958,6 +963,7 @@ impl Merge for McpPartial {
             http_addr: over.http_addr.or(self.http_addr),
             lint_config: over.lint_config.or(self.lint_config),
             rules_dir: over.rules_dir.or(self.rules_dir),
+            allow_sigma_cli: over.allow_sigma_cli.or(self.allow_sigma_cli),
         }
     }
 }
@@ -1005,7 +1011,7 @@ mod tests {
     #[test]
     fn mcp_section_parses_and_merges() {
         let base: RsigmaConfigPartial = yaml_serde::from_str(
-            "mcp:\n  http_addr: 127.0.0.1:9100\n  rules_dir: /etc/rsigma/rules\n",
+            "mcp:\n  http_addr: 127.0.0.1:9100\n  rules_dir: /etc/rsigma/rules\n  allow_sigma_cli: true\n",
         )
         .expect("parses mcp section");
         let over: RsigmaConfigPartial =
@@ -1015,6 +1021,7 @@ mod tests {
         // higher layer wins per-field; untouched fields are preserved
         assert_eq!(mcp.http_addr.as_deref(), Some("127.0.0.1:9100"));
         assert_eq!(mcp.rules_dir, Some(PathBuf::from("/override/rules")));
+        assert_eq!(mcp.allow_sigma_cli, Some(true));
     }
 
     #[test]
