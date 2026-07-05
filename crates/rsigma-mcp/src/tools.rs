@@ -48,12 +48,21 @@ mod resolve_pipeline;
 mod shared;
 mod validate_rules;
 
+/// Maximum number of concurrent sigma-cli delegations, matching the
+/// `max_sessions: 2` convention the tap/tail surfaces chose.
+const DELEGATE_MAX_CONCURRENT: usize = 2;
+
 /// Shared, immutable server state behind the cloneable handler.
 struct State {
     /// Default root for relative path-based tool calls (`--rules-dir`).
     root: Option<PathBuf>,
     /// Lint configuration applied by `lint_rules` and `fix_rules`.
     lint_config: LintConfig,
+    /// Whether `convert_rules` may delegate unknown targets to an external
+    /// sigma-cli (`--allow-sigma-cli`). Off by default.
+    allow_sigma_cli: bool,
+    /// Bounds concurrent sigma-cli subprocesses across all sessions.
+    delegate_permits: tokio::sync::Semaphore,
 }
 
 /// The rsigma MCP handler. Cloned per request by rmcp; the real state lives
@@ -65,12 +74,18 @@ pub struct RsigmaMcp {
 }
 
 impl RsigmaMcp {
-    /// Build a handler with an optional default root for path-based calls and a
-    /// lint configuration.
-    pub fn new(root: Option<PathBuf>, lint_config: LintConfig) -> Self {
+    /// Build a handler with an optional default root for path-based calls, a
+    /// lint configuration, and the sigma-cli delegation switch
+    /// (`--allow-sigma-cli`; pass `false` for the previous behavior).
+    pub fn new(root: Option<PathBuf>, lint_config: LintConfig, allow_sigma_cli: bool) -> Self {
         Self {
             tool_router: Self::tool_router(),
-            state: Arc::new(State { root, lint_config }),
+            state: Arc::new(State {
+                root,
+                lint_config,
+                allow_sigma_cli,
+                delegate_permits: tokio::sync::Semaphore::new(DELEGATE_MAX_CONCURRENT),
+            }),
         }
     }
 
@@ -81,6 +96,16 @@ impl RsigmaMcp {
     /// The lint configuration applied by `lint_rules` and `fix_rules`.
     fn lint_config(&self) -> &LintConfig {
         &self.state.lint_config
+    }
+
+    /// Whether `convert_rules` may delegate unknown targets to sigma-cli.
+    fn allow_sigma_cli(&self) -> bool {
+        self.state.allow_sigma_cli
+    }
+
+    /// The semaphore bounding concurrent sigma-cli subprocesses.
+    fn delegate_permits(&self) -> &tokio::sync::Semaphore {
+        &self.state.delegate_permits
     }
 
     /// Combine the per-tool routers into the single router rmcp dispatches over.
@@ -105,9 +130,10 @@ impl RsigmaMcp {
 }
 
 impl Default for RsigmaMcp {
-    /// A handler with no path root and default lint configuration.
+    /// A handler with no path root, default lint configuration, and sigma-cli
+    /// delegation disabled.
     fn default() -> Self {
-        Self::new(None, LintConfig::default())
+        Self::new(None, LintConfig::default(), false)
     }
 }
 
@@ -201,10 +227,93 @@ fn reference_pairs_json(pairs: &[(&str, &str)]) -> Value {
 // module can reach them as `crate::tools::{handler, src, VALID_RULE,
 // GOLDEN_RULE}` without duplicating the bodies.
 
-/// A handler with no path root and default lint configuration.
+/// A handler with no path root, default lint configuration, and sigma-cli
+/// delegation disabled.
 #[cfg(test)]
 pub(crate) fn handler() -> RsigmaMcp {
-    RsigmaMcp::new(None, LintConfig::default())
+    RsigmaMcp::new(None, LintConfig::default(), false)
+}
+
+/// A handler with sigma-cli delegation enabled and an optional rules root.
+#[cfg(test)]
+pub(crate) fn delegating_handler(root: Option<PathBuf>) -> RsigmaMcp {
+    RsigmaMcp::new(root, LintConfig::default(), true)
+}
+
+/// Run a future on a fresh current-thread runtime (the per-tool tests are
+/// plain `#[test]` functions).
+///
+/// The runtime is shut down in the background: on Windows, tokio reads child
+/// pipes through blocking-pool operations that only finish at pipe EOF, and a
+/// killed `cmd.exe` fake can leave an orphaned grandchild holding the pipe
+/// (there is no process-tree kill), so a synchronous runtime drop could block
+/// until the orphan exits.
+#[cfg(test)]
+pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let output = runtime.block_on(future);
+    runtime.shutdown_background();
+    output
+}
+
+/// Write a fake `sigma` executable into `dir` that prints `stdout_body`,
+/// prints `stderr_body` to stderr, sleeps `sleep_secs`, and exits with
+/// `exit_code`. Returns the executable path (a shell script on Unix, a `.cmd`
+/// batch file on Windows).
+#[cfg(test)]
+pub(crate) fn fake_sigma(
+    dir: &Path,
+    stdout_body: &str,
+    stderr_body: &str,
+    sleep_secs: u32,
+    exit_code: i32,
+) -> PathBuf {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("sigma");
+        // `exec` replaces the shell with the sleeper so kill_on_drop
+        // terminates the actual sleeping process; a plain `sleep` would be a
+        // grandchild that survives the shell's death.
+        let tail = if sleep_secs > 0 {
+            format!("exec sleep {sleep_secs}")
+        } else {
+            format!("exit {exit_code}")
+        };
+        let script = format!(
+            "#!/bin/sh\nprintf '%s' '{stdout_body}'\nprintf '%s' '{stderr_body}' >&2\n{tail}\n"
+        );
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+    #[cfg(windows)]
+    {
+        let path = dir.join("sigma.cmd");
+        let mut script = String::from("@echo off\r\n");
+        if !stdout_body.is_empty() {
+            script.push_str(&format!("echo {stdout_body}\r\n"));
+        }
+        if !stderr_body.is_empty() {
+            script.push_str(&format!("echo {stderr_body} 1>&2\r\n"));
+        }
+        if sleep_secs > 0 {
+            // Fully detach the sleeper from our stdio pipes: ping must not
+            // inherit them, or an orphaned ping (kill_on_drop only kills
+            // cmd.exe, not the tree) keeps the pipes open and blocks the
+            // reader until it exits.
+            script.push_str(&format!(
+                "ping -n {} 127.0.0.1 > nul 2>&1 < nul\r\n",
+                sleep_secs + 1
+            ));
+        }
+        script.push_str(&format!("exit /b {exit_code}\r\n"));
+        std::fs::write(&path, script).unwrap();
+        path
+    }
 }
 
 /// Wrap inline YAML as a [`shared::SourceInput`].

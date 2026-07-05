@@ -24,13 +24,14 @@ The command is gated behind the opt-in `mcp` Cargo feature: build from source wi
 |------|---------|-------------|
 | `--lint-config <PATH>` | lint defaults | A lint config file (`.rsigma-lint.yml`) applied by the `lint_rules` tool (disabled rules, severity overrides, extra tag namespaces). Config key: `mcp.lint_config`. |
 | `--rules-dir <PATH>` | none | Default root directory for relative `path` arguments in tool calls, so an agent can reference rules by a path relative to a rules tree. Config key: `mcp.rules_dir`. |
+| `--allow-sigma-cli` | off | Allow the `convert_rules` tool to delegate targets without a native backend to an installed [sigma-cli](../../reference/backends/sigma-cli.md), reaching the full pySigma backend set. Delegated calls spawn a subprocess (60s timeout, at most 2 concurrent); `path` and file-based `pipelines` inputs stay confined to `--rules-dir` when it is set. Config key: `mcp.allow_sigma_cli`. |
 | `--http <ADDR>` | stdio | Serve over the Streamable HTTP transport on this address (e.g. `127.0.0.1:9100`) instead of stdio. The MCP endpoint is mounted at `/mcp`. Config key: `mcp.http_addr`. |
 | `--auth-token <TOKEN>` | none | Require this static bearer token on every HTTP request (`Authorization: Bearer <token>`); requests without it get `401`. Also read from `RSIGMA_MCP_AUTH_TOKEN`. Flag/env only: secrets are never read from config files. |
 | `--allow-plaintext` | off | Allow binding plaintext HTTP on a non-loopback address without TLS. Loopback binds never need it. |
 | `--tls-cert <PATH>` | none | TLS certificate (PEM) for the HTTP transport. Requires `--tls-key` and a build with the `daemon-tls` feature. |
 | `--tls-key <PATH>` | none | TLS private key (PEM) for the HTTP transport. Requires `--tls-cert`. |
 
-`--http`, `--lint-config`, and `--rules-dir` also resolve from the layered config (`mcp` section) and the `RSIGMA_MCP__*` environment layer; the auth token stays flag/env-only.
+`--http`, `--lint-config`, `--rules-dir`, and `--allow-sigma-cli` also resolve from the layered config (`mcp` section) and the `RSIGMA_MCP__*` environment layer; the auth token stays flag/env-only.
 
 The global flags (`--log-format`, `--quiet`, …) are accepted but stdout stays reserved for the MCP transport; use `--log-format` to send structured diagnostics to stderr.
 
@@ -43,14 +44,15 @@ The global flags (`--log-format`, `--quiet`, …) are accepted but stdout stays 
 | `lint_rules` | Lint rules; findings carry rule id, severity, line, and fix availability. |
 | `validate_rules` | Parse + compile + correlation checks, optional pipelines and source resolution. |
 | `evaluate_events` | Run events against rules (detections and correlations). |
-| `convert_rules` | Convert rules to a backend query (`postgres`/`lynxdb`/`fibratus`). |
-| `list_backends` | List conversion targets and their formats. |
+| `convert_rules` | Convert rules to a backend query (`postgres`/`lynxdb`/`fibratus` natively; other targets via sigma-cli with `--allow-sigma-cli`). |
+| `list_backends` | List conversion targets and their formats (plus installed sigma-cli targets with `--allow-sigma-cli`). |
 | `list_fields` | List the event fields rules reference, with provenance. |
 | `resolve_pipeline` | Inspect a builtin or file pipeline; optionally resolve dynamic sources. |
 | `list_builtin_pipelines` | List the builtin pipelines. |
 | `fix_rules` | Apply safe auto-fixes; optionally persist with `write: true`. |
+| `author_ads` | Scaffold or render ADS detection metadata for a rule. |
 
-Plus three read-only resources: `rsigma://lint/catalogue`, `rsigma://reference/modifiers`, and `rsigma://reference/mitre-tactics`.
+Plus four read-only resources: `rsigma://lint/catalogue`, `rsigma://ads/schema`, `rsigma://reference/modifiers`, and `rsigma://reference/mitre-tactics`.
 
 ## Example: register with Cursor
 

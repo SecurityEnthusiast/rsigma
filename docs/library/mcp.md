@@ -24,8 +24,8 @@ rsigma-mcp = "{{ rsigma.version }}"
 
 | Item | Purpose |
 |------|---------|
-| `RsigmaMcp::new(root, lint_config)` | Build the handler with an optional default root for relative path-based tool calls and a lint configuration. |
-| `RsigmaMcp::default()` | A handler with no root and default lint configuration. |
+| `RsigmaMcp::new(root, lint_config, allow_sigma_cli)` | Build the handler with an optional default root for relative path-based tool calls, a lint configuration, and the sigma-cli delegation switch for `convert_rules` (pass `false` to keep conversion native-only). |
+| `RsigmaMcp::default()` | A handler with no root, default lint configuration, and delegation disabled. |
 | `serve_stdio(handler)` | Serve the handler over stdio, blocking until the client disconnects. The caller owns the tokio runtime. |
 
 The handler implements `rmcp::ServerHandler`, so it can also be served over any rmcp transport.
@@ -38,7 +38,7 @@ use rsigma_parser::LintConfig;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let handler = RsigmaMcp::new(None, LintConfig::default());
+    let handler = RsigmaMcp::new(None, LintConfig::default(), false);
     rsigma_mcp::serve_stdio(handler).await
 }
 ```

@@ -28,7 +28,6 @@ pub(crate) mod reports;
 mod resolve;
 mod scorecard;
 // Delegation to an external sigma-cli for non-native conversion targets.
-mod sigma_cli;
 mod status;
 mod tail;
 mod tap;

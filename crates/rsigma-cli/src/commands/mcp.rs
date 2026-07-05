@@ -35,6 +35,12 @@ pub(crate) struct McpServeArgs {
     #[arg(long = "rules-dir", value_name = "PATH")]
     pub rules_dir: Option<PathBuf>,
 
+    /// Allow the `convert_rules` tool to delegate targets without a native
+    /// backend to an installed sigma-cli (off by default). Delegated calls
+    /// spawn a subprocess; path inputs stay confined to `--rules-dir`.
+    #[arg(long = "allow-sigma-cli")]
+    pub allow_sigma_cli: bool,
+
     /// Serve over Streamable HTTP on this address (e.g. `127.0.0.1:9100`)
     /// instead of stdio. The MCP endpoint is mounted at `/mcp`.
     #[arg(long = "http", value_name = "ADDR")]
@@ -96,6 +102,13 @@ fn apply_mcp_config(args: &mut McpServeArgs) {
     if args.rules_dir.is_none() {
         args.rules_dir = mcp.rules_dir;
     }
+    // A bool flag cannot distinguish "absent" from "false", so the config only
+    // ever turns delegation on; an explicit --allow-sigma-cli already wins.
+    if !args.allow_sigma_cli
+        && let Some(allow) = mcp.allow_sigma_cli
+    {
+        args.allow_sigma_cli = allow;
+    }
 }
 
 /// Run the MCP server. Builds a multi-thread tokio runtime (same pattern as the
@@ -114,7 +127,8 @@ pub(crate) fn cmd_mcp_serve(mut args: McpServeArgs) {
         None => LintConfig::default(),
     };
 
-    let handler = rsigma_mcp::RsigmaMcp::new(args.rules_dir.clone(), lint_config);
+    let handler =
+        rsigma_mcp::RsigmaMcp::new(args.rules_dir.clone(), lint_config, args.allow_sigma_cli);
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()

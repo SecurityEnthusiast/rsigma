@@ -28,6 +28,8 @@ The crate provides a generic conversion framework that any backend can plug into
 | LynxDB | `lynxdb` | SPL2-compatible search queries for LynxDB log analytics engine |
 | Fibratus | `fibratus` | Fibratus rule YAML for the Apache-2.0 kernel-event detection and EDR engine |
 
+The optional `sigma-cli` feature (std-only, no extra dependencies) adds the `sigma_cli` module: discovery of an external [sigma-cli](https://github.com/SigmaHQ/sigma-cli), the `sigma convert` argument mapping (`build_convert_args`), and subprocess output classification (`classify_output`). It is the shared helper behind `rsigma backend convert` delegation and the MCP server's opt-in `--allow-sigma-cli`; the conversion API itself (`convert_collection`, the `Backend` trait) always converts natively and never spawns a subprocess.
+
 ## Usage
 
 ### Test backend

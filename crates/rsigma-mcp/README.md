@@ -20,7 +20,8 @@ use rsigma_parser::LintConfig;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let handler = RsigmaMcp::new(None, LintConfig::default());
+    // root, lint config, allow sigma-cli delegation in convert_rules
+    let handler = RsigmaMcp::new(None, LintConfig::default(), false);
     rsigma_mcp::serve_stdio(handler).await
 }
 ```
@@ -34,8 +35,8 @@ async fn main() -> anyhow::Result<()> {
 | `lint_rules` | Lint rules; findings carry lint rule id, severity, line, and fix availability. |
 | `validate_rules` | Parse + compile + correlation checks, optional pipelines and source resolution. |
 | `evaluate_events` | Evaluate JSON events against rules (detections and correlations). |
-| `convert_rules` | Convert rules to backend queries (`postgres`/`lynxdb`/`fibratus`). |
-| `list_backends` | List conversion targets and their formats. |
+| `convert_rules` | Convert rules to backend queries (`postgres`/`lynxdb`/`fibratus` natively; any other target via an installed sigma-cli when the server runs with `--allow-sigma-cli`). |
+| `list_backends` | List conversion targets and their formats (plus installed sigma-cli targets when delegation is enabled). |
 | `list_fields` | List the event fields rules reference, with provenance. |
 | `resolve_pipeline` | Inspect a builtin or file pipeline; optionally resolve dynamic sources. |
 | `list_builtin_pipelines` | List the builtin pipelines. |
@@ -53,6 +54,7 @@ Four read-only resources expose reference data: `rsigma://lint/catalogue` (the 8
 - Built on [`rmcp`](https://crates.io/crates/rmcp) 1.7 (the official Rust MCP SDK).
 - `RsigmaMcp` is the cloneable handler; the tool methods are thin wrappers over the underlying rsigma crates.
 - The CLI owns the tokio runtime entry point (`serve_stdio`), mirroring how the daemon is wired.
+- sigma-cli delegation is opt-in (`--allow-sigma-cli`) and hardened: `path` and file-based pipeline inputs are confined to `--rules-dir` when set, inline YAML is staged to a temp file, the subprocess is killed after 60s, and at most two delegations run concurrently.
 
 ## Smoke test
 

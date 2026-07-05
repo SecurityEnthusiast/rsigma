@@ -179,7 +179,7 @@ Run [`rsigma config init`](../cli/config/init.md) to scaffold a full, commented 
 | `visibility` | `rule visibility` | `mapping` (logsource/field to ATT&CK data-source table path or URL; unset uses the bundled default) and `fail_on_blind_spots`. `rules` and `observed` are intentionally absent (they are invocation-specific CLI arguments). |
 | `doc` | `rule doc` | `fail_on_missing` (the CI gate). The ADS bar itself (enforced statuses and required sections) lives in `.rsigma-lint.yml` under an `ads:` block, not here. See [Detection Strategy](../guide/detection-strategy.md). |
 | `hygiene` | `rule hygiene` | `rules`, the optional sources (`metrics`, `metrics_window`, `fields`), the thresholds (`silent_threshold`, `stale_threshold`, `noisy_threshold`), and `fail_on`. See [Rule Hygiene](../guide/rule-hygiene.md). |
-| `mcp` | `mcp serve` | `mcp.http_addr` (the `--http` bind address; unset means stdio), `mcp.lint_config`, and `mcp.rules_dir`. The auth token is secret and stays flag/env-only. Inert unless built with the `mcp` feature. |
+| `mcp` | `mcp serve` | `mcp.http_addr` (the `--http` bind address; unset means stdio), `mcp.lint_config`, `mcp.rules_dir`, and `mcp.allow_sigma_cli` (let `convert_rules` delegate non-native targets to an installed sigma-cli; off by default). The auth token is secret and stays flag/env-only. Inert unless built with the `mcp` feature. |
 
 ### Secrets policy
 

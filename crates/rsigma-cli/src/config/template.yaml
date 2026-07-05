@@ -368,3 +368,7 @@ mcp:
   # lint_config: .rsigma-lint.yml
   # Default root for relative path-based tool calls (`--rules-dir`).
   # rules_dir: ./rules
+  # Allow the convert_rules tool to delegate targets without a native backend
+  # to an installed sigma-cli (`--allow-sigma-cli`). Off by default; delegated
+  # path inputs stay confined to rules_dir when it is set.
+  # allow_sigma_cli: false

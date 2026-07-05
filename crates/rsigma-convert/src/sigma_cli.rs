@@ -2,15 +2,24 @@
 //! rsigma has no native backend for.
 //!
 //! This is a light subprocess wrapper, not a port or an embedded interpreter:
-//! `rsigma backend convert` hands the original rule files plus a near 1:1
-//! flag mapping to `sigma convert` and relays its output. No Python runtime is
-//! required unless a delegated target is actually used, so the rsigma binary
-//! stays self-contained for everyone converting to a native backend.
+//! callers hand the original rule files plus a near 1:1 flag mapping to
+//! `sigma convert` and relay its output. No Python runtime is required unless
+//! a delegated target is actually used, so rsigma binaries stay self-contained
+//! for everyone converting to a native backend.
+//!
+//! The module is deliberately runtime-agnostic: [`build_convert_args`] and
+//! [`classify_output`] are pure, and [`SigmaCli::run`] is a synchronous
+//! convenience for CLI-style callers. An async caller (the MCP server) builds
+//! its own `tokio::process::Command` from [`SigmaCli::program`] and the argv,
+//! then classifies the captured [`Output`] through the same
+//! [`classify_output`], so the two consumers cannot drift on flag mapping or
+//! outcome handling.
 //!
 //! Discovery uses the `RSIGMA_SIGMA_CLI` environment override when set, falling
 //! back to a bare `sigma` resolved on `PATH`. A spawn that fails with
 //! [`std::io::ErrorKind::NotFound`] means sigma-cli is not installed, which the
-//! caller turns into install guidance rather than a conversion failure.
+//! caller turns into install guidance ([`install_hint`]) rather than a
+//! conversion failure.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -18,20 +27,20 @@ use std::process::{Command, Output};
 
 /// Environment variable that overrides discovery with an explicit path to the
 /// `sigma` executable.
-pub(crate) const SIGMA_CLI_ENV: &str = "RSIGMA_SIGMA_CLI";
+pub const SIGMA_CLI_ENV: &str = "RSIGMA_SIGMA_CLI";
 
 /// Program name used when the override is unset.
 const DEFAULT_PROGRAM: &str = "sigma";
 
 /// A resolved sigma-cli invocation target.
-pub(crate) struct SigmaCli {
+pub struct SigmaCli {
     program: PathBuf,
     is_override: bool,
 }
 
 impl SigmaCli {
     /// Resolve the configured sigma-cli from the current environment.
-    pub(crate) fn configured() -> Self {
+    pub fn configured() -> Self {
         let (program, is_override) = resolve_program(std::env::var_os(SIGMA_CLI_ENV));
         Self {
             program,
@@ -39,18 +48,30 @@ impl SigmaCli {
         }
     }
 
+    /// Build an invocation target from an explicit program path, bypassing
+    /// environment discovery. Useful for tests that stub the executable
+    /// without mutating process-global environment variables.
+    pub fn from_program(program: impl Into<PathBuf>, is_override: bool) -> Self {
+        Self {
+            program: program.into(),
+            is_override,
+        }
+    }
+
     /// The executable that will be spawned (override path or bare `sigma`).
-    pub(crate) fn program(&self) -> &Path {
+    pub fn program(&self) -> &Path {
         &self.program
     }
 
     /// Whether the executable came from the `RSIGMA_SIGMA_CLI` override.
-    pub(crate) fn is_override(&self) -> bool {
+    pub fn is_override(&self) -> bool {
         self.is_override
     }
 
-    /// Run sigma-cli with `args`, capturing stdout, stderr, and the exit status.
-    pub(crate) fn run<I, S>(&self, args: I) -> std::io::Result<Output>
+    /// Run sigma-cli with `args`, capturing stdout, stderr, and the exit
+    /// status. Synchronous; async callers spawn their own command from
+    /// [`Self::program`].
+    pub fn run<I, S>(&self, args: I) -> std::io::Result<Output>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -70,6 +91,73 @@ fn resolve_program(env_value: Option<OsString>) -> (PathBuf, bool) {
     }
 }
 
+/// A successfully classified delegated conversion.
+#[derive(Debug)]
+pub struct DelegatedConversion {
+    /// Best-effort per-query split: each non-empty stdout line. Faithful for
+    /// the line-oriented text backends; multi-line output formats should read
+    /// [`Self::raw`] instead.
+    pub queries: Vec<String>,
+    /// The verbatim sigma-cli stdout (lossy UTF-8), the faithful copy of the
+    /// conversion output regardless of format.
+    pub raw: String,
+    /// sigma-cli stderr on a zero exit: skipped-rule notes, deprecation
+    /// warnings, and other diagnostics.
+    pub stderr: String,
+}
+
+/// A failed delegated conversion.
+#[derive(Debug)]
+pub enum DelegateError {
+    /// The sigma-cli executable could not be spawned because it does not
+    /// exist. Callers surface [`install_hint`].
+    NotInstalled {
+        /// The executable that failed to spawn.
+        program: PathBuf,
+        /// Whether it came from the `RSIGMA_SIGMA_CLI` override.
+        is_override: bool,
+    },
+    /// sigma-cli ran but exited non-zero.
+    NonZero {
+        /// The exit code, when the process was not killed by a signal.
+        code: Option<i32>,
+        /// Captured stdout (lossy UTF-8); usually empty on failure but
+        /// preserved so callers can relay everything sigma-cli printed.
+        stdout: String,
+        /// Captured stderr (lossy UTF-8) carrying the error text.
+        stderr: String,
+    },
+}
+
+/// Classify a captured sigma-cli [`Output`] into a [`DelegatedConversion`] or
+/// a [`DelegateError::NonZero`].
+///
+/// Spawn failures never reach this function; callers map a
+/// [`std::io::ErrorKind::NotFound`] spawn error to
+/// [`DelegateError::NotInstalled`] themselves because the raw
+/// [`std::io::Error`] is only visible at the spawn site.
+pub fn classify_output(output: &Output) -> Result<DelegatedConversion, DelegateError> {
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    if !output.status.success() {
+        return Err(DelegateError::NonZero {
+            code: output.status.code(),
+            stdout,
+            stderr,
+        });
+    }
+    let queries = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(str::to_string)
+        .collect();
+    Ok(DelegatedConversion {
+        queries,
+        raw: stdout,
+        stderr,
+    })
+}
+
 /// Build the `sigma convert` argument vector from rsigma's convert arguments.
 ///
 /// The mapping is near 1:1; the only transform is rsigma's
@@ -79,7 +167,7 @@ fn resolve_program(env_value: Option<OsString>) -> (PathBuf, bool) {
 /// skip-unsupported toggles, the output format, and the rule paths pass through
 /// unchanged. `--output` is intentionally not forwarded: rsigma captures
 /// sigma-cli's stdout and routes it through its own output handling.
-pub(crate) fn build_convert_args(
+pub fn build_convert_args(
     target: &str,
     format: &str,
     pipelines: &[PathBuf],
@@ -127,7 +215,7 @@ pub(crate) fn build_convert_args(
 
 /// Message shown when a target has no native backend and sigma-cli cannot be
 /// run, guiding the user to install it (or fix a broken override).
-pub(crate) fn install_hint(
+pub fn install_hint(
     target: &str,
     program: &Path,
     is_override: bool,
@@ -156,11 +244,25 @@ pub(crate) fn install_hint(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
 
     fn to_strings(argv: &[OsString]) -> Vec<String> {
         argv.iter()
             .map(|a| a.to_string_lossy().into_owned())
             .collect()
+    }
+
+    #[cfg(unix)]
+    fn exit_status(code: i32) -> ExitStatus {
+        ExitStatus::from_raw(code << 8)
+    }
+
+    #[cfg(windows)]
+    fn exit_status(code: i32) -> ExitStatus {
+        use std::os::windows::process::ExitStatusExt;
+        ExitStatus::from_raw(code as u32)
     }
 
     #[test]
@@ -182,6 +284,47 @@ mod tests {
         let (program, is_override) = resolve_program(Some(OsString::new()));
         assert_eq!(program, PathBuf::from("sigma"));
         assert!(!is_override);
+    }
+
+    #[test]
+    fn from_program_bypasses_environment() {
+        let cli = SigmaCli::from_program("/stub/sigma", true);
+        assert_eq!(cli.program(), Path::new("/stub/sigma"));
+        assert!(cli.is_override());
+    }
+
+    #[test]
+    fn classify_output_splits_nonempty_lines_and_keeps_raw() {
+        let output = Output {
+            status: exit_status(0),
+            stdout: b"query one\n\nquery two\n".to_vec(),
+            stderr: b"warning: something\n".to_vec(),
+        };
+        let conv = classify_output(&output).expect("zero exit classifies as success");
+        assert_eq!(conv.queries, vec!["query one", "query two"]);
+        assert_eq!(conv.raw, "query one\n\nquery two\n");
+        assert_eq!(conv.stderr, "warning: something\n");
+    }
+
+    #[test]
+    fn classify_output_maps_nonzero_exit() {
+        let output = Output {
+            status: exit_status(1),
+            stdout: b"partial\n".to_vec(),
+            stderr: b"Error: bad pipeline\n".to_vec(),
+        };
+        match classify_output(&output) {
+            Err(DelegateError::NonZero {
+                code,
+                stdout,
+                stderr,
+            }) => {
+                assert_eq!(code, Some(1));
+                assert_eq!(stdout, "partial\n");
+                assert!(stderr.contains("bad pipeline"));
+            }
+            other => panic!("expected NonZero, got {other:?}"),
+        }
     }
 
     #[test]
