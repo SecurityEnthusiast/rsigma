@@ -284,10 +284,10 @@ A Sigma rule is parsed into a strongly-typed AST (`rsigma-parser`), then compile
 
 RSigma is designed for high-throughput detection. On an Apple M4 Pro:
 
-- **Parsing**: 12.7 MiB/s for 1000 rules
-- **Detection**: 1.06M events/sec (JSON, 100 rules)
-- **Correlation**: 569K events/sec (temporal + event-count)
-- **Dynamic pipelines**: 2.71M events/sec once built (no per-event overhead)
+- **Parsing**: 12.4 MiB/s for 1000 rules
+- **Detection**: 1.12M events/sec (JSON runtime pipeline, 100 rules)
+- **Correlation**: 501K events/sec (temporal + event-count)
+- **Dynamic pipelines**: 2.85M events/sec once built (no per-event overhead)
 
 See [BENCHMARKS.md](BENCHMARKS.md) for full Criterion results across all subsystems.
 
