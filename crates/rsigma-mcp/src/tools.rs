@@ -48,12 +48,21 @@ mod resolve_pipeline;
 mod shared;
 mod validate_rules;
 
+/// Maximum number of concurrent sigma-cli delegations, matching the
+/// `max_sessions: 2` convention the tap/tail surfaces chose.
+const DELEGATE_MAX_CONCURRENT: usize = 2;
+
 /// Shared, immutable server state behind the cloneable handler.
 struct State {
     /// Default root for relative path-based tool calls (`--rules-dir`).
     root: Option<PathBuf>,
     /// Lint configuration applied by `lint_rules` and `fix_rules`.
     lint_config: LintConfig,
+    /// Whether `convert_rules` may delegate unknown targets to an external
+    /// sigma-cli (`--allow-sigma-cli`). Off by default.
+    allow_sigma_cli: bool,
+    /// Bounds concurrent sigma-cli subprocesses across all sessions.
+    delegate_permits: tokio::sync::Semaphore,
 }
 
 /// The rsigma MCP handler. Cloned per request by rmcp; the real state lives
@@ -65,12 +74,18 @@ pub struct RsigmaMcp {
 }
 
 impl RsigmaMcp {
-    /// Build a handler with an optional default root for path-based calls and a
-    /// lint configuration.
-    pub fn new(root: Option<PathBuf>, lint_config: LintConfig) -> Self {
+    /// Build a handler with an optional default root for path-based calls, a
+    /// lint configuration, and the sigma-cli delegation switch
+    /// (`--allow-sigma-cli`; pass `false` for the previous behavior).
+    pub fn new(root: Option<PathBuf>, lint_config: LintConfig, allow_sigma_cli: bool) -> Self {
         Self {
             tool_router: Self::tool_router(),
-            state: Arc::new(State { root, lint_config }),
+            state: Arc::new(State {
+                root,
+                lint_config,
+                allow_sigma_cli,
+                delegate_permits: tokio::sync::Semaphore::new(DELEGATE_MAX_CONCURRENT),
+            }),
         }
     }
 
@@ -81,6 +96,16 @@ impl RsigmaMcp {
     /// The lint configuration applied by `lint_rules` and `fix_rules`.
     fn lint_config(&self) -> &LintConfig {
         &self.state.lint_config
+    }
+
+    /// Whether `convert_rules` may delegate unknown targets to sigma-cli.
+    fn allow_sigma_cli(&self) -> bool {
+        self.state.allow_sigma_cli
+    }
+
+    /// The semaphore bounding concurrent sigma-cli subprocesses.
+    fn delegate_permits(&self) -> &tokio::sync::Semaphore {
+        &self.state.delegate_permits
     }
 
     /// Combine the per-tool routers into the single router rmcp dispatches over.
@@ -105,9 +130,10 @@ impl RsigmaMcp {
 }
 
 impl Default for RsigmaMcp {
-    /// A handler with no path root and default lint configuration.
+    /// A handler with no path root, default lint configuration, and sigma-cli
+    /// delegation disabled.
     fn default() -> Self {
-        Self::new(None, LintConfig::default())
+        Self::new(None, LintConfig::default(), false)
     }
 }
 
@@ -201,10 +227,11 @@ fn reference_pairs_json(pairs: &[(&str, &str)]) -> Value {
 // module can reach them as `crate::tools::{handler, src, VALID_RULE,
 // GOLDEN_RULE}` without duplicating the bodies.
 
-/// A handler with no path root and default lint configuration.
+/// A handler with no path root, default lint configuration, and sigma-cli
+/// delegation disabled.
 #[cfg(test)]
 pub(crate) fn handler() -> RsigmaMcp {
-    RsigmaMcp::new(None, LintConfig::default())
+    RsigmaMcp::new(None, LintConfig::default(), false)
 }
 
 /// Wrap inline YAML as a [`shared::SourceInput`].

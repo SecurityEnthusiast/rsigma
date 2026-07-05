@@ -80,26 +80,43 @@ pub(crate) fn parse_match_detail(level: Option<&str>) -> Result<MatchDetailLevel
     }
 }
 
+/// Canonical names of the natively supported conversion targets, for error
+/// messages and the sigma-cli install hint.
+pub(crate) const NATIVE_TARGETS: &[&str] = &["postgres", "lynxdb", "fibratus"];
+
+/// Return the native backend for `target`, or `None` when rsigma has no native
+/// backend for it (the delegation dispatch point). Test-only backends are
+/// intentionally excluded.
+pub(crate) fn try_native_backend(
+    target: &str,
+    options: &HashMap<String, String>,
+) -> Option<Box<dyn Backend>> {
+    match target {
+        "postgres" | "postgresql" | "pg" => Some(Box::new(
+            rsigma_convert::backends::postgres::PostgresBackend::from_options(options),
+        )),
+        "lynxdb" => Some(Box::new(
+            rsigma_convert::backends::lynxdb::LynxDbBackend::new(),
+        )),
+        "fibratus" => Some(Box::new(
+            rsigma_convert::backends::fibratus::FibratusBackend::from_options(options),
+        )),
+        _ => None,
+    }
+}
+
 /// Construct a conversion backend by target name, returning a structured error
-/// for unknown targets. Test-only backends are intentionally excluded.
+/// for unknown targets.
 pub(crate) fn get_backend(
     target: &str,
     options: &HashMap<String, String>,
 ) -> Result<Box<dyn Backend>, McpError> {
-    match target {
-        "postgres" | "postgresql" | "pg" => Ok(Box::new(
-            rsigma_convert::backends::postgres::PostgresBackend::from_options(options),
-        )),
-        "lynxdb" => Ok(Box::new(
-            rsigma_convert::backends::lynxdb::LynxDbBackend::new(),
-        )),
-        "fibratus" => Ok(Box::new(
-            rsigma_convert::backends::fibratus::FibratusBackend::from_options(options),
-        )),
-        other => Err(invalid(format!(
-            "unknown target '{other}'; available: postgres, lynxdb, fibratus"
-        ))),
-    }
+    try_native_backend(target, options).ok_or_else(|| {
+        invalid(format!(
+            "unknown target '{target}'; available: {}",
+            NATIVE_TARGETS.join(", ")
+        ))
+    })
 }
 
 // =============================================================================
