@@ -29,7 +29,7 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 
 ## Supported Features
 
-### Author Rules
+### Author
 
 * **[Sigma parsing](https://timescale.github.io/rsigma/library/parser/):** Parses Sigma YAML into a strongly-typed AST with support for detection, correlation, and filter rules
 * **[Array matching](https://timescale.github.io/rsigma/guide/array-matching/) (experimental):** Matches members of arrays in nested event data with any/all-member semantics, same-element correlation, and positional indexing, opt-in via `sigma-version: 3`
@@ -39,14 +39,19 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 * **LSP server:** Provides real-time diagnostics, completions, hover documentation, document symbols, and quick-fix code actions in [VSCode](https://timescale.github.io/rsigma/editors/vscode/), [Neovim](https://timescale.github.io/rsigma/editors/neovim/), and any LSP-capable editor
 * **[MCP server](https://timescale.github.io/rsigma/guide/mcp-server/):** Exposes the toolchain to AI agents (Cursor, Claude Code, ...) as structured MCP tools over stdio or Streamable HTTP with `rsigma mcp serve`
 
-### Test and Debug Rules
+### Test
 
 * **[Detection diagnostics](https://timescale.github.io/rsigma/cli/engine/explain/):** Explains why a rule did or did not match an event with `engine explain`, diffs pipeline transformations with `pipeline diff`, and introspects live correlation windows
 * **[Corpus backtesting](https://timescale.github.io/rsigma/cli/rule/backtest/):** Replays an event corpus against declared per-rule expectations with `rule backtest`, emitting a JSON or JUnit XML report for CI
-* **[CI integration](https://timescale.github.io/rsigma/guide/ci-cd/):** Gates a rule repository in one pull-request check with the [`timescale/rsigma-action`](https://github.com/timescale/rsigma-action) GitHub Action, wrapping lint, validate, fields-drift diff, backtest, and coverage
 * **[Output formats](https://timescale.github.io/rsigma/reference/output/):** Renders every command's results as JSON, NDJSON, table, CSV, or TSV with a TTY-aware default via a global `--output-format` flag
 
-### Detect in Real Time
+### Deploy
+
+* **[CI integration](https://timescale.github.io/rsigma/guide/ci-cd/):** Gates a rule repository in one pull-request check with the [`timescale/rsigma-action`](https://github.com/timescale/rsigma-action) GitHub Action, wrapping lint, validate, fields-drift diff, backtest, and coverage
+* **[Configuration](https://timescale.github.io/rsigma/reference/configuration/):** Layers settings from YAML config files, environment variables, and CLI flags, managed with the `rsigma config` command group
+* **[Signed artifacts](https://timescale.github.io/rsigma/deployment/docker/):** Ships multi-arch Docker images with cosign signatures, SBOM, and SLSA Build L3 provenance, plus prebuilt binaries for Linux, macOS, and Windows
+
+### Detect
 
 * **[Rule evaluation](https://timescale.github.io/rsigma/guide/evaluating-rules/):** Compiles rules into optimized matchers and evaluates them against events in real time, with stateless detection and stateful correlation (sliding/tumbling/session windows, group-by, chaining, suppression)
 * **[Streaming daemon](https://timescale.github.io/rsigma/guide/streaming-detection/):** Runs as a long-lived detection daemon with hot-reload, Prometheus metrics, stdin/HTTP/NATS/OTLP/Unix-socket input, and async sinks (stdout, file, NATS, OTLP, webhook, Unix socket) with per-sink retry and DLQ
@@ -62,9 +67,8 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 * **[TLS termination](https://timescale.github.io/rsigma/reference/security/):** Terminates TLS in-process on the daemon API listener with optional mutual TLS and cross-platform certificate hot-reload
 * **[State persistence](https://timescale.github.io/rsigma/guide/streaming-detection/):** Persists correlation, alert-pipeline, risk, and disposition state to SQLite with `--state-db` and restores it across restarts
 * **Live operations:** Inspects a running daemon with [`engine status`](https://timescale.github.io/rsigma/cli/engine/status/), records replayable fixtures with [`engine tap`](https://timescale.github.io/rsigma/cli/engine/tap/), and streams live detections with [`engine tail`](https://timescale.github.io/rsigma/cli/engine/tail/)
-* **[Configuration](https://timescale.github.io/rsigma/reference/configuration/):** Layers settings from YAML config files, environment variables, and CLI flags, managed with the `rsigma config` command group
 
-### Alert and Triage
+### Alert & Triage
 
 * **[Enrichment](https://timescale.github.io/rsigma/guide/enrichers/):** Injects context (asset info, IP reputation, identity, GeoIP, runbook URLs, ...) into detection and correlation results via `template`, `lookup`, `http`, and `command` primitives
 * **[Risk-based alerting](https://timescale.github.io/rsigma/guide/risk-based-alerting/):** Scores each firing per entity (user, host, source IP) and raises a single incident when an entity's accumulated risk crosses a threshold
@@ -72,7 +76,7 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 * **[Webhook alerts](https://timescale.github.io/rsigma/guide/webhooks/):** Delivers detections to Slack, Teams, Discord, PagerDuty, or any HTTP endpoint with templated payloads, HMAC request signing, per-webhook retry, rate limiting, and DLQ
 * **[Triage feedback](https://timescale.github.io/rsigma/guide/triage-feedback/):** Ingests analyst dispositions into a per-rule false-positive ratio that feeds the detection scorecard
 
-### Measure and Improve the Ruleset
+### Measure
 
 * **[ATT&CK coverage](https://timescale.github.io/rsigma/guide/attack-coverage/):** Exports an ATT&CK Navigator layer with `rule coverage` and reports gaps against Atomic Red Team, the SigmaHQ baseline, and a target technique list
 * **[Telemetry visibility](https://timescale.github.io/rsigma/guide/visibility-and-data-sources/):** Scores data-source maturity with `rule visibility`, exporting [DeTT&CT](https://github.com/rabobank-cdc/DeTTECT) administration files and a Navigator layer that surfaces blind spots
@@ -80,7 +84,7 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 * **[Detection scorecard](https://timescale.github.io/rsigma/guide/detection-scorecard/):** Fuses backtest, coverage, production-volume, and triage signals with `rule scorecard` into per-rule keep/tune/retire verdicts
 * **[Rule hygiene](https://timescale.github.io/rsigma/guide/rule-hygiene/):** Flags retirement candidates with `rule hygiene`: silent, noisy, untagged, unowned, incomplete ADS, broken field coverage, or stale status
 
-### Hunt in Other Backends
+### Hunt
 
 * **[Rule conversion](https://timescale.github.io/rsigma/guide/rule-conversion/):** Converts rules into backend-native queries via a pluggable backend trait, with native PostgreSQL/TimescaleDB, LynxDB, and Fibratus backends plus sigma-cli delegation for 30+ pySigma backends (Splunk, Elasticsearch, Microsoft Sentinel, ...)
 * **[Field catalog](https://timescale.github.io/rsigma/cli/rule/fields/):** Lists every field a ruleset references, before or after pipeline mapping, with `rule fields`
