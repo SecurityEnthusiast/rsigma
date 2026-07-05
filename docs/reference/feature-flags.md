@@ -42,6 +42,14 @@ The streaming runtime (event sources, sinks, daemon plumbing, dynamic pipelines)
 | `evtx` | no | `evtx` | `.evtx` file reader. |
 | `daachorse-index` | no | `rsigma-eval/daachorse-index` | Cross-rule AC support when used from `rsigma-runtime` consumers. |
 
+## `rsigma-convert`
+
+The conversion engine. Used as a library and re-exported by `rsigma-cli`.
+
+| Feature | Default | Gates | Enables |
+|---------|---------|-------|---------|
+| `sigma-cli` | no | nothing (std-only, no extra dependencies) | The `sigma_cli` module: discovery of an external [sigma-cli](https://github.com/SigmaHQ/sigma-cli), the `sigma convert` argument mapping, and subprocess output classification. Consumed by `rsigma-cli` (`backend convert` delegation) and `rsigma-mcp` (the opt-in `--allow-sigma-cli` delegation); conversion itself stays native and in-process. |
+
 ## `rsigma-parser`
 
 No features. The parser is unconditional.

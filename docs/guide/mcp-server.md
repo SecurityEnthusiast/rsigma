@@ -54,8 +54,8 @@ Every tool accepts **either** inline content (`yaml`, `condition`, `events`) **o
 | `lint_rules` | `yaml` or file/dir `path` | Findings per file: lint rule id, severity, message, 1-indexed line, `fixable`, and the fix title. |
 | `validate_rules` | `yaml` or file/dir `path`, `pipelines`, `resolve_sources` | Parse + compile + correlation-reference results, with per-rule compile errors. |
 | `evaluate_events` | rules (`yaml`/`path`), events (`events` array or `events_path` NDJSON), `pipelines`, `match_detail`, `enrichers`/`enrichers_path` | Matches with `event_index`, a summary of detection/correlation counts. With `enrichers` the matches are run through an enrichment pipeline first. |
-| `convert_rules` | rules, `target`, `format`, `pipelines`, `options`, `skip_unsupported` | Backend queries per rule, plus errors and warnings. |
-| `list_backends` | (none) | Conversion targets with their formats and correlation methods. |
+| `convert_rules` | rules, `target`, `format`, `pipelines`, `options`, `skip_unsupported` | Backend queries per rule, plus errors and warnings. Native targets (`postgres`/`lynxdb`/`fibratus`) convert in-process; with `--allow-sigma-cli`, any other target is delegated to an installed [sigma-cli](../reference/backends/sigma-cli.md) and the result carries `engine: "sigma-cli"`, a per-line `queries` split, the verbatim `raw` output (authoritative for multi-line formats), and sigma-cli's diagnostics as `warnings`. |
+| `list_backends` | (none) | Conversion targets with their formats and correlation methods; with `--allow-sigma-cli`, installed sigma-cli targets are appended with `engine: "sigma-cli"`. |
 | `list_fields` | rules, `pipelines`, `include_filters` | Each referenced field with the rules and source kinds that use it. |
 | `resolve_pipeline` | `pipeline` (builtin name or path), `resolve_sources` | Pipeline name, priority, transformation count, dynamic sources. |
 | `list_builtin_pipelines` | (none) | The builtin pipelines (`ecs_windows`, `fibratus_windows`, `sysmon`). |
@@ -103,6 +103,18 @@ Convert it to PostgreSQL:
 ```json
 { "name": "convert_rules", "arguments": { "path": "windows/proc.yml", "target": "postgres", "format": "view" } }
 ```
+
+## sigma-cli delegation
+
+By default the server is pure in-process Rust and `convert_rules` only accepts the native targets. Starting it with `--allow-sigma-cli` (config key `mcp.allow_sigma_cli`) lets `convert_rules` delegate any other target to an installed [sigma-cli](../reference/backends/sigma-cli.md), reaching the full pySigma backend set (`splunk`, `elasticsearch`, `kusto`, `qradar`, `loki`, and more):
+
+```json
+{ "name": "convert_rules", "arguments": { "path": "windows/proc.yml", "target": "splunk" } }
+```
+
+The delegated result carries `engine: "sigma-cli"`, a per-line `queries` split, the verbatim `raw` output (read this for multi-line formats like Loki `ruler`), and sigma-cli's diagnostics as `warnings`. When sigma-cli is not installed, the result is `{ "ok": false, ... }` with install guidance.
+
+Delegation is off by default because it spawns a subprocess, a category change from the server's in-process posture. When enabled it stays bounded: `path` and file-based `pipelines` arguments are confined to `--rules-dir` when one is configured (a path that escapes it is refused), inline `yaml` is staged through a private temporary file, each invocation is killed after 60 seconds, and at most two delegations run concurrently. rsigma builtin pipeline names (`ecs_windows`, `sysmon`) are not translated for delegated targets; pass sigma-cli pipeline names or YAML paths. Discovery honors the `RSIGMA_SIGMA_CLI` override and otherwise resolves `sigma` on `PATH`; note that the prebuilt Docker image bundles no Python, so delegation is effectively a local-stdio feature.
 
 ## The agentic loop
 

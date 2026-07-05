@@ -60,7 +60,7 @@ sigma-cli's stdout is captured and routed through rsigma's normal output handlin
 
 - **Per-rule directory output is native-only.** `-o <dir>/` (one file per rule) reuses a native backend's finalizer, which a delegated stream has no equivalent of, so delegated mode rejects a directory `--output`. Use a file path or stdout.
 - **Pipeline shortcut names are not translated.** rsigma's builtin pipeline names (`ecs_windows`, `sysmon`) are not mapped to sigma-cli pipeline identifiers. In delegated mode, pass a sigma-cli pipeline name (see `sigma list pipelines`) or a YAML file path to `-p`.
-- **CLI only.** Delegation applies to `rsigma backend convert` (and `backend targets`/`backend formats`). The MCP `convert` tool and the `rsigma_convert` library API convert with native backends only.
+- **CLI and (opt-in) MCP.** Delegation applies to `rsigma backend convert` (and `backend targets`/`backend formats`) unconditionally, and to the MCP `convert_rules` tool when the server runs with [`--allow-sigma-cli`](../../cli/mcp/serve.md) (off by default; delegated `path` inputs stay confined to `--rules-dir`, the subprocess is bounded by a 60s timeout and a 2-deep concurrency cap). The `rsigma_convert` library API converts with native backends only.
 
 ## Exit codes
 
