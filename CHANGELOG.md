@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### MCP sigma-cli delegation: reach the pySigma backends from `convert_rules`
+### MCP sigma-cli delegation: reach the pySigma backends from `convert_rules` (#290)
 
 Extends the native-first sigma-cli delegation that `rsigma backend convert` gained in #241 to the MCP server: when `rsigma mcp serve` runs with the new `--allow-sigma-cli` flag (config key `mcp.allow_sigma_cli`), the `convert_rules` tool delegates any target without a native backend to an installed [sigma-cli](https://github.com/SigmaHQ/sigma-cli), so an agent can convert to `splunk`, `elasticsearch`, `kusto`, `qradar`, `loki`, and the rest of the pySigma backend set. The `rsigma_convert` library API stays native-only by design.
 
