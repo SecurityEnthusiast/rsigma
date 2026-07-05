@@ -45,6 +45,10 @@ name = "logsource"
 harness = false
 
 [[bench]]
+name = "schema"
+harness = false
+
+[[bench]]
 name = "correlation"
 harness = false
 
