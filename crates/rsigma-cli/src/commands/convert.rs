@@ -250,7 +250,7 @@ pub(crate) fn cmd_convert(args: ConvertArgs, ctx: OutputCtx) {
 /// through, and sigma-cli's stdout is relayed through rsigma's output handling,
 /// so the result is identical to running sigma-cli directly.
 fn run_delegated(args: &ConvertArgs, ctx: &OutputCtx) {
-    use super::sigma_cli::{self, SigmaCli};
+    use rsigma_convert::sigma_cli::{self, DelegateError, SigmaCli};
 
     let target = args.target.as_str();
     let format = args.format.as_str();
@@ -297,24 +297,40 @@ fn run_delegated(args: &ConvertArgs, ctx: &OutputCtx) {
         }
     };
 
-    // Relay sigma-cli diagnostics verbatim (warnings, skipped-rule notes, errors).
-    if !result.stderr.is_empty() {
-        eprint!("{}", String::from_utf8_lossy(&result.stderr));
-    }
-    if !result.status.success() {
-        process::exit(crate::exit_code::RULE_ERROR);
+    let conversion = match sigma_cli::classify_output(&result) {
+        Ok(conversion) => conversion,
+        Err(DelegateError::NonZero { stderr, .. }) => {
+            // Relay sigma-cli's error text verbatim.
+            if !stderr.is_empty() {
+                eprint!("{stderr}");
+            }
+            process::exit(crate::exit_code::RULE_ERROR);
+        }
+        Err(DelegateError::NotInstalled { .. }) => {
+            // classify_output never produces NotInstalled (spawn errors are
+            // handled above), but keep the match exhaustive and safe.
+            eprintln!(
+                "{}",
+                sigma_cli::install_hint(target, cli.program(), cli.is_override(), NATIVE_TARGETS)
+            );
+            process::exit(crate::exit_code::CONFIG_ERROR);
+        }
+    };
+
+    // Relay sigma-cli diagnostics verbatim (warnings, skipped-rule notes).
+    if !conversion.stderr.is_empty() {
+        eprint!("{}", conversion.stderr);
     }
 
-    let stdout = String::from_utf8_lossy(&result.stdout);
-    let queries = stdout.trim_end_matches('\n');
+    let queries = conversion.raw.trim_end_matches('\n');
 
     // `--output-format json` wraps the delegated queries in the same envelope
     // shape the native path emits. sigma-cli text backends emit one query per
     // line, so each non-empty line becomes a query object.
     if ctx.format == OutputFormat::Json && output.is_none() {
-        let query_objs: Vec<serde_json::Value> = queries
-            .lines()
-            .filter(|line| !line.trim().is_empty())
+        let query_objs: Vec<serde_json::Value> = conversion
+            .queries
+            .iter()
             .map(|q| serde_json::json!({ "query": q }))
             .collect();
         render_json(
@@ -351,16 +367,21 @@ pub(crate) fn cmd_list_targets() {
 
     // Any other target is delegated to sigma-cli when it is installed; list its
     // targets too so the user sees the full set available from this machine.
-    let cli = super::sigma_cli::SigmaCli::configured();
-    match cli.run(["list", "targets"]) {
-        Ok(out) if out.status.success() && !out.stdout.is_empty() => {
+    let cli = rsigma_convert::sigma_cli::SigmaCli::configured();
+    let listing = cli
+        .run(["list", "targets"])
+        .ok()
+        .and_then(|out| rsigma_convert::sigma_cli::classify_output(&out).ok())
+        .filter(|conversion| !conversion.raw.is_empty());
+    match listing {
+        Some(conversion) => {
             println!(
                 "\nAdditional targets via sigma-cli ('{}'):",
                 cli.program().display()
             );
-            print!("{}", String::from_utf8_lossy(&out.stdout));
+            print!("{}", conversion.raw);
         }
-        _ => {
+        None => {
             println!(
                 "\nInstall sigma-cli for more targets (splunk, elasticsearch, kusto, qradar, loki, ...):"
             );
@@ -389,28 +410,36 @@ pub(crate) fn cmd_list_formats(target: String) {
     }
 
     // Delegated target: ask sigma-cli for the formats it supports.
-    let cli = super::sigma_cli::SigmaCli::configured();
+    use rsigma_convert::sigma_cli::{self, DelegateError, SigmaCli};
+    let cli = SigmaCli::configured();
     match cli.run(["list", "formats", target.as_str()]) {
-        Ok(out) => {
-            if !out.stdout.is_empty() {
-                print!("{}", String::from_utf8_lossy(&out.stdout));
+        Ok(out) => match sigma_cli::classify_output(&out) {
+            Ok(conversion) => {
+                if !conversion.raw.is_empty() {
+                    print!("{}", conversion.raw);
+                }
+                if !conversion.stderr.is_empty() {
+                    eprint!("{}", conversion.stderr);
+                }
             }
-            if !out.stderr.is_empty() {
-                eprint!("{}", String::from_utf8_lossy(&out.stderr));
-            }
-            if !out.status.success() {
+            Err(DelegateError::NonZero { stdout, stderr, .. }) => {
+                if !stdout.is_empty() {
+                    print!("{stdout}");
+                }
+                if !stderr.is_empty() {
+                    eprint!("{stderr}");
+                }
                 process::exit(crate::exit_code::CONFIG_ERROR);
             }
-        }
+            Err(DelegateError::NotInstalled { .. }) => {
+                // Unreachable: spawn errors are handled below.
+                process::exit(crate::exit_code::CONFIG_ERROR);
+            }
+        },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             eprintln!(
                 "{}",
-                super::sigma_cli::install_hint(
-                    &target,
-                    cli.program(),
-                    cli.is_override(),
-                    NATIVE_TARGETS
-                )
+                sigma_cli::install_hint(&target, cli.program(), cli.is_override(), NATIVE_TARGETS)
             );
             process::exit(crate::exit_code::CONFIG_ERROR);
         }

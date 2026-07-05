@@ -23,6 +23,8 @@ pub mod condition;
 pub mod convert;
 pub mod error;
 pub mod output;
+#[cfg(feature = "sigma-cli")]
+pub mod sigma_cli;
 pub mod state;
 
 pub use backend::{Backend, TextQueryConfig, TokenType};
