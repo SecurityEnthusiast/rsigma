@@ -10,6 +10,7 @@ Reran every benchmark suite on current main (Apple M4 Pro, 2026-07-05) and rewro
 
 * **New `schema` bench (`rsigma-eval`)** measures per-event `SchemaClassifier::classify` cost against the built-in signature set (early match, mid-list match, full-scan unknown, and the ambiguity-aware variant): 216-548 ns per event, so `--schema-routing` and `--observe-schemas` are effectively free at pipeline throughputs.
 * **New `enrichment` bench (`rsigma-runtime`)** measures the CPU-only floor of the post-evaluation enrichment pipeline with the `template` primitive over 1,000-result batches at one and four enrichers (~0.6-0.9 us per result per enricher).
+* **New `array` bench (`rsigma-eval`)** measures the `sigma-version: 3` array-matching paths against a flat-field baseline: implicit any-member matching, `[any]`/`[all]` object scopes at varying lengths and match positions, and positional indexing. Cost is linear in member count (~35-60 ns/member non-firing, ~110-250 ns/member firing, since the fan-out collects every matching member); positional indexing is O(1).
 * **Fixed the `dynamic_pipelines` bench**, which panicked since `load_rules` gained fail-closed dynamic-source re-resolution: the engine-build and reload benchmarks now run inside the tokio runtime context they require.
 
 ### MCP sigma-cli delegation: reach the pySigma backends from `convert_rules` (#290)

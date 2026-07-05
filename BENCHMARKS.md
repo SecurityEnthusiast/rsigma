@@ -21,6 +21,7 @@ cargo bench -p rsigma-eval --bench eval
 cargo bench -p rsigma-eval --bench eval --features daachorse-index   # includes the cross-rule AC suite
 cargo bench -p rsigma-eval --bench logsource
 cargo bench -p rsigma-eval --bench schema
+cargo bench -p rsigma-eval --bench array
 cargo bench -p rsigma-eval --bench correlation
 cargo bench -p rsigma-eval --bench correlation_memory   # peak-heap stress (not Criterion)
 cargo bench -p rsigma-eval --bench result_serialize
@@ -214,6 +215,26 @@ Per-event cost of `SchemaClassifier::classify` against the built-in signature se
 Classification stays well under a microsecond per event even in the full-scan worst case, so `--observe-schemas` and `--schema-routing` cost a fraction of a percent at typical pipeline throughputs.
 
 Run with `cargo bench -p rsigma-eval --bench schema`.
+
+### Array Matching (`sigma-version: 3`)
+
+Per-event cost of the array evaluation paths. Events carry a `connections` array of objects; the flat baseline is the same engine evaluating a single scalar field (326 ns). Array-scope bodies are evaluated per member rather than through the batched flat-field matchers, so cost is linear in member count.
+
+| Path | 10 members | 100 members | 1,000 members |
+|------|-----------:|------------:|--------------:|
+| Implicit any-member, hit at last element | 1.80 us | 12.4 us | 113.2 us |
+| Implicit any-member, miss (full scan) | 564 ns | 3.78 us | 34.6 us |
+| `[any]` scope, hit at first element | 2.47 us | 22.2 us | 220.2 us |
+| `[any]` scope, hit at last element | 2.75 us | 24.9 us | 245.3 us |
+| `[any]` scope, miss | 635 ns | 5.80 us | 57.8 us |
+| `[all]` scope, every member satisfies | 2.68 us | 24.8 us | 247.1 us |
+| `[all]` scope, first member fails | 391 ns | 3.08 us | 31.4 us |
+
+Positional indexing is O(1) in the array length: `args[0]` costs 693 ns and `args[-1]` 671 ns against a 1,000-element array, about 2x the flat baseline for the index resolution.
+
+Two properties fall out of the numbers. Non-firing evaluation costs ~35-60 ns per member (a 100-member `[any]` miss is 5.8 us, ~18x the flat baseline), and `[all]` exits early on the first failing member. But a **firing** rule pays ~110-250 ns per member regardless of where the matching element sits: `[any]` hit-first costs nearly the same as hit-last because the fan-out continues past the first hit to collect every matching member for match details. Budget array rules by array length times rule count on matching traffic, not by early-exit intuition.
+
+Run with `cargo bench -p rsigma-eval --bench array`.
 
 ### Result Serialization
 
@@ -475,6 +496,7 @@ Reload now includes the fail-closed dynamic-source re-resolution that `load_rule
 - **The bloom prefilter pays off from ~500 rules**: ~20% faster on non-matching traffic at 1K-5K rules, neutral at 100. Opt-in because matching-heavy traffic pays the filter cost without the skip benefit.
 - **Logsource pruning wins track the pruned fraction**: a 50/50 two-product split evaluates ~1.75x faster with `--logsource-routing` on, at both 1K and 10K rules.
 - **Schema classification is sub-microsecond**: 216-548 ns per event against the full built-in signature set, so schema routing and observability are effectively free at pipeline throughputs.
+- **Array matching is linear in member count, and hits cost more than misses**: non-firing paths cost ~35-60 ns per member while a firing rule pays ~110-250 ns per member independent of match position, because the fan-out collects every matching member for match details. Positional indexing (`args[N]`) stays O(1).
 - **Detection is fast**: ~365K events/sec with 100 rules in pure evaluation mode, scaling linearly with event count; the full JSON runtime pipeline reaches 1.12M events/sec.
 - **Runtime overhead is negative**: LogProcessor with JSON batching is faster than raw Engine evaluation due to batch-level optimizations and format-aware parsing.
 - **Rule count scales well**: runtime throughput is flat from 100 to 1,000 rules thanks to indexed field matching.

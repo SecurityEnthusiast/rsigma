@@ -49,6 +49,10 @@ name = "schema"
 harness = false
 
 [[bench]]
+name = "array"
+harness = false
+
+[[bench]]
 name = "correlation"
 harness = false
 
