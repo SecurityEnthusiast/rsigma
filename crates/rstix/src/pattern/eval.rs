@@ -13,6 +13,7 @@ use crate::pattern::ast::{
 use crate::pattern::context::{ObservationContext, TimestampedObservation};
 use crate::pattern::error::PatternMatchError;
 use crate::pattern::lexer::MAX_OBSERVATIONS;
+use crate::pattern::normalize;
 use crate::pattern::path::{self, FieldValue};
 use crate::pattern::security;
 
@@ -474,6 +475,10 @@ fn timestamp_in_window(
     start: Option<&StixTimestamp>,
     stop: Option<&StixTimestamp>,
 ) -> bool {
+    // No START/STOP (or outer WITHIN window) active — timestamps are not required.
+    if start.is_none() && stop.is_none() {
+        return true;
+    }
     let Some(at) = at else {
         return false;
     };
@@ -650,11 +655,17 @@ fn compare_values(
             _ => false,
         },
         ComparisonOp::Like => match (field_value_str(&left), right) {
-            (Some(s), PatternConstant::String(pat)) => like_match(s, pat.as_str()),
+            (Some(s), PatternConstant::String(pat)) => {
+                let pat = normalize::nfc(pat.as_str());
+                like_match(s, pat.as_ref())
+            }
             _ => false,
         },
         ComparisonOp::Matches => match (left, right) {
-            (FieldValue::Str(s), PatternConstant::String(re)) => regex_match(&s, re)?,
+            (FieldValue::Str(s), PatternConstant::String(re)) => {
+                let s = normalize::nfc(&s);
+                regex_match(s.as_ref(), re)?
+            }
             (FieldValue::Bytes(b), PatternConstant::String(re)) => bytes_regex_match(&b, re)?,
             _ => false,
         },
