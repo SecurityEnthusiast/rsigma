@@ -100,7 +100,10 @@ impl RsigmaMcp {
 /// Note any dynamic pipelines whose `${source.*}` references cannot be
 /// resolved: source declarations live in external `--source` files, which the
 /// MCP server does not accept. The pipelines pass through unexpanded.
-fn resolve_pipeline_sources(pipelines: Vec<Pipeline>, source_errors: &mut Vec<String>) -> Vec<Pipeline> {
+fn resolve_pipeline_sources(
+    pipelines: Vec<Pipeline>,
+    source_errors: &mut Vec<String>,
+) -> Vec<Pipeline> {
     for pipeline in &pipelines {
         if pipeline.is_dynamic() {
             source_errors.push(format!(

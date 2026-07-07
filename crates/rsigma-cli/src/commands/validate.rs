@@ -186,11 +186,10 @@ fn resolve_validate_sources(
 
             for pipeline in &pipelines {
                 if pipeline.is_dynamic() {
-                    let mut expanded =
-                        rsigma_runtime::sources::template::TemplateExpander::expand(
-                            pipeline,
-                            &resolved_data,
-                        );
+                    let mut expanded = rsigma_runtime::sources::template::TemplateExpander::expand(
+                        pipeline,
+                        &resolved_data,
+                    );
                     if let Err(e) = rsigma_runtime::sources::include::expand_includes(
                         &mut expanded,
                         &resolved_data,

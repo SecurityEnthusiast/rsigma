@@ -1048,7 +1048,10 @@ transformations:
         err.contains("migrate-sources"),
         "error should point at the migration tool: {err}"
     );
-    assert!(err.contains("--source"), "error should mention --source: {err}");
+    assert!(
+        err.contains("--source"),
+        "error should mention --source: {err}"
+    );
 }
 
 #[test]
@@ -1365,7 +1368,10 @@ transformations:
   - type: value_placeholders
 "#;
     let pipeline = parse_pipeline(yaml).unwrap();
-    assert!(pipeline.is_dynamic(), "list-valued var ref should be dynamic");
+    assert!(
+        pipeline.is_dynamic(),
+        "list-valued var ref should be dynamic"
+    );
     assert_eq!(pipeline.source_refs.len(), 1);
     assert_eq!(pipeline.source_refs[0].source_id, "cmd_list");
 }

@@ -136,5 +136,7 @@ fn error_points_at_migration_command() {
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("migrate-sources -p <pipeline> -o sources.yml"));
+        .stderr(predicate::str::contains(
+            "migrate-sources -p <pipeline> -o sources.yml",
+        ));
 }
