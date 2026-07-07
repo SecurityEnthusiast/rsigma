@@ -4,8 +4,11 @@
 //! detection with dynamically-resolved pipelines, source refresh on
 //! file change, error policy enforcement, and API-triggered re-resolution.
 //!
-//! The primary mechanism tested is vars + value_placeholders:
-//! - Source resolves to a list of values
+//! Source declarations live in standalone `--source` files (pipeline-embedded
+//! `sources:` blocks were removed in v1.0); a pipeline references them via
+//! `${source.*}` templates. The primary mechanism tested is vars +
+//! value_placeholders:
+//! - An external source resolves to a list of values
 //! - Pipeline var references the source via `${source.*}` template
 //! - Template expansion fills in the var
 //! - `value_placeholders` transformation substitutes `%var%` in detection items
@@ -263,7 +266,7 @@ fn resolve_activity(v: &serde_json::Value) -> u64 {
 }
 
 // Rule that uses a %placeholder% for the detection value.
-// The pipeline var `malicious_commands` will be filled dynamically from a source.
+// The pipeline var `malicious_commands` is filled dynamically from a source.
 const DYNAMIC_VAR_RULE: &str = r#"
 title: Dynamic Var Rule
 id: 00000000-0000-0000-0000-000000000099
@@ -285,14 +288,25 @@ fn write_source_file(path: &std::path::Path, content: &str) {
     f.sync_all().unwrap();
 }
 
-fn dynamic_pipeline_yaml(source_path: &str) -> String {
-    format!(
-        r#"
+/// A pipeline that references the external `cmd_list` source (no inline
+/// declaration, which is rejected since v1.0).
+fn dynamic_pipeline_yaml() -> String {
+    r#"
 name: dynamic-test
 priority: 10
 vars:
   malicious_commands:
-    - "${{source.cmd_list}}"
+    - "${source.cmd_list}"
+transformations:
+  - type: value_placeholders
+"#
+    .to_string()
+}
+
+/// A standalone `--source` file declaring the `cmd_list` file source.
+fn sources_yaml(source_path: &str) -> String {
+    format!(
+        r#"
 sources:
   - id: cmd_list
     type: file
@@ -300,28 +314,23 @@ sources:
     format: json
     refresh: watch
     on_error: use_cached
-
-transformations:
-  - type: value_placeholders
 "#
     )
 }
 
-fn dynamic_pipeline_yaml_required_fail(source_path: &str) -> String {
+/// A standalone `--source` file whose `cmd_list` source is required and fails
+/// hard when unreachable.
+fn sources_yaml_required_fail(source_path: &str) -> String {
     format!(
         r#"
-name: dynamic-required-fail
-priority: 10
 sources:
-  - id: missing_source
+  - id: cmd_list
     type: file
     path: {source_path}
     format: json
     refresh: once
     required: true
     on_error: fail
-
-transformations: []
 "#
     )
 }
@@ -337,8 +346,8 @@ fn daemon_with_dynamic_pipeline_detects_via_var_expansion() {
     write_source_file(&source_path, r#"["malware.exe", "evil.bat"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -347,6 +356,8 @@ fn daemon_with_dynamic_pipeline_detects_via_var_expansion() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -379,8 +390,8 @@ fn daemon_dynamic_pipeline_no_false_positive() {
     write_source_file(&source_path, r#"["malware.exe", "evil.bat"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -389,6 +400,8 @@ fn daemon_dynamic_pipeline_no_false_positive() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -422,8 +435,8 @@ fn daemon_reload_preserves_dynamic_detection() {
     write_source_file(&source_path, r#"["malware.exe"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -432,6 +445,8 @@ fn daemon_reload_preserves_dynamic_detection() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -476,8 +491,8 @@ fn daemon_source_refresh_on_file_change() {
     write_source_file(&source_path, r#"["unlikely_string_xyz"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -486,6 +501,8 @@ fn daemon_source_refresh_on_file_change() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -536,8 +553,8 @@ fn daemon_error_policy_use_cached() {
     write_source_file(&source_path, r#"["malware.exe"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -546,6 +563,8 @@ fn daemon_error_policy_use_cached() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -594,17 +613,18 @@ fn daemon_error_policy_use_cached() {
 #[test]
 fn daemon_required_source_fail_exits() {
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml =
-        dynamic_pipeline_yaml_required_fail("/nonexistent/path/that/does/not/exist.json");
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let sources_file = temp_file(
+        ".yml",
+        &sources_yaml_required_fail("/nonexistent/path/that/does/not/exist.json"),
+    );
 
     let status = DaemonProcess::spawn_expect_exit(&[
         "engine",
         "daemon",
         "-r",
         rule_file.path().to_str().unwrap(),
-        "-p",
-        pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -630,8 +650,8 @@ fn daemon_api_sources_resolve_triggers_re_resolution() {
     write_source_file(&source_path, r#"["unlikely_string_xyz"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -640,6 +660,8 @@ fn daemon_api_sources_resolve_triggers_re_resolution() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -692,8 +714,8 @@ fn daemon_status_includes_dynamic_sources() {
     write_source_file(&source_path, r#"["test"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -702,6 +724,8 @@ fn daemon_status_includes_dynamic_sources() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -732,8 +756,8 @@ fn daemon_metrics_include_source_resolution() {
     write_source_file(&source_path, r#"["test"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -742,6 +766,8 @@ fn daemon_metrics_include_source_resolution() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -775,8 +801,8 @@ fn daemon_cache_invalidation_endpoint() {
     write_source_file(&source_path, r#"["test"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -785,6 +811,8 @@ fn daemon_cache_invalidation_endpoint() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -806,8 +834,8 @@ fn daemon_sources_list_endpoint() {
     write_source_file(&source_path, r#"["test"]"#);
 
     let rule_file = temp_file(".yml", DYNAMIC_VAR_RULE);
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -816,6 +844,8 @@ fn daemon_sources_list_endpoint() {
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",
@@ -833,7 +863,7 @@ fn daemon_sources_list_endpoint() {
 }
 
 // ---------------------------------------------------------------------------
-// Test: rsigma pipeline resolve command (CLI) works with dynamic pipeline
+// Test: rsigma pipeline resolve command (CLI) works with external sources
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -842,8 +872,8 @@ fn cli_resolve_command_resolves_sources() {
     let source_path = dir.path().join("commands.json");
     write_source_file(&source_path, r#"["malware.exe", "evil.bat"]"#);
 
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let output = Command::new(rsigma_bin())
         .args([
@@ -851,6 +881,8 @@ fn cli_resolve_command_resolves_sources() {
             "resolve",
             "-p",
             pipeline_file.path().to_str().unwrap(),
+            "--source-file",
+            sources_file.path().to_str().unwrap(),
             "--pretty",
         ])
         .output()
@@ -884,8 +916,8 @@ fn cli_resolve_dry_run_shows_metadata() {
     let source_path = dir.path().join("commands.json");
     write_source_file(&source_path, r#"["x"]"#);
 
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let output = Command::new(rsigma_bin())
         .args([
@@ -893,6 +925,8 @@ fn cli_resolve_dry_run_shows_metadata() {
             "resolve",
             "-p",
             pipeline_file.path().to_str().unwrap(),
+            "--source-file",
+            sources_file.path().to_str().unwrap(),
             "--dry-run",
             "--pretty",
         ])
@@ -926,8 +960,8 @@ fn cli_validate_resolve_sources_passes() {
     let rule_path = rule_dir.path().join("rule.yml");
     std::fs::write(&rule_path, DYNAMIC_VAR_RULE).unwrap();
 
-    let pipeline_yaml = dynamic_pipeline_yaml(source_path.to_str().unwrap());
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(".yml", &sources_yaml(source_path.to_str().unwrap()));
 
     let output = Command::new(rsigma_bin())
         .args([
@@ -936,6 +970,8 @@ fn cli_validate_resolve_sources_passes() {
             rule_dir.path().to_str().unwrap(),
             "-p",
             pipeline_file.path().to_str().unwrap(),
+            "--source",
+            sources_file.path().to_str().unwrap(),
             "--resolve-sources",
         ])
         .output()
@@ -958,9 +994,11 @@ fn cli_validate_resolve_sources_fails_unreachable() {
     let rule_path = rule_dir.path().join("rule.yml");
     std::fs::write(&rule_path, DYNAMIC_VAR_RULE).unwrap();
 
-    let pipeline_yaml =
-        dynamic_pipeline_yaml_required_fail("/nonexistent/path/does/not/exist.json");
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+    let pipeline_file = temp_file(".yml", &dynamic_pipeline_yaml());
+    let sources_file = temp_file(
+        ".yml",
+        &sources_yaml_required_fail("/nonexistent/path/does/not/exist.json"),
+    );
 
     let output = Command::new(rsigma_bin())
         .args([
@@ -969,6 +1007,8 @@ fn cli_validate_resolve_sources_fails_unreachable() {
             rule_dir.path().to_str().unwrap(),
             "-p",
             pipeline_file.path().to_str().unwrap(),
+            "--source",
+            sources_file.path().to_str().unwrap(),
             "--resolve-sources",
         ])
         .output()
@@ -996,11 +1036,11 @@ fn daemon_include_expansion_detects() {
         r#"[{"type": "field_name_mapping", "mapping": {"CommandLine": "cmd"}}]"#,
     );
 
-    // Pipeline uses include directive to inject transformations from source
-    let pipeline_yaml = format!(
-        r#"
-name: include-test
-priority: 10
+    // External source declaring the transforms feed.
+    let sources_file = temp_file(
+        ".yml",
+        &format!(
+            r#"
 sources:
   - id: transforms
     type: file
@@ -1008,13 +1048,19 @@ sources:
     format: json
     refresh: watch
     on_error: use_cached
-
-transformations:
-  - include: "${{source.transforms}}"
 "#,
-        transforms_path.to_str().unwrap()
+            transforms_path.to_str().unwrap()
+        ),
     );
-    let pipeline_file = temp_file(".yml", &pipeline_yaml);
+
+    // Pipeline uses an include directive to inject transformations from the source.
+    let pipeline_yaml = r#"
+name: include-test
+priority: 10
+transformations:
+  - include: "${source.transforms}"
+"#;
+    let pipeline_file = temp_file(".yml", pipeline_yaml);
 
     // Rule uses standard Sigma field name "CommandLine".
     // After include expansion applies the mapping, the engine looks for "cmd" in events.
@@ -1040,6 +1086,8 @@ level: high
         rule_file.path().to_str().unwrap(),
         "-p",
         pipeline_file.path().to_str().unwrap(),
+        "--source",
+        sources_file.path().to_str().unwrap(),
         "--input",
         "http",
         "--api-addr",

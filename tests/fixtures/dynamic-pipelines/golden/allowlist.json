@@ -1,6 +1,6 @@
 [
   {
-    "pipeline": "dynamic-allowlist",
+    "pipeline": "external:tests/fixtures/dynamic-pipelines/source-files/allowlist.yml",
     "source_id": "admin_emails",
     "status": "ok",
     "data": [
@@ -10,7 +10,7 @@
     ]
   },
   {
-    "pipeline": "dynamic-allowlist",
+    "pipeline": "external:tests/fixtures/dynamic-pipelines/source-files/allowlist.yml",
     "source_id": "blocked_ips",
     "status": "ok",
     "data": [

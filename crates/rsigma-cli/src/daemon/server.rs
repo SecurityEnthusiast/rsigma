@@ -384,6 +384,17 @@ pub async fn run_daemon(config: DaemonConfig) {
         let resolver: Arc<dyn rsigma_runtime::sources::SourceResolver> = instrumented;
         engine.set_source_resolver(resolver.clone());
 
+        // Feed the engine the external source declarations so it can resolve
+        // and expand `${source.*}` references in the pipelines.
+        engine.set_external_sources(
+            config
+                .source_registry
+                .sources()
+                .into_iter()
+                .cloned()
+                .collect(),
+        );
+
         // Resolve dynamic sources at startup (blocks on required sources)
         if let Err(e) = engine.resolve_dynamic_pipelines().await {
             tracing::error!(error = %e, "Failed to resolve required dynamic sources at startup");

@@ -4,6 +4,15 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Removed pipeline-embedded `sources:` blocks (#293)
+
+Dynamic source declarations no longer live inside pipeline files. A pipeline that still declares an inline `sources:` block is now rejected with a hard parse error that points at `rsigma rule migrate-sources`; source declarations come exclusively from standalone `--source` files, and a pipeline only references them with `${source.<id>}`. This completes the deprecation cycle started in v0.12.0 (#135, visible-deprecated) and continued in v0.13.0 (#136, hidden from docs).
+
+- **Library API.** `rsigma_eval::Pipeline` drops its `sources` field; `Pipeline::is_dynamic()` is now driven purely by `${source.*}` references, and `validate_source_refs` no longer takes a pipeline-local declaration set. `parse_sources` is now exported for tooling that reads a raw `sources:` block. The runtime `RuntimeEngine` gains `set_external_sources`, resolving and expanding references against the external declarations (carried across hot-reload), and `expand_includes` takes the external sources for its remote-include check.
+- **Reference detection fix.** List-valued pipeline `vars` (the common `value_placeholders` shape, e.g. `malicious_commands: ["${source.cmd_list}"]`) are now correctly recognized as dynamic source references; previously only scalar var values were scanned, which the removed inline `sources:` block had masked.
+- **`rule migrate-sources`** reads the inline `sources:` block directly (rather than through the now-rejecting pipeline parser) so it keeps working as the migration path.
+- **Docs and tests** move to the external-only model throughout; the runtime `pipeline_deprecation` module and its stderr warning are gone.
+
 ### Removed the deprecated flat CLI aliases (#292)
 
 The twelve flat top-level subcommands (`eval`, `daemon`, `parse`, `validate`, `lint`, `fields`, `condition`, `stdin`, `convert`, `list-targets`, `list-formats`, `resolve`) are removed. They shipped as visible-deprecated forwarders in v0.12.0 (#124), were hidden from `rsigma --help` in v0.13.0 (#125), and reach end-of-life here. Invoking a removed alias now fails with clap's `unrecognized subcommand` error and lists the available command groups. Use the noun-led groups instead: `engine eval`, `engine daemon`, `rule parse`, `rule validate`, `rule lint`, `rule fields`, `rule condition`, `rule stdin`, `backend convert`, `backend targets`, `backend formats`, and `pipeline resolve`. The per-alias forwarding dispatch and the stderr deprecation warning are gone; the group enums remain the single source of truth for every argument.

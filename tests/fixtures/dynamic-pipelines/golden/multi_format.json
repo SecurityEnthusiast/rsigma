@@ -1,6 +1,6 @@
 [
   {
-    "pipeline": "dynamic-multi-format",
+    "pipeline": "external:tests/fixtures/dynamic-pipelines/source-files/multi_format.yml",
     "source_id": "json_data",
     "status": "ok",
     "data": {
@@ -12,7 +12,7 @@
     }
   },
   {
-    "pipeline": "dynamic-multi-format",
+    "pipeline": "external:tests/fixtures/dynamic-pipelines/source-files/multi_format.yml",
     "source_id": "yaml_data",
     "status": "ok",
     "data": {
@@ -23,7 +23,7 @@
     }
   },
   {
-    "pipeline": "dynamic-multi-format",
+    "pipeline": "external:tests/fixtures/dynamic-pipelines/source-files/multi_format.yml",
     "source_id": "csv_data",
     "status": "ok",
     "data": [
@@ -60,7 +60,7 @@
     ]
   },
   {
-    "pipeline": "dynamic-multi-format",
+    "pipeline": "external:tests/fixtures/dynamic-pipelines/source-files/multi_format.yml",
     "source_id": "lines_data",
     "status": "ok",
     "data": [

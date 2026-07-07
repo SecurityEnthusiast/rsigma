@@ -58,7 +58,7 @@ pub use conditions::{
 };
 pub use finalizers::Finalizer;
 pub use parsing::{
-    parse_pipeline, parse_pipeline_file, parse_sources_dir, parse_sources_file,
+    parse_pipeline, parse_pipeline_file, parse_sources, parse_sources_dir, parse_sources_file,
     parse_transformation_items, validate_source_refs,
 };
 pub use state::PipelineState;
@@ -81,9 +81,11 @@ pub struct Pipeline {
     pub transformations: Vec<TransformationItem>,
     /// Finalizers (stored for YAML compat; eval-mode ignores them).
     pub finalizers: Vec<Finalizer>,
-    /// Dynamic source declarations from the `sources` section.
-    pub sources: Vec<sources::DynamicSource>,
     /// Template references (`${source.*}`) found during parsing.
+    ///
+    /// Source *declarations* live in standalone source files loaded via
+    /// `--source` (see [`parse_sources_file`]); a pipeline only carries the
+    /// references it makes to them.
     pub source_refs: Vec<sources::SourceRef>,
 }
 
@@ -218,10 +220,10 @@ impl Pipeline {
         Ok(())
     }
 
-    /// Returns `true` if this pipeline declares any dynamic sources or contains
-    /// `${source.*}` template references.
+    /// Returns `true` if this pipeline contains any `${source.*}` template
+    /// references (and therefore depends on external dynamic sources).
     pub fn is_dynamic(&self) -> bool {
-        !self.sources.is_empty() || !self.source_refs.is_empty()
+        !self.source_refs.is_empty()
     }
 
     /// Returns a slice of all source references found during parsing.

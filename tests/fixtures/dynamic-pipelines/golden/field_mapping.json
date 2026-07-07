@@ -1,5 +1,5 @@
 {
-  "pipeline": "dynamic-field-mapping",
+  "pipeline": "external:tests/fixtures/dynamic-pipelines/source-files/field_mapping.yml",
   "source_id": "field_map",
   "status": "ok",
   "data": {

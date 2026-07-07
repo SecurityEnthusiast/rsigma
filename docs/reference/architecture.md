@@ -66,7 +66,7 @@ flowchart TD
         RENG --> RENRICH["enrichment/ post-eval pipeline<br/>primitives: template · lookup · http · command<br/>kind-aware: ${detection.*} · ${correlation.*}<br/>scope filter · HTTP response cache · on_error<br/>writes RuleHeader.enrichments"]
         RENRICH --> RPOST["post-engine layers (opt-in)<br/>risk/ per-entity scoring + risk incidents<br/>alert pipeline/ silence · inhibit ·<br/>dedup · incident grouping<br/>dispositions/ per-rule false-positive ratio"]
         RPOST --> RIO["io/<br/>EventSource (stdin · HTTP · NATS · unix*)<br/>OTLP* (HTTP + gRPC)<br/>TLS* termination (mTLS · cert hot-reload)<br/>on shared API listener (TCP or unix*)<br/>Sink (stdout · file · NATS · OTLP* · webhook · unix*)<br/>async delivery: per-sink workers · retry/backoff · DLQ"]
-        RSRC["sources/ (dynamic pipelines)<br/>DaemonSourceRegistry: external (--source) +<br/>pipeline-embedded (deprecated) · collision-error<br/>SourceResolver: HTTP · command · file · NATS<br/>TemplateExpander · SourceCache (SQLite TTL)<br/>RefreshScheduler: interval · watch · push<br/>SIGHUP · NATS control · includes<br/>extract: jq · JSONPath · CEL"]
+        RSRC["sources/ (dynamic pipelines)<br/>DaemonSourceRegistry: external (--source) · collision-error<br/>SourceResolver: HTTP · command · file · NATS<br/>TemplateExpander · SourceCache (SQLite TTL)<br/>RefreshScheduler: interval · watch · push<br/>SIGHUP · NATS control · includes<br/>extract: jq · JSONPath · CEL"]
     end
 
     subgraph rsigma-mcp
@@ -248,7 +248,7 @@ After enrichment and before the sinks, two opt-in layers reshape the result stre
 
 ### Dynamic source resolution (`rsigma-runtime::sources`)
 
-On every rule-load (including reloads), the `DaemonSourceRegistry` collects source declarations (from external `--source` files, plus the deprecated pipeline-embedded `sources:` blocks, with collision-error semantics) and runs each through the `SourceResolver` machinery:
+On every rule-load (including reloads), the `DaemonSourceRegistry` collects source declarations from external `--source` files (with collision-error semantics) and runs each through the `SourceResolver` machinery:
 
 1. Per source, dispatch on type: HTTP (`reqwest`), command (tokio `Command`), file (read + optional `notify` watch), NATS (subject subscribe, requires `nats` feature).
 2. Parse the response according to `format:` (`json`, `yaml`, `lines`, `csv`).

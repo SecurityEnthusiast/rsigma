@@ -568,16 +568,14 @@ pub(crate) fn load_pipelines(paths: &[PathBuf]) -> Vec<Pipeline> {
                 Ok(p) => {
                     eprintln!("Loaded pipeline: {} (priority {})", p.name, p.priority);
                     if p.is_dynamic() {
-                        let source_ids: Vec<&str> =
-                            p.sources.iter().map(|s| s.id.as_str()).collect();
-                        eprintln!("  dynamic source(s): {}", source_ids.join(", "));
-                    }
-                    // The inline-sources deprecation warning lives in
-                    // rsigma-runtime, which is only linked with the `daemon`
-                    // feature. Builds without it cannot resolve sources anyway.
-                    #[cfg(feature = "daemon")]
-                    if !p.sources.is_empty() {
-                        rsigma_runtime::warn_pipeline_inline_sources(path, &p.name);
+                        let source_ids: Vec<&str> = p
+                            .dynamic_references()
+                            .iter()
+                            .map(|r| r.source_id.as_str())
+                            .collect::<std::collections::BTreeSet<&str>>()
+                            .into_iter()
+                            .collect();
+                        eprintln!("  dynamic source ref(s): {}", source_ids.join(", "));
                     }
                     pipelines.push(p);
                 }

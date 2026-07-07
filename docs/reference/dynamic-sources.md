@@ -69,15 +69,17 @@ The full Rust type lives at [`rsigma_eval::pipeline::sources::DynamicSource`](ht
 
 Source IDs must be unique across every `--source` file (and across every directory the flag expands into). If the same ID appears in two different declaration sites the daemon exits at startup with an error naming both file paths, so there is exactly one canonical declaration site per source ID.
 
-!!! warning "Pipeline-embedded `sources:` is deprecated"
-    Declaring `sources:` inside a pipeline file is deprecated and will be
-    removed in v1.0 (tracked in [#137](https://github.com/timescale/rsigma/issues/137)).
-    The parser still accepts it today, but emits a loud `warning:` on stderr
-    and a structured `tracing::warn!` event pointing at the pipeline path.
+!!! warning "Pipeline-embedded `sources:` was removed in v1.0"
+    Declaring `sources:` inside a pipeline file is no longer accepted (tracked
+    in [#137](https://github.com/timescale/rsigma/issues/137)). The parser
+    rejects such a pipeline with a hard error pointing at the migration tool.
+    Source declarations live only in standalone `--source` files; a pipeline
+    references them with `${source.<id>}`.
 
-    Run `rsigma rule migrate-sources -p <pipelines-dir-or-file> -o sources.yml`
-    to extract every inline `sources:` block into a standalone file, then
-    load it via `--source sources.yml`. See the
+    If you still have a pipeline with an inline `sources:` block, run
+    `rsigma rule migrate-sources -p <pipelines-dir-or-file> -o sources.yml`
+    to extract it into a standalone file, then load it via `--source
+    sources.yml`. See the
     [`rule migrate-sources` reference](../cli/rule/migrate-sources.md) for
     flags and the `--strategy per-pipeline` mode.
 
