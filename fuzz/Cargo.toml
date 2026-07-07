@@ -16,7 +16,12 @@ serde_json = "1"
 yaml_serde = "0.10"
 regex = "1"
 arbitrary = { version = "1", features = ["derive"] }
-rstix = { path = "../crates/rstix", features = ["serde"] }
+rstix = { path = "../crates/rstix", features = ["serde", "pattern"] }
+
+[[bin]]
+name = "fuzz_stix_pattern"
+path = "fuzz_targets/fuzz_stix_pattern.rs"
+doc = false
 
 [[bin]]
 name = "fuzz_parse_yaml"

@@ -4,6 +4,20 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix Pattern Engine: canonical printer, Indicator wiring, and pattern semantics (#296)
+
+Adds the remaining `pattern` feature pieces for STIX indicator patterns and closes §9.6.1 evaluation semantics:
+
+* **`Pattern::canonical` / `Display`** — AST → canonical STIX pattern string; parse → print → parse preserves semantics (§9.8 fixture round-trips).
+* **`IndicatorPattern::Stix { parsed }`** — STIX indicators deserialize with `Pattern::parse(raw)` when `pattern` is enabled; invalid patterns fail at deserialize time.
+* **`IndicatorPattern::evaluate` / `evaluate_observed_data`** — delegate to the parsed pattern for STIX indicators; `NonStixPattern` for YARA/Snort/etc.
+* **`IndicatorBuilder`** — fluent programmatic construction of indicators (`stix_pattern`, `external_pattern`, `valid_from`, kill-chain phases); STIX patterns parse and type-check at `build()` when `pattern` is enabled; runs [`Indicator::validate`]. Design decision [DD-PE-001](docs/library/rstix.md#dd-pe-001--indicatorbuilder-validates-at-build-not-in-setters) documents why validation runs at `build()` rather than in setters.
+* **`fuzz_stix_pattern`** — libFuzzer target over parse + canonical print; seeds in `fuzz/seeds/fuzz_stix_pattern/` (§9.8 fixture lines).
+* **`LIKE` / `MATCHES` NFC normalization** — pattern constants and string property haystacks NFC-normalized before comparison.
+* **`MATCHES` PCRE DOTALL** — regex compilation enables `.` across newlines per §9.6.1.
+* **`evaluate()` with `at: None`** — non-temporal patterns accept observations without timestamps; temporal patterns still return `MissingTimestamp`.
+* **Absent optional `_ref` properties** — comparisons do not match; `EXISTS` is false; dangling or non-SCO targets still return `RefResolution`.
+
 ### De-flaked the TLS misconfiguration E2E tests on macOS (#295)
 
 `spawn_expect_failure` in the CLI test harness raced the daemon's exit against its stderr: the collection loop broke as soon as `try_wait()` saw the process gone, so when a misconfigured daemon failed fast (as `encrypted_key_password_is_rejected_with_guidance` does, the encrypted-key check being the first thing TLS init runs), the reader thread could still be holding the error line and the test asserted against empty stderr. The helper now drains the channel after reaping the child; closing the pipe ends the reader thread, so the drain terminates deterministically.
