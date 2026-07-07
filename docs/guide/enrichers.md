@@ -113,7 +113,7 @@ The decision matrix:
 - **Cache miss** → if `default` is configured, inject it; otherwise apply `on_error`
 - **Extract evaluation error** (invalid jq, type mismatch) → always applies `on_error`, even with `default` set
 
-`lookup` requires at least one dynamic source to be configured on the daemon via `--source <file>`. The loader surfaces a clear error at startup if a `lookup` enricher is configured without a source cache. (Pipeline-embedded `sources:` is also accepted but deprecated and removed in v1.0; see the [Dynamic Sources reference](../reference/dynamic-sources.md#source-declaration).)
+`lookup` requires at least one dynamic source to be configured on the daemon via `--source <file>`. The loader surfaces a clear error at startup if a `lookup` enricher is configured without a source cache. (Source declarations live only in `--source` files; pipeline-embedded `sources:` was removed in v1.0. See the [Dynamic Sources reference](../reference/dynamic-sources.md#source-declaration).)
 
 ### `http`: per-result HTTP fetch with optional response cache
 

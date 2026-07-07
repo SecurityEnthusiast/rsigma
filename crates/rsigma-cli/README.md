@@ -1041,7 +1041,7 @@ cat rule.yml | rsigma rule stdin
 
 ### `rule migrate-sources`: Extract pipeline sources into standalone files
 
-Extract pipeline-embedded `sources:` blocks into standalone source files. Pipeline-embedded sources are deprecated; this tool automates the migration to the `--source` flag.
+Extract pipeline-embedded `sources:` blocks into standalone source files. Pipeline-embedded sources were removed in v1.0; this tool automates the migration to the `--source` flag for any pipeline that still declares them.
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -1197,7 +1197,7 @@ rsigma engine daemon -r rules/ -p pipelines/ --source sources.d/   # loads all *
 
 External source files decouple source configuration from pipeline logic, so pipelines stay reusable across environments. Source IDs must be unique across every `--source` file. The flag is repeatable, so multiple files can be combined (each with its own per-team or per-data-source ownership).
 
-> **Deprecated.** Declaring `sources:` inline in a pipeline file is deprecated and will be removed in v1.0 (tracked in [#137](https://github.com/timescale/rsigma/issues/137)). The parser still accepts it but prints a `warning:` line on stderr at every load. Migrate with `rsigma rule migrate-sources -p <dir-or-file> -o sources.yml` and load the result via `--source sources.yml`.
+> **Removed in v1.0.** Declaring `sources:` inline in a pipeline file is no longer accepted (tracked in [#137](https://github.com/timescale/rsigma/issues/137)); the parser rejects such a pipeline with a hard error pointing at the migration tool. Migrate with `rsigma rule migrate-sources -p <dir-or-file> -o sources.yml` and load the result via `--source sources.yml`.
 
 ### Source types
 

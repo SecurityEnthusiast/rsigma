@@ -255,12 +255,11 @@ transformations:
 rsigma engine daemon -r rules/ -p pipeline.yml --source sources.yml
 ```
 
-!!! warning "Pipeline-embedded `sources:` is deprecated"
+!!! warning "Pipeline-embedded `sources:` was removed in v1.0"
     Declaring `sources:` inside the pipeline YAML (as opposed to a standalone
-    file loaded with `--source`) is deprecated and will be removed in v1.0
-    (tracked in [#137](https://github.com/timescale/rsigma/issues/137)). The
-    parser accepts it today but prints a `warning:` line on stderr and a
-    matching `tracing::warn!` event. Migrate existing pipelines with
+    file loaded with `--source`) is no longer accepted (tracked in
+    [#137](https://github.com/timescale/rsigma/issues/137)). The parser
+    rejects such a pipeline with a hard error. Migrate existing pipelines with
     `rsigma rule migrate-sources -p <dir-or-file> -o sources.yml` and load
     the resulting file with `--source sources.yml`.
 

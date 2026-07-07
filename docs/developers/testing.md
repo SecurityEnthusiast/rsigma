@@ -73,7 +73,7 @@ The 19 `cli_*.rs` files contain roughly 250 tests that invoke the freshly built 
 | `cli_migrate_sources.rs` | 4 | `rule migrate-sources` strategies and the post-extraction pipeline rewrite. |
 | `cli_output_format.rs` | 19 | Cross-command global `--output-format`, `--color`, `--quiet`, `--no-stats` resolution. |
 | `cli_parse.rs` | 8 | `rule parse` exit-code and structured-error contract. |
-| `cli_sources_deprecation.rs` | 6 | Stderr warning when a pipeline still declares inline sources after the deprecation. |
+| `cli_sources_deprecation.rs` | 6 | Hard parse error (pointing at `rule migrate-sources`) when a pipeline still declares inline `sources:`. |
 | `cli_validate.rs` | 4 | `rule validate` against good and bad rule sets. |
 
 The shared harness in `crates/rsigma-cli/tests/common/mod.rs` is the canonical reference for spawning a long-running daemon under test: it drains stdout in a background thread to prevent pipe stalls, forwards stderr lines via `mpsc`, probes the actual TCP socket with `TcpStream::connect_timeout` before returning a handle, and wraps the `Child` in a `ChildGuard` RAII type that kills it on drop. PR #115 hardened this against macOS-under-load flakes by replacing every `std::thread::sleep` wait with a `poll_until` retry loop that polls the actual observable condition (HTTP status, metric counter) every 50 ms up to a 5 s deadline. Use it for any new daemon-level test; do not roll your own.

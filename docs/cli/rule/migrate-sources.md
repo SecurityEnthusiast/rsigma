@@ -10,7 +10,7 @@ rsigma rule migrate-sources -p <PIPELINE> -o <OUTPUT> [--strategy <STRATEGY>] [-
 
 ## Description
 
-Scans one or more pipeline files for inline `sources:` blocks, extracts them into standalone source file(s), and rewrites the original pipeline files with the `sources:` block removed. This is the recommended migration path now that pipeline-embedded `sources:` is deprecated in favor of the `--source` daemon flag.
+Scans one or more pipeline files for inline `sources:` blocks, extracts them into standalone source file(s), and rewrites the original pipeline files with the `sources:` block removed. This is the migration path off pipeline-embedded `sources:`, which was removed in v1.0 in favor of the `--source` daemon flag: a pipeline that still declares an inline `sources:` block is now rejected everywhere else, so run this tool to move the declarations into a standalone `--source` file.
 
 The tool detects source ID collisions across pipelines and exits with an error if two pipelines declare the same ID with different configurations.
 
