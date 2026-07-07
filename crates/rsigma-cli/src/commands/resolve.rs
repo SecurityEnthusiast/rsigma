@@ -85,8 +85,9 @@ async fn resolve_async(
 
     // Pipelines only reference sources now; the declarations come from the
     // `--source-file` flags loaded above. Parse each pipeline so a stale
-    // inline `sources:` block still surfaces its migration error, and to
-    // report pipelines that reference no sources.
+    // inline `sources:` block still surfaces its migration error, and note
+    // any pipeline that references no sources (the command's output is
+    // driven entirely by the loaded source declarations either way).
     for path in &pipeline_paths {
         let pipeline = match parse_pipeline_file(path) {
             Ok(p) => p,
@@ -96,9 +97,9 @@ async fn resolve_async(
             }
         };
 
-        if !pipeline.is_dynamic() && source_files.is_empty() {
+        if !pipeline.is_dynamic() {
             eprintln!(
-                "Pipeline '{}' references no dynamic sources, skipping.",
+                "Pipeline '{}' references no dynamic sources.",
                 pipeline.name
             );
         }
