@@ -1484,28 +1484,15 @@ fn run_daemon(
             process::exit(exit_code::CONFIG_ERROR);
         });
 
-    let pipeline_sources: Vec<_> = pipelines
-        .iter()
-        .flat_map(|p| {
-            p.sources
-                .iter()
-                .map(|s| (s.clone(), p.name.clone()))
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    // The pipeline-embedded `sources:` deprecation warning is emitted from
-    // `load_pipelines` (called above), which de-duplicates across hot-reloads
-    // and covers every CLI entry point that loads a pipeline file.
-
-    let source_registry = rsigma_runtime::sources::registry::DaemonSourceRegistry::new(
-        external_sources,
-        pipeline_sources,
-    )
-    .unwrap_or_else(|e| {
-        eprintln!("Source ID collision: {e}");
-        process::exit(exit_code::CONFIG_ERROR);
-    });
+    // Source declarations come exclusively from external `--source` files;
+    // pipelines only reference them. The registry therefore holds only the
+    // external sources.
+    let source_registry =
+        rsigma_runtime::sources::registry::DaemonSourceRegistry::from_external(external_sources)
+            .unwrap_or_else(|e| {
+                eprintln!("Source ID collision: {e}");
+                process::exit(exit_code::CONFIG_ERROR);
+            });
 
     // `value_parser` (and the config schema) restrict this to off/summary/full.
     let match_detail = match_detail

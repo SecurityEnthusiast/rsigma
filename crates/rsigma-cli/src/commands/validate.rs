@@ -171,35 +171,35 @@ fn resolve_validate_sources(
             let mut resolved_pipelines = Vec::with_capacity(pipelines.len());
             let mut source_errors: Vec<String> = Vec::new();
 
-            // Resolve external sources first so they populate the cache
-            if !external_sources.is_empty()
-                && let Err(e) = rt.block_on(rsigma_runtime::sources::resolve_all(
-                    &resolver,
-                    &external_sources,
-                ))
-            {
-                source_errors.push(format!("external sources: {e}"));
-            }
+            // Resolve the external sources once into a shared data map that
+            // every dynamic pipeline's `${source.*}` references expand against.
+            let resolved_data = match rt.block_on(rsigma_runtime::sources::resolve_all(
+                &resolver,
+                &external_sources,
+            )) {
+                Ok(data) => data,
+                Err(e) => {
+                    source_errors.push(format!("external sources: {e}"));
+                    std::collections::HashMap::new()
+                }
+            };
 
             for pipeline in &pipelines {
                 if pipeline.is_dynamic() {
-                    match rt.block_on(rsigma_runtime::sources::resolve_all(
-                        &resolver,
-                        &pipeline.sources,
-                    )) {
-                        Ok(resolved_data) => {
-                            let expanded =
-                                rsigma_runtime::sources::template::TemplateExpander::expand(
-                                    pipeline,
-                                    &resolved_data,
-                                );
-                            resolved_pipelines.push(expanded);
-                        }
-                        Err(e) => {
-                            source_errors.push(format!("pipeline '{}': {e}", pipeline.name));
-                            resolved_pipelines.push(pipeline.clone());
-                        }
+                    let mut expanded =
+                        rsigma_runtime::sources::template::TemplateExpander::expand(
+                            pipeline,
+                            &resolved_data,
+                        );
+                    if let Err(e) = rsigma_runtime::sources::include::expand_includes(
+                        &mut expanded,
+                        &resolved_data,
+                        &external_sources,
+                        false,
+                    ) {
+                        source_errors.push(format!("pipeline '{}': {e}", pipeline.name));
                     }
+                    resolved_pipelines.push(expanded);
                 } else {
                     resolved_pipelines.push(pipeline.clone());
                 }

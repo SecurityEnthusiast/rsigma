@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use clap::Args;
-use rsigma_eval::parse_pipeline_file;
+use rsigma_eval::parse_sources;
 
 /// Arguments for `rsigma rule migrate-sources`.
 #[derive(Args, Debug)]
@@ -79,15 +79,18 @@ pub(crate) fn cmd_migrate_sources(args: MigrateSourcesArgs) {
             }
         };
 
-        let pipeline = match parse_pipeline_file(path) {
-            Ok(p) => p,
+        // The pipeline parser rejects inline `sources:` blocks, so read the
+        // block straight out of the raw YAML instead. A pipeline that no
+        // longer declares sources is simply skipped.
+        let sources = match extract_inline_sources(&content) {
+            Ok(sources) => sources,
             Err(e) => {
-                eprintln!("Error parsing pipeline {}: {e}", path.display());
+                eprintln!("Error parsing sources in {}: {e}", path.display());
                 std::process::exit(crate::exit_code::RULE_ERROR);
             }
         };
 
-        if pipeline.sources.is_empty() {
+        if sources.is_empty() {
             pipelines_without_sources += 1;
             continue;
         }
@@ -95,7 +98,7 @@ pub(crate) fn cmd_migrate_sources(args: MigrateSourcesArgs) {
         pipelines_with_sources += 1;
 
         let mut extracted = Vec::new();
-        for source in &pipeline.sources {
+        for source in &sources {
             if let Some(prev_pipeline) = seen_ids.get(&source.id) {
                 eprintln!(
                     "Error: source ID '{}' declared in both '{}' and '{}'. \
@@ -209,6 +212,24 @@ pub(crate) fn cmd_migrate_sources(args: MigrateSourcesArgs) {
 #[derive(Clone)]
 struct ExtractedSource {
     raw_yaml: String,
+}
+
+/// Parse a pipeline file's raw YAML and return its inline `sources:`
+/// declarations, or an empty vector when the file declares none. Errors only
+/// on a malformed `sources:` block (an unknown source type, a missing `id`,
+/// etc.), so a clean, already-migrated pipeline is a no-op.
+fn extract_inline_sources(
+    content: &str,
+) -> Result<Vec<rsigma_eval::pipeline::sources::DynamicSource>, rsigma_eval::EvalError> {
+    let value: yaml_serde::Value = yaml_serde::from_str(content)
+        .map_err(|e| rsigma_eval::EvalError::InvalidModifiers(format!("pipeline YAML: {e}")))?;
+    let Some(node) = value
+        .as_mapping()
+        .and_then(|m| m.get(yaml_serde::Value::String("sources".to_string())))
+    else {
+        return Ok(Vec::new());
+    };
+    parse_sources(node)
 }
 
 /// Extract the raw YAML text for a single source entry from a pipeline file.

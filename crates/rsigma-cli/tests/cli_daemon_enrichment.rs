@@ -41,13 +41,11 @@ tags:
     - attack.t1059.001
 "#;
 
-/// Pipeline declaring an `employee_directory` dynamic source so the
-/// `lookup` enricher has something to read from.
-fn pipeline_yaml(employees_path: &str) -> String {
+/// External `--source` file declaring an `employee_directory` dynamic source
+/// so the `lookup` enricher has something to read from.
+fn sources_yaml(employees_path: &str) -> String {
     format!(
         r#"
-name: enrich-test
-priority: 10
 sources:
   - id: employee_directory
     type: file
@@ -180,13 +178,13 @@ fn enrichers_inject_into_detection_output_via_all_four_primitives() {
         s
     });
 
-    // Pipeline + employees + enrichers config files. The `command`
+    // Sources + employees + enrichers config files. The `command`
     // enricher reads its JSON body from a fixture file via `cat`
     // (Unix) / `type` (Windows) so the test doesn't have to deal with
     // cross-shell quote escaping.
     let employees = temp_file(".json", EMPLOYEES_JSON);
     let probe_payload = temp_file(".json", r#"{"who": "daemon"}"#);
-    let pipeline = temp_file(".yml", &pipeline_yaml(employees.path().to_str().unwrap()));
+    let sources = temp_file(".yml", &sources_yaml(employees.path().to_str().unwrap()));
     let rule = temp_file(".yml", ENRICH_RULE);
     let enrichers = temp_file(
         ".yml",
@@ -205,8 +203,8 @@ fn enrichers_inject_into_detection_output_via_all_four_primitives() {
         "daemon",
         "-r",
         rule.path().to_str().unwrap(),
-        "-p",
-        pipeline.path().to_str().unwrap(),
+        "--source",
+        sources.path().to_str().unwrap(),
         "--enrichers",
         enrichers.path().to_str().unwrap(),
         "--input",

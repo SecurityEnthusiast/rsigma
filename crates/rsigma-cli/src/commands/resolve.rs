@@ -83,6 +83,10 @@ async fn resolve_async(
         }
     }
 
+    // Pipelines only reference sources now; the declarations come from the
+    // `--source-file` flags loaded above. Parse each pipeline so a stale
+    // inline `sources:` block still surfaces its migration error, and to
+    // report pipelines that reference no sources.
     for path in &pipeline_paths {
         let pipeline = match parse_pipeline_file(path) {
             Ok(p) => p,
@@ -92,25 +96,11 @@ async fn resolve_async(
             }
         };
 
-        if !pipeline.sources.is_empty() {
-            rsigma_runtime::warn_pipeline_inline_sources(path, &pipeline.name);
-        }
-
         if !pipeline.is_dynamic() && source_files.is_empty() {
             eprintln!(
-                "Pipeline '{}' has no dynamic sources, skipping.",
+                "Pipeline '{}' references no dynamic sources, skipping.",
                 pipeline.name
             );
-            continue;
-        }
-
-        for source in &pipeline.sources {
-            if let Some(ref filter) = source_filter
-                && source.id != *filter
-            {
-                continue;
-            }
-            all_sources.push((pipeline.name.clone(), source.clone()));
         }
     }
 
