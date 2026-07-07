@@ -656,17 +656,22 @@ fn compare_values(
         },
         ComparisonOp::Like => match (field_value_str(&left), right) {
             (Some(s), PatternConstant::String(pat)) => {
+                let s = normalize::nfc(s);
                 let pat = normalize::nfc(pat.as_str());
-                like_match(s, pat.as_ref())
+                like_match(s.as_ref(), pat.as_ref())
             }
             _ => false,
         },
         ComparisonOp::Matches => match (left, right) {
             (FieldValue::Str(s), PatternConstant::String(re)) => {
                 let s = normalize::nfc(&s);
-                regex_match(s.as_ref(), re)?
+                let re = normalize::nfc(re);
+                regex_match(s.as_ref(), re.as_ref())?
             }
-            (FieldValue::Bytes(b), PatternConstant::String(re)) => bytes_regex_match(&b, re)?,
+            (FieldValue::Bytes(b), PatternConstant::String(re)) => {
+                let re = normalize::nfc(re);
+                bytes_regex_match(&b, re.as_ref())?
+            }
             _ => false,
         },
         ComparisonOp::IsSubset => match (field_value_str(&left), right) {
@@ -949,6 +954,43 @@ mod level1 {
         ));
         let pattern = parse("[process:command_line MATCHES '\\\\./gedit-bin.*']");
         assert!(pattern.matches_single(&sco).expect("eval"));
+    }
+
+    #[test]
+    fn like_nfc_normalizes_both_operands() {
+        let nfd = "cafe\u{0301}";
+        let nfc = "caf\u{00E9}";
+        let sco = process(&format!(
+            r#"{{"type":"process","spec_version":"2.1","id":"process--00000000-0000-4000-8000-000000000001","command_line":"{nfd}"}}"#
+        ));
+        let pattern = parse(&format!("[process:command_line LIKE '%{nfc}%']"));
+        assert!(
+            pattern.matches_single(&sco).expect("eval"),
+            "NFD field value must match NFC LIKE pattern after §9.6.1 normalization"
+        );
+    }
+
+    #[test]
+    fn matches_nfc_normalizes_both_operands() {
+        let nfd = "cafe\u{0301}";
+        let nfc = "caf\u{00E9}";
+        let sco = process(&format!(
+            r#"{{"type":"process","spec_version":"2.1","id":"process--00000000-0000-4000-8000-000000000001","command_line":"{nfd}"}}"#
+        ));
+        let pattern = parse(&format!("[process:command_line MATCHES '.*{nfc}.*']"));
+        assert!(
+            pattern.matches_single(&sco).expect("eval"),
+            "NFD field value must match NFC MATCHES regex after §9.6.1 normalization"
+        );
+
+        let sco_nfc = process(&format!(
+            r#"{{"type":"process","spec_version":"2.1","id":"process--00000000-0000-4000-8000-000000000002","command_line":"{nfc}"}}"#
+        ));
+        let pattern_nfd = parse(&format!("[process:command_line MATCHES '.*{nfd}.*']"));
+        assert!(
+            pattern_nfd.matches_single(&sco_nfc).expect("eval"),
+            "NFC field value must match NFD MATCHES regex after §9.6.1 normalization"
+        );
     }
 
     #[test]

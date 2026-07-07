@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use unicode_normalization::UnicodeNormalization;
 
-/// NFC-normalize a string per STIX §9.6.1 (LIKE pattern constant, MATCHES haystack).
+/// NFC-normalize a string per STIX §9.6.1 (`LIKE` / `MATCHES` operands).
 pub(crate) fn nfc<'a>(input: &'a str) -> Cow<'a, str> {
     if input.is_ascii() {
         return Cow::Borrowed(input);

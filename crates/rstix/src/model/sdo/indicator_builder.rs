@@ -31,7 +31,7 @@ pub enum IndicatorBuilderError {
 enum PendingPattern {
     Stix {
         raw: String,
-        version: Option<String>,
+        pattern_version: Option<String>,
     },
     External {
         pattern_type: String,
@@ -161,10 +161,10 @@ impl IndicatorBuilder {
     ///
     /// Stores the raw pattern string; does not parse here. With the `pattern` feature,
     /// parse and type-check run in [`build`](Self::build) (same boundary as deserialize).
-    pub fn stix_pattern(mut self, raw: impl Into<String>, version: Option<String>) -> Self {
+    pub fn stix_pattern(mut self, raw: impl Into<String>, pattern_version: Option<String>) -> Self {
         self.pattern = Some(PendingPattern::Stix {
             raw: raw.into(),
-            version,
+            pattern_version,
         });
         self
     }
@@ -220,7 +220,10 @@ impl IndicatorBuilder {
             .valid_from
             .ok_or(IndicatorBuilderError::MissingValidFrom)?;
         let pattern = match self.pattern.ok_or(IndicatorBuilderError::MissingPattern)? {
-            PendingPattern::Stix { raw, version } => build_stix_pattern(raw, version)?,
+            PendingPattern::Stix {
+                raw,
+                pattern_version,
+            } => build_stix_pattern(raw, pattern_version)?,
             PendingPattern::External {
                 pattern_type,
                 pattern_version,
@@ -250,17 +253,20 @@ impl IndicatorBuilder {
 #[cfg(feature = "pattern")]
 fn build_stix_pattern(
     raw: String,
-    version: Option<String>,
+    pattern_version: Option<String>,
 ) -> Result<IndicatorPattern, IndicatorBuilderError> {
-    Ok(IndicatorPattern::stix(raw, version)?)
+    Ok(IndicatorPattern::stix(raw, pattern_version)?)
 }
 
 #[cfg(not(feature = "pattern"))]
 fn build_stix_pattern(
     raw: String,
-    version: Option<String>,
+    pattern_version: Option<String>,
 ) -> Result<IndicatorPattern, IndicatorBuilderError> {
-    Ok(IndicatorPattern::Stix { raw, version })
+    Ok(IndicatorPattern::Stix {
+        raw,
+        pattern_version,
+    })
 }
 
 #[cfg(all(test, feature = "serde"))]

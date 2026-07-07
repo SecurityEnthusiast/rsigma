@@ -20,7 +20,7 @@ pub enum IndicatorPattern {
         /// Raw STIX pattern string.
         raw: String,
         /// STIX patterning version (wire field `pattern_version`).
-        version: Option<String>,
+        pattern_version: Option<String>,
         /// Parsed and type-checked pattern (`pattern` feature).
         #[cfg(feature = "pattern")]
         parsed: Pattern,
@@ -55,7 +55,9 @@ impl IndicatorPattern {
     /// Pattern language version from the wire `pattern_version` field.
     pub fn pattern_version(&self) -> Option<&str> {
         match self {
-            Self::Stix { version, .. } => version.as_deref(),
+            Self::Stix {
+                pattern_version, ..
+            } => pattern_version.as_deref(),
             Self::Other {
                 pattern_version, ..
             } => pattern_version.as_deref(),
@@ -64,12 +66,15 @@ impl IndicatorPattern {
 
     /// Parse and construct a STIX indicator pattern (`pattern` feature).
     #[cfg(feature = "pattern")]
-    pub fn stix(raw: impl Into<String>, version: Option<String>) -> Result<Self, PatternError> {
+    pub fn stix(
+        raw: impl Into<String>,
+        pattern_version: Option<String>,
+    ) -> Result<Self, PatternError> {
         let raw = raw.into();
         let parsed = Pattern::parse(&raw)?;
         Ok(Self::Stix {
             raw,
-            version,
+            pattern_version,
             parsed,
         })
     }
@@ -185,7 +190,7 @@ fn indicator_pattern_from_wire(
         let parsed = Pattern::parse(&pattern)?;
         Ok(IndicatorPattern::Stix {
             raw: pattern,
-            version: pattern_version,
+            pattern_version,
             parsed,
         })
     } else {
@@ -206,7 +211,7 @@ fn indicator_pattern_from_wire(
     if pattern_type == "stix" {
         IndicatorPattern::Stix {
             raw: pattern,
-            version: pattern_version,
+            pattern_version,
         }
     } else {
         IndicatorPattern::Other {
@@ -224,9 +229,11 @@ impl serde::Serialize for Indicator {
         S: serde::Serializer,
     {
         let (pattern, pattern_type, pattern_version) = match &self.pattern {
-            IndicatorPattern::Stix { raw, version, .. } => {
-                (raw.as_str(), "stix", version.as_deref())
-            }
+            IndicatorPattern::Stix {
+                raw,
+                pattern_version,
+                ..
+            } => (raw.as_str(), "stix", pattern_version.as_deref()),
             IndicatorPattern::Other {
                 pattern_type,
                 pattern_version,
@@ -417,7 +424,7 @@ mod tests {
                 {
                     IndicatorPattern::Stix {
                         raw: "[ipv4-addr:value = '198.51.100.3']".into(),
-                        version: None,
+                        pattern_version: None,
                     }
                 }
             },

@@ -207,7 +207,7 @@ Recorded engineering choices for the `pattern` feature and Indicator integration
 **Consequences.**
 
 - Invalid STIX patterns surface as `IndicatorBuilderError::Pattern` from `build()`, not from `stix_pattern()`.
-- With `pattern` disabled, `build()` stores `IndicatorPattern::Stix { raw, version }` without an AST (same as serde-only deserialize).
+- With `pattern` disabled, `build()` stores `IndicatorPattern::Stix { raw, pattern_version }` without an AST (same as serde-only deserialize).
 - Pre-parsed patterns can be supplied via `.pattern(IndicatorPattern::stix(...)?)` or `.pattern(...)` after calling `Pattern::parse` / `IndicatorPattern::stix` directly.
 
 User-facing docs: [rstix library page](../../docs/library/rstix.md#pattern-engine-stix-9).
