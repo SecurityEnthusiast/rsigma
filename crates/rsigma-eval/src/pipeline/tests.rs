@@ -239,7 +239,6 @@ fn test_merge_pipelines_sorts_by_priority() {
             vars: HashMap::new(),
             transformations: vec![],
             finalizers: vec![],
-            sources: vec![],
             source_refs: vec![],
         },
         Pipeline {
@@ -248,7 +247,6 @@ fn test_merge_pipelines_sorts_by_priority() {
             vars: HashMap::new(),
             transformations: vec![],
             finalizers: vec![],
-            sources: vec![],
             source_refs: vec![],
         },
         Pipeline {
@@ -257,7 +255,6 @@ fn test_merge_pipelines_sorts_by_priority() {
             vars: HashMap::new(),
             transformations: vec![],
             finalizers: vec![],
-            sources: vec![],
             source_refs: vec![],
         },
     ];
@@ -1000,6 +997,22 @@ transformations:
 // Dynamic pipeline tests
 // =============================================================================
 
+/// Parse the `sources:` node of a YAML document into source declarations,
+/// mirroring what a standalone `--source` file yields. Source declarations no
+/// longer live inside pipelines, so the declaration-parsing coverage exercises
+/// the same [`parse_sources`](parsing::parse_sources) path an external file
+/// uses. Only the `sources:` key is read; any surrounding keys are ignored.
+fn parse_source_list(yaml: &str) -> crate::error::Result<Vec<sources::DynamicSource>> {
+    let value: yaml_serde::Value = yaml_serde::from_str(yaml).unwrap();
+    let node = value
+        .as_mapping()
+        .unwrap()
+        .get(yaml_serde::Value::String("sources".to_string()))
+        .expect("test YAML must have a top-level `sources:` key")
+        .clone();
+    parsing::parse_sources(&node)
+}
+
 #[test]
 fn test_static_pipeline_is_not_dynamic() {
     let yaml = r#"
@@ -1013,8 +1026,29 @@ transformations:
 "#;
     let pipeline = parse_pipeline(yaml).unwrap();
     assert!(!pipeline.is_dynamic());
-    assert!(pipeline.sources.is_empty());
     assert!(pipeline.source_refs.is_empty());
+}
+
+#[test]
+fn test_inline_sources_block_is_rejected() {
+    // Pipeline-embedded `sources:` was removed in v1.0; the parser rejects it
+    // with a hint pointing at the migration tool.
+    let yaml = r#"
+name: Legacy Pipeline
+sources:
+  - id: threat_feed
+    type: file
+    path: /tmp/threat.json
+    format: json
+transformations:
+  - type: value_placeholders
+"#;
+    let err = parse_pipeline(yaml).unwrap_err().to_string();
+    assert!(
+        err.contains("migrate-sources"),
+        "error should point at the migration tool: {err}"
+    );
+    assert!(err.contains("--source"), "error should mention --source: {err}");
 }
 
 #[test]
@@ -1035,11 +1069,10 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    assert!(pipeline.is_dynamic());
-    assert_eq!(pipeline.sources.len(), 1);
+    let src_list = parse_source_list(yaml).unwrap();
+    assert_eq!(src_list.len(), 1);
 
-    let src = &pipeline.sources[0];
+    let src = &src_list[0];
     assert_eq!(src.id, "admin_emails");
     assert!(src.required);
     assert_eq!(src.timeout, Some(std::time::Duration::from_secs(10)));
@@ -1086,8 +1119,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    let src = &pipeline.sources[0];
+    let src_list = parse_source_list(yaml).unwrap();
+    let src = &src_list[0];
     assert_eq!(src.id, "ioc_domains");
     assert!(!src.required);
     assert_eq!(src.on_error, sources::ErrorPolicy::Fail);
@@ -1123,8 +1156,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    let src = &pipeline.sources[0];
+    let src_list = parse_source_list(yaml).unwrap();
+    let src = &src_list[0];
     assert_eq!(src.id, "watchlist");
     assert_eq!(src.refresh, sources::RefreshPolicy::Watch);
 
@@ -1156,8 +1189,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    let src = &pipeline.sources[0];
+    let src_list = parse_source_list(yaml).unwrap();
+    let src = &src_list[0];
     assert_eq!(src.id, "threat_intel");
     assert_eq!(src.refresh, sources::RefreshPolicy::Push);
 
@@ -1187,8 +1220,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    let src = &pipeline.sources[0];
+    let src_list = parse_source_list(yaml).unwrap();
+    let src = &src_list[0];
     match &src.source_type {
         sources::SourceType::Http { extract, .. } => {
             assert_eq!(
@@ -1215,8 +1248,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    let src = &pipeline.sources[0];
+    let src_list = parse_source_list(yaml).unwrap();
+    let src = &src_list[0];
     match &src.source_type {
         sources::SourceType::File { extract, .. } => {
             assert_eq!(
@@ -1245,8 +1278,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    let src = &pipeline.sources[0];
+    let src_list = parse_source_list(yaml).unwrap();
+    let src = &src_list[0];
     match &src.source_type {
         sources::SourceType::Http { extract, .. } => {
             assert_eq!(
@@ -1275,7 +1308,7 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let result = parse_pipeline(yaml);
+    let result = parse_source_list(yaml);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("xpath"), "error should mention 'xpath': {err}");
@@ -1284,35 +1317,20 @@ transformations:
 #[test]
 fn test_parse_on_demand_refresh() {
     let yaml = r#"
-name: On Demand Pipeline
 sources:
   - id: compromised
     type: http
     url: https://api.internal/v1/compromised
     refresh: on_demand
-transformations:
-  - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    assert_eq!(
-        pipeline.sources[0].refresh,
-        sources::RefreshPolicy::OnDemand
-    );
+    let src_list = parse_source_list(yaml).unwrap();
+    assert_eq!(src_list[0].refresh, sources::RefreshPolicy::OnDemand);
 }
 
 #[test]
 fn test_detect_source_refs_in_vars() {
     let yaml = r#"
 name: Ref Detection
-sources:
-  - id: admin_emails
-    type: http
-    url: https://api.internal/v1/emails
-    format: json
-  - id: env_config
-    type: http
-    url: https://cmdb.internal/v1/config
-    format: json
 vars:
   admin_emails: "${source.admin_emails}"
   log_index: "${source.env_config.log_index}"
@@ -1335,14 +1353,27 @@ transformations:
 }
 
 #[test]
+fn test_detect_source_refs_in_list_vars() {
+    // A var whose value is a list of templates (the common `value_placeholders`
+    // shape) must still register as a dynamic source reference.
+    let yaml = r#"
+name: List Var Refs
+vars:
+  malicious_commands:
+    - "${source.cmd_list}"
+transformations:
+  - type: value_placeholders
+"#;
+    let pipeline = parse_pipeline(yaml).unwrap();
+    assert!(pipeline.is_dynamic(), "list-valued var ref should be dynamic");
+    assert_eq!(pipeline.source_refs.len(), 1);
+    assert_eq!(pipeline.source_refs[0].source_id, "cmd_list");
+}
+
+#[test]
 fn test_detect_source_refs_in_transformation_fields() {
     let yaml = r#"
 name: Transform Refs
-sources:
-  - id: env_config
-    type: http
-    url: https://cmdb.internal/v1/config
-    format: json
 transformations:
   - type: field_name_mapping
     mapping: "${source.env_config.field_mapping}"
@@ -1375,11 +1406,6 @@ transformations:
 fn test_detect_include_directive() {
     let yaml = r#"
 name: Include Pipeline
-sources:
-  - id: extra_transforms
-    type: http
-    url: https://compliance.internal/v1/transforms
-    format: yaml
 transformations:
   - include: "${source.extra_transforms}"
   - type: value_placeholders
@@ -1397,40 +1423,22 @@ transformations:
 }
 
 #[test]
-fn test_cross_validation_undeclared_source_fails() {
+fn test_source_refs_are_not_validated_at_parse_time() {
+    // Source declarations live in external `--source` files, so a pipeline's
+    // `${source.*}` references cannot be resolved at parse time. Parsing a
+    // pipeline that references an unknown source must succeed; the reference
+    // is validated later against the loaded external IDs.
     let yaml = r#"
-name: Bad Refs Pipeline
-sources:
-  - id: declared_source
-    type: http
-    url: https://api.internal/v1/data
+name: Ref Only Pipeline
 vars:
-  emails: "${source.undeclared_source}"
+  emails: "${source.some_external_source}"
 transformations:
   - type: value_placeholders
 "#;
-    let result = parse_pipeline(yaml);
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("undeclared_source"), "got: {err_msg}");
-}
-
-#[test]
-fn test_cross_validation_declared_source_passes() {
-    let yaml = r#"
-name: Good Refs Pipeline
-sources:
-  - id: my_source
-    type: http
-    url: https://api.internal/v1/data
-    format: json
-vars:
-  data: "${source.my_source}"
-transformations:
-  - type: value_placeholders
-"#;
-    let result = parse_pipeline(yaml);
-    assert!(result.is_ok());
+    let pipeline = parse_pipeline(yaml).unwrap();
+    assert!(pipeline.is_dynamic());
+    assert_eq!(pipeline.source_refs.len(), 1);
+    assert_eq!(pipeline.source_refs[0].source_id, "some_external_source");
 }
 
 #[test]
@@ -1444,7 +1452,7 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let result = parse_pipeline(yaml);
+    let result = parse_source_list(yaml);
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("unknown type"), "got: {err_msg}");
@@ -1460,7 +1468,7 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let result = parse_pipeline(yaml);
+    let result = parse_source_list(yaml);
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("'id'"), "got: {err_msg}");
@@ -1477,7 +1485,7 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let result = parse_pipeline(yaml);
+    let result = parse_source_list(yaml);
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("'url'"), "got: {err_msg}");
@@ -1494,7 +1502,7 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let result = parse_pipeline(yaml);
+    let result = parse_source_list(yaml);
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("non-empty 'command'"), "got: {err_msg}");
@@ -1511,8 +1519,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    assert!(pipeline.sources[0].required);
+    let src_list = parse_source_list(yaml).unwrap();
+    assert!(src_list[0].required);
 }
 
 #[test]
@@ -1526,8 +1534,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    match &pipeline.sources[0].source_type {
+    let src_list = parse_source_list(yaml).unwrap();
+    match &src_list[0].source_type {
         sources::SourceType::Http { format, .. } => {
             assert_eq!(*format, sources::DataFormat::Json);
         }
@@ -1546,8 +1554,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    assert_eq!(pipeline.sources[0].refresh, sources::RefreshPolicy::Once);
+    let src_list = parse_source_list(yaml).unwrap();
+    assert_eq!(src_list[0].refresh, sources::RefreshPolicy::Once);
 }
 
 #[test]
@@ -1561,18 +1569,13 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    assert_eq!(
-        pipeline.sources[0].on_error,
-        sources::ErrorPolicy::UseCached
-    );
+    let src_list = parse_source_list(yaml).unwrap();
+    assert_eq!(src_list[0].on_error, sources::ErrorPolicy::UseCached);
 }
 
 #[test]
-fn test_multiple_sources_and_refs() {
+fn test_multiple_sources_parse() {
     let yaml = r#"
-name: Multi Source
-priority: 5
 sources:
   - id: emails
     type: http
@@ -1585,6 +1588,19 @@ sources:
     format: yaml
     refresh: watch
     required: false
+"#;
+    let src_list = parse_source_list(yaml).unwrap();
+    assert_eq!(src_list.len(), 2);
+    assert_eq!(src_list[0].id, "emails");
+    assert_eq!(src_list[1].id, "config");
+    assert!(!src_list[1].required);
+}
+
+#[test]
+fn test_multiple_refs() {
+    let yaml = r#"
+name: Multi Source
+priority: 5
 vars:
   admin_emails: "${source.emails}"
   log_level: "${source.config.log_level}"
@@ -1593,7 +1609,6 @@ transformations:
 "#;
     let pipeline = parse_pipeline(yaml).unwrap();
     assert!(pipeline.is_dynamic());
-    assert_eq!(pipeline.sources.len(), 2);
     assert_eq!(pipeline.source_refs.len(), 2);
     assert_eq!(pipeline.dynamic_references().len(), 2);
 }
@@ -1638,7 +1653,6 @@ transformations:
 "#;
     let pipeline = parse_pipeline(yaml).unwrap();
     assert!(!pipeline.is_dynamic());
-    assert!(pipeline.sources.is_empty());
     assert!(pipeline.source_refs.is_empty());
 }
 
@@ -1654,18 +1668,15 @@ fn test_parse_multiple_refresh_durations() {
     for (duration_str, expected) in test_cases {
         let yaml = format!(
             r#"
-name: Duration Test
 sources:
   - id: src
     type: http
     url: https://api.internal/data
     refresh: {duration_str}
-transformations:
-  - type: value_placeholders
 "#
         );
-        let pipeline = parse_pipeline(&yaml).unwrap();
-        match &pipeline.sources[0].refresh {
+        let src_list = parse_source_list(&yaml).unwrap();
+        match &src_list[0].refresh {
             sources::RefreshPolicy::Interval(d) => {
                 assert_eq!(*d, expected, "failed for '{duration_str}'");
             }
@@ -1688,8 +1699,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    match &pipeline.sources[0].source_type {
+    let src_list = parse_source_list(yaml).unwrap();
+    match &src_list[0].source_type {
         sources::SourceType::Http { headers, .. } => {
             assert_eq!(headers.len(), 2);
             assert_eq!(headers.get("Authorization").unwrap(), "Bearer ${API_TOKEN}");
@@ -1712,8 +1723,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    match &pipeline.sources[0].source_type {
+    let src_list = parse_source_list(yaml).unwrap();
+    match &src_list[0].source_type {
         sources::SourceType::Http { method, .. } => {
             assert_eq!(method.as_deref(), Some("POST"));
         }
@@ -1736,8 +1747,8 @@ sources:
 transformations:
   - type: value_placeholders
 "#;
-    let pipeline = parse_pipeline(yaml).unwrap();
-    let src = &pipeline.sources[0];
+    let src_list = parse_source_list(yaml).unwrap();
+    let src = &src_list[0];
     assert_eq!(src.on_error, sources::ErrorPolicy::UseDefault);
     assert!(src.default.is_some());
 }
@@ -1832,8 +1843,10 @@ transformations:
   - type: value_placeholders
     include: "${source.ext_lookup}"
 "#;
+    // Parsing succeeds: references are validated later against external IDs,
+    // not at parse time.
     let pipeline = parse_pipeline(yaml);
-    assert!(pipeline.is_err(), "should fail without external IDs");
+    assert!(pipeline.is_ok(), "parse should defer reference validation");
 
     let value: yaml_serde::Value = yaml_serde::from_str(yaml).unwrap();
     let obj = value.as_mapping().unwrap();
@@ -1842,7 +1855,7 @@ transformations:
     let mut external = std::collections::HashSet::new();
     external.insert("ext_lookup".to_string());
 
-    assert!(parsing::validate_source_refs(&[], &source_refs, Some(&external)).is_ok());
+    assert!(parsing::validate_source_refs(&source_refs, Some(&external)).is_ok());
 }
 
 #[test]
@@ -1858,7 +1871,7 @@ fn test_validate_source_refs_undeclared_even_with_externals() {
     let mut external = std::collections::HashSet::new();
     external.insert("other_id".to_string());
 
-    let result = parsing::validate_source_refs(&[], &refs, Some(&external));
+    let result = parsing::validate_source_refs(&refs, Some(&external));
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("missing"));
 }

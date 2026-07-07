@@ -68,15 +68,23 @@ fn parse_pipeline_value(value: &yaml_serde::Value) -> Result<Pipeline> {
         Vec::new()
     };
 
-    let sources = if let Some(items) = obj.get(ykey("sources")) {
-        parse_sources(items)?
-    } else {
-        Vec::new()
-    };
+    // Pipeline-embedded `sources:` blocks were deprecated in v0.12.0 and
+    // removed in v1.0. Source declarations now live in standalone source
+    // files loaded via `--source`; a pipeline only references them with
+    // `${source.<id>}`. Reject the inline form with a migration hint.
+    if obj.get(ykey("sources")).is_some() {
+        return Err(EvalError::InvalidModifiers(
+            "pipeline declares an inline 'sources:' block, which was removed in v1.0. \
+             Extract it into a standalone source file with \
+             `rsigma rule migrate-sources -p <pipeline> -o sources.yml` and load it via \
+             `--source sources.yml`."
+                .to_string(),
+        ));
+    }
 
     let source_refs = scan_source_refs(obj);
 
-    validate_source_refs(&sources, &source_refs, None)?;
+    validate_source_refs(&source_refs, None)?;
 
     Ok(Pipeline {
         name,
@@ -84,7 +92,6 @@ fn parse_pipeline_value(value: &yaml_serde::Value) -> Result<Pipeline> {
         vars,
         transformations,
         finalizers,
-        sources,
         source_refs,
     })
 }
@@ -850,7 +857,11 @@ fn parse_finalizers(value: &yaml_serde::Value) -> Vec<Finalizer> {
 // Dynamic source parsing
 // =============================================================================
 
-/// Parse the `sources` section of a pipeline YAML.
+/// Parse a `sources` sequence into dynamic source declarations.
+///
+/// Used by [`parse_sources_file`] for standalone `--source` files and by the
+/// `rsigma rule migrate-sources` tool to read a legacy pipeline's inline
+/// `sources:` block. Pipelines themselves no longer accept an inline block.
 pub fn parse_sources(value: &yaml_serde::Value) -> Result<Vec<DynamicSource>> {
     let items = value
         .as_sequence()
@@ -1172,14 +1183,14 @@ fn parse_command_field(value: Option<&yaml_serde::Value>) -> Result<Vec<String>>
 // =============================================================================
 
 /// Validate that every `${source.*}` reference and `include` target names a
-/// declared source (pipeline-local or external registry). Returns an error
-/// listing all undeclared source IDs.
+/// source declared in an external source file. Returns an error listing all
+/// undeclared source IDs.
 ///
-/// `external_ids` is an optional set of source IDs declared outside the
-/// pipeline (via `--source` files). A reference is valid if it matches
-/// either a pipeline-local declaration or an external ID.
+/// `external_ids` is the set of source IDs declared outside the pipeline (via
+/// `--source` files). When `None`, no external declarations are known yet, so
+/// references cannot be resolved at parse time and validation is deferred (the
+/// caller re-runs it once external sources are loaded).
 pub fn validate_source_refs(
-    sources: &[DynamicSource],
     refs: &[SourceRef],
     external_ids: Option<&std::collections::HashSet<String>>,
 ) -> Result<()> {
@@ -1187,14 +1198,15 @@ pub fn validate_source_refs(
         return Ok(());
     }
 
-    let declared: std::collections::HashSet<&str> = sources.iter().map(|s| s.id.as_str()).collect();
+    // Without a known external ID set (parse time), references are validated
+    // later against the loaded `--source` files.
+    let Some(external_ids) = external_ids else {
+        return Ok(());
+    };
 
     let undeclared: Vec<&str> = refs
         .iter()
-        .filter(|r| {
-            !declared.contains(r.source_id.as_str())
-                && !external_ids.is_some_and(|ext| ext.contains(r.source_id.as_str()))
-        })
+        .filter(|r| !external_ids.contains(r.source_id.as_str()))
         .map(|r| r.source_id.as_str())
         .collect::<std::collections::HashSet<&str>>()
         .into_iter()
@@ -1229,20 +1241,12 @@ fn source_ref_regex() -> &'static Regex {
 pub(crate) fn scan_source_refs(obj: &yaml_serde::Mapping) -> Vec<SourceRef> {
     let mut refs = Vec::new();
 
-    // Scan vars
+    // Scan vars. A var value can be a scalar string, a list of strings, or a
+    // nested structure, so recurse rather than only matching scalar strings.
     if let Some(yaml_serde::Value::Mapping(vars)) = obj.get(ykey("vars")) {
         for (k, v) in vars {
-            if let (Some(var_name), Some(s)) = (k.as_str(), yaml_value_as_str(v)) {
-                for cap in source_ref_regex().captures_iter(s) {
-                    refs.push(SourceRef {
-                        source_id: cap[1].to_string(),
-                        sub_path: cap.get(2).map(|m| m.as_str().to_string()),
-                        location: RefLocation::Var {
-                            var_name: var_name.to_string(),
-                        },
-                        raw_template: cap[0].to_string(),
-                    });
-                }
+            if let Some(var_name) = k.as_str() {
+                scan_var_value_for_refs(v, var_name, &mut refs);
             }
         }
     }
@@ -1293,6 +1297,36 @@ pub(crate) fn scan_source_refs(obj: &yaml_serde::Mapping) -> Vec<SourceRef> {
     }
 
     refs
+}
+
+/// Recursively scan a `vars` value (scalar, list, or nested) for
+/// `${source.*}` references, attributing each to the named variable.
+fn scan_var_value_for_refs(value: &yaml_serde::Value, var_name: &str, refs: &mut Vec<SourceRef>) {
+    match value {
+        yaml_serde::Value::String(s) => {
+            for cap in source_ref_regex().captures_iter(s) {
+                refs.push(SourceRef {
+                    source_id: cap[1].to_string(),
+                    sub_path: cap.get(2).map(|m| m.as_str().to_string()),
+                    location: RefLocation::Var {
+                        var_name: var_name.to_string(),
+                    },
+                    raw_template: cap[0].to_string(),
+                });
+            }
+        }
+        yaml_serde::Value::Sequence(seq) => {
+            for item in seq {
+                scan_var_value_for_refs(item, var_name, refs);
+            }
+        }
+        yaml_serde::Value::Mapping(m) => {
+            for (_, v) in m {
+                scan_var_value_for_refs(v, var_name, refs);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Recursively scan a YAML value for `${source.*}` references.
