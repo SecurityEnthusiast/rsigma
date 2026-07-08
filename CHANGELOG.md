@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix Validation Pipeline scaffold (`validate` feature)
+### rstix Validation Pipeline scaffold (`validate` feature) (#297)
 
 Adds the profile-based **Validation Pipeline** module behind the optional `validate` feature (implies `serde` + `pattern`):
 
