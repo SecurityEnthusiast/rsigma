@@ -196,17 +196,24 @@ let custom = Validator::builder()
 | `producer_strict` | all except references | Publishing/export |
 | `interop_strict` | all 12, zero leniency | OASIS interop tests |
 
-**Scaffold status:** types, profiles, diagnostic taxonomy (`STIX-E/W/I/H` codes), check dispatcher, raw JSON entry (`STIX-E0001` with span metadata), root type discrimination (`STIX-E0002`), parse-error bridging (`STIX-E0003` for missing ids), and `ValidatorBuilder::with_allow_custom` / `with_parse_options` are implemented. Remaining check implementations follow in a later release.
+### Validation Pipeline design decisions
+
+Recorded engineering choices for the `validate` feature. Summaries also appear on the [rstix library page](../../docs/library/rstix.md#validation-pipeline).
+
+<a id="dd-vp-001--bundlevalidate-vs-validatevalidator"></a>
 
 #### DD-VP-001 — `Bundle::validate()` vs `validate::Validator`
 
 | | |
 | --- | --- |
-| **Status** | Accepted (Validation Pipeline scaffold) |
+| **Status** | Accepted |
+| **Applies to** | `validate` feature, `model::Bundle::validate` |
 | **`Bundle::validate()`** | Warning-only SHOULD findings; `model::ValidationReport` + `ValidationCode` enum |
 | **`validate::Validator`** | Profile-driven pipeline; Error/Warning/Info/Hint; OASIS-style string codes |
 
-Use `Validator` for untrusted JSON and named profiles. Overlapping rules migrate into the validation pipeline in follow-up work; `Bundle::validate()` remains until migration is complete.
+**Decision.** Use `Validator` for untrusted JSON and named profiles. Overlapping rules migrate into the validation pipeline in follow-up work; `Bundle::validate()` remains until migration is complete.
+
+**Scaffold status (current release).** Types, profiles, diagnostic taxonomy (`STIX-E/W/I/H` codes), check dispatcher, raw JSON entry (`STIX-E0001` with span metadata), root type discrimination (`STIX-E0002`), parse-error bridging (`STIX-E0003` for missing ids), and `ValidatorBuilder::with_allow_custom` / `with_parse_options` are implemented. Remaining check implementations follow in a later release.
 
 ### Pattern Engine design decisions
 
