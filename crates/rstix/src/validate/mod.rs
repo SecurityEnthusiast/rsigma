@@ -14,8 +14,7 @@
 //!   the same semantic helpers as phases 10 and 12.
 //!
 //! All checks are wired through the dispatcher and share helpers under
-//! [`model_bridge`](model_bridge), [`object_validate`](object_validate),
-//! [`semantic`](semantic), and [`wire`](wire).
+//! `model_bridge`, `object_validate`, `semantic`, and `wire`.
 
 mod checks;
 mod diagnostic;
