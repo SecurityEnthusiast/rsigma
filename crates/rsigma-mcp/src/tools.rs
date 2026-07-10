@@ -21,9 +21,8 @@ use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::router::tool::ToolRouter,
     model::{
-        AnnotateAble, Implementation, ListResourcesResult, PaginatedRequestParams, RawResource,
-        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
-        ServerInfo,
+        Implementation, ListResourcesResult, PaginatedRequestParams, ReadResourceRequestParams,
+        ReadResourceResult, Resource, ResourceContents, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     tool_handler,
@@ -167,10 +166,10 @@ impl ServerHandler for RsigmaMcp {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
         let resources = vec![
-            RawResource::new(RESOURCE_LINT_CATALOGUE, "Lint rule catalogue").no_annotation(),
-            RawResource::new(RESOURCE_ADS_SCHEMA, "ADS section catalogue").no_annotation(),
-            RawResource::new(RESOURCE_MODIFIERS, "Sigma field modifiers").no_annotation(),
-            RawResource::new(RESOURCE_MITRE_TACTICS, "MITRE ATT&CK tactics").no_annotation(),
+            Resource::new(RESOURCE_LINT_CATALOGUE, "Lint rule catalogue"),
+            Resource::new(RESOURCE_ADS_SCHEMA, "ADS section catalogue"),
+            Resource::new(RESOURCE_MODIFIERS, "Sigma field modifiers"),
+            Resource::new(RESOURCE_MITRE_TACTICS, "MITRE ATT&CK tactics"),
         ];
         Ok(ListResourcesResult {
             resources,
