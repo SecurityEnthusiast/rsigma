@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use rmcp::{
     ErrorData as McpError,
-    model::{CallToolResult, Content},
+    model::{CallToolResult, ContentBlock},
 };
 use rsigma_convert::Backend;
 use rsigma_eval::{MatchDetailLevel, Pipeline, parse_pipeline_file, resolve_builtin_pipeline};
@@ -41,7 +41,7 @@ pub struct SourceInput {
 /// Wrap a serializable value as a successful tool result carrying pretty JSON text.
 pub(crate) fn json_result(value: &Value) -> CallToolResult {
     let text = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
-    CallToolResult::success(vec![Content::text(text)])
+    CallToolResult::success(vec![ContentBlock::text(text)])
 }
 
 /// Shorthand for an invalid-params MCP error.
