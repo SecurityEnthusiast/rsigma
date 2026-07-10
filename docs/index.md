@@ -37,6 +37,14 @@ RSigma is a complete Rust toolkit for the [Sigma](https://sigmahq.io/) detection
 
     [:octicons-arrow-right-24: Core concepts](./getting-started/concepts.md)
 
+- :material-sync:{ .lg .middle } **Detection engineering loop**
+
+    ---
+
+    Author, test, deploy, detect, alert, measure, and hunt: one map of the full lifecycle.
+
+    [:octicons-arrow-right-24: The loop](./guide/detection-engineering-loop.md)
+
 - :material-console:{ .lg .middle } **CLI Reference**
 
     ---

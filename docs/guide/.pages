@@ -1,4 +1,5 @@
 nav:
+  - Detection Engineering Loop: detection-engineering-loop.md
   - Evaluating Rules: evaluating-rules.md
   - Streaming Detection: streaming-detection.md
   - Rule Conversion: rule-conversion.md

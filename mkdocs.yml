@@ -162,6 +162,7 @@ plugins:
           - getting-started/quick-start.md
           - getting-started/concepts.md
         User Guide:
+          - guide/detection-engineering-loop.md
           - guide/evaluating-rules.md
           - guide/streaming-detection.md
           - guide/rule-conversion.md
