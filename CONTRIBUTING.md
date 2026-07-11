@@ -8,6 +8,7 @@ Thank you for considering a contribution to rsigma! This document covers the bas
 
 - Rust toolchain (MSRV: 1.88.0). Install via [rustup](https://rustup.rs/).
 - Docker (optional, required for integration tests that use testcontainers).
+- Node.js 20+ (optional, only for building the documentation site under `docs/`; not needed for the Rust workspace).
 
 ### Building
 
@@ -95,8 +96,9 @@ rsigma is a Cargo workspace with the following crates:
 | ----- | ------- |
 | `rsigma-parser` | YAML parsing, AST, linting, auto-fix |
 | `rsigma-eval` | Rule compilation, matching engine, correlation |
-| `rsigma-convert` | Backend conversion (PostgreSQL, Splunk, etc.) |
+| `rsigma-convert` | Backend conversion (PostgreSQL, LynxDB, Fibratus) |
 | `rsigma-runtime` | Streaming I/O, daemon engine, input adapters |
+| `rsigma-mcp` | Model Context Protocol server exposing rsigma to AI agents |
 | `rsigma-cli` | CLI binary (validate, lint, convert, daemon) |
 | `rsigma-lsp` | Language Server Protocol implementation |
 | `rstix` | STIX 2.1 library: typed objects, bundle parse/stream, semantic validation (TAXII client planned) |
