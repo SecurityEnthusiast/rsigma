@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Docs site search on rsigma.io
+### Docs site search on rsigma.io (#313)
 
 Build the docmd site with base `/` and canonical URL `https://rsigma.io/` so the search client loads `search-index.json` from the site root. The previous `/rsigma/` base matched the old GitHub Pages project path but broke search after the custom domain went live.
 
