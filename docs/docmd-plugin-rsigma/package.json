@@ -1,0 +1,22 @@
+{
+  "name": "docmd-plugin-rsigma",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "docmd": {
+    "key": "rsigma",
+    "kind": "plugin",
+    "displayName": "RSigma macros",
+    "tagline": "Cargo.toml-synced {{ rsigma.* }} tokens and include-markdown inlining",
+    "capabilities": ["init", "build", "post-build"]
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  }
+}

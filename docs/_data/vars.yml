@@ -1,4 +1,4 @@
-# Variables exposed to MkDocs pages via mkdocs-macros-plugin.
+# Variables exposed to docmd pages via docmd-plugin-rsigma.
 # version, edition, msrv, and license are read from workspace Cargo.toml
 # at build time by docs/macros.py and override anything set here.
 rsigma:
