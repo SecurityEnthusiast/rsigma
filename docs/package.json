@@ -1,0 +1,15 @@
+{
+  "name": "rsigma-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "docs:dev": "docmd dev",
+    "docs:build": "docmd build",
+    "docs:validate": "docmd validate"
+  },
+  "devDependencies": {
+    "@docmd/core": "0.8.11",
+    "@docmd/plugin-git": "0.8.11",
+    "docmd-plugin-rsigma": "file:docmd-plugin-rsigma"
+  }
+}
