@@ -235,12 +235,10 @@ export default {
   },
 
   // docmd emits page-relative asset/link URLs (e.g. `../../assets/...`) together
-  // with a `<base href="{siteRoot}">` tag. On a GitHub Pages project subpath
-  // (`/rsigma/`) the base tag re-roots those relative URLs above the subpath, so
-  // every deep page loads its CSS/JS from `/assets/...` (404) instead of
-  // `/rsigma/assets/...`. The client JS reads `window.DOCMD_BASE`, not the tag,
-  // so removing the tag lets relative URLs resolve against the real document URL
-  // (correct on both the root dev server and the `/rsigma/` production site).
+  // with a `<base href="{siteRoot}">` tag. The base tag re-roots those relative
+  // URLs at the site root, which breaks deep pages when combined with how the
+  // client resolves paths. The client JS reads `window.DOCMD_BASE`, not the tag,
+  // so removing the tag lets relative URLs resolve against the real document URL.
   onPostBuild(ctx) {
     const outputDir = ctx?.outputDir ?? path.join(process.cwd(), "site");
     const log = typeof ctx?.log === "function" ? ctx.log : () => {};
