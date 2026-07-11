@@ -1,6 +1,6 @@
 # Welcome to RSigma's documentation!
 
-RSigma is a complete Rust toolkit for the [Sigma](https://sigmahq.io/) detection standard, including a parser, evaluation engine, rule conversion, streaming runtime, linter, CLI, and LSP server. Or, as Zack Allen put it in [Detection Engineering Weekly #149](https://www.detectionengineering.net/i/191079258/detection-engineering-gem), "RSigma is essentially a SIEM."
+RSigma is a complete [Sigma](https://sigmahq.io/) detection engineering toolkit: parser, linter, evaluator, correlation engine, conversion framework, streaming daemon, MCP and LSP servers. Or, as Zack Allen put it in [Detection Engineering Weekly #149](https://www.detectionengineering.net/i/191079258/detection-engineering-gem), "RSigma is essentially a SIEM."
 
 ::: grids
 ::: grid
