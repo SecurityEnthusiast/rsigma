@@ -61,8 +61,6 @@ jobs:
 
       - name: Build site
         run: npm run docs:build
-        env:
-          DOCMD_BASE: /rsigma/ # GitHub Pages project site is served under /rsigma/
 
       - name: Validate links
         run: npm run docs:validate

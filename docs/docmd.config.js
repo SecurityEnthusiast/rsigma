@@ -1,12 +1,11 @@
 // docmd emits page-relative asset and link URLs anchored by the <base href> tag.
-// The base must be "/" for the local dev server (served at the root) and
-// "/rsigma/" for the GitHub Pages project site. CI sets DOCMD_BASE=/rsigma/
-// for the production build; local `docmd dev` and `docmd build` default to "/".
+// The site is published at https://rsigma.io/ (GitHub Pages custom domain); base
+// stays "/". Override with DOCMD_BASE only for local experiments.
 const base = process.env.DOCMD_BASE || "/";
 
 export default {
   title: "RSigma",
-  url: "https://timescale.github.io/rsigma/",
+  url: "https://rsigma.io/",
   src: "content",
   out: "site",
   base,
