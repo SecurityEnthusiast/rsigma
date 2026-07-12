@@ -26,3 +26,12 @@
 html[data-theme="dark"] .sidebar-header .logo-text {
   color: #fff;
 }
+
+/* docmd renders headings as flex containers. Any inline markup in a heading
+   (inline code, links, emphasis) then becomes a separate flex item, and the
+   items collapse into narrow stacked columns instead of flowing as text. The
+   permalink anchor is absolutely positioned on desktop, so block layout keeps
+   headings as normal inline flow without losing the anchor. */
+.docmd-heading {
+  display: block;
+}
