@@ -25,6 +25,12 @@ The HIR is modifier-resolved. Quantified selectors keep their quantifier and nam
 | [`lower_rule`] / [`lower_detection`] / [`lower_condition`] | AST → HIR |
 | [`lower_correlation`] / [`lower_filter`] | Parallel walkers for those shapes |
 | [`LowerOptions`] | Strict vs placeholder-preserving lowering |
+| [`optimize_rule`] / [`flatten_condition`] / [`eliminate_dead_detections`] | Opt-in, semantics-preserving HIR passes |
+| [`common_subexpressions`] | Non-mutating analysis of repeated detection items |
+
+## Optimization passes
+
+`optimize::*` are opt-in, total functions on the HIR for offline tooling. They are not run by the default eval or convert paths, so compiled-matcher behavior and byte-identical backend output are unchanged. `flatten_condition` normalizes boolean groups, `eliminate_dead_detections` prunes detections no condition can reference (honoring `them`/glob patterns), and `common_subexpressions` reports repeated detection items. Each pass preserves the match decision and the set of matched selections and fields.
 
 ## Constraints
 
@@ -48,3 +54,7 @@ MIT. See the repository root.
 [`lower_correlation`]: https://docs.rs/rsigma-ir/latest/rsigma_ir/lower/fn.lower_correlation.html
 [`lower_filter`]: https://docs.rs/rsigma-ir/latest/rsigma_ir/lower/fn.lower_filter.html
 [`LowerOptions`]: https://docs.rs/rsigma-ir/latest/rsigma_ir/struct.LowerOptions.html
+[`optimize_rule`]: https://docs.rs/rsigma-ir/latest/rsigma_ir/optimize/fn.optimize_rule.html
+[`flatten_condition`]: https://docs.rs/rsigma-ir/latest/rsigma_ir/optimize/fn.flatten_condition.html
+[`eliminate_dead_detections`]: https://docs.rs/rsigma-ir/latest/rsigma_ir/optimize/fn.eliminate_dead_detections.html
+[`common_subexpressions`]: https://docs.rs/rsigma-ir/latest/rsigma_ir/optimize/fn.common_subexpressions.html
