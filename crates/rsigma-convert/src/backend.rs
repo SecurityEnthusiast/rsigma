@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use rsigma_eval::pipeline::state::PipelineState;
+use rsigma_ir::{IrPattern, IrPatternPart, IrStrOp};
 use rsigma_parser::*;
 
 use crate::error::{ConvertError, Result};
@@ -728,6 +729,156 @@ pub fn text_convert_field_eq_str(
     }
 
     // Exact match (default)
+    let result = if let Some(expr) = cfg.eq_expression {
+        expr.replace("{field}", &escaped_field)
+            .replace("{value}", &value_str)
+    } else {
+        format!("{escaped_field}{}{value_str}", cfg.eq_token)
+    };
+    Ok(ConvertResult::Query(result))
+}
+
+// =============================================================================
+// IR-native text rendering
+// =============================================================================
+//
+// These mirror `text_convert_value_str` / `text_convert_field_eq_str` but read
+// the faithful `IrPattern` (wildcard-aware, original case) and an explicit
+// `IrStrOp` instead of a parser `SigmaString` + `&[Modifier]`. They are the
+// rendering primitives the IR-native `Backend` leaves build on, so a backend
+// never needs a parser type to emit a string match.
+
+/// Convert an [`IrPattern`] to its text representation, applying escaping and
+/// quoting. Mirrors [`text_convert_value_str`].
+pub fn text_convert_ir_pattern(cfg: &TextQueryConfig, pattern: &IrPattern) -> String {
+    let mut result = String::new();
+    let mut has_wildcards = false;
+
+    for part in &pattern.parts {
+        match part {
+            IrPatternPart::Literal(s) => {
+                let mut escaped = String::with_capacity(s.len());
+                for ch in s.chars() {
+                    let ch_str = ch.to_string();
+                    if cfg.filter_chars.contains(&ch_str.as_str()) {
+                        continue;
+                    }
+                    if ch_str == cfg.escape_char
+                        || ch_str == cfg.str_quote
+                        || cfg.add_escaped.contains(&ch_str.as_str())
+                    {
+                        escaped.push_str(cfg.escape_char);
+                    }
+                    escaped.push(ch);
+                }
+                result.push_str(&escaped);
+            }
+            IrPatternPart::WildcardMulti => {
+                result.push_str(cfg.wildcard_multi);
+                has_wildcards = true;
+            }
+            IrPatternPart::WildcardSingle => {
+                result.push_str(cfg.wildcard_single);
+                has_wildcards = true;
+            }
+        }
+    }
+
+    if !has_wildcards {
+        let should_quote = match cfg.str_quote_pattern {
+            Some(pat) => {
+                let matches = get_cached_regex(pat)
+                    .map(|re| re.is_match(&result))
+                    .unwrap_or(false);
+                if cfg.str_quote_pattern_negation {
+                    !matches
+                } else {
+                    matches
+                }
+            }
+            None => true,
+        };
+        if should_quote {
+            return format!("{}{result}{}", cfg.str_quote, cfg.str_quote);
+        }
+    }
+
+    result
+}
+
+/// Dispatch an IR string match (`op` + wildcard-aware `pattern`) to a query
+/// fragment. Mirrors [`text_convert_field_eq_str`], with `op` and
+/// `case_insensitive` replacing the modifier slice.
+pub fn text_convert_field_str_ir(
+    cfg: &TextQueryConfig,
+    field: &str,
+    op: IrStrOp,
+    pattern: &IrPattern,
+    case_insensitive: bool,
+) -> Result<ConvertResult> {
+    let escaped_field = text_escape_and_quote_field(cfg, field);
+    let is_cased = !case_insensitive;
+    let is_contains = op == IrStrOp::Contains;
+    let is_startswith = op == IrStrOp::StartsWith;
+    let is_endswith = op == IrStrOp::EndsWith;
+
+    let value_str = text_convert_ir_pattern(cfg, pattern);
+
+    if is_cased {
+        if is_contains && let Some(expr) = cfg.case_sensitive_contains_expression {
+            return Ok(ConvertResult::Query(
+                expr.replace("{field}", &escaped_field)
+                    .replace("{value}", &value_str),
+            ));
+        }
+        if is_startswith && let Some(expr) = cfg.case_sensitive_startswith_expression {
+            return Ok(ConvertResult::Query(
+                expr.replace("{field}", &escaped_field)
+                    .replace("{value}", &value_str),
+            ));
+        }
+        if is_endswith && let Some(expr) = cfg.case_sensitive_endswith_expression {
+            return Ok(ConvertResult::Query(
+                expr.replace("{field}", &escaped_field)
+                    .replace("{value}", &value_str),
+            ));
+        }
+        if let Some(expr) = cfg.case_sensitive_match_expression {
+            return Ok(ConvertResult::Query(
+                expr.replace("{field}", &escaped_field)
+                    .replace("{value}", &value_str),
+            ));
+        }
+    }
+
+    if is_contains && let Some(expr) = cfg.contains_expression {
+        return Ok(ConvertResult::Query(
+            expr.replace("{field}", &escaped_field)
+                .replace("{value}", &value_str),
+        ));
+    }
+    if is_startswith && let Some(expr) = cfg.startswith_expression {
+        return Ok(ConvertResult::Query(
+            expr.replace("{field}", &escaped_field)
+                .replace("{value}", &value_str),
+        ));
+    }
+    if is_endswith && let Some(expr) = cfg.endswith_expression {
+        return Ok(ConvertResult::Query(
+            expr.replace("{field}", &escaped_field)
+                .replace("{value}", &value_str),
+        ));
+    }
+
+    if pattern.has_wildcards()
+        && let Some(expr) = cfg.wildcard_match_expression
+    {
+        return Ok(ConvertResult::Query(
+            expr.replace("{field}", &escaped_field)
+                .replace("{value}", &value_str),
+        ));
+    }
+
     let result = if let Some(expr) = cfg.eq_expression {
         expr.replace("{field}", &escaped_field)
             .replace("{value}", &value_str)
