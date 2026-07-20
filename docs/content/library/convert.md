@@ -1,6 +1,6 @@
 # `rsigma-convert`
 
-Convert parsed Sigma rules into backend-native query strings. Ships with PostgreSQL/TimescaleDB and LynxDB backends; the `Backend` trait lets you add your own.
+Convert Sigma rules into backend-native query strings. A rule is lowered to the intermediate representation (`rsigma-ir`) once, and the `Backend` trait renders from that HIR; ships with PostgreSQL/TimescaleDB, LynxDB, and Fibratus backends, and lets you add your own.
 
 - [docs.rs/rsigma-convert](https://docs.rs/rsigma-convert)
 - [README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-convert/README.md)
@@ -28,7 +28,7 @@ No features. The crate is pure Rust + `regex`.
 
 | Type | Purpose |
 |------|---------|
-| `Backend` trait | The plug-in surface (~30 methods). Implement one method per detection-item shape, return the query as a string. |
+| `Backend` trait | The plug-in surface. Value leaves consume the faithful HIR (`IrPattern`, `IrStrOp`, `IrNumber`, `RegexFlags`, `CompareOp`) with no parser types; implement one leaf per matcher shape and return the query as a string. |
 | `TextQueryConfig` | ~90-field config struct that drives most text-query backends declaratively. Mirrors pySigma's `TextQueryBackend` class variables (precedence, boolean operators, wildcards, string and field quoting, regex and CIDR templates, IN-list optimization, deferred parts, query envelope). |
 | `PostgresBackend` | The PostgreSQL/TimescaleDB backend. Output formats: `default`, `view`, `timescaledb`, `continuous_aggregate`, `sliding_window`. |
 | `LynxDbBackend` | The LynxDB backend. Output formats: `default`, `minimal`. |
@@ -118,7 +118,7 @@ impl Backend for MyBackend {
 }
 ```
 
-The default `convert_rule` walks the condition AST and dispatches into `text_*` helpers (e.g. `text_convert_field_eq_str`, `text_convert_field_eq_cidr`) that consult the config. Only override the methods that your backend needs to behave differently from pySigma's `TextQueryBackend` default.
+The default `convert_rule` lowers the rule to `IrRule`, walks the resulting `IrDetection` and `IrCondition`, and dispatches into `text_*` helpers (e.g. `text_convert_field_str_ir`, `text_convert_ir_pattern`) that consult the config. Only override the leaves that your backend needs to behave differently from pySigma's `TextQueryBackend` default.
 
 See [Adding Backends](../developers/adding-backends.md) for the step-by-step walkthrough, the testing pattern, and how to wire a new backend into `rsigma backend convert` if you also want CLI integration.
 

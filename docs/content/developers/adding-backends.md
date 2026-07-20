@@ -8,7 +8,7 @@ A native backend always takes precedence over [sigma-cli delegation](../referenc
 
 Two flavours of backend, depending on how much pySigma-style boilerplate you want to inherit:
 
-1. **Text-query backend.** Set `text_query_config()` to a `TextQueryConfig` and let the trait's default methods walk the condition AST for you. This is how `PostgresBackend`, `LynxDbBackend`, and `FibratusBackend` are built. Use this if your target language is a flat boolean expression with `field op value` shapes.
+1. **Text-query backend.** Set `text_query_config()` to a `TextQueryConfig` and let the trait's default methods walk the lowered IR for you. This is how `PostgresBackend`, `LynxDbBackend`, and `FibratusBackend` are built. Use this if your target language is a flat boolean expression with `field op value` shapes.
 2. **Custom backend.** Override `convert_rule` outright. Use this when your target language has fundamentally different structure (a tree-shaped JSON DSL like Elasticsearch query DSL, or a pipeline of stages like Splunk SPL).
 
 Most SIEMs fit shape 1.

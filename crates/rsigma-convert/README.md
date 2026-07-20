@@ -248,22 +248,22 @@ A reference TimescaleDB schema is provided at [`schema/timescaledb_security_even
 
 ## Backend Trait
 
-Backends implement the `Backend` trait to produce query strings from Sigma AST nodes. The trait operates on **parsed** types from `rsigma-parser` (not compiled matchers) because conversion needs the original field names, modifiers, and values.
+Backends implement the `Backend` trait to produce query strings from a rule's intermediate representation (`rsigma-ir`). A rule is lowered to an `IrRule` once, and the trait's value leaves consume the faithful HIR (`IrPattern`, `IrStrOp`, `IrNumber`, resolved flags) rather than parser types, so a backend never touches `rsigma-parser` to emit a value match. The generic detection and condition walks live in the crate and call these leaves.
 
 Key methods:
 
 | Method | Description |
 |--------|-------------|
 | `convert_rule` | Convert a single `SigmaRule` into query strings |
-| `convert_condition` | Walk a `ConditionExpr` tree |
-| `convert_detection` | Convert a `Detection` (AllOf/AnyOf/Keywords) |
-| `convert_detection_item` | Convert a single `DetectionItem` (field + modifiers + values) |
-| `convert_field_eq_str` | String value matching with modifier dispatch |
-| `convert_field_eq_re` | Regex matching |
+| `convert_ir_detection` | Walk an `IrDetection` (AllOf/AnyOf/Keywords/array match) |
+| `convert_ir_detection_item` | Convert a single `IrDetectionItem` (field + matcher) |
+| `convert_field_str` | String matching over an `IrStrOp` + wildcard-aware `IrPattern` |
+| `convert_field_regex` | Regex matching with explicit `RegexFlags` |
 | `convert_field_eq_cidr` | CIDR matching |
-| `convert_field_compare` | Numeric comparison (`gt`, `gte`, `lt`, `lte`) |
+| `convert_field_compare_op` | Numeric comparison via `CompareOp` (`gt`, `gte`, `lt`, `lte`) |
 | `convert_field_exists` | Field existence check |
-| `convert_keyword` | Unbound/keyword value matching |
+| `convert_keyword_str` / `convert_keyword_num` | Unbound/keyword value matching |
+| `convert_condition_and` / `convert_condition_or` / `convert_condition_not` | Combine sub-expressions |
 | `finish_query` | Assemble final query with deferred parts |
 | `finalize_query` | Apply output format to a query |
 | `finalize_output` | Finalize the complete output |
@@ -275,13 +275,13 @@ For text-based query backends (the vast majority), create a `TextQueryConfig` wi
 | Function | Description |
 |----------|-------------|
 | `text_escape_and_quote_field` | Escape and optionally quote a field name |
-| `text_convert_value_str` | Convert a `SigmaString` with escaping and quoting |
+| `text_convert_ir_pattern` | Convert an `IrPattern` with escaping and quoting |
 | `text_convert_value_re` | Escape a regex pattern |
 | `text_convert_condition_and` | Join expressions with AND token |
 | `text_convert_condition_or` | Join expressions with OR token |
 | `text_convert_condition_not` | Negate an expression |
 | `text_convert_condition_group` | Precedence-aware grouping |
-| `text_convert_field_eq_str` | String match dispatch (contains/startswith/endswith/wildcard/exact) |
+| `text_convert_field_str_ir` | String match dispatch (contains/startswith/endswith/wildcard/exact) |
 | `text_finish_query` | Assemble query with deferred parts and state substitution |
 
 ## Implementing a Backend

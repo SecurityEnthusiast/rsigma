@@ -11,15 +11,12 @@
 //! - Case-sensitive matching via `CASE(value)` wrapper.
 //! - Default matching is case-insensitive.
 
-use std::collections::HashMap;
-
 use rsigma_eval::pipeline::state::PipelineState;
+use rsigma_ir::{IrPattern, IrStrOp};
 use rsigma_parser::*;
 
 use crate::backend::*;
-use crate::condition::convert_condition_expr;
 use crate::condition_ir::convert_rule_via_ir;
-use crate::convert::{default_convert_detection, default_convert_detection_item};
 use crate::error::{ConvertError, Result};
 use crate::state::{ConversionState, ConvertResult, DeferredTextExpression};
 
@@ -173,16 +170,7 @@ impl Backend for LynxDbBackend {
         convert_rule_via_ir(self, rule, output_format, pipeline_state)
     }
 
-    // --- Condition tree dispatch ---
-
-    fn convert_condition(
-        &self,
-        expr: &ConditionExpr,
-        detections: &HashMap<String, Detection>,
-        state: &mut ConversionState,
-    ) -> Result<String> {
-        convert_condition_expr(self, expr, detections, state)
-    }
+    // --- Condition combinators ---
 
     fn convert_condition_and(&self, exprs: &[String]) -> Result<String> {
         let non_empty: Vec<String> = exprs.iter().filter(|s| !s.is_empty()).cloned().collect();
@@ -212,58 +200,23 @@ impl Backend for LynxDbBackend {
         Ok(text_convert_condition_not(self.config, expr))
     }
 
-    // --- Detection ---
-
-    fn convert_detection(&self, det: &Detection, state: &mut ConversionState) -> Result<String> {
-        default_convert_detection(self, det, state)
-    }
-
-    fn convert_detection_item(
-        &self,
-        item: &DetectionItem,
-        state: &mut ConversionState,
-    ) -> Result<String> {
-        default_convert_detection_item(self, item, state)
-    }
-
     // --- Field/value escaping ---
 
     fn escape_and_quote_field(&self, field: &str) -> String {
         text_escape_and_quote_field(self.config, field)
     }
 
-    fn convert_value_str(&self, value: &SigmaString, _state: &ConversionState) -> String {
-        text_convert_value_str(self.config, value)
-    }
+    // --- Value-type-specific leaves (IR-native) ---
 
-    fn convert_value_re(&self, regex: &str, _state: &ConversionState) -> String {
-        text_convert_value_re(self.config, regex)
-    }
-
-    // --- Value-type-specific methods ---
-
-    fn convert_field_eq_str(
+    fn convert_field_str(
         &self,
         field: &str,
-        value: &SigmaString,
-        modifiers: &[Modifier],
-        state: &mut ConversionState,
+        op: IrStrOp,
+        pattern: &IrPattern,
+        case_insensitive: bool,
+        _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
-        text_convert_field_eq_str(self.config, field, value, modifiers, state)
-    }
-
-    fn convert_field_eq_str_case_sensitive(
-        &self,
-        field: &str,
-        value: &SigmaString,
-        modifiers: &[Modifier],
-        state: &mut ConversionState,
-    ) -> Result<ConvertResult> {
-        let mut mods = modifiers.to_vec();
-        if !mods.contains(&Modifier::Cased) {
-            mods.push(Modifier::Cased);
-        }
-        text_convert_field_eq_str(self.config, field, value, &mods, state)
+        text_convert_field_str_ir(self.config, field, op, pattern, case_insensitive)
     }
 
     fn convert_field_eq_num(
@@ -300,11 +253,11 @@ impl Backend for LynxDbBackend {
         Ok(self.config.field_null_expression.replace("{field}", &f))
     }
 
-    fn convert_field_eq_re(
+    fn convert_field_regex(
         &self,
         field: &str,
         pattern: &str,
-        _flags: &[Modifier],
+        _flags: RegexFlags,
         _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
         let f = text_escape_and_quote_field(self.config, field);
@@ -334,24 +287,19 @@ impl Backend for LynxDbBackend {
         })))
     }
 
-    fn convert_field_compare(
+    fn convert_field_compare_op(
         &self,
         field: &str,
-        op: &Modifier,
+        op: CompareOp,
         value: f64,
         _state: &mut ConversionState,
     ) -> Result<String> {
         let f = text_escape_and_quote_field(self.config, field);
         let op_name = match op {
-            Modifier::Lt => "lt",
-            Modifier::Lte => "lte",
-            Modifier::Gt => "gt",
-            Modifier::Gte => "gte",
-            _ => {
-                return Err(ConvertError::UnsupportedModifier(format!(
-                    "compare op {op:?}"
-                )));
-            }
+            CompareOp::Lt => "lt",
+            CompareOp::Lte => "lte",
+            CompareOp::Gt => "gt",
+            CompareOp::Gte => "gte",
         };
         let op_token = self
             .config
@@ -421,64 +369,30 @@ impl Backend for LynxDbBackend {
         ))
     }
 
-    fn convert_keyword(&self, value: &SigmaValue, _state: &mut ConversionState) -> Result<String> {
-        match value {
-            SigmaValue::String(s) => {
-                let v = text_convert_value_str(self.config, s);
-                let expr = self
-                    .config
-                    .unbound_value_str_expression
-                    .ok_or(ConvertError::UnsupportedKeyword)?;
-                Ok(expr.replace("{value}", &v))
-            }
-            SigmaValue::Integer(n) => {
-                let expr = self
-                    .config
-                    .unbound_value_num_expression
-                    .ok_or(ConvertError::UnsupportedKeyword)?;
-                Ok(expr.replace("{value}", &n.to_string()))
-            }
-            SigmaValue::Float(f) => {
-                let expr = self
-                    .config
-                    .unbound_value_num_expression
-                    .ok_or(ConvertError::UnsupportedKeyword)?;
-                Ok(expr.replace("{value}", &f.to_string()))
-            }
-            _ => Err(ConvertError::UnsupportedKeyword),
-        }
-    }
-
-    fn convert_condition_as_in_expression(
+    fn convert_keyword_str(
         &self,
-        field: &str,
-        values: &[&SigmaValue],
-        is_or: bool,
+        pattern: &IrPattern,
         _state: &mut ConversionState,
     ) -> Result<String> {
-        if !is_or {
-            return Err(ConvertError::UnsupportedModifier(
-                "AND-in not supported by LynxDB backend".into(),
-            ));
-        }
-        let f = text_escape_and_quote_field(self.config, field);
+        let v = text_convert_ir_pattern(self.config, pattern);
         let expr = self
             .config
-            .field_in_list_expression
-            .ok_or_else(|| ConvertError::UnsupportedModifier("in-list".into()))?;
+            .unbound_value_str_expression
+            .ok_or(ConvertError::UnsupportedKeyword)?;
+        Ok(expr.replace("{value}", &v))
+    }
 
-        let items: Vec<String> = values
-            .iter()
-            .map(|v| match v {
-                SigmaValue::String(s) => text_convert_value_str(self.config, s),
-                SigmaValue::Integer(n) => n.to_string(),
-                SigmaValue::Float(f) => f.to_string(),
-                _ => String::new(),
-            })
-            .collect();
-
-        let list = items.join(self.config.list_separator);
-        Ok(expr.replace("{field}", &f).replace("{list}", &list))
+    fn convert_keyword_num(&self, value: f64, _state: &mut ConversionState) -> Result<String> {
+        let expr = self
+            .config
+            .unbound_value_num_expression
+            .ok_or(ConvertError::UnsupportedKeyword)?;
+        let s = if value.fract() == 0.0 {
+            (value as i64).to_string()
+        } else {
+            value.to_string()
+        };
+        Ok(expr.replace("{value}", &s))
     }
 
     // --- Query finalization ---

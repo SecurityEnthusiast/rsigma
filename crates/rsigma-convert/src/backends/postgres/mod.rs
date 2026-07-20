@@ -15,12 +15,11 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use rsigma_eval::pipeline::state::PipelineState;
+use rsigma_ir::{IrDetection, IrDetectionItem, IrPattern, IrPatternPart, IrStrOp};
 use rsigma_parser::*;
 
 use crate::backend::*;
-use crate::condition::convert_condition_expr;
 use crate::condition_ir::convert_rule_via_ir;
-use crate::convert::{default_convert_detection, default_convert_detection_item};
 use crate::error::{ConvertError, Result};
 use crate::state::{ConversionState, ConvertResult};
 
@@ -32,6 +31,21 @@ fn validate_sql_identifier(s: &str) -> Result<()> {
     } else {
         Err(ConvertError::InvalidIdentifier(s.to_string()))
     }
+}
+
+/// Flatten a keyword [`IrPattern`] to its text form for full-text search,
+/// rendering wildcards back to their literal `*`/`?` so `plainto_tsquery`
+/// treats them as ordinary characters.
+fn keyword_pattern_text(pattern: &IrPattern) -> String {
+    let mut s = String::new();
+    for part in &pattern.parts {
+        match part {
+            IrPatternPart::Literal(t) => s.push_str(t),
+            IrPatternPart::WildcardMulti => s.push('*'),
+            IrPatternPart::WildcardSingle => s.push('?'),
+        }
+    }
+    s
 }
 
 /// A JSONB field-path navigation op: an object key or a positional index
@@ -335,14 +349,14 @@ impl PostgresBackend {
         s.replace('\'', "''")
     }
 
-    /// Build a SigmaString value into a SQL string literal with proper escaping
-    /// and wildcard translation for LIKE/ILIKE.
-    fn build_like_value(&self, value: &SigmaString) -> String {
-        let mut result = String::with_capacity(value.original.len() + 2);
+    /// Build an [`IrPattern`] into a SQL string literal with proper escaping and
+    /// wildcard translation for LIKE/ILIKE.
+    fn build_like_value_ir(&self, pattern: &IrPattern) -> String {
+        let mut result = String::with_capacity(pattern.parts.len() + 2);
         result.push('\'');
-        for part in &value.parts {
+        for part in &pattern.parts {
             match part {
-                StringPart::Plain(s) => {
+                IrPatternPart::Literal(s) => {
                     for ch in s.chars() {
                         match ch {
                             '\'' => result.push_str("''"),
@@ -353,8 +367,8 @@ impl PostgresBackend {
                         }
                     }
                 }
-                StringPart::Special(SpecialChar::WildcardMulti) => result.push('%'),
-                StringPart::Special(SpecialChar::WildcardSingle) => result.push('_'),
+                IrPatternPart::WildcardMulti => result.push('%'),
+                IrPatternPart::WildcardSingle => result.push('_'),
             }
         }
         result.push('\'');
@@ -383,9 +397,9 @@ impl PostgresBackend {
         format!("'{prefix}{inner}{suffix}'")
     }
 
-    /// Build a plain SQL string literal from a SigmaString (no wildcards).
-    fn build_plain_value(&self, value: &SigmaString) -> String {
-        let plain = value.as_plain().unwrap_or_else(|| value.original.clone());
+    /// Build a plain SQL string literal from an [`IrPattern`] (no wildcards).
+    fn build_plain_value_ir(&self, pattern: &IrPattern) -> String {
+        let plain = pattern.as_plain().unwrap_or_default();
         format!("'{}'", self.escape_sql_str(&plain))
     }
 
@@ -476,56 +490,51 @@ impl PostgresBackend {
         }
     }
 
-    /// If `body` matches the array member value itself (every item is
-    /// field-less), return those items so the element can be bound as a scalar
-    /// text column via `jsonb_array_elements_text`.
-    fn scalar_self_body(body: &Detection) -> Option<&[DetectionItem]> {
-        if let Detection::AllOf(items) = body
+    /// IR-native analogue of [`scalar_self_body`](Self::scalar_self_body).
+    fn scalar_self_body_ir(body: &IrDetection) -> Option<&[IrDetectionItem]> {
+        if let IrDetection::AllOf(items) = body
             && !items.is_empty()
-            && items.iter().all(|it| it.field.name.is_none())
+            && items.iter().all(|it| it.field.is_none())
         {
             return Some(items);
         }
         None
     }
 
-    /// Lower an array object-scope match given the JSONB expression for the
-    /// array. `EXISTS` for `any`; non-empty `NOT EXISTS(... NOT ...)` for `all`.
-    fn array_exists_from_expr(
+    /// IR-native analogue of [`array_exists_from_expr`](Self::array_exists_from_expr).
+    /// The body is converted through the IR-native detection dispatch, so the
+    /// emitted SQL is byte-identical to the parser path.
+    fn array_exists_from_expr_ir(
         &self,
         array_expr: &str,
         quantifier: ArrayQuantifier,
-        body: &Detection,
+        body: &IrDetection,
         state: &mut ConversionState,
     ) -> Result<String> {
         let seq = next_array_alias_seq(state);
         let alias = format!("__sigma_e{seq}");
 
-        let (srf, body_sql) = if let Some(items) = Self::scalar_self_body(body) {
-            // Scalar members: bind each element as a text column and reuse the
-            // normal item conversion by renaming the field-less items to the
-            // alias (a plain, unquoted identifier in non-JSONB mode).
-            let renamed = Detection::AllOf(
+        let (srf, body_sql) = if let Some(items) = Self::scalar_self_body_ir(body) {
+            let renamed = IrDetection::AllOf(
                 items
                     .iter()
-                    .map(|it| DetectionItem {
-                        field: FieldSpec::new(Some(alias.clone()), it.field.modifiers.clone()),
-                        values: it.values.clone(),
+                    .map(|it| IrDetectionItem {
+                        field: Some(alias.clone()),
+                        matcher: it.matcher.clone(),
+                        exists: it.exists,
                     })
                     .collect(),
             );
             let elem = self.with_json_field(None);
             (
                 "jsonb_array_elements_text",
-                default_convert_detection(&elem, &renamed, state)?,
+                crate::ir_convert::default_convert_ir_detection(&elem, &renamed, state)?,
             )
         } else {
-            // Object members: bind each element as a JSONB column and convert
-            // the body relative to it (nested blocks recurse via the trait).
             let elem = self.with_json_field(Some(alias.clone()));
             (
                 "jsonb_array_elements",
-                default_convert_detection(&elem, body, state)?,
+                crate::ir_convert::default_convert_ir_detection(&elem, body, state)?,
             )
         };
 
@@ -539,19 +548,11 @@ impl PostgresBackend {
                  AND NOT EXISTS \
                  (SELECT 1 FROM {srf}({array_expr}) AS {alias} WHERE NOT ({body_sql})))"
             ),
-            // `all_or_empty` is `all` minus the non-empty guard, and it also
-            // matches a missing/null array. Same CASE shape as `none` so the
-            // empty/missing cases match without running jsonb_array_elements on
-            // a scalar.
             ArrayQuantifier::AllOrEmpty => format!(
                 "(CASE WHEN jsonb_typeof({array_expr}) = 'array' \
                  THEN NOT EXISTS (SELECT 1 FROM {srf}({array_expr}) AS {alias} WHERE NOT ({body_sql})) \
                  ELSE {array_expr} IS NULL OR jsonb_typeof({array_expr}) = 'null' END)"
             ),
-            // `none` matches an empty or missing array, so it cannot use the
-            // `typeof = 'array' AND ...` guard (that would reject empty/missing).
-            // A CASE guarantees `jsonb_array_elements` is only evaluated on an
-            // actual array, avoiding a runtime error on a scalar value.
             ArrayQuantifier::None => format!(
                 "(CASE WHEN jsonb_typeof({array_expr}) = 'array' \
                  THEN NOT EXISTS (SELECT 1 FROM {srf}({array_expr}) AS {alias} WHERE {body_sql}) \
@@ -610,16 +611,7 @@ impl Backend for PostgresBackend {
         convert_rule_via_ir(self, rule, output_format, pipeline_state)
     }
 
-    // --- Condition tree dispatch ---
-
-    fn convert_condition(
-        &self,
-        expr: &ConditionExpr,
-        detections: &HashMap<String, Detection>,
-        state: &mut ConversionState,
-    ) -> Result<String> {
-        convert_condition_expr(self, expr, detections, state)
-    }
+    // --- Condition combinators ---
 
     fn convert_condition_and(&self, exprs: &[String]) -> Result<String> {
         Ok(text_convert_condition_and(self.config, exprs))
@@ -633,35 +625,19 @@ impl Backend for PostgresBackend {
         Ok(text_convert_condition_not(self.config, expr))
     }
 
-    // --- Detection ---
-
-    fn convert_detection(&self, det: &Detection, state: &mut ConversionState) -> Result<String> {
-        default_convert_detection(self, det, state)
-    }
-
-    fn convert_detection_item(
-        &self,
-        item: &DetectionItem,
-        state: &mut ConversionState,
-    ) -> Result<String> {
-        default_convert_detection_item(self, item, state)
-    }
-
-    fn convert_array_match(
+    fn convert_ir_array_match(
         &self,
         field: &str,
         quantifier: ArrayQuantifier,
-        body: &Detection,
+        body: &IrDetection,
         state: &mut ConversionState,
     ) -> Result<String> {
-        // Array matching requires JSONB-backed event storage; in flat-column
-        // mode there is no array to unnest.
         let json_col = self
             .json_field
             .as_deref()
             .ok_or(ConvertError::UnsupportedArrayMatching)?;
         let array_expr = Self::jsonb_path(json_col, field, false)?;
-        self.array_exists_from_expr(&array_expr, quantifier, body, state)
+        self.array_exists_from_expr_ir(&array_expr, quantifier, body, state)
     }
 
     fn supports_field_index(&self) -> bool {
@@ -677,54 +653,33 @@ impl Backend for PostgresBackend {
             .unwrap_or_else(|_| text_escape_and_quote_field(self.config, field))
     }
 
-    fn convert_value_str(&self, value: &SigmaString, _state: &ConversionState) -> String {
-        self.build_like_value(value)
-    }
+    // --- Value-type-specific leaves (IR-native) ---
 
-    fn convert_value_re(&self, regex: &str, _state: &ConversionState) -> String {
-        format!("'{}'", self.escape_sql_str(regex))
-    }
-
-    // --- Value-type-specific methods ---
-
-    fn convert_field_eq_str(
+    fn convert_field_str(
         &self,
         field: &str,
-        value: &SigmaString,
-        modifiers: &[Modifier],
+        op: IrStrOp,
+        pattern: &IrPattern,
+        case_insensitive: bool,
         _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
         let f = self.field_expr(field)?;
-        let is_cased = modifiers.contains(&Modifier::Cased);
-        let is_contains = modifiers.contains(&Modifier::Contains);
-        let is_startswith = modifiers.contains(&Modifier::StartsWith);
-        let is_endswith = modifiers.contains(&Modifier::EndsWith);
-        let has_wildcards = value.contains_wildcards();
+        let is_cased = !case_insensitive;
+        let is_contains = matches!(op, IrStrOp::Contains);
+        let is_startswith = matches!(op, IrStrOp::StartsWith);
+        let is_endswith = matches!(op, IrStrOp::EndsWith);
+        let has_wildcards = pattern.has_wildcards();
 
         let like_op = if is_cased { "LIKE" } else { "ILIKE" };
 
         if is_contains || is_startswith || is_endswith || has_wildcards {
-            let inner = self.build_like_value(value);
+            let inner = self.build_like_value_ir(pattern);
             let val = self.wrap_like_wildcards(&inner, is_contains, is_startswith, is_endswith);
             return Ok(ConvertResult::Query(format!("{f} {like_op} {val}")));
         }
 
-        let val = self.build_plain_value(value);
+        let val = self.build_plain_value_ir(pattern);
         Ok(ConvertResult::Query(format!("{f} = {val}")))
-    }
-
-    fn convert_field_eq_str_case_sensitive(
-        &self,
-        field: &str,
-        value: &SigmaString,
-        modifiers: &[Modifier],
-        state: &mut ConversionState,
-    ) -> Result<ConvertResult> {
-        let mut mods = modifiers.to_vec();
-        if !mods.contains(&Modifier::Cased) {
-            mods.push(Modifier::Cased);
-        }
-        self.convert_field_eq_str(field, value, &mods, state)
     }
 
     fn convert_field_eq_num(
@@ -761,16 +716,16 @@ impl Backend for PostgresBackend {
         Ok(format!("{f} IS NULL"))
     }
 
-    fn convert_field_eq_re(
+    fn convert_field_regex(
         &self,
         field: &str,
         pattern: &str,
-        flags: &[Modifier],
+        flags: RegexFlags,
         _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
         let f = self.field_expr(field)?;
         let escaped_pattern = self.escape_sql_str(pattern);
-        let is_cased = flags.contains(&Modifier::Cased) || self.case_sensitive_re;
+        let is_cased = flags.cased || self.case_sensitive_re;
         let op = if is_cased { "~" } else { "~*" };
         Ok(ConvertResult::Query(format!(
             "{f} {op} '{escaped_pattern}'"
@@ -789,24 +744,19 @@ impl Backend for PostgresBackend {
         )))
     }
 
-    fn convert_field_compare(
+    fn convert_field_compare_op(
         &self,
         field: &str,
-        op: &Modifier,
+        op: CompareOp,
         value: f64,
         _state: &mut ConversionState,
     ) -> Result<String> {
         let f = self.field_expr(field)?;
         let op_token = match op {
-            Modifier::Lt => "<",
-            Modifier::Lte => "<=",
-            Modifier::Gt => ">",
-            Modifier::Gte => ">=",
-            _ => {
-                return Err(ConvertError::UnsupportedModifier(format!(
-                    "compare op {op:?}"
-                )));
-            }
+            CompareOp::Lt => "<",
+            CompareOp::Lte => "<=",
+            CompareOp::Gt => ">",
+            CompareOp::Gte => ">=",
         };
         let val_str =
             if value.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&value) {
@@ -854,56 +804,38 @@ impl Backend for PostgresBackend {
         Ok(ConvertResult::Query(format!("{f1} = {f2}")))
     }
 
-    fn convert_keyword(&self, value: &SigmaValue, _state: &mut ConversionState) -> Result<String> {
+    fn convert_keyword_str(
+        &self,
+        pattern: &IrPattern,
+        _state: &mut ConversionState,
+    ) -> Result<String> {
         let search_target = match &self.json_field {
             Some(json_col) => format!("{json_col}::text"),
             None => "ROW(*)::text".to_string(),
         };
-        match value {
-            SigmaValue::String(s) => {
-                let plain = s.as_plain().unwrap_or_else(|| s.original.clone());
-                if plain.is_empty() {
-                    return Err(ConvertError::UnsupportedKeyword);
-                }
-                let escaped = self.escape_sql_str(&plain);
-                Ok(format!(
-                    "to_tsvector('simple', {search_target}) @@ plainto_tsquery('simple', '{escaped}')"
-                ))
-            }
-            SigmaValue::Integer(n) => Ok(format!(
-                "to_tsvector('simple', {search_target}) @@ plainto_tsquery('simple', '{n}')"
-            )),
-            SigmaValue::Float(f) => Ok(format!(
-                "to_tsvector('simple', {search_target}) @@ plainto_tsquery('simple', '{f}')"
-            )),
-            _ => Err(ConvertError::UnsupportedKeyword),
+        let plain = keyword_pattern_text(pattern);
+        if plain.is_empty() {
+            return Err(ConvertError::UnsupportedKeyword);
         }
+        let escaped = self.escape_sql_str(&plain);
+        Ok(format!(
+            "to_tsvector('simple', {search_target}) @@ plainto_tsquery('simple', '{escaped}')"
+        ))
     }
 
-    fn convert_condition_as_in_expression(
-        &self,
-        field: &str,
-        values: &[&SigmaValue],
-        is_or: bool,
-        _state: &mut ConversionState,
-    ) -> Result<String> {
-        if !is_or {
-            return Err(ConvertError::UnsupportedModifier(
-                "AND IN-list not supported for PostgreSQL".into(),
-            ));
-        }
-        let f = self.field_expr(field)?;
-        let items: Vec<String> = values
-            .iter()
-            .map(|v| match v {
-                SigmaValue::String(s) => self.build_plain_value(s),
-                SigmaValue::Integer(n) => n.to_string(),
-                SigmaValue::Float(f) => f.to_string(),
-                _ => String::new(),
-            })
-            .collect();
-        let list = items.join(", ");
-        Ok(format!("{f} IN ({list})"))
+    fn convert_keyword_num(&self, value: f64, _state: &mut ConversionState) -> Result<String> {
+        let search_target = match &self.json_field {
+            Some(json_col) => format!("{json_col}::text"),
+            None => "ROW(*)::text".to_string(),
+        };
+        let v = if value.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&value) {
+            (value as i64).to_string()
+        } else {
+            value.to_string()
+        };
+        Ok(format!(
+            "to_tsvector('simple', {search_target}) @@ plainto_tsquery('simple', '{v}')"
+        ))
     }
 
     // --- Query finalization ---

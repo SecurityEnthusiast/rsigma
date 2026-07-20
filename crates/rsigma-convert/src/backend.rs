@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use rsigma_eval::pipeline::state::PipelineState;
+use rsigma_ir::{IrDetection, IrDetectionItem, IrPattern, IrPatternPart, IrStrOp};
 use rsigma_parser::*;
 
 use crate::error::{ConvertError, Result};
@@ -38,6 +39,55 @@ pub enum TokenType {
     OR = 2,
 }
 
+/// Numeric comparison operator for IR-native field comparison.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompareOp {
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+}
+
+/// Regex match flags for [`Backend::convert_field_regex`].
+///
+/// `case_insensitive` is the `|i` flag; `cased` records the `|cased` modifier
+/// (which some backends use to select a case-sensitive regex operator).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RegexFlags {
+    pub case_insensitive: bool,
+    pub multiline: bool,
+    pub dotall: bool,
+    pub cased: bool,
+}
+
+/// Reconstruct a parser [`SigmaString`] from a faithful [`IrPattern`].
+///
+/// Bridges the IR-native leaf defaults to the existing parser-typed leaves
+/// during the migration; the pattern round-trips exactly (same literal parts
+/// and wildcards), so delegation is byte-identical.
+pub(crate) fn ir_pattern_to_sigma(pattern: &IrPattern) -> SigmaString {
+    let mut original = String::new();
+    let parts = pattern
+        .parts
+        .iter()
+        .map(|p| match p {
+            IrPatternPart::Literal(t) => {
+                original.push_str(t);
+                StringPart::Plain(t.clone())
+            }
+            IrPatternPart::WildcardMulti => {
+                original.push('*');
+                StringPart::Special(SpecialChar::WildcardMulti)
+            }
+            IrPatternPart::WildcardSingle => {
+                original.push('?');
+                StringPart::Special(SpecialChar::WildcardSingle)
+            }
+        })
+        .collect();
+    SigmaString { parts, original }
+}
+
 // =============================================================================
 // Backend trait
 // =============================================================================
@@ -69,46 +119,11 @@ pub trait Backend: Send + Sync {
         pipeline_state: &PipelineState,
     ) -> Result<Vec<String>>;
 
-    // --- Condition tree dispatch ---
-
-    fn convert_condition(
-        &self,
-        expr: &ConditionExpr,
-        detections: &HashMap<String, Detection>,
-        state: &mut ConversionState,
-    ) -> Result<String>;
+    // --- Condition combinators ---
 
     fn convert_condition_and(&self, exprs: &[String]) -> Result<String>;
     fn convert_condition_or(&self, exprs: &[String]) -> Result<String>;
     fn convert_condition_not(&self, expr: &str) -> Result<String>;
-
-    // --- Detection item conversion ---
-
-    fn convert_detection(&self, det: &Detection, state: &mut ConversionState) -> Result<String>;
-
-    fn convert_detection_item(
-        &self,
-        item: &DetectionItem,
-        state: &mut ConversionState,
-    ) -> Result<String>;
-
-    /// Convert an array object-scope match (`field[any]:` / `field[all]:`).
-    ///
-    /// `body` is evaluated against the members of the array at `field`. The
-    /// default implementation reports the construct as unsupported; backends
-    /// that can express member quantification (e.g. PostgreSQL JSONB via
-    /// `jsonb_array_elements` + `EXISTS`) override this. Backends must fail
-    /// loudly here rather than emit a query with different semantics.
-    fn convert_array_match(
-        &self,
-        field: &str,
-        quantifier: ArrayQuantifier,
-        body: &Detection,
-        state: &mut ConversionState,
-    ) -> Result<String> {
-        let _ = (field, quantifier, body, state);
-        Err(ConvertError::UnsupportedArrayMatching)
-    }
 
     /// Whether this backend can lower a positional array index (`field[N]`) in
     /// a field path. Backends that cannot must not silently emit a literal
@@ -119,30 +134,61 @@ pub trait Backend: Send + Sync {
         false
     }
 
+    // --- IR-native detection dispatch ---
+
+    /// Convert a lowered [`IrDetection`] into a query fragment.
+    fn convert_ir_detection(
+        &self,
+        det: &IrDetection,
+        state: &mut ConversionState,
+    ) -> Result<String> {
+        crate::ir_convert::default_convert_ir_detection(self, det, state)
+    }
+
+    /// Convert a single lowered [`IrDetectionItem`] into a query fragment.
+    fn convert_ir_detection_item(
+        &self,
+        item: &IrDetectionItem,
+        state: &mut ConversionState,
+    ) -> Result<String> {
+        crate::ir_convert::default_convert_ir_detection_item(self, item, state)
+    }
+
+    /// Convert an array object-scope match (`field[any]:` / `field[all]:`) over
+    /// a lowered body. Default reports the construct unsupported; JSONB-capable
+    /// backends override it.
+    fn convert_ir_array_match(
+        &self,
+        field: &str,
+        quantifier: ArrayQuantifier,
+        body: &IrDetection,
+        state: &mut ConversionState,
+    ) -> Result<String> {
+        let _ = (field, quantifier, body, state);
+        Err(ConvertError::UnsupportedArrayMatching)
+    }
+
     // --- Field/value escaping ---
 
     fn escape_and_quote_field(&self, field: &str) -> String;
-    fn convert_value_str(&self, value: &SigmaString, state: &ConversionState) -> String;
-    fn convert_value_re(&self, regex: &str, state: &ConversionState) -> String;
 
-    // --- Value-type-specific methods ---
+    // --- Value-type-specific leaves (IR-native) ---
+    //
+    // These consume the faithful HIR (`IrPattern` / `IrStrOp` / flags) with no
+    // parser types, so a backend (or a pack renderer) never touches
+    // `rsigma-parser` to emit a value match.
 
-    fn convert_field_eq_str(
+    /// String match over a wildcard-aware, original-case pattern.
+    fn convert_field_str(
         &self,
         field: &str,
-        value: &SigmaString,
-        modifiers: &[Modifier],
+        op: IrStrOp,
+        pattern: &IrPattern,
+        case_insensitive: bool,
         state: &mut ConversionState,
     ) -> Result<ConvertResult>;
 
-    fn convert_field_eq_str_case_sensitive(
-        &self,
-        field: &str,
-        value: &SigmaString,
-        modifiers: &[Modifier],
-        state: &mut ConversionState,
-    ) -> Result<ConvertResult>;
-
+    /// Numeric equality.
     fn convert_field_eq_num(
         &self,
         field: &str,
@@ -150,6 +196,7 @@ pub trait Backend: Send + Sync {
         state: &mut ConversionState,
     ) -> Result<String>;
 
+    /// Boolean equality.
     fn convert_field_eq_bool(
         &self,
         field: &str,
@@ -157,16 +204,19 @@ pub trait Backend: Send + Sync {
         state: &mut ConversionState,
     ) -> Result<String>;
 
+    /// Null match.
     fn convert_field_eq_null(&self, field: &str, state: &mut ConversionState) -> Result<String>;
 
-    fn convert_field_eq_re(
+    /// Regex match with raw pattern and explicit [`RegexFlags`].
+    fn convert_field_regex(
         &self,
         field: &str,
         pattern: &str,
-        flags: &[Modifier],
+        flags: RegexFlags,
         state: &mut ConversionState,
     ) -> Result<ConvertResult>;
 
+    /// CIDR containment match.
     fn convert_field_eq_cidr(
         &self,
         field: &str,
@@ -174,14 +224,7 @@ pub trait Backend: Send + Sync {
         state: &mut ConversionState,
     ) -> Result<ConvertResult>;
 
-    fn convert_field_compare(
-        &self,
-        field: &str,
-        op: &Modifier,
-        value: f64,
-        state: &mut ConversionState,
-    ) -> Result<String>;
-
+    /// Field existence / non-existence.
     fn convert_field_exists(
         &self,
         field: &str,
@@ -189,6 +232,7 @@ pub trait Backend: Send + Sync {
         state: &mut ConversionState,
     ) -> Result<String>;
 
+    /// Backend-specific query-expression placeholder substitution.
     fn convert_field_eq_query_expr(
         &self,
         field: &str,
@@ -197,6 +241,7 @@ pub trait Backend: Send + Sync {
         state: &mut ConversionState,
     ) -> Result<String>;
 
+    /// Field-to-field comparison (`|fieldref`).
     fn convert_field_ref(
         &self,
         field1: &str,
@@ -204,21 +249,24 @@ pub trait Backend: Send + Sync {
         state: &mut ConversionState,
     ) -> Result<ConvertResult>;
 
-    fn convert_keyword(&self, value: &SigmaValue, state: &mut ConversionState) -> Result<String>;
-
-    // --- IN-list optimization (optional) ---
-
-    fn convert_condition_as_in_expression(
+    /// Numeric comparison (`gt`/`gte`/`lt`/`lte`).
+    fn convert_field_compare_op(
         &self,
-        _field: &str,
-        _values: &[&SigmaValue],
-        _is_or: bool,
-        _state: &mut ConversionState,
-    ) -> Result<String> {
-        Err(ConvertError::UnsupportedModifier(
-            "IN expression not supported".into(),
-        ))
-    }
+        field: &str,
+        op: CompareOp,
+        value: f64,
+        state: &mut ConversionState,
+    ) -> Result<String>;
+
+    /// Keyword (unbound) string term over a wildcard-aware pattern.
+    fn convert_keyword_str(
+        &self,
+        pattern: &IrPattern,
+        state: &mut ConversionState,
+    ) -> Result<String>;
+
+    /// Keyword (unbound) numeric term.
+    fn convert_keyword_num(&self, value: f64, state: &mut ConversionState) -> Result<String>;
 
     // --- Query finalization ---
 
@@ -489,63 +537,6 @@ pub fn text_escape_and_quote_field(cfg: &TextQueryConfig, field: &str) -> String
     escaped
 }
 
-/// Convert a `SigmaString` to its text representation, applying escaping and quoting.
-pub fn text_convert_value_str(cfg: &TextQueryConfig, value: &SigmaString) -> String {
-    let mut result = String::new();
-    let mut has_wildcards = false;
-
-    for part in &value.parts {
-        match part {
-            StringPart::Plain(s) => {
-                let mut escaped = String::with_capacity(s.len());
-                for ch in s.chars() {
-                    let ch_str = ch.to_string();
-                    if cfg.filter_chars.contains(&ch_str.as_str()) {
-                        continue;
-                    }
-                    if ch_str == cfg.escape_char
-                        || ch_str == cfg.str_quote
-                        || cfg.add_escaped.contains(&ch_str.as_str())
-                    {
-                        escaped.push_str(cfg.escape_char);
-                    }
-                    escaped.push(ch);
-                }
-                result.push_str(&escaped);
-            }
-            StringPart::Special(SpecialChar::WildcardMulti) => {
-                result.push_str(cfg.wildcard_multi);
-                has_wildcards = true;
-            }
-            StringPart::Special(SpecialChar::WildcardSingle) => {
-                result.push_str(cfg.wildcard_single);
-                has_wildcards = true;
-            }
-        }
-    }
-
-    if !has_wildcards {
-        let should_quote = match cfg.str_quote_pattern {
-            Some(pat) => {
-                let matches = get_cached_regex(pat)
-                    .map(|re| re.is_match(&result))
-                    .unwrap_or(false);
-                if cfg.str_quote_pattern_negation {
-                    !matches
-                } else {
-                    matches
-                }
-            }
-            None => true,
-        };
-        if should_quote {
-            return format!("{}{result}{}", cfg.str_quote, cfg.str_quote);
-        }
-    }
-
-    result
-}
-
 /// Escape a regex pattern according to the config.
 pub fn text_convert_value_re(cfg: &TextQueryConfig, regex_str: &str) -> String {
     let mut result = regex_str.to_string();
@@ -650,26 +641,90 @@ pub fn text_finish_query(
     result
 }
 
-/// Dispatch string matching based on modifiers and wildcard positions.
-///
-/// Returns the query fragment for a field=value comparison, handling
-/// `contains`, `startswith`, `endswith`, and wildcard patterns.
-pub fn text_convert_field_eq_str(
+// =============================================================================
+// IR-native text rendering
+// =============================================================================
+//
+// These read the faithful `IrPattern` (wildcard-aware, original case) and an
+// explicit `IrStrOp`, never a parser `SigmaString` + `&[Modifier]`. They are
+// the rendering primitives the IR-native `Backend` leaves build on, so a
+// backend never needs a parser type to emit a string match.
+
+/// Convert an [`IrPattern`] to its text representation, applying escaping and
+/// quoting.
+pub fn text_convert_ir_pattern(cfg: &TextQueryConfig, pattern: &IrPattern) -> String {
+    let mut result = String::new();
+    let mut has_wildcards = false;
+
+    for part in &pattern.parts {
+        match part {
+            IrPatternPart::Literal(s) => {
+                let mut escaped = String::with_capacity(s.len());
+                for ch in s.chars() {
+                    let ch_str = ch.to_string();
+                    if cfg.filter_chars.contains(&ch_str.as_str()) {
+                        continue;
+                    }
+                    if ch_str == cfg.escape_char
+                        || ch_str == cfg.str_quote
+                        || cfg.add_escaped.contains(&ch_str.as_str())
+                    {
+                        escaped.push_str(cfg.escape_char);
+                    }
+                    escaped.push(ch);
+                }
+                result.push_str(&escaped);
+            }
+            IrPatternPart::WildcardMulti => {
+                result.push_str(cfg.wildcard_multi);
+                has_wildcards = true;
+            }
+            IrPatternPart::WildcardSingle => {
+                result.push_str(cfg.wildcard_single);
+                has_wildcards = true;
+            }
+        }
+    }
+
+    if !has_wildcards {
+        let should_quote = match cfg.str_quote_pattern {
+            Some(pat) => {
+                let matches = get_cached_regex(pat)
+                    .map(|re| re.is_match(&result))
+                    .unwrap_or(false);
+                if cfg.str_quote_pattern_negation {
+                    !matches
+                } else {
+                    matches
+                }
+            }
+            None => true,
+        };
+        if should_quote {
+            return format!("{}{result}{}", cfg.str_quote, cfg.str_quote);
+        }
+    }
+
+    result
+}
+
+/// Dispatch an IR string match (`op` + wildcard-aware `pattern`) to a query
+/// fragment, with `op` and `case_insensitive` driving operator selection.
+pub fn text_convert_field_str_ir(
     cfg: &TextQueryConfig,
     field: &str,
-    value: &SigmaString,
-    modifiers: &[Modifier],
-    _state: &ConversionState,
+    op: IrStrOp,
+    pattern: &IrPattern,
+    case_insensitive: bool,
 ) -> Result<ConvertResult> {
     let escaped_field = text_escape_and_quote_field(cfg, field);
-    let is_cased = modifiers.contains(&Modifier::Cased);
-    let is_contains = modifiers.contains(&Modifier::Contains);
-    let is_startswith = modifiers.contains(&Modifier::StartsWith);
-    let is_endswith = modifiers.contains(&Modifier::EndsWith);
+    let is_cased = !case_insensitive;
+    let is_contains = op == IrStrOp::Contains;
+    let is_startswith = op == IrStrOp::StartsWith;
+    let is_endswith = op == IrStrOp::EndsWith;
 
-    let value_str = text_convert_value_str(cfg, value);
+    let value_str = text_convert_ir_pattern(cfg, pattern);
 
-    // Case-sensitive dispatch
     if is_cased {
         if is_contains && let Some(expr) = cfg.case_sensitive_contains_expression {
             return Ok(ConvertResult::Query(
@@ -697,7 +752,6 @@ pub fn text_convert_field_eq_str(
         }
     }
 
-    // Case-insensitive dispatch (default)
     if is_contains && let Some(expr) = cfg.contains_expression {
         return Ok(ConvertResult::Query(
             expr.replace("{field}", &escaped_field)
@@ -717,8 +771,7 @@ pub fn text_convert_field_eq_str(
         ));
     }
 
-    // Wildcard match fallback
-    if value.contains_wildcards()
+    if pattern.has_wildcards()
         && let Some(expr) = cfg.wildcard_match_expression
     {
         return Ok(ConvertResult::Query(
@@ -727,7 +780,6 @@ pub fn text_convert_field_eq_str(
         ));
     }
 
-    // Exact match (default)
     let result = if let Some(expr) = cfg.eq_expression {
         expr.replace("{field}", &escaped_field)
             .replace("{value}", &value_str)

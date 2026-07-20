@@ -19,17 +19,16 @@
 
 pub mod backend;
 pub mod backends;
-pub mod condition;
 pub mod condition_ir;
 pub mod convert;
 pub mod error;
+pub mod ir_convert;
 pub mod output;
 #[cfg(feature = "sigma-cli")]
 pub mod sigma_cli;
 pub mod state;
 
 pub use backend::{Backend, TextQueryConfig, TokenType};
-pub use condition::convert_condition_expr;
 pub use convert::convert_collection;
 pub use error::{ConvertError, Result};
 pub use output::{ConversionOutput, ConversionResult};
