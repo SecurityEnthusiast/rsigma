@@ -320,20 +320,21 @@ detection:
 }
 
 #[test]
-fn convert_condition_as_in_expression_emits_iin_for_or() {
-    // Exercise the IN-list helper directly to lock in the iin/in
-    // formatting since the auto-dispatch path doesn't currently call
-    // it. Used by future optimization passes and the macro recognizer.
-    use crate::state::ConversionState;
-    use rsigma_parser::{SigmaString, SigmaValue};
-    let backend = FibratusBackend::new();
-    let a = SigmaValue::String(SigmaString::new("cmd.exe"));
-    let b = SigmaValue::String(SigmaString::new("pwsh.exe"));
-    let mut state = ConversionState::default();
-    let out = backend
-        .convert_condition_as_in_expression("ps.name", &[&a, &b], true, &mut state)
-        .unwrap();
-    assert_eq!(out, "ps.name iin ('cmd.exe', 'pwsh.exe')");
+fn multi_value_exact_list_emits_iin_for_or() {
+    // A two-value exact-match list collapses to a single case-insensitive
+    // `iin` clause via the IR-native list-operator path.
+    let q = convert(
+        r#"
+title: T
+detection:
+  sel:
+    ps.name:
+      - cmd.exe
+      - pwsh.exe
+  condition: sel
+"#,
+    );
+    assert_eq!(q, vec!["ps.name iin ('cmd.exe', 'pwsh.exe')"]);
 }
 
 #[test]

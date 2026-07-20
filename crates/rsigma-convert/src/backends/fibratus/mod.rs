@@ -17,8 +17,9 @@
 //!   `TextQueryConfig` operator slots with the case-insensitive forms
 //!   and the `case_sensitive_*_expression` slots with the bare forms
 //!   (exactly inverse to how other backends use those slots) plus
-//!   overrides `convert_condition_as_in_expression` to pick `iin` vs
-//!   `in` from per-item modifiers. Plain string equality without a glob
+//!   collapses multi-value string lists into a single list-operator
+//!   clause that picks `iin` vs `in` from the matcher's case
+//!   sensitivity. Plain string equality without a glob
 //!   uses the dedicated string-equality operators (`~=` default, `=`
 //!   when `|cased`), which evaluate more efficiently than a wildcard
 //!   match; `imatches`/`matches` are reserved for values that actually
@@ -49,13 +50,11 @@ mod tests;
 use std::collections::HashMap;
 
 use rsigma_eval::pipeline::state::PipelineState;
-use rsigma_ir::{IrDetectionItem, IrMatcher, IrStrOp};
+use rsigma_ir::{IrDetectionItem, IrMatcher, IrPattern, IrStrOp};
 use rsigma_parser::*;
 
 use crate::backend::*;
-use crate::condition::convert_condition_expr;
 use crate::condition_ir::convert_rule_via_ir;
-use crate::convert::{default_convert_detection, default_convert_detection_item};
 use crate::error::{ConvertError, Result};
 use crate::state::{ConversionState, ConvertResult};
 
@@ -157,9 +156,9 @@ pub static FIBRATUS_CONFIG: TextQueryConfig = TextQueryConfig {
     compare_op_expression: Some("{field} {op} {value}"),
     compare_ops: &[("lt", "<"), ("lte", "<="), ("gt", ">"), ("gte", ">=")],
 
-    // IN-list collapsing: the OR-of-equalities path lowers to
-    // `field iin ('a', 'b')` by default; `convert_condition_as_in_expression`
-    // is overridden to flip to bare `in` when every value carries `|cased`.
+    // IN-list collapsing: a multi-value OR string list lowers to
+    // `field iin ('a', 'b')` by default and to bare `in` when the list is
+    // case-sensitive, via the IR-native `convert_ir_detection_item` override.
     convert_or_as_in: true,
     convert_and_as_in: false,
     in_expressions_allow_wildcards: false,
@@ -222,94 +221,16 @@ impl FibratusBackend {
         }
     }
 
-    /// Return true if every item modifier list contains `Cased` (i.e. the
-    /// whole in-list should use the bare `in` operator). Used by
-    /// `convert_condition_as_in_expression` since the per-item modifiers
-    /// are not visible at the dispatch site through the generic helpers.
-    fn all_cased(values: &[&SigmaValue]) -> bool {
-        // The IN-list collapse only sees raw values; per-item modifiers
-        // are not threaded through the dispatch. The backend-wide
-        // `case_sensitive` flag is the only knob available here; per-item
-        // `|cased` mixed with non-cased values keeps the (correct) `iin`
-        // form and falls back to OR'd equality only when the IN-list
-        // helper itself rejects.
-        let _ = values;
-        false
-    }
-
-    /// Collapse a multi-value OR string list into one Fibratus
+    /// Collapse a uniform `AnyOf` of string matchers into a single Fibratus
     /// list-operator clause (`field iin ('a', 'b')`,
     /// `field imatches ('a*', 'b?')`, `field icontains ('a', 'b')`, ...).
     ///
-    /// Fibratus operators accept a parenthesized list on the right-hand
-    /// side with "any of" (OR) semantics, which is exactly what a
-    /// multi-value Sigma list means, so a single clause replaces the
-    /// OR-of-equalities the generic dispatch would otherwise emit.
-    ///
-    /// Returns `Ok(None)` (falling back to the generic dispatch) unless
-    /// the item is a plain multi-value string list carrying only
-    /// string-operator modifiers (`contains`, `startswith`, `endswith`,
-    /// `cased`). `|all` (AND, "all of") is left to the generic AND-join
-    /// because a list RHS cannot express conjunction. The `evt.name`
-    /// discriminator and `|cased` values use the case-sensitive `in`;
-    /// other equality lists use `iin`; wildcard-bearing lists use
-    /// `imatches`/`matches`.
-    fn try_string_value_list(&self, item: &DetectionItem) -> Result<Option<String>> {
-        if item.values.len() < 2 || item.field.has_modifier(Modifier::All) {
-            return Ok(None);
-        }
-        const ALLOWED: &[Modifier] = &[
-            Modifier::Contains,
-            Modifier::StartsWith,
-            Modifier::EndsWith,
-            Modifier::Cased,
-        ];
-        if item.field.modifiers.iter().any(|m| !ALLOWED.contains(m)) {
-            return Ok(None);
-        }
-        let mut strings: Vec<&SigmaString> = Vec::with_capacity(item.values.len());
-        for v in &item.values {
-            match v {
-                SigmaValue::String(s) => strings.push(s),
-                _ => return Ok(None),
-            }
-        }
-        let field_name = item
-            .field
-            .name
-            .as_deref()
-            .ok_or(ConvertError::MissingFieldName)?;
-        let f = self.escape_and_quote_field(field_name);
-        let cased = self.fibratus.case_sensitive || item.field.has_modifier(Modifier::Cased);
-        let any_wild = strings.iter().any(|s| shared::has_wildcards(s));
-
-        let op = if item.field.has_modifier(Modifier::Contains) {
-            if cased { "contains" } else { "icontains" }
-        } else if item.field.has_modifier(Modifier::StartsWith) {
-            if cased { "startswith" } else { "istartswith" }
-        } else if item.field.has_modifier(Modifier::EndsWith) {
-            if cased { "endswith" } else { "iendswith" }
-        } else if any_wild {
-            if cased { "matches" } else { "imatches" }
-        } else if cased || field_name == "evt.name" {
-            "in"
-        } else {
-            "iin"
-        };
-
-        let list = strings
-            .iter()
-            .map(|s| shared::quote_sigma_string(s))
-            .collect::<Vec<_>>()
-            .join(", ");
-        Ok(Some(format!("{f} {op} ({list})")))
-    }
-
-    /// IR-native analogue of [`try_string_value_list`](Self::try_string_value_list):
-    /// collapse a uniform `AnyOf` of string matchers into a single Fibratus
-    /// list-operator clause. Returns `None` (fall back to per-value dispatch)
-    /// unless every matcher is an `IrMatcher::Str` with the same operator and
-    /// case sensitivity.
+    /// Fibratus operators accept a parenthesized list on the right-hand side
+    /// with "any of" (OR) semantics, which is exactly what a multi-value Sigma
+    /// list means, so a single clause replaces the OR-of-equalities the generic
+    /// dispatch would otherwise emit. Returns `None` (fall back to per-value
+    /// dispatch) unless every matcher is an `IrMatcher::Str` with the same
+    /// operator and case sensitivity.
     fn try_string_value_list_ir(&self, field: &str, ms: &[IrMatcher]) -> Option<String> {
         let mut op: Option<IrStrOp> = None;
         let mut ci: Option<bool> = None;
@@ -417,16 +338,7 @@ impl Backend for FibratusBackend {
         convert_rule_via_ir(self, rule, output_format, pipeline_state)
     }
 
-    // --- Condition tree dispatch ---
-
-    fn convert_condition(
-        &self,
-        expr: &ConditionExpr,
-        detections: &HashMap<String, Detection>,
-        state: &mut ConversionState,
-    ) -> Result<String> {
-        convert_condition_expr(self, expr, detections, state)
-    }
+    // --- Condition combinators ---
 
     fn convert_condition_and(&self, exprs: &[String]) -> Result<String> {
         let non_empty: Vec<String> = exprs.iter().filter(|s| !s.is_empty()).cloned().collect();
@@ -463,95 +375,6 @@ impl Backend for FibratusBackend {
             return Ok(String::new());
         }
         Ok(format!("not ({expr})"))
-    }
-
-    // --- Detection ---
-
-    fn convert_detection(&self, det: &Detection, state: &mut ConversionState) -> Result<String> {
-        default_convert_detection(self, det, state)
-    }
-
-    fn convert_detection_item(
-        &self,
-        item: &DetectionItem,
-        state: &mut ConversionState,
-    ) -> Result<String> {
-        // Multi-value `|re` (without `|all`) lowers to a single
-        // `regex(field, pat1, pat2, ...) = true` call, the idiomatic
-        // Fibratus form (the `regex()` filter function accepts a
-        // variadic pattern list and returns true if any pattern
-        // matches). Without this override the generic dispatch would
-        // OR N separate single-pattern calls together, which is
-        // semantically correct but cluttered; with `|all` the
-        // generic AND-join is the right thing and we fall through.
-        if item.field.has_modifier(Modifier::Re)
-            && item.values.len() >= 2
-            && !item.field.has_modifier(Modifier::All)
-        {
-            let field_name = item
-                .field
-                .name
-                .as_deref()
-                .ok_or(ConvertError::MissingFieldName)?;
-            let mut patterns: Vec<String> = Vec::with_capacity(item.values.len());
-            for v in &item.values {
-                let pat = match v {
-                    SigmaValue::String(s) => s.original.clone(),
-                    _ => return Err(ConvertError::UnsupportedValue("re requires string".into())),
-                };
-                if !shared::is_re2_compatible(&pat) {
-                    return Err(ConvertError::UnsupportedModifier(format!(
-                        "regex pattern uses PCRE-only construct (lookaround/backreference) Fibratus's RE2 engine does not support: {pat}"
-                    )));
-                }
-                patterns.push(pat);
-            }
-            let f = self.escape_and_quote_field(field_name);
-            let quoted: Vec<String> = patterns
-                .iter()
-                .map(|p| shared::quote_plain_str(p))
-                .collect();
-            return Ok(format!("regex({f}, {}) = true", quoted.join(", ")));
-        }
-
-        // Multi-value `|cidr` (without `|all`) collapses to a single
-        // `cidr_contains(field, 'a/n', 'b/m', ...)` call: the Fibratus
-        // filter function accepts a variadic list of CIDR masks and
-        // returns true if the address falls inside any of them, which is
-        // the OR semantics Sigma multi-value lists carry. With `|all`
-        // the generic AND-join is correct and we fall through.
-        if item.field.has_modifier(Modifier::Cidr)
-            && item.values.len() >= 2
-            && !item.field.has_modifier(Modifier::All)
-        {
-            let field_name = item
-                .field
-                .name
-                .as_deref()
-                .ok_or(ConvertError::MissingFieldName)?;
-            let mut masks: Vec<String> = Vec::with_capacity(item.values.len());
-            for v in &item.values {
-                match v {
-                    SigmaValue::String(s) => masks.push(shared::quote_plain_str(&s.original)),
-                    _ => {
-                        return Err(ConvertError::UnsupportedValue(
-                            "cidr requires string".into(),
-                        ));
-                    }
-                }
-            }
-            let f = self.escape_and_quote_field(field_name);
-            return Ok(format!("cidr_contains({f}, {})", masks.join(", ")));
-        }
-
-        // Multi-value OR string lists collapse to a single Fibratus
-        // list-operator clause (`field iin ('a', 'b')`, ...) instead of
-        // OR'd single comparisons.
-        if let Some(list_expr) = self.try_string_value_list(item)? {
-            return Ok(list_expr);
-        }
-
-        default_convert_detection_item(self, item, state)
     }
 
     fn convert_ir_detection_item(
@@ -611,36 +434,22 @@ impl Backend for FibratusBackend {
         shared::sanitize_field(field)
     }
 
-    fn convert_value_str(&self, value: &SigmaString, _state: &ConversionState) -> String {
-        shared::quote_sigma_string(value)
-    }
+    // --- Value-type-specific leaves (IR-native) ---
 
-    fn convert_value_re(&self, regex: &str, _state: &ConversionState) -> String {
-        // The regex override emits the full `regex(...)` call; this helper
-        // is only used for debug/logging callers and returns the bare
-        // pattern wrapped in single quotes with `'`/`\` escaped.
-        shared::quote_plain_str(regex)
-    }
-
-    // --- Value-type-specific methods ---
-
-    fn convert_field_eq_str(
+    fn convert_field_str(
         &self,
         field: &str,
-        value: &SigmaString,
-        modifiers: &[Modifier],
-        state: &mut ConversionState,
+        op: IrStrOp,
+        pattern: &IrPattern,
+        case_insensitive: bool,
+        _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
-        let mut mods = modifiers.to_vec();
-        if self.fibratus.case_sensitive && !mods.contains(&Modifier::Cased) {
-            mods.push(Modifier::Cased);
-        }
         let f = self.escape_and_quote_field(field);
-        let val = self.convert_value_str(value, state);
-        let is_cased = mods.contains(&Modifier::Cased);
-        let is_contains = mods.contains(&Modifier::Contains);
-        let is_startswith = mods.contains(&Modifier::StartsWith);
-        let is_endswith = mods.contains(&Modifier::EndsWith);
+        let val = shared::quote_sigma_string(&crate::backend::ir_pattern_to_sigma(pattern));
+        let is_cased = self.fibratus.case_sensitive || !case_insensitive;
+        let is_contains = matches!(op, IrStrOp::Contains);
+        let is_startswith = matches!(op, IrStrOp::StartsWith);
+        let is_endswith = matches!(op, IrStrOp::EndsWith);
 
         // Substring operators (`contains`/`startswith`/`endswith`) always
         // use the dedicated Fibratus operators, case-insensitive by
@@ -680,7 +489,7 @@ impl Backend for FibratusBackend {
         // the exact `=` operator (the event-name vocabulary is a fixed,
         // canonically-cased enum and every upstream macro/rule writes
         // `evt.name = '...'`).
-        let expr = if shared::has_wildcards(value) {
+        let expr = if pattern.has_wildcards() {
             let template = if is_cased {
                 self.config.case_sensitive_match_expression
             } else {
@@ -699,20 +508,6 @@ impl Backend for FibratusBackend {
             format!("{f} {op} {val}")
         };
         Ok(ConvertResult::Query(expr))
-    }
-
-    fn convert_field_eq_str_case_sensitive(
-        &self,
-        field: &str,
-        value: &SigmaString,
-        modifiers: &[Modifier],
-        state: &mut ConversionState,
-    ) -> Result<ConvertResult> {
-        let mut mods = modifiers.to_vec();
-        if !mods.contains(&Modifier::Cased) {
-            mods.push(Modifier::Cased);
-        }
-        self.convert_field_eq_str(field, value, &mods, state)
     }
 
     fn convert_field_eq_num(
@@ -749,11 +544,11 @@ impl Backend for FibratusBackend {
         Ok(self.config.field_null_expression.replace("{field}", &f))
     }
 
-    fn convert_field_eq_re(
+    fn convert_field_regex(
         &self,
         field: &str,
         pattern: &str,
-        _flags: &[Modifier],
+        _flags: RegexFlags,
         _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
         if !shared::is_re2_compatible(pattern) {
@@ -779,24 +574,19 @@ impl Backend for FibratusBackend {
         )))
     }
 
-    fn convert_field_compare(
+    fn convert_field_compare_op(
         &self,
         field: &str,
-        op: &Modifier,
+        op: CompareOp,
         value: f64,
         _state: &mut ConversionState,
     ) -> Result<String> {
         let f = self.escape_and_quote_field(field);
         let op_name = match op {
-            Modifier::Lt => "lt",
-            Modifier::Lte => "lte",
-            Modifier::Gt => "gt",
-            Modifier::Gte => "gte",
-            _ => {
-                return Err(ConvertError::UnsupportedModifier(format!(
-                    "compare op {op:?}"
-                )));
-            }
+            CompareOp::Lt => "lt",
+            CompareOp::Lte => "lte",
+            CompareOp::Gt => "gt",
+            CompareOp::Gte => "gte",
         };
         let op_token = self
             .config
@@ -853,7 +643,11 @@ impl Backend for FibratusBackend {
         Ok(ConvertResult::Query(format!("{f1} = {f2}")))
     }
 
-    fn convert_keyword(&self, _value: &SigmaValue, _state: &mut ConversionState) -> Result<String> {
+    fn convert_keyword_str(
+        &self,
+        _pattern: &IrPattern,
+        _state: &mut ConversionState,
+    ) -> Result<String> {
         // Fibratus has no unbound full-text search; keyword detections
         // cannot be expressed. Return the structured error so the rule
         // shows up in the conversion-errors list rather than emitting
@@ -861,52 +655,8 @@ impl Backend for FibratusBackend {
         Err(ConvertError::UnsupportedKeyword)
     }
 
-    fn convert_condition_as_in_expression(
-        &self,
-        field: &str,
-        values: &[&SigmaValue],
-        is_or: bool,
-        _state: &mut ConversionState,
-    ) -> Result<String> {
-        if !is_or {
-            // AND-in (all values present) needs `intersects`, but that
-            // takes a slice on both sides. Fall back to the OR'd
-            // equality path by signalling the helper to give up.
-            return Err(ConvertError::UnsupportedModifier(
-                "and-in (all values present in a field) is not expressible as a single Fibratus operator".into(),
-            ));
-        }
-        let f = self.escape_and_quote_field(field);
-        let op = if self.fibratus.case_sensitive || Self::all_cased(values) {
-            "in"
-        } else {
-            self.config.or_in_operator.unwrap_or("iin")
-        };
-        let expr = self
-            .config
-            .field_in_list_expression
-            .ok_or_else(|| ConvertError::UnsupportedModifier("in-list".into()))?;
-        let items: Vec<String> = values
-            .iter()
-            .map(|v| match v {
-                SigmaValue::String(s) => shared::quote_sigma_string(s),
-                SigmaValue::Integer(n) => n.to_string(),
-                SigmaValue::Float(f) => f.to_string(),
-                SigmaValue::Bool(b) => {
-                    if *b {
-                        self.config.bool_true.to_string()
-                    } else {
-                        self.config.bool_false.to_string()
-                    }
-                }
-                SigmaValue::Null => "null".to_string(),
-            })
-            .collect();
-        let list = items.join(self.config.list_separator);
-        Ok(expr
-            .replace("{field}", &f)
-            .replace("{op}", op)
-            .replace("{list}", &list))
+    fn convert_keyword_num(&self, _value: f64, _state: &mut ConversionState) -> Result<String> {
+        Err(ConvertError::UnsupportedKeyword)
     }
 
     // --- Query finalization ---

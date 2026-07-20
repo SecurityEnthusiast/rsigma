@@ -196,10 +196,14 @@ fn convert_leaf<B: Backend + ?Sized>(
             Ok(resolve(res, state))
         }
         IrMatcher::Cidr { network } => {
-            let res = backend.convert_field_cidr(field, network, state)?;
+            let res = backend.convert_field_eq_cidr(field, network, state)?;
             Ok(resolve(res, state))
         }
-        IrMatcher::NumericEq(n) => Ok(Some(backend.convert_field_num(field, number(n)?, state)?)),
+        IrMatcher::NumericEq(n) => Ok(Some(backend.convert_field_eq_num(
+            field,
+            number(n)?,
+            state,
+        )?)),
         IrMatcher::NumericGt(n) => Ok(Some(backend.convert_field_compare_op(
             field,
             CompareOp::Gt,
@@ -225,8 +229,8 @@ fn convert_leaf<B: Backend + ?Sized>(
             state,
         )?)),
         IrMatcher::Exists(expect) => Ok(Some(backend.convert_field_exists(field, *expect, state)?)),
-        IrMatcher::Null => Ok(Some(backend.convert_field_null(field, state)?)),
-        IrMatcher::BoolEq(b) => Ok(Some(backend.convert_field_bool(field, *b, state)?)),
+        IrMatcher::Null => Ok(Some(backend.convert_field_eq_null(field, state)?)),
+        IrMatcher::BoolEq(b) => Ok(Some(backend.convert_field_eq_bool(field, *b, state)?)),
         IrMatcher::FieldRef { field: rf, .. } => {
             let res = backend.convert_field_ref(field, rf, state)?;
             Ok(resolve(res, state))
