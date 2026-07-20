@@ -4026,6 +4026,7 @@ dependencies = [
  "log",
  "regex",
  "rsigma-eval",
+ "rsigma-ir",
  "rsigma-parser",
  "serde_json",
  "testcontainers",
@@ -4053,10 +4054,26 @@ dependencies = [
  "rand 0.10.2",
  "rayon",
  "regex",
+ "rsigma-ir",
  "rsigma-parser",
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.18",
+ "yaml_serde",
+]
+
+[[package]]
+name = "rsigma-ir"
+version = "0.19.0"
+dependencies = [
+ "base64",
+ "ipnet",
+ "regex",
+ "rsigma-eval",
+ "rsigma-parser",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "yaml_serde",
 ]

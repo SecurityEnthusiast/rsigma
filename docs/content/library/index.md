@@ -9,7 +9,8 @@ For the canonical, line-by-line API reference, follow [docs.rs/rsigma](https://d
 | Crate | Depends on | Use it when you want to... |
 |-------|------------|----------------------------|
 | [`rsigma-parser`](parser.md) | (nothing else from rsigma) | Parse a Sigma YAML file into a typed AST. |
-| [`rsigma-eval`](eval.md) | `rsigma-parser` | Compile that AST and evaluate events against it; run correlations; apply pipelines. |
+| [`rsigma-ir`](ir.md) | `rsigma-parser` | Lower the AST into a modifier-resolved, selector-free HIR shared by eval and convert. |
+| [`rsigma-eval`](eval.md) | `rsigma-parser`, `rsigma-ir` | Compile that AST (via HIR) and evaluate events against it; run correlations; apply pipelines. |
 | [`rsigma-convert`](convert.md) | `rsigma-parser` | Emit backend-native query strings (PostgreSQL, LynxDB, or a custom backend you implement). |
 | [`rsigma-runtime`](runtime.md) | `rsigma-parser`, `rsigma-eval` | Wrap the engine in a streaming runtime: input adapters, sinks, hot-reload, dynamic source resolution. |
 | `rsigma-lsp` | `rsigma-parser`, `rsigma-eval` | Run the Sigma language server in your own editor integration. |

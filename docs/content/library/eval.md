@@ -1,6 +1,6 @@
 # `rsigma-eval`
 
-The detection and correlation engine. Compiles parsed Sigma rules into a matcher tree, evaluates events against them, runs correlation windows, and applies processing pipelines.
+The detection and correlation engine. Compiles parsed Sigma rules into a matcher tree (via the [`rsigma-ir`](ir.md) HIR), evaluates events against them, runs correlation windows, and applies processing pipelines.
 
 - [docs.rs/rsigma-eval](https://docs.rs/rsigma-eval)
 - [README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-eval/README.md)

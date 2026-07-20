@@ -3,6 +3,7 @@
 mod common;
 
 use common::{rsigma, temp_file};
+use insta::assert_snapshot;
 use predicates::prelude::*;
 
 const RULE: &str = r#"
@@ -137,7 +138,11 @@ fn negation_node_is_rendered() {
 }
 
 #[test]
-fn quantified_selector_reports_counts() {
+fn quantified_selector_reports_counts_in_explain() {
+    // `1 of selection_*` is preserved as a native selector, so the trace is a
+    // quantified node with need/got counts. Snapshot the raw stdout so key
+    // order comes from the struct `Serialize` impls, not serde_json's
+    // `preserve_order` feature (which is not always unified into the build).
     let rule = temp_file(
         ".yml",
         r#"
@@ -153,7 +158,7 @@ detection:
     condition: 1 of selection_*
 "#,
     );
-    rsigma()
+    let output = rsigma()
         .args([
             "engine",
             "explain",
@@ -161,13 +166,22 @@ detection:
             rule.path().to_str().unwrap(),
             "--color",
             "never",
+            "--output-format",
+            "json",
             "-e",
             r#"{"CommandLine":"run powershell"}"#,
         ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("(1/1 matched)"))
-        .stdout(predicate::str::contains("MATCH"));
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_snapshot!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        @r#"[{"rule_title":"One Of","rule_id":"oneof-1","matched":true,"conditions":[{"type":"quantified","quantifier":"any","matched":true,"need":1,"got":1,"branches":[{"name":"selection_a","matched":true,"detection":{"type":"all_of","matched":true,"items":[{"field":"CommandLine","matcher":"contains","pattern":"powershell","actual":"run powershell","matched":true,"reason":"matched"}]}},{"name":"selection_b","matched":false,"detection":{"type":"all_of","matched":false,"items":[{"field":"CommandLine","matcher":"contains","pattern":"whoami","actual":"run powershell","matched":false,"reason":"value_mismatch"}]}}]}]}]"#
+    );
 }
 
 #[test]

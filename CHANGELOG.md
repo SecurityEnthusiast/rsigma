@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Intermediate representation crate and IR-backed compile (#360)
+
+- **`rsigma-ir`** — new sync-only crate with HIR types (`IrRule`, `IrDetection`, `IrMatcher`, `IrCondition`, `IrCorrelation`, `IrFilter`) and `lower_rule` / `lower_*` that resolve modifiers before eval. Quantified selectors are preserved so evaluation stays count-based.
+- **`rsigma-eval`** — `compile_rule` routes through `lower_rule` → `compile_to_compiled`. `compile_rule_legacy` remains for dual-path differential tests. Public physical API (`CompiledRule`, `evaluate_rule`, `Engine`) is unchanged.
+- **`rsigma-convert`** — detection-rule conversion resolves conditions through IR (`convert_rule_via_ir`); detection-item dispatch still uses the parser AST. PostgreSQL, LynxDB, and Fibratus golden tests unchanged.
+
 ### Dependency bumps (#354, #357)
 
 Rolls up the open Dependabot PRs into a single merge. Rust (workspace `Cargo.lock` and `fuzz/Cargo.lock`): `bytes` 1.12.0 to 1.12.1 (#322), `regex` 1.12.4 to 1.13.1 (#326, #319), `jsonschema` 0.46.9 to 0.48.1 (#325), `rmcp` 2.1.0 to 2.2.0 (#323) with a co-required `sse-stream` 0.2.3 to 0.2.4 bump (`rmcp` 2.2.0 calls the renamed `SseStream::from_bytes_stream` API), and the `patch-updates` group (#356) `daachorse` 3.0.2 to 3.0.3 plus `uuid` 1.23.4 to 1.23.5. `rsigma-parser` Cargo.toml pins for `yamlpath`/`yamlpatch` move from `1.25` to `1.26` (lockfile already on 1.26.1; `yamlpath` 1.27.0 is held back until `yamlpatch` publishes a matching release). CI (all repinned by commit SHA, batched via the `actions-updates` group, #324, #355): `taiki-e/install-action` v2.82.8 to v2.83.2, `github/codeql-action/upload-sarif` v4.36.3 to v4.37.0, and `actions/setup-node` v4.4.0 to v6.4.0. VS Code extension: `typescript` 6.0.3 to 7.0.2 (#321) and `@types/node` 26.1.0 to 26.1.1 (#320). Held back: `rusqlite` 0.39 to 0.40.1 (#234) on MSRV 1.88.

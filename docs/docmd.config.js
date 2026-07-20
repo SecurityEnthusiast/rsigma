@@ -207,6 +207,7 @@ export default {
       collapsible: true,
       children: [
         { title: "rsigma-parser", path: "/library/parser" },
+        { title: "rsigma-ir", path: "/library/ir" },
         { title: "rsigma-eval", path: "/library/eval" },
         { title: "rsigma-convert", path: "/library/convert" },
         { title: "rsigma-runtime", path: "/library/runtime" },

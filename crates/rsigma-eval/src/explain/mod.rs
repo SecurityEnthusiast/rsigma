@@ -613,6 +613,8 @@ detection:
 
     #[test]
     fn quantified_selector_records_need_and_got() {
+        // `1 of selection_*` is preserved as a native selector, so explain
+        // reports it as a quantified node with need/got counts.
         let rule = compile(
             r#"
 title: One Of
