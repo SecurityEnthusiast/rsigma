@@ -1,6 +1,7 @@
 [package]
 name = "rsigma-ir"
 description = "Intermediate representation for Sigma rules — shared canonical form for eval and convert"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
