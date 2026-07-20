@@ -5,8 +5,8 @@
 mod common;
 
 use common::{collection_from, rule_from};
-use rsigma_eval::{compile_rule, compile_rule_legacy, evaluate_rule, JsonEvent};
-use serde_json::{json, Value};
+use rsigma_eval::{JsonEvent, compile_rule, compile_rule_legacy, evaluate_rule};
+use serde_json::{Value, json};
 
 fn assert_match_parity(yaml: &str, events: &[Value]) {
     let rule = rule_from(yaml);

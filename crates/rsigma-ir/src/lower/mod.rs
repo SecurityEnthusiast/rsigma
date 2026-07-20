@@ -2,7 +2,7 @@
 //!
 //! Walks metadata, detections, and conditions after static pipeline transforms.
 //! Selectors collapse here into [`IrCondition`] trees with no `Selector` variant.
-//! Modifier interpretation lives in [`mod_ctx`] / [`value`].
+//! Modifier interpretation lives in private helpers alongside this module.
 
 mod helpers;
 mod mod_ctx;

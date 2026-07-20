@@ -26,11 +26,7 @@ pub fn compile_to_compiled(ir: &IrRule) -> Result<CompiledRule> {
         detections.insert(name.clone(), compile_ir_detection(detection)?);
     }
 
-    let conditions: Vec<ConditionExpr> = ir
-        .conditions
-        .iter()
-        .map(ir_condition_to_expr)
-        .collect();
+    let conditions: Vec<ConditionExpr> = ir.conditions.iter().map(ir_condition_to_expr).collect();
 
     let include_event = ir
         .metadata
@@ -119,8 +115,8 @@ fn compile_ir_detection(detection: &IrDetection) -> Result<CompiledDetection> {
 
 fn compile_ir_detection_item(item: &IrDetectionItem) -> Result<CompiledDetectionItem> {
     let matcher = compile_ir_matcher(&item.matcher)?;
-    let bloom_eligible = item.field.is_some()
-        && crate::engine::bloom_index::is_positive_substring_matcher(&matcher);
+    let bloom_eligible =
+        item.field.is_some() && crate::engine::bloom_index::is_positive_substring_matcher(&matcher);
 
     Ok(CompiledDetectionItem {
         field: item.field.clone(),

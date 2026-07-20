@@ -1726,6 +1726,7 @@ dependencies = [
  "log",
  "rayon",
  "regex",
+ "rsigma-ir",
  "rsigma-parser",
  "serde",
  "serde_json",
@@ -1745,6 +1746,20 @@ dependencies = [
  "rsigma-runtime",
  "rstix",
  "serde_json",
+ "yaml_serde",
+]
+
+[[package]]
+name = "rsigma-ir"
+version = "0.19.0"
+dependencies = [
+ "base64",
+ "ipnet",
+ "regex",
+ "rsigma-parser",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "yaml_serde",
 ]
 

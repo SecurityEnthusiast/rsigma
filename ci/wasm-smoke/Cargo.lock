@@ -446,6 +446,21 @@ dependencies = [
  "ipnet",
  "log",
  "regex",
+ "rsigma-ir",
+ "rsigma-parser",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "yaml_serde",
+]
+
+[[package]]
+name = "rsigma-ir"
+version = "0.19.0"
+dependencies = [
+ "base64",
+ "ipnet",
+ "regex",
  "rsigma-parser",
  "serde",
  "serde_json",
