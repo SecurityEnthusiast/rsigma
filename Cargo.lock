@@ -4062,6 +4062,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsigma-ir"
+version = "0.19.0"
+dependencies = [
+ "rsigma-eval",
+ "rsigma-parser",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "rsigma-lsp"
 version = "0.19.0"
 dependencies = [
