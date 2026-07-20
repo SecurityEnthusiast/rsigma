@@ -10,13 +10,13 @@
 //!   identical to native evaluation (no boolean expansion).
 //! - **Array-scope complete**: [`IrDetection`] mirrors
 //!   `CompiledDetection::{ArrayMatch, And, Conditional}`.
-//! - **Serializable**: no compiled `Regex`, no `IpNet`.
-//! - **Placeholder-aware** when lowering preserves `${source.*}` as
-//!   [`IrValue::DynamicSourceRef`].
+//! - **Faithful and lossless**: string matches keep a wildcard-aware,
+//!   original-case [`IrPattern`]; encoding modifiers stay explicit as
+//!   [`IrEncoding`]. Lowering never lowercases, compiles regexes, or expands
+//!   encodings, so both eval (at compile time) and convert (at emit time)
+//!   render it exactly.
 //! - **`RuleHeader`-projecting**: [`IrRuleMetadata`] is a superset; compile
 //!   projects the subset used by `rsigma_eval::result::RuleHeader`.
-//! - **Convert-friendly**: each [`IrDetectionItem`] may carry an optional
-//!   [`SurfaceSpec`] that eval ignores but convert / reverse-convert uses.
 
 use std::collections::HashMap;
 
