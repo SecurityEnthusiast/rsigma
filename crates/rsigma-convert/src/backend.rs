@@ -39,6 +39,68 @@ pub enum TokenType {
     OR = 2,
 }
 
+/// Numeric comparison operator for IR-native field comparison.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompareOp {
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+}
+
+/// Reconstruct a parser [`SigmaString`] from a faithful [`IrPattern`].
+///
+/// Bridges the IR-native leaf defaults to the existing parser-typed leaves
+/// during the migration; the pattern round-trips exactly (same literal parts
+/// and wildcards), so delegation is byte-identical.
+pub(crate) fn ir_pattern_to_sigma(pattern: &IrPattern) -> SigmaString {
+    let mut original = String::new();
+    let parts = pattern
+        .parts
+        .iter()
+        .map(|p| match p {
+            IrPatternPart::Literal(t) => {
+                original.push_str(t);
+                StringPart::Plain(t.clone())
+            }
+            IrPatternPart::WildcardMulti => {
+                original.push('*');
+                StringPart::Special(SpecialChar::WildcardMulti)
+            }
+            IrPatternPart::WildcardSingle => {
+                original.push('?');
+                StringPart::Special(SpecialChar::WildcardSingle)
+            }
+        })
+        .collect();
+    SigmaString { parts, original }
+}
+
+/// The parser modifier list a string match implies, for delegating IR-native
+/// leaves to the parser-typed leaves.
+pub(crate) fn ir_str_modifiers(op: IrStrOp, case_insensitive: bool) -> Vec<Modifier> {
+    let mut mods = Vec::new();
+    match op {
+        IrStrOp::Exact => {}
+        IrStrOp::Contains => mods.push(Modifier::Contains),
+        IrStrOp::StartsWith => mods.push(Modifier::StartsWith),
+        IrStrOp::EndsWith => mods.push(Modifier::EndsWith),
+    }
+    if !case_insensitive {
+        mods.push(Modifier::Cased);
+    }
+    mods
+}
+
+fn compare_op_modifier(op: CompareOp) -> Modifier {
+    match op {
+        CompareOp::Gt => Modifier::Gt,
+        CompareOp::Gte => Modifier::Gte,
+        CompareOp::Lt => Modifier::Lt,
+        CompareOp::Lte => Modifier::Lte,
+    }
+}
+
 // =============================================================================
 // Backend trait
 // =============================================================================
@@ -206,6 +268,115 @@ pub trait Backend: Send + Sync {
     ) -> Result<ConvertResult>;
 
     fn convert_keyword(&self, value: &SigmaValue, state: &mut ConversionState) -> Result<String>;
+
+    // --- IR-native value leaves ---
+    //
+    // These consume the faithful HIR (`IrPattern` / `IrStrOp` / flags) with no
+    // parser types. Default impls delegate to the parser-typed leaves above by
+    // reconstructing the equivalent inputs, so a backend works IR-native for
+    // free; backends override these directly to drop the parser dependency.
+
+    /// String match over a wildcard-aware, original-case pattern.
+    fn convert_field_str(
+        &self,
+        field: &str,
+        op: IrStrOp,
+        pattern: &IrPattern,
+        case_insensitive: bool,
+        state: &mut ConversionState,
+    ) -> Result<ConvertResult> {
+        let sigma = ir_pattern_to_sigma(pattern);
+        let mods = ir_str_modifiers(op, case_insensitive);
+        self.convert_field_eq_str(field, &sigma, &mods, state)
+    }
+
+    /// Numeric equality.
+    fn convert_field_num(
+        &self,
+        field: &str,
+        value: f64,
+        state: &mut ConversionState,
+    ) -> Result<String> {
+        self.convert_field_eq_num(field, value, state)
+    }
+
+    /// Boolean equality.
+    fn convert_field_bool(
+        &self,
+        field: &str,
+        value: bool,
+        state: &mut ConversionState,
+    ) -> Result<String> {
+        self.convert_field_eq_bool(field, value, state)
+    }
+
+    /// Null match.
+    fn convert_field_null(&self, field: &str, state: &mut ConversionState) -> Result<String> {
+        self.convert_field_eq_null(field, state)
+    }
+
+    /// Regex match with raw pattern and explicit flags.
+    fn convert_field_regex(
+        &self,
+        field: &str,
+        pattern: &str,
+        case_insensitive: bool,
+        multiline: bool,
+        dotall: bool,
+        state: &mut ConversionState,
+    ) -> Result<ConvertResult> {
+        let mut flags = vec![Modifier::Re];
+        if case_insensitive {
+            flags.push(Modifier::IgnoreCase);
+        }
+        if multiline {
+            flags.push(Modifier::Multiline);
+        }
+        if dotall {
+            flags.push(Modifier::DotAll);
+        }
+        self.convert_field_eq_re(field, pattern, &flags, state)
+    }
+
+    /// CIDR containment match.
+    fn convert_field_cidr(
+        &self,
+        field: &str,
+        cidr: &str,
+        state: &mut ConversionState,
+    ) -> Result<ConvertResult> {
+        self.convert_field_eq_cidr(field, cidr, state)
+    }
+
+    /// Numeric comparison (`gt`/`gte`/`lt`/`lte`).
+    fn convert_field_compare_op(
+        &self,
+        field: &str,
+        op: CompareOp,
+        value: f64,
+        state: &mut ConversionState,
+    ) -> Result<String> {
+        self.convert_field_compare(field, &compare_op_modifier(op), value, state)
+    }
+
+    /// Keyword (unbound) string term.
+    fn convert_keyword_str(
+        &self,
+        pattern: &IrPattern,
+        state: &mut ConversionState,
+    ) -> Result<String> {
+        self.convert_keyword(&SigmaValue::String(ir_pattern_to_sigma(pattern)), state)
+    }
+
+    /// Keyword (unbound) numeric term.
+    fn convert_keyword_num(&self, value: f64, state: &mut ConversionState) -> Result<String> {
+        let v = if value.fract() == 0.0 {
+            SigmaValue::Integer(value as i64)
+        } else {
+            SigmaValue::Float(value)
+        };
+        self.convert_keyword(&v, state)
+    }
 
     // --- IN-list optimization (optional) ---
 
