@@ -1,16 +1,13 @@
-//! Expected HIR shapes for Phase 0.0 (fixtures-first).
+//! Expected HIR shapes for selector collapse and metadata projection.
 //!
 //! These hand-built [`IrCondition`] / metadata stubs are the contract that
-//! Phase 0.2 `lower_rule` must satisfy. Match oracles live in the sibling
-//! test binaries; this file freezes the *structural* IR expectation.
-//!
-//! Parity tests that call [`rsigma_ir::lower::lower_rule`] are `#[ignore]`
-//! until Phase 0.2 implements lowering. Un-ignore them when wiring 0.2.
+//! `lower_rule` must satisfy. Match oracles live in the sibling test binaries;
+//! this file freezes the structural IR expectation.
 
 mod common;
 
 use common::rule_from;
-use rsigma_ir::lower::{lower_rule, LowerOptions};
+use rsigma_ir::lower::{LowerOptions, lower_rule};
 use rsigma_ir::{IrCondition, IrRuleMetadata};
 
 /// Vacuous `all of selection_*` with zero matching detection names → empty And.
@@ -20,23 +17,17 @@ pub fn expected_vacuous_all_of_conditions() -> Vec<IrCondition> {
 
 /// `1 of them` over `selection` + `_internal` → only `selection`.
 pub fn expected_them_skip_underscore_conditions() -> Vec<IrCondition> {
-    vec![IrCondition::Or(vec![IrCondition::Detection(
-        "selection".into(),
-    )])]
+    vec![IrCondition::Detection("selection".into())]
 }
 
-/// `all of them` over `selection` + `_internal` → And over non-`_` names only.
+/// `all of them` over `selection` + `_internal` → non-`_` names only.
 pub fn expected_all_of_them_skip_underscore_conditions() -> Vec<IrCondition> {
-    vec![IrCondition::And(vec![IrCondition::Detection(
-        "selection".into(),
-    )])]
+    vec![IrCondition::Detection("selection".into())]
 }
 
 /// `1 of _*` over `selection_main` + `_internal` → only `_internal`.
 pub fn expected_glob_underscore_conditions() -> Vec<IrCondition> {
-    vec![IrCondition::Or(vec![IrCondition::Detection(
-        "_internal".into(),
-    )])]
+    vec![IrCondition::Detection("_internal".into())]
 }
 
 /// `all of selection_a* and all of selection_b*` with zero matches each.
@@ -57,21 +48,15 @@ fn expected_hir_stubs_are_well_formed() {
     );
     assert_eq!(
         expected_them_skip_underscore_conditions(),
-        vec![IrCondition::Or(vec![IrCondition::Detection(
-            "selection".into()
-        )])]
+        vec![IrCondition::Detection("selection".into())]
     );
     assert_eq!(
         expected_all_of_them_skip_underscore_conditions(),
-        vec![IrCondition::And(vec![IrCondition::Detection(
-            "selection".into()
-        )])]
+        vec![IrCondition::Detection("selection".into())]
     );
     assert_eq!(
         expected_glob_underscore_conditions(),
-        vec![IrCondition::Or(vec![IrCondition::Detection(
-            "_internal".into()
-        )])]
+        vec![IrCondition::Detection("_internal".into())]
     );
     assert_eq!(
         expected_vacuous_all_of_multiple_conditions(),
@@ -89,11 +74,10 @@ fn expected_hir_stubs_are_well_formed() {
 }
 
 // =============================================================================
-// Phase 0.2 parity (ignored until lower_rule is implemented)
+// lower_rule selector collapse parity
 // =============================================================================
 
 #[test]
-#[ignore = "phase 0.2: enable when lower_rule collapses selectors"]
 fn lower_vacuous_all_of_matches_expected_hir() {
     let rule = rule_from(
         r#"
@@ -111,7 +95,6 @@ detection:
 }
 
 #[test]
-#[ignore = "phase 0.2: enable when lower_rule collapses selectors"]
 fn lower_them_skip_underscore_matches_expected_hir() {
     let rule = rule_from(
         r#"
@@ -130,7 +113,6 @@ detection:
 }
 
 #[test]
-#[ignore = "phase 0.2: enable when lower_rule collapses selectors"]
 fn lower_all_of_them_skip_underscore_matches_expected_hir() {
     let rule = rule_from(
         r#"
@@ -152,7 +134,6 @@ detection:
 }
 
 #[test]
-#[ignore = "phase 0.2: enable when lower_rule collapses selectors"]
 fn lower_glob_underscore_matches_expected_hir() {
     let rule = rule_from(
         r#"
@@ -171,7 +152,6 @@ detection:
 }
 
 #[test]
-#[ignore = "phase 0.2: enable when lower_rule collapses selectors"]
 fn lower_vacuous_all_of_multiple_matches_expected_hir() {
     let rule = rule_from(
         r#"

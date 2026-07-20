@@ -1,19 +1,15 @@
-//! Shared helpers for Phase 0.0 baseline fixtures.
-//!
-//! These tests exercise the **legacy** compile/evaluate path in `rsigma-eval`
-//! as the ground-truth oracle. When Phase 0.2 lowering lands, the same
-//! fixtures will also assert
-//! `lower_rule → compile_to_compiled → evaluate_rule` parity.
+//! Shared helpers for IR fixture tests.
 //!
 //! Prefer [`compiled_from`] + [`rule_matches`] for pure condition/matcher
 //! semantics. [`engine_from`] goes through [`Engine`] indices/prefilters and
 //! can drop rules whose unused detections constrain the index (see the
 //! vacuous `all of` fixtures).
 
-use rsigma_eval::{
-    compile_rule, evaluate_rule, CompiledRule, Engine, EvaluationResult, JsonEvent,
-};
-use rsigma_parser::{parse_sigma_yaml, CorrelationRule, FilterRule, SigmaCollection, SigmaRule};
+// Each integration test binary includes this module but uses a subset of helpers.
+#![allow(dead_code)]
+
+use rsigma_eval::{CompiledRule, Engine, EvaluationResult, JsonEvent, compile_rule, evaluate_rule};
+use rsigma_parser::{CorrelationRule, FilterRule, SigmaCollection, SigmaRule, parse_sigma_yaml};
 use serde_json::Value;
 
 /// Parse a full Sigma collection (rules + correlations + filters).

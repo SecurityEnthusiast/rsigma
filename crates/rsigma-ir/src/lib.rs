@@ -40,22 +40,10 @@
 //!
 //! ## Constraints
 //!
-//! - Sync-only.  No tokio, reqwest, or other async-runtime dependencies.
-//!   Dynamic source resolution (Phase 6b, `DynamicSourceRef`) lives in
-//!   `rsigma-runtime::specialize_ir`, not here.
-//!
-//! - Serializable.  `IrRule`, `IrCorrelation`, and `IrFilter` derive serde.
-//!   Postcard and JSON are the wire formats; Phase 4 is the first serialization
-//!   gate.
-//!
-//! ## Phases
-//!
-//! | Phase | What | Gate |
-//! |-------|------|------|
-//! | 0.0 | Baseline fixtures under `tests/` | Legacy match/compile oracles + expected-HIR stubs + correlation/filter/keywords |
-//! | 0.1 | HIR types in [`hir`] | Types compile (in progress alongside 0.0) |
-//! | 0.2 | `lower_rule`, … in [`lower`] | Fixtures pass through IR lowering |
-//! | 0.3 | Corpus differential | match/no-match + `EvaluationResult` wire-shape parity |
+//! - Sync-only. No tokio, reqwest, or other async-runtime dependencies.
+//! - HIR values are literal-only on the default lowering path; deferred
+//!   `DynamicSourceRef` values are produced only when
+//!   [`lower::LowerOptions::permissive_placeholders`] is enabled.
 
 pub mod error;
 pub mod hir;
@@ -63,3 +51,4 @@ pub mod lower;
 
 pub use error::IrError;
 pub use hir::*;
+pub use lower::{LowerOptions, lower_rule};

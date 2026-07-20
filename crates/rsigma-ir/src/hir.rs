@@ -46,7 +46,7 @@ pub struct IrRule {
 ///
 /// Superset of `rsigma_eval::result::RuleHeader` plus the rest of the Sigma
 /// rule metadata convert and offline tools need.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct IrRuleMetadata {
     pub title: String,
     pub id: Option<String>,
@@ -70,32 +70,6 @@ pub struct IrRuleMetadata {
     pub custom_attributes: HashMap<String, Value>,
     /// Optional affinity hint for pack consumers; schema routing stays outside IR.
     pub schema_affinity: Option<Vec<String>>,
-}
-
-impl Default for IrRuleMetadata {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            id: None,
-            name: None,
-            level: None,
-            tags: Vec::new(),
-            status: None,
-            description: None,
-            author: None,
-            date: None,
-            modified: None,
-            references: Vec::new(),
-            falsepositives: Vec::new(),
-            fields: Vec::new(),
-            related: Vec::new(),
-            license: None,
-            taxonomy: None,
-            scope: Vec::new(),
-            custom_attributes: HashMap::new(),
-            schema_affinity: None,
-        }
-    }
 }
 
 // =============================================================================
@@ -166,8 +140,12 @@ pub enum IrMatcher {
         value: IrValue,
         case_insensitive: bool,
     },
-    Regex { pattern: IrValue },
-    Cidr { network: IrValue },
+    Regex {
+        pattern: IrValue,
+    },
+    Cidr {
+        network: IrValue,
+    },
     NumericEq(IrNumber),
     NumericGt(IrNumber),
     NumericGte(IrNumber),
