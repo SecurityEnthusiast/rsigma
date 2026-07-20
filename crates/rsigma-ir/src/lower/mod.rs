@@ -11,7 +11,7 @@ mod value;
 use std::collections::HashMap;
 
 use rsigma_parser::{
-    ConditionExpr, CorrelationRule, Detection, DetectionItem, FilterRule, Quantifier, SigmaRule,
+    ConditionExpr, CorrelationRule, Detection, DetectionItem, Detections, FilterRule, SigmaRule,
     SigmaValue,
 };
 
@@ -32,6 +32,11 @@ pub struct LowerOptions {
     /// `${source.*}` placeholders. When true, preserve them as
     /// `IrValue::DynamicSourceRef` (deferred specialization path).
     pub permissive_placeholders: bool,
+    /// When true, record the original field spelling, modifiers, and values on
+    /// each [`IrDetectionItem`] as a [`SurfaceSpec`]. The eval compile path
+    /// ignores it, so it defaults to off to avoid cloning every value; convert
+    /// (which needs the original modifiers) opts in.
+    pub retain_surface: bool,
 }
 
 /// Lower a single parsed `SigmaRule` into its HIR form.
@@ -54,6 +59,21 @@ pub fn lower_rule(rule: &SigmaRule, opts: &LowerOptions) -> Result<IrRule> {
         detections,
         conditions,
     })
+}
+
+/// Lower only the condition trees of a detection section, without lowering
+/// detection items.
+///
+/// Convert re-walks the parser AST for detection bodies, so it only needs the
+/// selector-resolved condition trees. This avoids the cost (and eval-specific
+/// value constraints) of fully lowering every detection item.
+pub fn lower_conditions(section: &Detections) -> Result<Vec<IrCondition>> {
+    let names: Vec<String> = section.named.keys().cloned().collect();
+    section
+        .conditions
+        .iter()
+        .map(|c| lower_condition(c, &names))
+        .collect()
 }
 
 /// Lower a parsed detection into `IrDetection`.
@@ -147,11 +167,15 @@ pub fn lower_detection_item(item: &DetectionItem, opts: &LowerOptions) -> Result
     let ctx = ModCtx::from_modifiers(&item.field.modifiers);
     validate_modifiers(&ctx, &item.field.modifiers)?;
 
-    let surface = Some(SurfaceSpec {
-        field: item.field.name.clone(),
-        modifiers: item.field.modifiers.clone(),
-        values: item.values.clone(),
-    });
+    let surface = if opts.retain_surface {
+        Some(SurfaceSpec {
+            field: item.field.name.clone(),
+            modifiers: item.field.modifiers.clone(),
+            values: item.values.clone(),
+        })
+    } else {
+        None
+    };
 
     if ctx.exists {
         let expect = match item.values.first() {
@@ -232,102 +256,16 @@ pub fn lower_condition(expr: &ConditionExpr, detection_names: &[String]) -> Resu
             quantifier,
             pattern,
         } => {
-            let mut matching: Vec<String> = detection_names
-                .iter()
-                .filter(|name| pattern.matches_detection_name(name))
-                .cloned()
-                .collect();
-            // Deterministic HIR: sort matched names alphabetically.
-            matching.sort();
-            Ok(collapse_selector(quantifier.clone(), matching))
+            // Preserve the selector so eval evaluates it natively (count-based,
+            // reporting every matching detection) and convert can resolve it
+            // like the parser path. Expanding here would change reported
+            // matched-selections and blow up combinatorially for `N of`.
+            Ok(IrCondition::Selector {
+                quantifier: quantifier.clone(),
+                pattern: pattern.clone(),
+            })
         }
     }
-}
-
-/// Collapse a selector into And/Or/Detection only.
-///
-/// - `any` / `1` → `Or` over matching names (empty `Or` is false)
-/// - `all` → `And` over matching names (empty `And` is vacuous true)
-/// - `N of` → combinatorial expansion of "at least N" as `Or` of `And`s
-fn collapse_selector(quantifier: Quantifier, matching: Vec<String>) -> IrCondition {
-    match quantifier {
-        Quantifier::Any => {
-            if matching.len() == 1 {
-                IrCondition::Detection(matching.into_iter().next().unwrap())
-            } else {
-                IrCondition::Or(matching.into_iter().map(IrCondition::Detection).collect())
-            }
-        }
-        Quantifier::All => {
-            if matching.len() == 1 {
-                IrCondition::Detection(matching.into_iter().next().unwrap())
-            } else {
-                IrCondition::And(matching.into_iter().map(IrCondition::Detection).collect())
-            }
-        }
-        Quantifier::Count(n) => collapse_count(n, matching),
-    }
-}
-
-fn collapse_count(n: u64, matching: Vec<String>) -> IrCondition {
-    if n == 0 {
-        // match_count >= 0 is always true
-        return IrCondition::And(vec![]);
-    }
-    if matching.is_empty() || n as usize > matching.len() {
-        // Impossible to satisfy
-        return IrCondition::Or(vec![]);
-    }
-    if n == 1 {
-        return collapse_selector(Quantifier::Any, matching);
-    }
-    if n as usize == matching.len() {
-        return collapse_selector(Quantifier::All, matching);
-    }
-
-    // At least n of k: Or over all combinations of size n, each as And.
-    let combos = combinations(&matching, n as usize);
-    let arms: Vec<IrCondition> = combos
-        .into_iter()
-        .map(|combo| {
-            if combo.len() == 1 {
-                IrCondition::Detection(combo.into_iter().next().unwrap())
-            } else {
-                IrCondition::And(combo.into_iter().map(IrCondition::Detection).collect())
-            }
-        })
-        .collect();
-    if arms.len() == 1 {
-        arms.into_iter().next().unwrap()
-    } else {
-        IrCondition::Or(arms)
-    }
-}
-
-fn combinations(items: &[String], k: usize) -> Vec<Vec<String>> {
-    fn rec(
-        items: &[String],
-        k: usize,
-        start: usize,
-        path: &mut Vec<String>,
-        out: &mut Vec<Vec<String>>,
-    ) {
-        if path.len() == k {
-            out.push(path.clone());
-            return;
-        }
-        for i in start..items.len() {
-            path.push(items[i].clone());
-            rec(items, k, i + 1, path, out);
-            path.pop();
-        }
-    }
-    let mut out = Vec::new();
-    if k == 0 || k > items.len() {
-        return out;
-    }
-    rec(items, k, 0, &mut Vec::new(), &mut out);
-    out
 }
 
 /// Lower a correlation rule into `IrCorrelation`.
@@ -353,11 +291,7 @@ pub fn lower_filter(filter: &FilterRule, opts: &LowerOptions) -> Result<IrFilter
     for (name, detection) in &filter.detection.named {
         detections.insert(name.clone(), lower_detection(detection, opts)?);
     }
-    let detection_names: Vec<String> = detections.keys().cloned().collect();
-    let mut conditions = Vec::with_capacity(filter.detection.conditions.len());
-    for condition in &filter.detection.conditions {
-        conditions.push(lower_condition(condition, &detection_names)?);
-    }
+    let conditions = lower_conditions(&filter.detection)?;
     Ok(IrFilter {
         metadata: metadata_from_filter(filter),
         sigma_version: filter.sigma_version,
@@ -369,13 +303,13 @@ pub fn lower_filter(filter: &FilterRule, opts: &LowerOptions) -> Result<IrFilter
 }
 
 fn reject_placeholders(value: &SigmaValue) -> Result<()> {
-    if let SigmaValue::String(s) = value {
-        let text = s.as_plain().unwrap_or_else(|| s.original.clone());
-        if text.contains("${source.") {
-            return Err(IrError::Lowering(format!(
-                "unresolved source placeholder in detection value: {text}"
-            )));
-        }
+    if let SigmaValue::String(s) = value
+        && s.original.contains("${source.")
+    {
+        return Err(IrError::Lowering(format!(
+            "unresolved source placeholder in detection value: {}",
+            s.original
+        )));
     }
     Ok(())
 }
@@ -449,22 +383,5 @@ fn metadata_from_filter(filter: &FilterRule) -> IrRuleMetadata {
         scope: filter.scope.clone(),
         custom_attributes: yaml_to_json_map(&filter.custom_attributes),
         schema_affinity: None,
-    }
-}
-
-#[cfg(test)]
-mod combinations_tests {
-    use super::combinations;
-
-    #[test]
-    fn combinations_of_size_two() {
-        let items = ["a", "b", "c"].map(String::from).to_vec();
-        let got = combinations(&items, 2);
-        let expected: Vec<Vec<String>> = vec![
-            vec!["a".into(), "b".into()],
-            vec!["a".into(), "c".into()],
-            vec!["b".into(), "c".into()],
-        ];
-        assert_eq!(got, expected);
     }
 }

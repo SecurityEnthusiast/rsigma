@@ -2,7 +2,6 @@
 
 use base64::Engine as Base64Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use regex::Regex;
 use rsigma_parser::SigmaValue;
 
 use crate::error::IrError;
@@ -134,12 +133,19 @@ pub(super) fn base64_offset_patterns(value: &[u8]) -> Vec<String> {
     patterns
 }
 
+/// Assemble a regex pattern string with inline flags.
+///
+/// The pattern is not compiled here: the eval compile step compiles it into a
+/// physical matcher (and surfaces any syntax error), while convert emits it to
+/// a backend with its own regex engine. Compiling here would both double the
+/// work on the eval path and reject patterns valid for a target backend but
+/// not for the Rust `regex` crate.
 pub(super) fn build_regex_pattern(
     pattern: &str,
     case_insensitive: bool,
     multiline: bool,
     dotall: bool,
-) -> Result<String> {
+) -> String {
     let mut flags = String::new();
     if case_insensitive {
         flags.push('i');
@@ -151,15 +157,11 @@ pub(super) fn build_regex_pattern(
         flags.push('s');
     }
 
-    let full_pattern = if flags.is_empty() {
+    if flags.is_empty() {
         pattern.to_string()
     } else {
         format!("(?{flags}){pattern}")
-    };
-
-    // Validate the pattern at lower time so invalid regex fails early.
-    Regex::new(&full_pattern)?;
-    Ok(full_pattern)
+    }
 }
 
 const WINDASH_CHARS: [char; 5] = ['-', '/', '\u{2013}', '\u{2014}', '\u{2015}'];

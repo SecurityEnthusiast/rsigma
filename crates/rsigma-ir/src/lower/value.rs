@@ -74,7 +74,7 @@ pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher>
 
     if ctx.re {
         let pattern = value_to_plain_string(value)?;
-        let full = build_regex_pattern(&pattern, ctx.ignore_case, ctx.multiline, ctx.dotall)?;
+        let full = build_regex_pattern(&pattern, ctx.ignore_case, ctx.multiline, ctx.dotall);
         return Ok(IrMatcher::Regex { pattern: lit(full) });
     }
 
@@ -191,7 +191,6 @@ fn lower_sigma_string(sigma_str: &SigmaString, ctx: &ModCtx) -> Result<IrMatcher
         ctx.startswith,
         ctx.endswith,
     );
-    Regex::new(&pattern)?;
     Ok(IrMatcher::Regex {
         pattern: lit(pattern),
     })
@@ -237,7 +236,6 @@ pub(super) fn lower_value_keywords(value: &SigmaValue) -> Result<IrMatcher> {
                 })
             } else {
                 let pattern = super::helpers::keywords_wildcard_pattern(&s.parts, ci);
-                Regex::new(&pattern)?;
                 Ok(IrMatcher::Regex {
                     pattern: lit(pattern),
                 })
@@ -249,6 +247,3 @@ pub(super) fn lower_value_keywords(value: &SigmaValue) -> Result<IrMatcher> {
         SigmaValue::Null => Ok(IrMatcher::Null),
     }
 }
-
-// Re-export Regex for lower_sigma_string validation without pulling into callers.
-use regex::Regex;

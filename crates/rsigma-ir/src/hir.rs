@@ -5,7 +5,9 @@
 //!
 //! - **modifier-resolved**: `FieldSpec + modifiers + SigmaValue` lowers into
 //!   explicit [`IrMatcher`] variants.
-//! - **Selector-resolved**: [`IrCondition`] has no `Selector` variant.
+//! - **Selector-preserving**: [`IrCondition::Selector`] keeps the quantifier
+//!   and name pattern so counting and reported matched-selections stay
+//!   identical to native evaluation (no boolean expansion).
 //! - **Array-scope complete**: [`IrDetection`] mirrors
 //!   `CompiledDetection::{ArrayMatch, And, Conditional}`.
 //! - **Serializable**: no compiled `Regex`, no `IpNet`.
@@ -20,7 +22,7 @@ use std::collections::HashMap;
 
 use rsigma_parser::{
     ArrayQuantifier, CorrelationCondition, CorrelationType, FieldAlias, FilterRuleTarget, Level,
-    LogSource, Related, Status, Timespan, WindowMode,
+    LogSource, Quantifier, Related, SelectorPattern, Status, Timespan, WindowMode,
 };
 use serde_json::Value;
 
@@ -226,13 +228,21 @@ pub enum IrExtractExpr {
 
 /// Selector-free condition expression.
 ///
-/// Parser `ConditionExpr::Selector` is collapsed at lower time.
+/// A quantified selector keeps its [`Quantifier`] and [`SelectorPattern`]
+/// rather than being expanded into a boolean tree. This preserves eval's
+/// count-based semantics (evaluate every matching detection, report all that
+/// match) and avoids the combinatorial blow-up of expanding `N of` into an
+/// `Or` of `And`s.
 #[derive(Debug, Clone, PartialEq)]
 pub enum IrCondition {
     Detection(String),
     And(Vec<IrCondition>),
     Or(Vec<IrCondition>),
     Not(Box<IrCondition>),
+    Selector {
+        quantifier: Quantifier,
+        pattern: SelectorPattern,
+    },
 }
 
 // =============================================================================

@@ -138,10 +138,11 @@ fn negation_node_is_rendered() {
 }
 
 #[test]
-fn quantified_selector_collapses_to_or_in_explain() {
-    // `1 of selection_*` collapses to Or at lower time. Snapshot the JSON
-    // trace so the check is structural (`type: or`) rather than tied to
-    // human tree labels like "any of:" / "(1/1 matched)".
+fn quantified_selector_reports_counts_in_explain() {
+    // `1 of selection_*` is preserved as a native selector, so the trace is a
+    // quantified node with need/got counts. Snapshot the raw stdout so key
+    // order comes from the struct `Serialize` impls, not serde_json's
+    // `preserve_order` feature (which is not always unified into the build).
     let rule = temp_file(
         ".yml",
         r#"
@@ -177,12 +178,9 @@ detection:
         "stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
-    // Snapshot the raw stdout so key order comes straight from the struct
-    // `Serialize` impls and does not depend on whether serde_json's
-    // `preserve_order` feature is unified into the build.
     assert_snapshot!(
         String::from_utf8_lossy(&output.stdout).trim(),
-        @r#"[{"rule_title":"One Of","rule_id":"oneof-1","matched":true,"conditions":[{"type":"or","matched":true,"children":[{"type":"selection","name":"selection_a","matched":true,"detection":{"type":"all_of","matched":true,"items":[{"field":"CommandLine","matcher":"contains","pattern":"powershell","actual":"run powershell","matched":true,"reason":"matched"}]}},{"type":"selection","name":"selection_b","matched":false,"detection":{"type":"all_of","matched":false,"items":[{"field":"CommandLine","matcher":"contains","pattern":"whoami","actual":"run powershell","matched":false,"reason":"value_mismatch"}]}}]}]}]"#
+        @r#"[{"rule_title":"One Of","rule_id":"oneof-1","matched":true,"conditions":[{"type":"quantified","quantifier":"any","matched":true,"need":1,"got":1,"branches":[{"name":"selection_a","matched":true,"detection":{"type":"all_of","matched":true,"items":[{"field":"CommandLine","matcher":"contains","pattern":"powershell","actual":"run powershell","matched":true,"reason":"matched"}]}},{"name":"selection_b","matched":false,"detection":{"type":"all_of","matched":false,"items":[{"field":"CommandLine","matcher":"contains","pattern":"whoami","actual":"run powershell","matched":false,"reason":"value_mismatch"}]}}]}]}]"#
     );
 }
 

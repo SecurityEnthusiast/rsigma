@@ -51,4 +51,4 @@ pub mod lower;
 
 pub use error::IrError;
 pub use hir::*;
-pub use lower::{LowerOptions, lower_rule};
+pub use lower::{LowerOptions, lower_conditions, lower_rule};

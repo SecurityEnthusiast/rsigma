@@ -1,71 +1,24 @@
-//! Expected HIR shapes for selector collapse and metadata projection.
+//! Expected HIR shapes for selector lowering and metadata projection.
 //!
-//! These hand-built [`IrCondition`] / metadata stubs are the contract that
-//! `lower_rule` must satisfy. Match oracles live in the sibling test binaries;
-//! this file freezes the structural IR expectation.
+//! Lowering keeps quantified selectors intact (as [`IrCondition::Selector`]) so
+//! eval evaluates them natively; this file freezes that structural expectation.
 
 mod common;
 
 use common::rule_from;
 use rsigma_ir::lower::{LowerOptions, lower_rule};
 use rsigma_ir::{IrCondition, IrRuleMetadata};
+use rsigma_parser::{Quantifier, SelectorPattern};
 
-/// Vacuous `all of selection_*` with zero matching detection names → empty And.
-pub fn expected_vacuous_all_of_conditions() -> Vec<IrCondition> {
-    vec![IrCondition::And(vec![])]
-}
-
-/// `1 of them` over `selection` + `_internal` → only `selection`.
-pub fn expected_them_skip_underscore_conditions() -> Vec<IrCondition> {
-    vec![IrCondition::Detection("selection".into())]
-}
-
-/// `all of them` over `selection` + `_internal` → non-`_` names only.
-pub fn expected_all_of_them_skip_underscore_conditions() -> Vec<IrCondition> {
-    vec![IrCondition::Detection("selection".into())]
-}
-
-/// `1 of _*` over `selection_main` + `_internal` → only `_internal`.
-pub fn expected_glob_underscore_conditions() -> Vec<IrCondition> {
-    vec![IrCondition::Detection("_internal".into())]
-}
-
-/// `all of selection_a* and all of selection_b*` with zero matches each.
-pub fn expected_vacuous_all_of_multiple_conditions() -> Vec<IrCondition> {
-    vec![IrCondition::And(vec![
-        IrCondition::And(vec![]),
-        IrCondition::And(vec![]),
-    ])]
+fn selector(quantifier: Quantifier, pattern: SelectorPattern) -> IrCondition {
+    IrCondition::Selector {
+        quantifier,
+        pattern,
+    }
 }
 
 #[test]
 fn expected_hir_stubs_are_well_formed() {
-    // Construction itself is the deliverable: these shapes must compile and
-    // stay stable as the lowering contract.
-    assert_eq!(
-        expected_vacuous_all_of_conditions(),
-        vec![IrCondition::And(vec![])]
-    );
-    assert_eq!(
-        expected_them_skip_underscore_conditions(),
-        vec![IrCondition::Detection("selection".into())]
-    );
-    assert_eq!(
-        expected_all_of_them_skip_underscore_conditions(),
-        vec![IrCondition::Detection("selection".into())]
-    );
-    assert_eq!(
-        expected_glob_underscore_conditions(),
-        vec![IrCondition::Detection("_internal".into())]
-    );
-    assert_eq!(
-        expected_vacuous_all_of_multiple_conditions(),
-        vec![IrCondition::And(vec![
-            IrCondition::And(vec![]),
-            IrCondition::And(vec![]),
-        ])]
-    );
-
     let meta = IrRuleMetadata {
         title: "stub".into(),
         ..IrRuleMetadata::default()
@@ -74,11 +27,13 @@ fn expected_hir_stubs_are_well_formed() {
 }
 
 // =============================================================================
-// lower_rule selector collapse parity
+// lower_rule selector-preservation parity
 // =============================================================================
 
 #[test]
-fn lower_vacuous_all_of_matches_expected_hir() {
+fn lower_vacuous_all_of_preserves_selector() {
+    // `all of selection_*` with zero matching names stays a selector; eval
+    // resolves the empty set to vacuous truth at match time.
     let rule = rule_from(
         r#"
 title: Vacuous All Of Zero
@@ -90,12 +45,18 @@ detection:
 "#,
     );
     let ir = lower_rule(&rule, &LowerOptions::default()).expect("lower");
-    assert_eq!(ir.conditions, expected_vacuous_all_of_conditions());
+    assert_eq!(
+        ir.conditions,
+        vec![selector(
+            Quantifier::All,
+            SelectorPattern::Pattern("selection_*".into())
+        )]
+    );
     assert_eq!(ir.metadata.title, "Vacuous All Of Zero");
 }
 
 #[test]
-fn lower_them_skip_underscore_matches_expected_hir() {
+fn lower_them_preserves_selector() {
     let rule = rule_from(
         r#"
 title: Them Skip Prefix
@@ -109,11 +70,14 @@ detection:
 "#,
     );
     let ir = lower_rule(&rule, &LowerOptions::default()).expect("lower");
-    assert_eq!(ir.conditions, expected_them_skip_underscore_conditions());
+    assert_eq!(
+        ir.conditions,
+        vec![selector(Quantifier::Any, SelectorPattern::Them)]
+    );
 }
 
 #[test]
-fn lower_all_of_them_skip_underscore_matches_expected_hir() {
+fn lower_all_of_them_preserves_selector() {
     let rule = rule_from(
         r#"
 title: Them All Skip
@@ -129,12 +93,12 @@ detection:
     let ir = lower_rule(&rule, &LowerOptions::default()).expect("lower");
     assert_eq!(
         ir.conditions,
-        expected_all_of_them_skip_underscore_conditions()
+        vec![selector(Quantifier::All, SelectorPattern::Them)]
     );
 }
 
 #[test]
-fn lower_glob_underscore_matches_expected_hir() {
+fn lower_glob_underscore_preserves_selector() {
     let rule = rule_from(
         r#"
 title: Glob Matches Underscore
@@ -148,11 +112,17 @@ detection:
 "#,
     );
     let ir = lower_rule(&rule, &LowerOptions::default()).expect("lower");
-    assert_eq!(ir.conditions, expected_glob_underscore_conditions());
+    assert_eq!(
+        ir.conditions,
+        vec![selector(
+            Quantifier::Any,
+            SelectorPattern::Pattern("_*".into())
+        )]
+    );
 }
 
 #[test]
-fn lower_vacuous_all_of_multiple_matches_expected_hir() {
+fn lower_multiple_selectors_under_and() {
     let rule = rule_from(
         r#"
 title: Vacuous All Of Multiple
@@ -164,5 +134,44 @@ detection:
 "#,
     );
     let ir = lower_rule(&rule, &LowerOptions::default()).expect("lower");
-    assert_eq!(ir.conditions, expected_vacuous_all_of_multiple_conditions());
+    assert_eq!(
+        ir.conditions,
+        vec![IrCondition::And(vec![
+            selector(
+                Quantifier::All,
+                SelectorPattern::Pattern("selection_a*".into())
+            ),
+            selector(
+                Quantifier::All,
+                SelectorPattern::Pattern("selection_b*".into())
+            ),
+        ])]
+    );
+}
+
+#[test]
+fn lower_count_selector_preserved_not_expanded() {
+    // `2 of selection_*` must not expand combinatorially; it stays a selector.
+    let rule = rule_from(
+        r#"
+title: Count Of
+logsource: { category: test }
+detection:
+    selection_a:
+        Image: 'a.exe'
+    selection_b:
+        Image: 'b.exe'
+    selection_c:
+        Image: 'c.exe'
+    condition: 2 of selection_*
+"#,
+    );
+    let ir = lower_rule(&rule, &LowerOptions::default()).expect("lower");
+    assert_eq!(
+        ir.conditions,
+        vec![selector(
+            Quantifier::Count(2),
+            SelectorPattern::Pattern("selection_*".into())
+        )]
+    );
 }

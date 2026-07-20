@@ -14,7 +14,7 @@ YAML → parser(AST) → static pipelines → lower(HIR) → compile(CompiledRul
                                        convert(backends)
 ```
 
-The HIR is modifier-resolved and selector-free. Compiled artifacts (`Regex`, `IpNet`, Aho-Corasick automata) are materialised later in `rsigma-eval`.
+The HIR is modifier-resolved. Quantified selectors keep their quantifier and name pattern so evaluation stays count-based. Compiled artifacts (`Regex`, `IpNet`, Aho-Corasick automata) are materialised later in `rsigma-eval`.
 
 ## Public API
 

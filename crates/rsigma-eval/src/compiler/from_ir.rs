@@ -214,6 +214,13 @@ fn ir_condition_to_expr(cond: &IrCondition) -> ConditionExpr {
             ConditionExpr::Or(exprs.iter().map(ir_condition_to_expr).collect())
         }
         IrCondition::Not(inner) => ConditionExpr::Not(Box::new(ir_condition_to_expr(inner))),
+        IrCondition::Selector {
+            quantifier,
+            pattern,
+        } => ConditionExpr::Selector {
+            quantifier: quantifier.clone(),
+            pattern: pattern.clone(),
+        },
     }
 }
 

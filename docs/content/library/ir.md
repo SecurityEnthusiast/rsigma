@@ -1,6 +1,6 @@
 # `rsigma-ir`
 
-Shared intermediate representation (HIR) for Sigma rules. Sits between the parser AST and the eval/convert consumers so modifier resolution and selector collapse happen once.
+Shared intermediate representation (HIR) for Sigma rules. Sits between the parser AST and the eval/convert consumers so modifier resolution happens once.
 
 - [docs.rs/rsigma-ir](https://docs.rs/rsigma-ir)
 - [README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-ir/README.md)
@@ -8,7 +8,7 @@ Shared intermediate representation (HIR) for Sigma rules. Sits between the parse
 
 ## When to use
 
-- Lower a parsed `SigmaRule` into a modifier-resolved, selector-free form before custom analysis.
+- Lower a parsed `SigmaRule` into a modifier-resolved form before custom analysis.
 - Share one canonical rule shape between evaluation and query conversion.
 - Inspect detections, conditions, correlation, or filter shapes without compiling regex/`IpNet` matchers.
 
@@ -28,7 +28,7 @@ The crate is sync-only (no tokio/reqwest).
 
 | Type / function | Purpose |
 |-----------------|---------|
-| `IrRule` / `IrDetection` / `IrMatcher` / `IrCondition` | Detection-rule HIR. `IrCondition` has no `Selector` variant. |
+| `IrRule` / `IrDetection` / `IrMatcher` / `IrCondition` | Detection-rule HIR. `IrCondition::Selector` keeps the quantifier and name pattern. |
 | `IrCorrelation` / `IrFilter` | Correlation and filter HIR. |
 | `IrRuleMetadata` | Metadata superset used when projecting eval `RuleHeader`. |
 | `SurfaceSpec` | Optional sidecar on detection items for convert fidelity. |
@@ -38,7 +38,7 @@ The crate is sync-only (no tokio/reqwest).
 
 ## Lowering notes
 
-- Selectors such as `1 of selection_*` and `all of them` collapse at lower time into `Or` / `And` / `Detection` trees. Vacuous `all of <pattern>` over zero matching names becomes an empty `And` (true).
+- Selectors such as `1 of selection_*` and `all of them` are preserved as `IrCondition::Selector`, so evaluation stays count-based and reports every matching detection. `them` skips `_`-prefixed detection names; vacuous `all of <pattern>` over zero matching names is true, matching native evaluation.
 - `them` skips detection names that begin with `_`; glob/prefix patterns that explicitly match `_`-prefixed names still include them.
 - Modifier contradictions (`|cidr|contains`, `|base64|base64offset`, …) fail at lower time with the same error kinds eval previously surfaced from `compile_rule`.
 

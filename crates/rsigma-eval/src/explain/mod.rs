@@ -612,9 +612,9 @@ detection:
     }
 
     #[test]
-    fn quantified_selector_collapses_to_or_at_lower() {
-        // `1 of selection_*` collapses to Or over matching names at lower time,
-        // so explain walks a selector-free Or tree rather than Quantified.
+    fn quantified_selector_records_need_and_got() {
+        // `1 of selection_*` is preserved as a native selector, so explain
+        // reports it as a quantified node with need/got counts.
         let rule = compile(
             r#"
 title: One Of
@@ -632,19 +632,15 @@ detection:
         let exp = explain_rule(&rule, &JsonEvent::borrow(&v));
         assert!(exp.matched);
         match &exp.conditions[0] {
-            ConditionTrace::Or {
-                matched: true,
-                children,
+            ConditionTrace::Quantified {
+                need,
+                got,
+                branches,
+                ..
             } => {
-                assert_eq!(children.len(), 2);
-                assert!(children.iter().any(|c| matches!(
-                    c,
-                    ConditionTrace::Selection {
-                        name,
-                        matched: true,
-                        ..
-                    } if name == "selection_a"
-                )));
+                assert_eq!(*need, 1);
+                assert_eq!(*got, 1);
+                assert_eq!(branches.len(), 2);
             }
             other => panic!("unexpected: {other:?}"),
         }

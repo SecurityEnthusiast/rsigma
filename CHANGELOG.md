@@ -6,10 +6,9 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ### Intermediate representation crate and IR-backed compile (#360)
 
-- **`rsigma-ir`** — new sync-only crate with HIR types (`IrRule`, `IrDetection`, `IrMatcher`, `IrCondition`, `IrCorrelation`, `IrFilter`) and `lower_rule` / `lower_*` that resolve modifiers and collapse selectors before eval.
+- **`rsigma-ir`** — new sync-only crate with HIR types (`IrRule`, `IrDetection`, `IrMatcher`, `IrCondition`, `IrCorrelation`, `IrFilter`) and `lower_rule` / `lower_*` that resolve modifiers before eval. Quantified selectors are preserved so evaluation stays count-based.
 - **`rsigma-eval`** — `compile_rule` routes through `lower_rule` → `compile_to_compiled`. `compile_rule_legacy` remains for dual-path differential tests. Public physical API (`CompiledRule`, `evaluate_rule`, `Engine`) is unchanged.
-- **`rsigma-convert`** — detection-rule conversion lowers conditions through IR (`convert_rule_via_ir`) so selectors are collapsed before emit; detection-item dispatch still uses the parser AST. PostgreSQL, LynxDB, and Fibratus golden tests unchanged.
-- Selector edge cases preserved at lower time: vacuous `all of <pattern>` is true for eval; `them` skips `_`-prefixed detection names. Convert still rejects empty selector matches.
+- **`rsigma-convert`** — detection-rule conversion resolves conditions through IR (`convert_rule_via_ir`); detection-item dispatch still uses the parser AST. PostgreSQL, LynxDB, and Fibratus golden tests unchanged.
 
 ### Dependency bumps (#354, #357)
 
