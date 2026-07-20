@@ -12,7 +12,7 @@
 //!                                                          convert(Backend queries)
 //! ```
 //!
-//! The HIR captures modifier resolution, selector collapse, and array-scope
+//! The HIR captures modifier resolution, quantified selectors, and array-scope
 //! detections in a serializable form.  Compiled matchers (`Regex`, `IpNet`)
 //! are elided from the IR; they are materialised in the compile step.
 //!
@@ -20,7 +20,7 @@
 //!
 //! - **`IrRule`** — the top-level shape, a superset of `SigmaRule` metadata
 //!   with a resolution-free detection tree (`IrDetection`) and conditions
-//!   (`IrCondition`) that carry no `Selector` variant.
+//!   (`IrCondition`) that preserve quantified selectors.
 //!
 //! - **`IrMatcher`** — modifier-resolved matchers.  Each field modifier that
 //!   changes comparison (contains, startswith, endswith, cidr, re, numeric
@@ -49,7 +49,12 @@
 pub mod error;
 pub mod hir;
 pub mod lower;
+pub mod optimize;
 
 pub use error::IrError;
 pub use hir::*;
 pub use lower::{LowerOptions, lower_conditions, lower_rule};
+pub use optimize::{
+    CseReport, RepeatedItem, common_subexpressions, eliminate_dead_detections, flatten_condition,
+    optimize_rule,
+};
