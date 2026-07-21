@@ -303,7 +303,20 @@ fn quoted_inner(value: &str) -> Option<String> {
     for q in ['"', '\''] {
         if value.len() >= 2 && value.starts_with(q) && value.ends_with(q) {
             let inner = &value[1..value.len() - 1];
-            return Some(inner.replace(&format!("\\{q}"), &q.to_string()));
+            // A quoted phrase is a literal: unescape Lucene backslash escapes
+            // (`\\` -> `\`, `\"` -> `"`, ...) so the phrase is the intended text.
+            let mut out = String::with_capacity(inner.len());
+            let mut chars = inner.chars();
+            while let Some(c) = chars.next() {
+                if c == '\\' {
+                    if let Some(next) = chars.next() {
+                        out.push(next);
+                    }
+                } else {
+                    out.push(c);
+                }
+            }
+            return Some(out);
         }
     }
     None

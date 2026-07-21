@@ -1,0 +1,9 @@
+title: Golden Test
+logsource:
+    product: windows
+detection:
+    keywords:
+        - mimikatz
+    selection:
+        EventID: 1
+    condition: selection and keywords

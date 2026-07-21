@@ -1,0 +1,10 @@
+title: Golden Test
+logsource:
+    product: windows
+detection:
+    selection:
+        Bytes|gt: 10000
+    selection_1:
+        DestinationPort|gte: 1024
+        DestinationPort|lte: 65535
+    condition: selection and selection_1
