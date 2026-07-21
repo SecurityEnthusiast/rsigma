@@ -1,0 +1,1 @@
+DestinationPort:[1024 TO 65535] AND Bytes:>10000

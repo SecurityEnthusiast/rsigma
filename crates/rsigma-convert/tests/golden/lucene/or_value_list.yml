@@ -1,0 +1,9 @@
+title: Golden Test
+logsource:
+    product: windows
+detection:
+    selection:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+    condition: selection

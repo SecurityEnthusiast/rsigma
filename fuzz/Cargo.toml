@@ -11,6 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 rsigma-parser = { path = "../crates/rsigma-parser" }
 rsigma-eval = { path = "../crates/rsigma-eval" }
+rsigma-convert = { path = "../crates/rsigma-convert" }
 rsigma-runtime = { path = "../crates/rsigma-runtime", features = ["logfmt", "cef"] }
 serde_json = "1"
 yaml_serde = "0.10"
@@ -131,5 +132,10 @@ doc = false
 [[bin]]
 name = "fuzz_rstix_validate_json"
 path = "fuzz_targets/fuzz_rstix_validate_json.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_lucene_frontend"
+path = "fuzz_targets/fuzz_lucene_frontend.rs"
 doc = false
 

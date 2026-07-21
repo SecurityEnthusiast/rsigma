@@ -1,0 +1,11 @@
+title: Golden Test
+logsource:
+    product: windows
+detection:
+    selection:
+        EventID: 1
+    selection_1:
+        Image:
+            - 'C:\a.exe'
+            - 'C:\b.exe'
+    condition: selection and selection_1

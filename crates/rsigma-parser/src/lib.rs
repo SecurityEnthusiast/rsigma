@@ -55,6 +55,7 @@
 pub mod ads;
 pub mod ast;
 pub mod condition;
+pub mod emit;
 pub mod error;
 pub mod fieldpath;
 pub mod lint;
@@ -76,6 +77,7 @@ pub use ast::{
     SelectorPattern, SigmaCollection, SigmaDocument, SigmaRule, Status, WindowMode,
 };
 pub use condition::parse_condition;
+pub use emit::{emit_collection_yaml, emit_rule_yaml};
 pub use error::{Result, SigmaParserError, SourceLocation};
 pub use lint::catalogue::{LintRuleInfo, catalogue};
 #[cfg(feature = "fix")]

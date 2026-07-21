@@ -1763,6 +1763,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsigma-convert"
+version = "0.19.0"
+dependencies = [
+ "log",
+ "regex",
+ "rsigma-eval",
+ "rsigma-ir",
+ "rsigma-parser",
+ "serde_json",
+ "thiserror 2.0.19",
+ "yaml_serde",
+]
+
+[[package]]
 name = "rsigma-eval"
 version = "0.19.0"
 dependencies = [
@@ -1790,6 +1804,7 @@ dependencies = [
  "arbitrary",
  "libfuzzer-sys",
  "regex",
+ "rsigma-convert",
  "rsigma-eval",
  "rsigma-parser",
  "rsigma-runtime",

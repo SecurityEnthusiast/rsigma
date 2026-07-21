@@ -1,0 +1,8 @@
+title: Golden Test
+logsource:
+    product: windows
+detection:
+    selection:
+        CommandLine|exists: true
+        EventID: 4104
+    condition: selection
