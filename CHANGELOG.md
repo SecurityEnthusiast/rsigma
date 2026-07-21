@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix: TAXII 2.1 Client (`taxii` feature)
+### rstix: TAXII 2.1 Client (`taxii` feature) (#373)
 
 - **`taxii`** — async HTTP client for TAXII 2.1 endpoint groups (discovery, API Root, collections, objects, manifest, versions, status). **Channels (§6) are RESERVED in the spec and not implemented.** Includes DNS SRV via `_taxii2._tcp` and `TaxiiClientConfig::dns_nameserver()` for custom resolvers.
 - **Wire format** — `TaxiiEnvelope` for object exchange (not `Bundle`); `Accept` / `Content-Type: application/taxii+json;version=2.1` on every request; manifest requests also accept STIX JSON; trailing-slash URL rules; HTTPS enforced by default (`allow_insecure_http` for tests); `max_content_length` enforced before POST.
