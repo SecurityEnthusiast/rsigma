@@ -116,8 +116,14 @@ async fn live_https_discovery_over_tls() {
 #[ignore = "live mTLS: run tests/taxii-live/run-live-tests.sh"]
 async fn live_mtls_discovery() {
     let server_cert = live_cert("server.pem");
-    let cert_pem = std::fs::read(live_cert("client.pem")).expect("client cert");
-    let key_pem = std::fs::read(live_cert("client-key.pem")).expect("client key");
+    let cert_pem = std::fs::read(live_cert("client.pem")).unwrap_or_else(|err| {
+        panic!("client cert: {err} (run ./crates/rstix/tests/taxii-live/generate-certs.sh)");
+    });
+    let key_pem = std::fs::read(live_cert("client-key.pem")).unwrap_or_else(|err| {
+        panic!(
+            "client key: {err} — run ./crates/rstix/tests/taxii-live/generate-certs.sh (fixes permissions)"
+        );
+    });
     let pin = spki_pin_from_cert_pem(&server_cert);
     let client = TaxiiClient::new(
         TaxiiClientConfig::new(LIVE_MTLS_URL)

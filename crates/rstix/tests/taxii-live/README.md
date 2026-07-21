@@ -17,7 +17,7 @@ Docker stack (Wiremock + Caddy + CoreDNS) for live TLS, mTLS, and DNS SRV tests.
 ./crates/rstix/tests/taxii-live/run-live-tests.sh
 ```
 
-Generates certs (if missing) and runs `docker compose up`.
+Generates certs (if missing) and runs `docker compose up`. Also adds `dane.taxii.test` and `taxii.test` to `/etc/hosts` (may prompt for sudo).
 
 **2. Run live tests**
 
@@ -34,7 +34,7 @@ No environment variables. URLs and cert paths are defined in `tests/taxii_live.r
 | TLS | `https://127.0.0.1:8443` |
 | mTLS | `https://localhost:8444` (use `localhost`, not the IP — Caddy strict SNI) |
 | TLS 1.3 only | `https://127.0.0.1:8445` |
-| DANE | `https://dane.taxii.test:8443` (TLSA via CoreDNS `127.0.0.1:5353`) |
+| DANE | `https://dane.taxii.test:8443` (requires `127.0.0.1 dane.taxii.test` in `/etc/hosts`; TLSA via CoreDNS `127.0.0.1:5353`) |
 | SRV | `_taxii2._tcp.taxii.test` via CoreDNS `127.0.0.1:5353` |
 
 ## Commands

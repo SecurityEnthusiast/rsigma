@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate a local CA, server cert (taxii.test + localhost + dane.taxii.test), client cert
-# for mTLS tests, PKCS#12 for native TLS, and CoreDNS TLSA answers for DANE tests.
+# for mTLS tests, PKCS#12 for native TLS, and CoreDNS TLSA records for DANE tests.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -20,6 +20,7 @@ PKCS12_PASSWORD="rstix-live"
 
 write_zone() {
   local serial="$1"
+  local tlsa_hex="$2"
   cat >"$ZONE_FILE" <<EOF
 \$ORIGIN taxii.test.
 \$TTL 3600
@@ -35,25 +36,19 @@ write_zone() {
 ns      IN  A    127.0.0.1
 dane    IN  A    127.0.0.1
 _taxii2._tcp  IN  SRV  10 100 8443 localhost.
+_8443._tcp.dane.taxii.test. 3600 IN TLSA 3 1 1 ${tlsa_hex}
 EOF
 }
 
 write_corefile() {
-  local tlsa_hex="$1"
-  cat >"$COREFILE" <<'COREEOF'
+  cat >"$COREFILE" <<'EOF'
 taxii.test {
-	file /etc/coredns/taxii.test.zone fallthrough
-	template IN TLSA {
-		match ^_8443\._tcp\.dane\.taxii\.test\.$
-COREEOF
-  echo "		answer \"_8443._tcp.dane.taxii.test. 3600 IN TLSA 3 1 1 ${tlsa_hex}\"" >>"$COREFILE"
-  cat >>"$COREFILE" <<'COREEOF'
-	}
+	file /etc/coredns/taxii.test.zone
 	reload 5s
 	log
 	errors
 }
-COREEOF
+EOF
 }
 
 compute_tlsa_hex() {
@@ -67,7 +62,12 @@ write_pkcs12() {
   openssl pkcs12 -export -out "$CLIENT_P12" \
     -inkey "$CLIENT_KEY" -in "$CLIENT_PEM" -certfile "$CA_PEM" \
     -passout "pass:${PKCS12_PASSWORD}"
-  chmod 600 "$CLIENT_P12"
+}
+
+fix_cert_permissions() {
+  # Caddy (root in container) and the local Rust test runner must both read these files.
+  chmod 644 "$CA_PEM" "$SERVER_PEM" "$CLIENT_PEM" "$CLIENT_KEY" 2>/dev/null || true
+  chmod 600 "$CA_KEY" "$SERVER_KEY" "$CLIENT_P12" 2>/dev/null || true
 }
 
 if [[ -f "$CA_PEM" ]]; then
@@ -105,7 +105,6 @@ EOF
   openssl x509 -req -in "$CERT_DIR/client.csr" -CA "$CA_PEM" -CAkey "$CA_KEY" -CAcreateserial \
     -out "$CLIENT_PEM" -days 825 -sha256
 
-  chmod 600 "$CA_KEY" "$SERVER_KEY" "$CLIENT_KEY"
   echo "Wrote CA, server, and client material under $CERT_DIR"
 fi
 
@@ -116,7 +115,8 @@ fi
 
 TLSA_HEX="$(compute_tlsa_hex)"
 SOA_SERIAL="$(date -u +%Y%m%d%H)"
-write_zone "$SOA_SERIAL"
-write_corefile "$TLSA_HEX"
+write_zone "$SOA_SERIAL" "$TLSA_HEX"
+write_corefile
 write_pkcs12
+fix_cert_permissions
 echo "Updated CoreDNS zone ($ZONE_FILE), Corefile ($COREFILE), and PKCS#12 ($CLIENT_P12)"
