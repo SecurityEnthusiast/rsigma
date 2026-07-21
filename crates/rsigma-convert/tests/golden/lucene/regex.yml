@@ -1,0 +1,7 @@
+title: Golden Test
+logsource:
+    product: windows
+detection:
+    selection:
+        CommandLine|re: '.*-enc.*'
+    condition: selection

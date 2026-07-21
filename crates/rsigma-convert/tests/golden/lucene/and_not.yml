@@ -1,0 +1,10 @@
+title: Golden Test
+logsource:
+    product: windows
+detection:
+    filter:
+        User: SYSTEM
+    selection:
+        Image|endswith: '\cmd.exe'
+        CommandLine|contains: whoami
+    condition: selection and not filter

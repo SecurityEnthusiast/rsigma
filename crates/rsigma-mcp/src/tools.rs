@@ -44,6 +44,7 @@ mod list_fields;
 mod parse_condition;
 mod parse_rule;
 mod resolve_pipeline;
+mod reverse;
 mod shared;
 mod validate_rules;
 
@@ -111,7 +112,7 @@ impl RsigmaMcp {
     ///
     /// Each submodule contributes a `*_router()` built by `#[tool_router]`;
     /// [`ToolRouter`] implements `Add`, so summing them yields a router holding
-    /// all 12 tools.
+    /// all 13 tools.
     fn tool_router() -> ToolRouter<Self> {
         Self::parse_rule_router()
             + Self::parse_condition_router()
@@ -125,6 +126,7 @@ impl RsigmaMcp {
             + Self::list_builtin_pipelines_router()
             + Self::fix_rules_router()
             + Self::author_ads_router()
+            + Self::reverse_router()
     }
 }
 

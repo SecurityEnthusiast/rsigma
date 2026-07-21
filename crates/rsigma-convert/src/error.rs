@@ -33,6 +33,12 @@ pub enum ConvertError {
     #[error("rule conversion failed: {0}")]
     RuleConversion(String),
 
+    #[error("query parse error: {0}")]
+    QueryParse(String),
+
+    #[error("unsupported query construct: {0}")]
+    UnsupportedConstruct(String),
+
     #[error("invalid SQL identifier: {0}")]
     InvalidIdentifier(String),
 
