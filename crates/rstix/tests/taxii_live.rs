@@ -6,6 +6,9 @@
 //! ```bash
 //! cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture
 //! ```
+//!
+//! URLs are hard-coded: TLS `127.0.0.1:8443`, mTLS `localhost:8444` (Caddy strict SNI),
+//! SRV via CoreDNS `127.0.0.1:5353`. See `tests/taxii-live/README.md`.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};

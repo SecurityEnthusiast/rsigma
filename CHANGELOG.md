@@ -6,15 +6,15 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ### rstix: TAXII 2.1 Client (`taxii` feature)
 
-- **`taxii`** — async HTTP client for all seven OASIS TAXII 2.1 endpoint groups: discovery (including DNS SRV via `_taxii2._tcp`), API Root, collections, objects (GET by id, paginated streams, POST envelope, DELETE with read+write preflight), manifest, versions, and status polling.
+- **`taxii`** — async HTTP client for TAXII 2.1 endpoint groups (discovery, API Root, collections, objects, manifest, versions, status). **Channels (§6) are RESERVED in the spec and not implemented.** Includes DNS SRV via `_taxii2._tcp` and `TaxiiClientConfig::dns_nameserver()` for custom resolvers.
 - **Wire format** — `TaxiiEnvelope` for object exchange (not `Bundle`); `Accept` / `Content-Type: application/taxii+json;version=2.1` on every request; manifest requests also accept STIX JSON; trailing-slash URL rules; HTTPS enforced by default (`allow_insecure_http` for tests); `max_content_length` enforced before POST.
 - **Pagination** — `TaxiiPaged<T>` returns page bodies plus `X-TAXII-Date-Added-First` / `Last` headers; cursor + header fallback on objects, manifest, object-by-id, and versions streams.
 - **Auth** — `BearerAuth`, `BasicAuth`, `ApiKeyHeader` via `TaxiiAuthProvider`; secrets use `secrecy::SecretString` with redacted `Debug`.
 - **Resilience** — `RetryPolicy` (503/429/network with backoff, honoring `Retry-After` on 503/429); full `TaxiiError` mapping including HTTP 415; optional `PreflightPolicy` for client-side permission guards.
-- **mTLS** — `ClientCertificate::from_pem` (rustls default); PKCS#12 via `taxii-native-tls`.
+- **mTLS** — `ClientCertificate::from_pem` on rustls (client cert embedded in `build_rustls_config`); PKCS#12 via `taxii-native-tls`.
 - **`taxii-native-tls`** — optional native TLS backend (default uses rustls).
-- **Tests** — `cargo test -p rstix --features taxii --test taxii_client` (58 wiremock + unit integration tests; coverage matrix in crate README).
-- **Conformance closure** — TLS 1.2+ enforcement, required success `Content-Type`, strict pagination headers, RFC 2782 SRV weighted selection, HTTP 416 stream recovery, HTTP `Date` clock skew for `added_after`, `WWW-Authenticate` parsing, API Root/collection capability checks, POST auto-poll (`PostSubmitPolicy`), optional SPKI pinning and DANE (`ServerTrustPolicy`), `TaxiiDiscovery::default_api_root()`, optional `StatusDetail.version`.
+- **Tests** — `cargo test -p rstix --features taxii --test taxii_client` (**59** wiremock integration tests; coverage matrix in crate README). Optional live Docker harness: `./crates/rstix/tests/taxii-live/run-live-tests.sh` then `cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture` (TLS, mTLS, SRV — not in default CI; DANE / TLS 1.3 version / PKCS#12 not live-tested).
+- **Conformance closure** — TLS 1.2+ enforcement, required success `Content-Type`, strict pagination headers, RFC 2782 SRV weighted selection, HTTP 416 stream recovery, HTTP `Date` clock skew for `added_after`, `WWW-Authenticate` parsing, API Root/collection capability checks, POST auto-poll (`PostSubmitPolicy`), optional SPKI pinning and DANE config (`ServerTrustPolicy`; DANE not verified live), `TaxiiDiscovery::default_api_root()`, optional `StatusDetail.version`.
 
 ### Deterministic bloom pre-filter seeding
 

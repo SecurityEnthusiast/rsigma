@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Generate certs and start the Docker stack for live TAXII tests.
+# Does NOT run cargo test — see tests/taxii-live/README.md step 2.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"

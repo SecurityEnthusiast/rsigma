@@ -122,7 +122,7 @@ Two optional feature flags (`taxii` implies `serde`; `taxii-native-tls` implies 
 
 | Feature | Module | Highlights |
 | ------- | ------ | ---------- |
-| `taxii` | `rstix::taxii` | Full TAXII 2.1 client: [`TaxiiClient`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#public-api-surface-rstixtaxii) / [`TaxiiClientConfig`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxiiclientconfig-builder-methods), TLS 1.2+1.3 via rustls, [`ServerTrustPolicy`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#tls-and-server-trust-section-855) (PKIX / SPKI pin / DANE), [`PostSubmitPolicy`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxiiclientconfig-builder-methods) / [`CapabilityPolicy`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxiiclientconfig-builder-methods), auth (Bearer/Basic/API-key), pagination streams + 416 recovery, [`TaxiiError`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#selected-taxiierror-variants) mapping |
+| `taxii` | `rstix::taxii` | TAXII 2.1 HTTP client ([`TaxiiClient`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#public-api-surface-rstixtaxii), TLS 1.2+1.3 via rustls, SPKI pin / DANE **config**, auth, pagination, SRV + `dns_nameserver()`). **Channels §6 not implemented.** See [test coverage](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxii-test-coverage). |
 | `taxii-native-tls` | (client TLS) | Native TLS via `reqwest/native-tls`; PKCS#12 client certificates (default rustls uses PEM). Incompatible with pinning/DANE. |
 
 ```rust
@@ -139,9 +139,9 @@ while let Some(obj) = stream.next().await {
 }
 ```
 
-Acceptance: `cargo test -p rstix --features taxii --test taxii_client` (58 wiremock tests).
+Acceptance: `cargo test -p rstix --features taxii --test taxii_client` (**59** wiremock tests).
 
-Optional live TLS/mTLS/SRV harness: `./crates/rstix/tests/taxii-live/run-live-tests.sh` then `cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture`. DANE and TLS 1.3 are not asserted by Rust tests.
+Optional live harness (manual, not CI): `./crates/rstix/tests/taxii-live/run-live-tests.sh` then `cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture`. Covers TLS, mTLS (`localhost:8444`), and SRV. **Not** live-tested: DANE, TLS 1.3 version assertion, PKCS#12, `taxii-native-tls`, Channels §6.
 
 Full **API surface tables**, invariant decisions, and **test coverage matrix**: [crate README — TAXII Client](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxii-client).
 

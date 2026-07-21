@@ -409,7 +409,7 @@ Acceptance tests: `store::memory::dedup`, `store::memory::fingerprint`, `store::
 
 ## TAXII Client
 
-The optional **`taxii`** feature provides a complete OASIS TAXII 2.1 HTTP client. Wire payloads use [`TaxiiEnvelope`](taxii::TaxiiEnvelope) — **not** [`Bundle`](model::Bundle). Never POST a STIX Bundle to `add_objects`.
+The optional **`taxii`** feature provides an OASIS TAXII 2.1 HTTP client for all normative endpoint groups **except Channels (spec §6, RESERVED — not implemented)**. Wire payloads use [`TaxiiEnvelope`](taxii::TaxiiEnvelope) — **not** [`Bundle`](model::Bundle). Never POST a STIX Bundle to `add_objects`. See [test coverage](#taxii-test-coverage) for what is verified in CI vs the optional live Docker harness.
 
 ### Public API surface (`rstix::taxii`)
 
@@ -469,8 +469,9 @@ The optional **`taxii`** feature provides a complete OASIS TAXII 2.1 HTTP client
 | [`SpkiPin`](taxii::SpkiPin) | SHA-256 SPKI pin (`from_hex`). |
 | [`TlsaCache`](taxii::TlsaCache) | Thread-safe TLSA record cache for DANE verification. |
 | [`TlsaRecord`](taxii::TlsaRecord) | Parsed TLSA association data (RFC 6698). |
-| [`build_rustls_config`](taxii::build_rustls_config) | Build rustls `ClientConfig` with **TLS 1.2 + TLS 1.3 only** (no TLS 1.0/1.1). |
-| [`resolve_tlsa(host, port)`](taxii::resolve_tlsa) | DNS TLSA lookup (`_{port}._tcp.{host}`) for DANE prefetch. |
+| [`build_rustls_config`](taxii::build_rustls_config) | Build rustls `ClientConfig` (TLS 1.2+1.3 only; optional `ClientCertificate` for mTLS on the rustls path). |
+| [`resolve_tlsa(host, port)`](taxii::resolve_tlsa) | DNS TLSA lookup via system resolver (`_{port}._tcp.{host}`). |
+| [`resolve_tlsa_with(host, port, nameserver)`](taxii::resolve_tlsa_with) | TLSA lookup via optional custom nameserver. |
 
 TLS version policy: `build_rustls_config` passes `[&TLS12, &TLS13]` to rustls. Negotiation prefers the highest mutually supported version (typically TLS 1.3). TLS 1.0/1.1 are not enabled.
 
@@ -479,7 +480,8 @@ TLS version policy: `build_rustls_config` passes `[&TLS12, &TLS13]` to rustls. N
 | Type / function | Purpose |
 | --------------- | ------- |
 | [`TaxiiDiscovery`](taxii::TaxiiDiscovery) | Discovery resource; `resolved_api_roots`, **`default_api_root()`**. |
-| [`resolve_taxii_srv(domain)`](taxii::resolve_taxii_srv) | SRV lookup with RFC 2782 weighted random; skips `"."` targets. |
+| [`resolve_taxii_srv(domain)`](taxii::resolve_taxii_srv) | SRV lookup (system resolver) with RFC 2782 weighted random; skips `"."` targets. |
+| [`resolve_taxii_srv_with(domain, nameserver)`](taxii::resolve_taxii_srv_with) | SRV lookup via optional custom nameserver (e.g. local CoreDNS). |
 | [`TAXII2_SRV_SERVICE`](taxii::TAXII2_SRV_SERVICE) | Constant `"_taxii2._tcp"`. |
 | [`HttpsPolicy`](taxii::HttpsPolicy) | HTTPS enforcement for URL resolution. |
 
@@ -506,7 +508,7 @@ TLS version policy: `build_rustls_config` passes `[&TLS12, &TLS13]` to rustls. N
 | [`RetryPolicy`](taxii::RetryPolicy) | Retry/backoff for 5xx/429/network. |
 | [`PreflightPolicy`](taxii::PreflightPolicy) / [`PostSubmitPolicy`](taxii::PostSubmitPolicy) / [`CapabilityPolicy`](taxii::CapabilityPolicy) | Client-side policy enums. |
 
-**Selected [`TaxiiError`](taxii::Error) variants**
+**Selected [`TaxiiError`](taxii::TaxiiError) variants**
 
 | Variant | When |
 | ------- | ---- |
@@ -527,33 +529,38 @@ Run: `cargo test -p rstix --features taxii --test taxii_client`
 **Live TLS / DNS / mTLS** (optional, not in default CI): [`tests/taxii-live/README.md`](tests/taxii-live/README.md)
 
 ```bash
-./crates/rstix/tests/taxii-live/run-live-tests.sh   # start stack
+./crates/rstix/tests/taxii-live/run-live-tests.sh   # start Docker stack only
 cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture
 ```
 
-| Area | Wiremock E2E | Unit / other |
-| ---- | ------------ | ------------ |
-| Bearer / Basic / API-key auth injection | yes (`auth_tests`, `coverage_tests`) | Debug redaction unit tests |
-| ReadNotPermitted / WriteNotPermitted | yes (`coverage_tests`) | — |
-| InvalidContentType | yes (`coverage_tests`) | — |
-| MissingContentType | — (wiremock always sets a type) | yes (`request.rs` unit test) |
-| ResponseTooLarge | yes (`coverage_tests`) | — |
-| StatusPollTimeout | yes (`coverage_tests`) | — |
-| `objects_stream` / `object_stream` | yes (`pagination_tests`, `coverage_tests`) | — |
-| 416 stream recovery | yes (`coverage_tests`) | HTTP 416 mapping in `error_tests` |
-| Missing pagination headers | yes (`coverage_tests`) | `pagination.rs` unit test |
-| POST auto-poll | yes (`coverage_tests`) | `status_tests` poll helper |
-| Capability / API Root version | yes (`gap_tests`) | — |
-| `WWW-Authenticate` on 401 | yes (`gap_tests`) | `www_authenticate.rs` unit test |
-| TLS 1.2 + 1.3 config | — (requires TLS handshake) | yes (`server_trust.rs`, `tls_tests`) |
-| SPKI pin / DANE config build | — | yes (`tls_tests`, `dane.rs`) |
-| mTLS PEM handshake | Manual: `live_mtls_discovery` + Docker stack (not wiremock) | PEM reject in `tls_tests` |
-| PKCS#12 mTLS | **Not tested** (needs `taxii-native-tls` + manual setup) | — |
-| `discover_via_srv` / live DNS | `live_discover_via_srv` via `run-live-tests.sh` | SRV unit tests in `dns.rs`; `dns_nameserver()` for CoreDNS |
-| TLS 1.3 version negotiated | **Not asserted in Rust** | TLS 1.2+1.3 enabled in `build_rustls_config`; confirm with `openssl s_client` in live README |
-| DANE over the wire | **Not tested live** | `dane.rs` unit tests only |
-| Live harness (Docker) | **Present** — `tests/taxii-live/`; **3 ignored Rust tests** — not run in CI | See live README |
-| Native TLS backend | **Not tested live** | Requires `taxii-native-tls` + HTTPS server |
+**Wiremock (CI-style):** `cargo test -p rstix --features taxii --test taxii_client` — **59** tests on plain HTTP.
+
+**Live (optional, manual):** three `#[ignore]` tests in `tests/taxii_live.rs` after the stack script above. Verified on a VM with Docker: TLS (`127.0.0.1:8443`), mTLS (`localhost:8444` — Caddy strict SNI; do not use the IP for mTLS), SRV (CoreDNS `127.0.0.1:5353` via `dns_nameserver()`). Not run in default workspace CI.
+
+| Area | Wiremock E2E | Live (Docker) | Unit / other |
+| ---- | ------------ | ------------- | ------------ |
+| Bearer / Basic / API-key auth injection | yes (`auth_tests`, `coverage_tests`) | — | Debug redaction unit tests |
+| ReadNotPermitted / WriteNotPermitted | yes (`coverage_tests`) | — | — |
+| InvalidContentType | yes (`coverage_tests`) | — | — |
+| MissingContentType | — (wiremock always sets a type) | — | yes (`request.rs` unit test) |
+| ResponseTooLarge | yes (`coverage_tests`) | — | — |
+| StatusPollTimeout | yes (`coverage_tests`) | — | — |
+| `objects_stream` / `object_stream` | yes (`pagination_tests`, `coverage_tests`) | — | — |
+| 416 stream recovery | yes (`coverage_tests`) | — | HTTP 416 mapping in `error_tests` |
+| Missing pagination headers | yes (`coverage_tests`) | — | `pagination.rs` unit test |
+| POST auto-poll | yes (`coverage_tests`) | — | `status_tests` poll helper |
+| Capability / API Root version | yes (`gap_tests`) | — | — |
+| `WWW-Authenticate` on 401 | yes (`gap_tests`) | — | `www_authenticate.rs` unit test |
+| TLS 1.2 + 1.3 enabled in rustls config | — | — | yes (`server_trust.rs`, `tls_tests`) |
+| HTTPS + SPKI pin handshake | — | yes (`live_https_discovery_over_tls`, `:8443`) | — |
+| mTLS PEM handshake | — | yes (`live_mtls_discovery`, `localhost:8444`) | PEM + rustls client auth in `tls_tests` |
+| `discover_via_srv` / DNS SRV | — | yes (`live_discover_via_srv`) | `dns.rs` unit tests; `dns_nameserver()` |
+| SPKI pin / DANE config build | — | — | yes (`tls_tests`, `dane.rs`) |
+| TLS 1.3 version negotiated | — | **Not asserted** | TLS 1.2+1.3 enabled; use `openssl s_client` manually if needed |
+| DANE over the wire | — | **Not tested** | `dane.rs` unit tests only |
+| PKCS#12 mTLS | — | **Not tested** | needs `taxii-native-tls` + manual setup |
+| Native TLS backend | — | **Not tested** | needs `taxii-native-tls` + HTTPS server |
+| Channels (§6) | — | — | **Not implemented** (RESERVED in spec) |
 
 ```rust
 use futures::StreamExt;
@@ -586,7 +593,7 @@ let status = client
 
 Request invariants (all calls): `Accept: application/taxii+json;version=2.1`, `User-Agent: rstix/{VERSION}` (override via config), trailing slash on endpoint URLs, discovery at fixed `{base}/taxii2/`.
 
-Acceptance tests: `cargo test -p rstix --features taxii --test taxii_client` (**58** wiremock integration tests; see [TAXII test coverage](#taxii-test-coverage)).
+Acceptance tests: `cargo test -p rstix --features taxii --test taxii_client` (**59** wiremock integration tests; see [TAXII test coverage](#taxii-test-coverage)).
 
 ### TAXII Client invariant decisions
 
@@ -612,7 +619,8 @@ Acceptance tests: `cargo test -p rstix --features taxii --test taxii_client` (**
 | DELETE preflight | Requires both `can_read` and `can_write` | Spec section 5.7 |
 | Manifest Accept | TAXII + STIX media types | Spec section 5.3 |
 | DNS SRV discovery | `resolve_taxii_srv` + `TaxiiClient::discover_via_srv` | `_taxii2._tcp` records |
-| mTLS | `ClientCertificate::from_pem`; PKCS#12 with `taxii-native-tls` | Spec section 8.3.1 |
+| mTLS | PEM via `ClientCertificate::from_pem` embedded in `build_rustls_config` (rustls default); PKCS#12 with `taxii-native-tls` only | reqwest `.identity()` is **not** used with preconfigured rustls |
+| Channels | **Not implemented** | Spec §6 RESERVED |
 | Filter validation | `limit > 0`; `all` version rules enforced | Invalid filters rejected before HTTP |
 
 ## Validation Pipeline
