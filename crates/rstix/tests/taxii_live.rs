@@ -1,13 +1,13 @@
-//! Live TAXII integration tests (TLS, DNS SRV, mTLS).
+//! Live TAXII integration tests (TLS, mTLS, DNS SRV).
 //!
-//! Not run in default CI. Requires Docker stack — see `tests/taxii-live/README.md`.
+//! Requires the Docker stack in `tests/taxii-live/`. Start it with
+//! `./crates/rstix/tests/taxii-live/run-live-tests.sh`, then run:
 //!
 //! ```bash
-//! export RSTIX_TAXII_LIVE=1
-//! export RSTIX_TAXII_LIVE_BASE_URL=https://127.0.0.1:8443
 //! cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture
 //! ```
 
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use rustls_pki_types::pem::PemObject;
@@ -17,19 +17,25 @@ use rstix::taxii::{
 };
 use sha2::{Digest, Sha256};
 
-fn live_enabled() -> bool {
-    std::env::var("RSTIX_TAXII_LIVE")
-        .map(|v| v == "1")
-        .unwrap_or(false)
+const LIVE_BASE_URL: &str = "https://127.0.0.1:8443";
+const LIVE_MTLS_URL: &str = "https://127.0.0.1:8444";
+const LIVE_SRV_DOMAIN: &str = "taxii.test";
+const LIVE_DNS_NAMESERVER: &str = "127.0.0.1:5353";
+
+fn live_harness_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/taxii-live")
 }
 
-fn env_path(name: &str) -> Option<PathBuf> {
-    std::env::var(name).ok().map(PathBuf::from)
+fn live_cert(name: &str) -> PathBuf {
+    live_harness_dir().join("fixtures/certs").join(name)
 }
 
 fn spki_pin_from_cert_pem(path: &Path) -> SpkiPin {
     let pem = std::fs::read(path).unwrap_or_else(|err| {
-        panic!("read server cert {}: {err}", path.display());
+        panic!(
+            "read server cert {}: {err} (run ./crates/rstix/tests/taxii-live/generate-certs.sh)",
+            path.display()
+        );
     });
     let cert = rustls_pki_types::CertificateDer::pem_slice_iter(&pem)
         .next()
@@ -49,45 +55,31 @@ fn live_client(base_url: &str, server_cert: &Path) -> TaxiiClient {
     .expect("live client")
 }
 
+fn live_dns_nameserver() -> SocketAddr {
+    LIVE_DNS_NAMESERVER
+        .parse()
+        .expect("live harness DNS nameserver address")
+}
+
 #[tokio::test]
-#[ignore = "live TLS: start tests/taxii-live docker compose and set RSTIX_TAXII_LIVE=1"]
+#[ignore = "live TLS: run tests/taxii-live/run-live-tests.sh"]
 async fn live_https_discovery_over_tls() {
-    if !live_enabled() {
-        eprintln!("skip live_https_discovery_over_tls: set RSTIX_TAXII_LIVE=1");
-        return;
-    }
-    let base = std::env::var("RSTIX_TAXII_LIVE_BASE_URL")
-        .expect("RSTIX_TAXII_LIVE_BASE_URL e.g. https://127.0.0.1:8443");
-    let server_cert = env_path("RSTIX_TAXII_LIVE_SERVER_CERT").unwrap_or_else(|| {
-        PathBuf::from("crates/rstix/tests/taxii-live/fixtures/certs/server.pem")
-    });
-    let client = live_client(&base, &server_cert);
+    let server_cert = live_cert("server.pem");
+    let client = live_client(LIVE_BASE_URL, &server_cert);
     let discovery = client.discover().await.expect("discovery over TLS");
     assert_eq!(discovery.title, "Live Wiremock TAXII");
     assert!(discovery.default_api_root().is_some());
 }
 
 #[tokio::test]
-#[ignore = "live mTLS: set RSTIX_TAXII_LIVE=1 and client cert env vars"]
+#[ignore = "live mTLS: run tests/taxii-live/run-live-tests.sh"]
 async fn live_mtls_discovery() {
-    if !live_enabled() {
-        eprintln!("skip live_mtls_discovery: set RSTIX_TAXII_LIVE=1");
-        return;
-    }
-    let base = std::env::var("RSTIX_TAXII_LIVE_MTLS_URL")
-        .unwrap_or_else(|_| "https://127.0.0.1:8444".into());
-    let server_cert = env_path("RSTIX_TAXII_LIVE_SERVER_CERT").unwrap_or_else(|| {
-        PathBuf::from("crates/rstix/tests/taxii-live/fixtures/certs/server.pem")
-    });
-    let client_cert = env_path("RSTIX_TAXII_LIVE_CLIENT_CERT")
-        .expect("RSTIX_TAXII_LIVE_CLIENT_CERT");
-    let client_key = env_path("RSTIX_TAXII_LIVE_CLIENT_KEY")
-        .expect("RSTIX_TAXII_LIVE_CLIENT_KEY");
-    let cert_pem = std::fs::read(&client_cert).expect("client cert");
-    let key_pem = std::fs::read(&client_key).expect("client key");
+    let server_cert = live_cert("server.pem");
+    let cert_pem = std::fs::read(live_cert("client.pem")).expect("client cert");
+    let key_pem = std::fs::read(live_cert("client-key.pem")).expect("client key");
     let pin = spki_pin_from_cert_pem(&server_cert);
     let client = TaxiiClient::new(
-        TaxiiClientConfig::new(base)
+        TaxiiClientConfig::new(LIVE_MTLS_URL)
             .server_trust(ServerTrustPolicy::PinnedSpkiOnly(vec![pin]))
             .client_certificate(ClientCertificate::from_pem(&cert_pem, &key_pem).expect("mtls")),
     )
@@ -96,28 +88,16 @@ async fn live_mtls_discovery() {
 }
 
 #[tokio::test]
-#[ignore = "live DNS SRV: configure resolver for taxii.test — see tests/taxii-live/README.md"]
+#[ignore = "live DNS SRV: run tests/taxii-live/run-live-tests.sh"]
 async fn live_discover_via_srv() {
-    if !live_enabled() {
-        eprintln!("skip live_discover_via_srv: set RSTIX_TAXII_LIVE=1");
-        return;
-    }
-    let domain = std::env::var("RSTIX_TAXII_LIVE_SRV_DOMAIN").unwrap_or_else(|_| "taxii.test".into());
-    let server_cert = env_path("RSTIX_TAXII_LIVE_SERVER_CERT").unwrap_or_else(|| {
-        PathBuf::from("crates/rstix/tests/taxii-live/fixtures/certs/server.pem")
-    });
+    let server_cert = live_cert("server.pem");
     let pin = spki_pin_from_cert_pem(&server_cert);
     let config = TaxiiClientConfig::new("https://placeholder.invalid")
-        .server_trust(ServerTrustPolicy::PinnedSpkiOnly(vec![pin]));
-    match TaxiiClient::discover_via_srv(&domain, config).await {
-        Ok(discovery) => {
-            assert!(!discovery.api_roots.is_empty() || discovery.default_api_root().is_some());
-        }
-        Err(err) => {
-            eprintln!(
-                "live_discover_via_srv skipped: DNS SRV for {domain} not reachable via system resolver ({err}). \
-                 Configure /etc/resolver/{domain} → 127.0.0.1:5353 per tests/taxii-live/README.md"
-            );
-        }
-    }
+        .server_trust(ServerTrustPolicy::PinnedSpkiOnly(vec![pin]))
+        .dns_nameserver(live_dns_nameserver());
+    let discovery = TaxiiClient::discover_via_srv(LIVE_SRV_DOMAIN, config)
+        .await
+        .expect("discovery via SRV");
+    assert_eq!(discovery.title, "Live Wiremock TAXII");
+    assert!(discovery.default_api_root().is_some());
 }

@@ -1,6 +1,10 @@
 //! DNS SRV discovery and TLSA lookup for TAXII servers (spec sections 1.6.1, 3.9, 8.4.2, 8.5.2).
 
+use std::net::SocketAddr;
+
 use hickory_resolver::TokioResolver;
+use hickory_resolver::config::{ConnectionConfig, NameServerConfig, ResolverConfig};
+use hickory_resolver::net::runtime::TokioRuntimeProvider;
 use hickory_resolver::proto::rr::RData;
 use url::Url;
 
@@ -16,13 +20,18 @@ pub const TAXII2_SRV_SERVICE: &str = "_taxii2._tcp";
 /// Returns HTTPS URLs ending in `/taxii2/` ordered by SRV priority with RFC 2782
 /// weighted random selection within each priority group.
 pub async fn resolve_taxii_srv(domain: &str) -> Result<Vec<Url>, TaxiiError> {
+    resolve_taxii_srv_with(domain, None).await
+}
+
+/// Like [`resolve_taxii_srv`], but queries `nameserver` instead of the system resolver when set.
+pub async fn resolve_taxii_srv_with(
+    domain: &str,
+    nameserver: Option<SocketAddr>,
+) -> Result<Vec<Url>, TaxiiError> {
     let domain = domain.trim().trim_end_matches('.');
     let lookup = format!("{TAXII2_SRV_SERVICE}.{domain}");
 
-    let resolver = TokioResolver::builder_tokio()
-        .map_err(|err| TaxiiError::DnsDiscovery(err.to_string()))?
-        .build()
-        .map_err(|err| TaxiiError::DnsDiscovery(err.to_string()))?;
+    let resolver = build_resolver(nameserver)?;
     let response = resolver
         .srv_lookup(lookup)
         .await
@@ -49,13 +58,19 @@ pub async fn resolve_taxii_srv(domain: &str) -> Result<Vec<Url>, TaxiiError> {
 
 /// Resolve TLSA records for DANE (`_{port}._tcp.{host}`).
 pub async fn resolve_tlsa(host: &str, port: u16) -> Result<Vec<TlsaRecord>, TaxiiError> {
+    resolve_tlsa_with(host, port, None).await
+}
+
+/// Like [`resolve_tlsa`], but queries `nameserver` instead of the system resolver when set.
+pub async fn resolve_tlsa_with(
+    host: &str,
+    port: u16,
+    nameserver: Option<SocketAddr>,
+) -> Result<Vec<TlsaRecord>, TaxiiError> {
     let host = host.trim().trim_end_matches('.');
     let lookup = format!("_{port}._tcp.{host}");
 
-    let resolver = TokioResolver::builder_tokio()
-        .map_err(|err| TaxiiError::DnsDiscovery(err.to_string()))?
-        .build()
-        .map_err(|err| TaxiiError::DnsDiscovery(err.to_string()))?;
+    let resolver = build_resolver(nameserver)?;
     let response = resolver
         .tlsa_lookup(lookup)
         .await
@@ -74,6 +89,27 @@ pub async fn resolve_tlsa(host: &str, port: u16) -> Result<Vec<TlsaRecord>, Taxi
         });
     }
     Ok(records)
+}
+
+fn build_resolver(nameserver: Option<SocketAddr>) -> Result<TokioResolver, TaxiiError> {
+    let resolver = if let Some(addr) = nameserver {
+        let mut udp = ConnectionConfig::udp();
+        udp.port = addr.port();
+        let mut tcp = ConnectionConfig::tcp();
+        tcp.port = addr.port();
+        let mut config = ResolverConfig::from_parts(None, vec![], vec![]);
+        config.add_name_server(NameServerConfig::new(
+            addr.ip(),
+            true,
+            vec![udp, tcp],
+        ));
+        TokioResolver::builder_with_config(config, TokioRuntimeProvider::default())
+    } else {
+        TokioResolver::builder_tokio().map_err(|err| TaxiiError::DnsDiscovery(err.to_string()))?
+    };
+    resolver
+        .build()
+        .map_err(|err| TaxiiError::DnsDiscovery(err.to_string()))
 }
 
 fn order_srv_records(mut records: Vec<(u16, u16, Url)>) -> Vec<Url> {

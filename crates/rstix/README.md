@@ -452,6 +452,7 @@ The optional **`taxii`** feature provides a complete OASIS TAXII 2.1 HTTP client
 | `capability(p)` | `Enforce` | [`CapabilityPolicy`](taxii::CapabilityPolicy) — verify API Root `versions` + collection `media_types`. |
 | `server_trust(p)` | `SystemRoots` | [`ServerTrustPolicy`](taxii::ServerTrustPolicy) — PKIX, SPKI pin, or DANE. |
 | `tlsa_cache(c)` | empty | [`TlsaCache`](taxii::TlsaCache) — shared TLSA store for DANE. |
+| `dns_nameserver(addr)` | system resolver | Override DNS for SRV/TLSA lookups (local CoreDNS). |
 | `tls_native(b)` | `false` | Native TLS (`taxii-native-tls` feature); **incompatible** with pinning/DANE. |
 | `client_certificate(c)` | none | [`ClientCertificate`](taxii::ClientCertificate) — mTLS (PEM on rustls; PKCS#12 on native TLS). |
 | `allow_insecure_http(b)` | `false` | Allow `http://` (tests/interop only). |
@@ -523,11 +524,10 @@ TLS version policy: `build_rustls_config` passes `[&TLS12, &TLS13]` to rustls. N
 
 Run: `cargo test -p rstix --features taxii --test taxii_client`
 
-**Live TLS / DNS / mTLS** (optional, not in default CI): [`tests/taxii-live/README.md`](tests/taxii-live/README.md) — Docker stack + **3 ignored** Rust tests; DANE and TLS 1.3 are **not** verified by those tests (see live README).
+**Live TLS / DNS / mTLS** (optional, not in default CI): [`tests/taxii-live/README.md`](tests/taxii-live/README.md)
 
 ```bash
-cd crates/rstix/tests/taxii-live && ./generate-certs.sh && docker compose up -d --wait
-export RSTIX_TAXII_LIVE=1 RSTIX_TAXII_LIVE_BASE_URL=https://127.0.0.1:8443
+./crates/rstix/tests/taxii-live/run-live-tests.sh   # start stack
 cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture
 ```
 
@@ -549,7 +549,7 @@ cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture
 | SPKI pin / DANE config build | — | yes (`tls_tests`, `dane.rs`) |
 | mTLS PEM handshake | Manual: `live_mtls_discovery` + Docker stack (not wiremock) | PEM reject in `tls_tests` |
 | PKCS#12 mTLS | **Not tested** (needs `taxii-native-tls` + manual setup) | — |
-| `discover_via_srv` / live DNS | Manual: `live_discover_via_srv` (soft pass on DNS miss) + OS resolver | SRV unit tests in `dns.rs` |
+| `discover_via_srv` / live DNS | `live_discover_via_srv` via `run-live-tests.sh` | SRV unit tests in `dns.rs`; `dns_nameserver()` for CoreDNS |
 | TLS 1.3 version negotiated | **Not asserted in Rust** | TLS 1.2+1.3 enabled in `build_rustls_config`; confirm with `openssl s_client` in live README |
 | DANE over the wire | **Not tested live** | `dane.rs` unit tests only |
 | Live harness (Docker) | **Present** — `tests/taxii-live/`; **3 ignored Rust tests** — not run in CI | See live README |

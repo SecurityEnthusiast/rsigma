@@ -10,8 +10,8 @@
     },
     "jsonBody": {
       "title": "Live Wiremock TAXII",
-      "default": "https://taxii.test:8443/api1/",
-      "api_roots": ["https://taxii.test:8443/api1/"]
+      "default": "https://localhost:8443/api1/",
+      "api_roots": ["https://localhost:8443/api1/"]
     }
   }
 }

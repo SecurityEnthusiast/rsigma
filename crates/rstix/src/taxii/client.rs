@@ -3,6 +3,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use std::net::SocketAddr;
 
 use futures::Stream;
 use url::Url;
@@ -58,6 +59,7 @@ pub struct TaxiiClientConfig {
     capability: CapabilityPolicy,
     server_trust: ServerTrustPolicy,
     tlsa_cache: TlsaCache,
+    dns_nameserver: Option<SocketAddr>,
 }
 
 impl TaxiiClientConfig {
@@ -81,6 +83,7 @@ impl TaxiiClientConfig {
             capability: CapabilityPolicy::default(),
             server_trust: ServerTrustPolicy::default(),
             tlsa_cache: TlsaCache::default(),
+            dns_nameserver: None,
         }
     }
 
@@ -185,6 +188,12 @@ impl TaxiiClientConfig {
         self.tlsa_cache = cache;
         self
     }
+
+    /// Override the DNS resolver used for SRV/TLSA lookups (testing / local CoreDNS).
+    pub fn dns_nameserver(mut self, nameserver: SocketAddr) -> Self {
+        self.dns_nameserver = Some(nameserver);
+        self
+    }
 }
 
 struct TaxiiClientInner {
@@ -279,7 +288,8 @@ impl TaxiiClient {
         config: TaxiiClientConfig,
     ) -> Result<TaxiiDiscovery, TaxiiError> {
         let mut last_err = None;
-        for base in dns::resolve_taxii_srv(domain).await? {
+        let nameserver = config.dns_nameserver;
+        for base in dns::resolve_taxii_srv_with(domain, nameserver).await? {
             match Self::new(config.clone().base_url(base.to_string())) {
                 Ok(client) => match client.discover().await {
                     Ok(discovery) => return Ok(discovery),

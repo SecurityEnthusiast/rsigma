@@ -141,7 +141,7 @@ while let Some(obj) = stream.next().await {
 
 Acceptance: `cargo test -p rstix --features taxii --test taxii_client` (58 wiremock tests).
 
-Optional live TLS/mTLS/SRV harness: [`tests/taxii-live/README.md`](https://github.com/timescale/rsigma/blob/main/crates/rstix/tests/taxii-live/README.md) — **3 ignored tests**, not run in CI; DANE and TLS 1.3 negotiation are **not** asserted by Rust tests.
+Optional live TLS/mTLS/SRV harness: `./crates/rstix/tests/taxii-live/run-live-tests.sh` then `cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture`. DANE and TLS 1.3 are not asserted by Rust tests.
 
 Full **API surface tables**, invariant decisions, and **test coverage matrix**: [crate README — TAXII Client](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxii-client).
 
