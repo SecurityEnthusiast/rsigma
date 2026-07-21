@@ -3,7 +3,7 @@
 //! This is the mirror image of the forward [`Backend`](crate::Backend) engine.
 //! Where a backend lowers a rule's HIR into a query string, a [`Frontend`]
 //! parses a query string into the shared HIR ([`IrRule`]), which is then raised
-//! to a [`SigmaRule`](rsigma_parser::SigmaRule) and emitted as Sigma YAML.
+//! to a [`SigmaRule`] and emitted as Sigma YAML.
 //!
 //! ```text
 //! query -> Frontend::parse_query() -> IrRule -> raise_rule() -> SigmaRule -> emit_rule_yaml()

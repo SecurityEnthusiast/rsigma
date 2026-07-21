@@ -14,7 +14,7 @@
 //!
 //! Value scalars are rendered in Sigma's single-quote convention, with literal
 //! `*`, `?`, and `\` escaped so a re-parse reproduces the same
-//! [`SigmaString`](crate::SigmaString) wildcard structure.
+//! [`SigmaString`] wildcard structure.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
