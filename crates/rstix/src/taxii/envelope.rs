@@ -1,0 +1,168 @@
+//! TAXII envelope and status resources.
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::core::TaxiiTimestamp;
+use crate::model::ParseOptions;
+use crate::model::StixObject;
+use crate::model::stix_object::deserialize_stix_object_from_value;
+
+use super::TaxiiError;
+use super::filter::ObjectVersion;
+
+/// TAXII envelope wire format (spec section 3.7) — not a STIX Bundle.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TaxiiEnvelope {
+    /// Whether additional pages exist.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub more: bool,
+    /// Opaque pagination cursor when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next: Option<String>,
+    /// STIX objects in this page.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub objects: Vec<StixObject>,
+}
+
+impl TaxiiEnvelope {
+    /// Create an envelope for POST requests.
+    pub fn new(objects: Vec<StixObject>) -> Self {
+        Self {
+            more: false,
+            next: None,
+            objects,
+        }
+    }
+}
+
+/// Raw envelope JSON prior to STIX object dispatch.
+#[derive(Deserialize)]
+struct RawEnvelope {
+    #[serde(default)]
+    more: bool,
+    #[serde(default)]
+    next: Option<String>,
+    #[serde(default)]
+    objects: Vec<serde_json::Value>,
+}
+
+impl RawEnvelope {
+    fn into_envelope(self, opts: &ParseOptions) -> Result<TaxiiEnvelope, TaxiiError> {
+        let mut objects = Vec::with_capacity(self.objects.len());
+        for value in self.objects {
+            let (object, _) = deserialize_stix_object_from_value(value, opts)?;
+            objects.push(object);
+        }
+        Ok(TaxiiEnvelope {
+            more: self.more,
+            next: self.next,
+            objects,
+        })
+    }
+}
+
+pub(crate) fn parse_envelope(
+    bytes: &[u8],
+    opts: &ParseOptions,
+) -> Result<TaxiiEnvelope, TaxiiError> {
+    let raw: RawEnvelope =
+        serde_json::from_slice(bytes).map_err(|err| TaxiiError::MalformedResponse {
+            reason: err.to_string(),
+        })?;
+    raw.into_envelope(opts)
+}
+
+/// Status resource processing state (spec section 4.3.1).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StatusState {
+    /// Request still processing.
+    Pending,
+    /// Request finished.
+    Complete,
+}
+
+/// Per-object status detail entry.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatusDetail {
+    /// Object identifier.
+    pub id: String,
+    /// Object version string when present.
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Optional detail message.
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+impl StatusDetail {
+    /// Parse the version field into [`ObjectVersion`] when present.
+    pub fn object_version(&self) -> Option<ObjectVersion> {
+        self.version.as_deref().map(ObjectVersion::from_wire)
+    }
+}
+
+/// Status resource returned for POST 202 and status polling.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TaxiiStatus {
+    /// Status identifier.
+    pub id: String,
+    /// Processing state.
+    pub status: StatusState,
+    /// Request timestamp (TAXII transport precision).
+    #[serde(default)]
+    pub request_timestamp: Option<TaxiiTimestamp>,
+    /// Total objects in the status summary.
+    pub total_count: u32,
+    /// Successfully processed object count.
+    pub success_count: u32,
+    /// Successfully processed objects.
+    #[serde(default)]
+    pub successes: Vec<StatusDetail>,
+    /// Failed object count.
+    pub failure_count: u32,
+    /// Failed objects.
+    #[serde(default)]
+    pub failures: Vec<StatusDetail>,
+    /// Pending object count.
+    pub pending_count: u32,
+    /// Objects still pending processing.
+    #[serde(default)]
+    pub pendings: Vec<StatusDetail>,
+    /// Custom status properties preserved verbatim.
+    #[serde(flatten)]
+    pub custom: BTreeMap<String, serde_json::Value>,
+}
+
+/// Manifest record entry (spec section 5.3.1).
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct ManifestRecord {
+    /// Object identifier.
+    pub id: String,
+    /// When the object version was added to the collection.
+    pub date_added: TaxiiTimestamp,
+    /// Object version string.
+    pub version: String,
+    /// Optional media type for this version.
+    #[serde(default)]
+    pub media_type: Option<String>,
+}
+
+/// Manifest resource wrapper.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct ManifestResponse {
+    /// Whether more manifest records are available.
+    #[serde(default)]
+    pub more: bool,
+    /// Opaque pagination cursor when present.
+    #[serde(default)]
+    pub next: Option<String>,
+    /// Manifest records when present.
+    #[serde(default)]
+    pub objects: Vec<ManifestRecord>,
+    /// Unmodeled manifest properties.
+    #[serde(flatten)]
+    pub custom: BTreeMap<String, serde_json::Value>,
+}

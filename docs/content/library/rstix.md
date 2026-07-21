@@ -23,6 +23,7 @@ rstix = "{{ rsigma.version }}"
 | **Pattern Engine** (`pattern` — parse, type-check, full Level 3 evaluation, canonical printer, Indicator wiring, `IndicatorBuilder`) | **Complete** |
 | **Validation Pipeline** (`validate` — `Validator`, profiles, `STIX-E/W/I/H` diagnostics, all twelve checks, raw JSON entry) | **Complete** |
 | **Graph + Marking + Store** (`graph`, `marking`, `store`, `store-fs` — property graph, TLP resolution, in-memory and filesystem store) | **Complete** |
+| **TAXII Client** (`taxii`, `taxii-native-tls` — HTTP client for all TAXII 2.1 endpoint groups) | **Complete** |
 
 ## Quick start
 
@@ -113,7 +114,36 @@ Evaluation notes (STIX §9):
 
 Tests: `tests/fixtures/pattern/` (STIX §9.8), `tests/fixtures/pattern/sco-fields/` (SCO field manifest, 276 cases), `tests/pattern_parse.rs`, `tests/pattern_eval.rs`, `tests/pattern_spec_eval.rs`, `tests/pattern_eval_operators.rs`, `tests/pattern_eval_sco_fields.rs`, `tests/pattern_eval_errors.rs`, `tests/pattern_eval_security.rs`, `tests/pattern_indicator.rs`, unit modules `pattern::parser::level1`, `level23`, `not`, `pattern::typeck::`, `pattern::eval`, `pattern::security`.
 
-Later workspace phases (TAXII Client) may index indicators by `Pattern::observed_types()` but do not reimplement pattern grammar.
+Later workspace phases may index indicators by `Pattern::observed_types()` but do not reimplement pattern grammar.
+
+## TAXII Client
+
+Two optional feature flags (`taxii` implies `serde`; `taxii-native-tls` implies `taxii`):
+
+| Feature | Module | Highlights |
+| ------- | ------ | ---------- |
+| `taxii` | `rstix::taxii` | Full TAXII 2.1 client: [`TaxiiClient`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#public-api-surface-rstixtaxii) / [`TaxiiClientConfig`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxiiclientconfig-builder-methods), TLS 1.2+1.3 via rustls, [`ServerTrustPolicy`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#tls-and-server-trust-section-855) (PKIX / SPKI pin / DANE), [`PostSubmitPolicy`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxiiclientconfig-builder-methods) / [`CapabilityPolicy`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxiiclientconfig-builder-methods), auth (Bearer/Basic/API-key), pagination streams + 416 recovery, [`TaxiiError`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#selected-taxiierror-variants) mapping |
+| `taxii-native-tls` | (client TLS) | Native TLS via `reqwest/native-tls`; PKCS#12 client certificates (default rustls uses PEM). Incompatible with pinning/DANE. |
+
+```rust
+use rstix::taxii::{BearerAuth, TaxiiClient, TaxiiClientConfig, TaxiiFilter};
+use futures::StreamExt;
+
+let client = TaxiiClient::new(
+    TaxiiClientConfig::new("https://taxii.example.com").auth(BearerAuth::new(token)),
+)?;
+let discovery = client.discover().await?;
+let mut stream = client.objects_stream(api_root_url, "col1", TaxiiFilter::new());
+while let Some(obj) = stream.next().await {
+    let _obj = obj?;
+}
+```
+
+Acceptance: `cargo test -p rstix --features taxii --test taxii_client` (58 wiremock tests).
+
+Optional live TLS/mTLS/SRV harness: [`tests/taxii-live/README.md`](https://github.com/timescale/rsigma/blob/main/crates/rstix/tests/taxii-live/README.md) — **3 ignored tests**, not run in CI; DANE and TLS 1.3 negotiation are **not** asserted by Rust tests.
+
+Full **API surface tables**, invariant decisions, and **test coverage matrix**: [crate README — TAXII Client](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxii-client).
 
 ## Graph + Marking + Store
 
@@ -465,6 +495,8 @@ All twelve pipeline checks are implemented. The conformance harness (`tests/fixt
 | `marking` | TLP and statement marking resolution (`MarkingResolver`, granular selectors). |
 | `store` | In-memory STIX store (`MemoryStore`, `StixQuery`, `ImportReport`). |
 | `store-fs` | Filesystem-backed durable store (`FsStore`; implies `store`). |
+| `taxii` | TAXII 2.1 HTTP client (`TaxiiClient`, `TaxiiEnvelope`, auth, pagination, retry). |
+| `taxii-native-tls` | Native TLS for `TaxiiClient` (implies `taxii`; default uses rustls). |
 
 ## Related docs
 

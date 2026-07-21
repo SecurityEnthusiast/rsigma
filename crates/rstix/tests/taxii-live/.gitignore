@@ -1,0 +1,4 @@
+fixtures/certs/
+*.csr
+*.srl
+server.cnf

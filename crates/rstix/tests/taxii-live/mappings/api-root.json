@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/api1/"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/taxii+json;version=2.1"
+    },
+    "jsonBody": {
+      "title": "Live API Root",
+      "versions": ["application/taxii+json;version=2.1"],
+      "max_content_length": 1048576
+    }
+  }
+}

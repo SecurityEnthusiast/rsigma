@@ -1,0 +1,17 @@
+# TLS termination for local TAXII live tests.
+# Certificates from ./generate-certs.sh mounted at /certs.
+
+https://:8443 {
+	tls /certs/server.pem /certs/server-key.pem
+	reverse_proxy wiremock:8080
+}
+
+https://:8444 {
+	tls /certs/server.pem /certs/server-key.pem {
+		client_auth {
+			mode require_and_verify
+			trusted_ca_cert_file /certs/ca.pem
+		}
+	}
+	reverse_proxy wiremock:8080
+}

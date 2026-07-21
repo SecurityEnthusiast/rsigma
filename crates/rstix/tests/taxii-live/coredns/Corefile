@@ -1,0 +1,5 @@
+taxii.test {
+	file /etc/coredns/taxii.test.zone
+	log
+	errors
+}

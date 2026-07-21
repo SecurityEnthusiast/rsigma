@@ -4,6 +4,18 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix: TAXII 2.1 Client (`taxii` feature)
+
+- **`taxii`** — async HTTP client for all seven OASIS TAXII 2.1 endpoint groups: discovery (including DNS SRV via `_taxii2._tcp`), API Root, collections, objects (GET by id, paginated streams, POST envelope, DELETE with read+write preflight), manifest, versions, and status polling.
+- **Wire format** — `TaxiiEnvelope` for object exchange (not `Bundle`); `Accept` / `Content-Type: application/taxii+json;version=2.1` on every request; manifest requests also accept STIX JSON; trailing-slash URL rules; HTTPS enforced by default (`allow_insecure_http` for tests); `max_content_length` enforced before POST.
+- **Pagination** — `TaxiiPaged<T>` returns page bodies plus `X-TAXII-Date-Added-First` / `Last` headers; cursor + header fallback on objects, manifest, object-by-id, and versions streams.
+- **Auth** — `BearerAuth`, `BasicAuth`, `ApiKeyHeader` via `TaxiiAuthProvider`; secrets use `secrecy::SecretString` with redacted `Debug`.
+- **Resilience** — `RetryPolicy` (503/429/network with backoff, honoring `Retry-After` on 503/429); full `TaxiiError` mapping including HTTP 415; optional `PreflightPolicy` for client-side permission guards.
+- **mTLS** — `ClientCertificate::from_pem` (rustls default); PKCS#12 via `taxii-native-tls`.
+- **`taxii-native-tls`** — optional native TLS backend (default uses rustls).
+- **Tests** — `cargo test -p rstix --features taxii --test taxii_client` (58 wiremock + unit integration tests; coverage matrix in crate README).
+- **Conformance closure** — TLS 1.2+ enforcement, required success `Content-Type`, strict pagination headers, RFC 2782 SRV weighted selection, HTTP 416 stream recovery, HTTP `Date` clock skew for `added_after`, `WWW-Authenticate` parsing, API Root/collection capability checks, POST auto-poll (`PostSubmitPolicy`), optional SPKI pinning and DANE (`ServerTrustPolicy`), `TaxiiDiscovery::default_api_root()`, optional `StatusDetail.version`.
+
 ### Deterministic bloom pre-filter seeding
 
 The engine's per-field substring bloom pre-filter seeded its hasher from ahash's runtime RNG, so its exact bit layout, and therefore which non-matching values landed as false positives, varied across process runs (surfacing as a flaky `bloom_index` unit test). The filter now uses fixed seeds and is deterministic across runs and platforms. Correctness is unchanged: the bloom only ever over-approximates, never producing a false negative, regardless of seed.

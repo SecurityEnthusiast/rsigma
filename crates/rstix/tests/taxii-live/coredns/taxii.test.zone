@@ -1,0 +1,5 @@
+$ORIGIN taxii.test.
+$TTL 3600
+
+@       IN  A       127.0.0.1
+_taxii2._tcp  IN  SRV  10 100 8443 taxii.test.
