@@ -72,13 +72,14 @@ async fn tools_list_exposes_all_core_tools() {
         "list_builtin_pipelines",
         "fix_rules",
         "author_ads",
+        "from_lucene",
     ] {
         assert!(
             names.contains(&expected.to_string()),
             "missing tool {expected}"
         );
     }
-    assert_eq!(tools.len(), 12, "expected exactly 12 tools, got {names:?}");
+    assert_eq!(tools.len(), 13, "expected exactly 13 tools, got {names:?}");
 
     // parse_rule advertises an input schema with the `yaml` property.
     let parse_rule = tools.iter().find(|t| t.name == "parse_rule").unwrap();
