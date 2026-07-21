@@ -1,5 +1,13 @@
 $ORIGIN taxii.test.
 $TTL 3600
 
-@       IN  A       127.0.0.1
+@       IN  SOA  ns.taxii.test. admin.taxii.test. (
+                2026072101 ; serial
+                3600       ; refresh
+                600        ; retry
+                86400      ; expire
+                3600 )     ; minimum
+@       IN  NS   ns.taxii.test.
+@       IN  A    127.0.0.1
+ns      IN  A    127.0.0.1
 _taxii2._tcp  IN  SRV  10 100 8443 taxii.test.
