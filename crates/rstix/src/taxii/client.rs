@@ -239,20 +239,28 @@ impl TaxiiClient {
             Url::parse(&config.base_url).map_err(|err| TaxiiError::InvalidUrl(err.to_string()))?;
         super::url::ensure_https(&base_url, https_policy)?;
 
-        let mut client_builder = reqwest::Client::builder().timeout(config.timeout);
-        if let Some(cert) = &config.client_certificate {
-            client_builder = client_builder.identity(cert.identity());
-        }
+        let client_builder = reqwest::Client::builder().timeout(config.timeout);
         #[cfg(feature = "taxii-native-tls")]
         let client_builder = if config.tls_native {
+            if let Some(cert) = &config.client_certificate {
+                client_builder = client_builder.identity(cert.identity());
+            }
             client_builder.use_native_tls()
         } else {
-            let tls = build_rustls_config(&config.server_trust, &config.tlsa_cache)?;
+            let tls = build_rustls_config(
+                &config.server_trust,
+                &config.tlsa_cache,
+                config.client_certificate.as_ref(),
+            )?;
             client_builder.use_preconfigured_tls(tls)
         };
         #[cfg(not(feature = "taxii-native-tls"))]
         let client_builder = {
-            let tls = build_rustls_config(&config.server_trust, &config.tlsa_cache)?;
+            let tls = build_rustls_config(
+                &config.server_trust,
+                &config.tlsa_cache,
+                config.client_certificate.as_ref(),
+            )?;
             client_builder.use_preconfigured_tls(tls)
         };
 

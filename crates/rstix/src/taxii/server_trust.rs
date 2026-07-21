@@ -17,6 +17,7 @@ use webpki_roots::TLS_SERVER_ROOTS;
 
 use super::TaxiiError;
 use super::dane::{TlsaRecord, spki_sha256, verify_dane};
+use super::tls::ClientCertificate;
 
 /// SHA-256 SPKI pin for certificate pinning.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -78,6 +79,7 @@ impl TlsaCache {
 pub fn build_rustls_config(
     policy: &ServerTrustPolicy,
     tlsa_cache: &TlsaCache,
+    client_certificate: Option<&ClientCertificate>,
 ) -> Result<ClientConfig, TaxiiError> {
     let mut roots = RootCertStore::empty();
     roots.extend(TLS_SERVER_ROOTS.iter().cloned());
@@ -110,16 +112,21 @@ pub fn build_rustls_config(
         })
     };
 
-    Ok(
-        ClientConfig::builder_with_provider(Arc::new(default_provider()))
-            .with_protocol_versions(&[&TLS12, &TLS13])
-            .map_err(|err| TaxiiError::InvalidServerTrust {
-                reason: err.to_string(),
-            })?
-            .dangerous()
-            .with_custom_certificate_verifier(verifier)
-            .with_no_client_auth(),
-    )
+    let builder = ClientConfig::builder_with_provider(Arc::new(default_provider()))
+        .with_protocol_versions(&[&TLS12, &TLS13])
+        .map_err(|err| TaxiiError::InvalidServerTrust {
+            reason: err.to_string(),
+        })?
+        .dangerous()
+        .with_custom_certificate_verifier(verifier);
+
+    if let Some((certs, key)) = client_certificate.and_then(|cert| cert.rustls_auth()) {
+        builder
+            .with_client_auth_cert(certs.clone(), key.clone_key())
+            .map_err(|err| TaxiiError::InvalidClientCertificate(err.to_string()))
+    } else {
+        Ok(builder.with_no_client_auth())
+    }
 }
 
 struct PolicyVerifier {
@@ -214,14 +221,14 @@ mod tests {
 
     #[test]
     fn builds_rustls_config_with_system_roots() {
-        build_rustls_config(&ServerTrustPolicy::SystemRoots, &TlsaCache::default())
+        build_rustls_config(&ServerTrustPolicy::SystemRoots, &TlsaCache::default(), None)
             .expect("config");
     }
 
     #[test]
     fn builder_accepts_tls12_and_tls13() {
         // `build_rustls_config` passes `[&TLS12, &TLS13]` to rustls; rejection would fail here.
-        build_rustls_config(&ServerTrustPolicy::SystemRoots, &TlsaCache::default())
+        build_rustls_config(&ServerTrustPolicy::SystemRoots, &TlsaCache::default(), None)
             .expect("tls12+tls13");
     }
 
