@@ -1,12 +1,11 @@
-//! The `from_lucene` tool: convert an Elastic Lucene query into a draft Sigma
-//! rule.
+//! The `reverse_convert` tool: convert a SIEM query into a draft Sigma rule.
 //!
-//! Parses a Lucene / Elasticsearch `query_string` into the intermediate
-//! representation, raises a Sigma rule, and returns it as YAML. A query carries
-//! no rule metadata, so the title, id, level, status, and logsource come from
-//! parameters; the result is a best-effort skeleton for a human to review.
-//! Constructs with no Sigma equivalent (boosting, fuzzy/proximity, non-numeric
-//! ranges) come back as `{ "ok": false, "error": ... }`.
+//! Parses a query in the chosen `dialect` (Elastic Lucene today) into the
+//! intermediate representation, raises a Sigma rule, and returns it as YAML. A
+//! query carries no rule metadata, so the title, id, level, status, and
+//! logsource come from parameters; the result is a best-effort skeleton for a
+//! human to review. Constructs with no Sigma equivalent (boosting,
+//! fuzzy/proximity, non-numeric ranges) come back as `{ "ok": false, ... }`.
 
 use rmcp::{
     ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
@@ -19,11 +18,14 @@ use serde_json::{Value, json};
 use super::RsigmaMcp;
 use super::shared::{invalid, json_result};
 
-/// Input for `from_lucene`.
+/// Input for `reverse_convert`.
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct FromLuceneInput {
-    /// The Lucene / Elasticsearch `query_string` to convert.
+pub struct ReverseInput {
+    /// The query to convert.
     pub query: String,
+    /// Source query dialect. Defaults to `lucene` (the only dialect today).
+    #[serde(default)]
+    pub dialect: Option<String>,
     /// Rule title (recommended; a query has no title of its own).
     #[serde(default)]
     pub title: Option<String>,
@@ -47,20 +49,27 @@ pub struct FromLuceneInput {
     pub logsource_service: Option<String>,
 }
 
-#[tool_router(router = from_lucene_router, vis = "pub(crate)")]
+#[tool_router(router = reverse_router, vis = "pub(crate)")]
 impl RsigmaMcp {
-    /// Convert an Elastic Lucene query into a draft Sigma rule.
+    /// Convert a SIEM query into a draft Sigma rule.
     #[tool(
-        description = "Convert an Elastic Lucene / Elasticsearch query_string into a draft Sigma rule (YAML). Supports field:value with wildcards, quoted phrases, /regex/, [a TO b] ranges, comparison shorthand, field:(a OR b) groups, _exists_, keyword terms, and AND/OR/NOT with grouping. A query carries no metadata, so pass title/id/level/status and logsource_product/category/service; the result is a reviewable skeleton. Boosting, fuzzy/proximity, and non-numeric ranges are reported as errors."
+        description = "Reverse-convert a SIEM query into a draft Sigma rule (YAML). `dialect` selects the source query language (`lucene` today, the Lucene / Elasticsearch query_string subset: field:value with wildcards, quoted phrases, /regex/, [a TO b] ranges, comparison shorthand, field:(a OR b) groups, _exists_, keyword terms, and AND/OR/NOT with grouping). A query carries no metadata, so pass title/id/level/status and logsource_product/category/service; the result is a reviewable skeleton. Boosting, fuzzy/proximity, and non-numeric ranges are reported as errors."
     )]
-    async fn from_lucene(
+    async fn reverse_convert(
         &self,
-        Parameters(input): Parameters<FromLuceneInput>,
+        Parameters(input): Parameters<ReverseInput>,
     ) -> Result<CallToolResult, McpError> {
-        Ok(json_result(&self.run_from_lucene(input)?))
+        Ok(json_result(&self.run_reverse_convert(input)?))
     }
 
-    pub(crate) fn run_from_lucene(&self, input: FromLuceneInput) -> Result<Value, McpError> {
+    pub(crate) fn run_reverse_convert(&self, input: ReverseInput) -> Result<Value, McpError> {
+        let dialect = input.dialect.as_deref().unwrap_or("lucene");
+        if dialect != "lucene" {
+            return Err(invalid(format!(
+                "unsupported dialect '{dialect}'; supported: lucene"
+            )));
+        }
+
         let level = parse_meta::<Level>(input.level.as_deref(), "level")?;
         let status = parse_meta::<Status>(input.status.as_deref(), "status")?;
 
@@ -75,20 +84,18 @@ impl RsigmaMcp {
             strict: false,
         };
 
-        let frontend = LuceneFrontend;
-        let mut output = reverse_collection(&frontend, std::slice::from_ref(&input.query), &ctx);
+        let mut output =
+            reverse_collection(&LuceneFrontend, std::slice::from_ref(&input.query), &ctx);
         if let Some((_, err)) = output.errors.first() {
-            return Ok(json!({ "ok": false, "dialect": "lucene", "error": err.to_string() }));
+            return Ok(json!({ "ok": false, "dialect": dialect, "error": err.to_string() }));
         }
         let Some(result) = output.rules.pop() else {
-            return Ok(
-                json!({ "ok": false, "dialect": "lucene", "error": "no rule was produced" }),
-            );
+            return Ok(json!({ "ok": false, "dialect": dialect, "error": "no rule was produced" }));
         };
         Ok(json!({
             "ok": true,
             "engine": "rsigma",
-            "dialect": "lucene",
+            "dialect": dialect,
             "rule_title": result.rule.title,
             "yaml": result.yaml,
         }))
@@ -113,9 +120,10 @@ mod tests {
     use super::*;
     use crate::tools::handler;
 
-    fn input(query: &str) -> FromLuceneInput {
-        FromLuceneInput {
+    fn input(query: &str) -> ReverseInput {
+        ReverseInput {
             query: query.to_string(),
+            dialect: None,
             title: Some("Test".into()),
             id: None,
             level: None,
@@ -129,7 +137,7 @@ mod tests {
     #[test]
     fn converts_a_query_to_sigma_yaml() {
         let v = handler()
-            .run_from_lucene(input("Image:*\\\\cmd.exe AND NOT User:SYSTEM"))
+            .run_reverse_convert(input("Image:*\\\\cmd.exe AND NOT User:SYSTEM"))
             .unwrap();
         assert_eq!(v["ok"], true, "envelope: {v}");
         let yaml = v["yaml"].as_str().unwrap();
@@ -142,16 +150,26 @@ mod tests {
 
     #[test]
     fn unsupported_construct_reports_error_envelope() {
-        let v = handler().run_from_lucene(input("field:value^2")).unwrap();
+        let v = handler()
+            .run_reverse_convert(input("field:value^2"))
+            .unwrap();
         assert_eq!(v["ok"], false, "envelope: {v}");
         assert!(v["error"].as_str().unwrap().contains("boost"));
+    }
+
+    #[test]
+    fn unknown_dialect_is_an_input_error() {
+        let mut i = input("EventID:1");
+        i.dialect = Some("spl".into());
+        let err = handler().run_reverse_convert(i).unwrap_err();
+        assert!(format!("{err:?}").contains("unsupported dialect"));
     }
 
     #[test]
     fn invalid_level_is_an_input_error() {
         let mut i = input("EventID:1");
         i.level = Some("bogus".into());
-        let err = handler().run_from_lucene(i).unwrap_err();
+        let err = handler().run_reverse_convert(i).unwrap_err();
         assert!(format!("{err:?}").contains("invalid level"));
     }
 }

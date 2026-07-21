@@ -11,7 +11,6 @@ mod eval;
 mod eval_stream;
 mod explain;
 mod fields;
-mod from_lucene;
 mod hygiene;
 mod lint;
 #[cfg(feature = "mcp")]
@@ -27,6 +26,7 @@ pub(crate) mod reports;
 // ship with the `daemon` feature.
 #[cfg(feature = "daemon")]
 mod resolve;
+mod reverse;
 mod scorecard;
 // Delegation to an external sigma-cli for non-native conversion targets.
 mod status;
@@ -49,7 +49,6 @@ pub(crate) use draft::{DraftArgs, cmd_draft};
 pub(crate) use eval::{EvalArgs, apply_eval_config, cmd_eval};
 pub(crate) use explain::{ExplainArgs, cmd_explain};
 pub(crate) use fields::{FieldsArgs, cmd_fields};
-pub(crate) use from_lucene::{FromLuceneArgs, cmd_from_lucene};
 pub(crate) use hygiene::{HygieneArgs, apply_hygiene_config, cmd_hygiene};
 pub(crate) use lint::{LintArgs, LintCounts, cmd_lint};
 #[cfg(feature = "mcp")]
@@ -59,6 +58,7 @@ pub(crate) use parse::{ConditionArgs, ParseArgs, StdinArgs, cmd_condition, cmd_p
 pub(crate) use pipeline_diff::{PipelineDiffArgs, cmd_pipeline_diff};
 #[cfg(feature = "daemon")]
 pub(crate) use resolve::{ResolveArgs, cmd_resolve};
+pub(crate) use reverse::{ReverseArgs, cmd_reverse};
 pub(crate) use scorecard::{ScorecardArgs, apply_scorecard_config, cmd_scorecard};
 pub(crate) use status::{StatusArgs, cmd_status};
 pub(crate) use tail::{TailArgs, cmd_tail};

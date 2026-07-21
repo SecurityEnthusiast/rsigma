@@ -37,7 +37,6 @@ mod author_ads;
 mod convert_rules;
 mod evaluate_events;
 mod fix_rules;
-mod from_lucene;
 mod lint_rules;
 mod list_backends;
 mod list_builtin_pipelines;
@@ -45,6 +44,7 @@ mod list_fields;
 mod parse_condition;
 mod parse_rule;
 mod resolve_pipeline;
+mod reverse;
 mod shared;
 mod validate_rules;
 
@@ -126,7 +126,7 @@ impl RsigmaMcp {
             + Self::list_builtin_pipelines_router()
             + Self::fix_rules_router()
             + Self::author_ads_router()
-            + Self::from_lucene_router()
+            + Self::reverse_router()
     }
 }
 

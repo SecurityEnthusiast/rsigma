@@ -72,7 +72,7 @@ async fn tools_list_exposes_all_core_tools() {
         "list_builtin_pipelines",
         "fix_rules",
         "author_ads",
-        "from_lucene",
+        "reverse_convert",
     ] {
         assert!(
             names.contains(&expected.to_string()),

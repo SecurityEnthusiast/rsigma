@@ -2,7 +2,7 @@
 //!
 //! Each case is a `.lucene` query and a `.yml` expected Sigma rule in
 //! `tests/golden/lucene/`. The test drives the query through the same
-//! `reverse_collection` entry point the `rsigma rule from-lucene` CLI uses (with
+//! `reverse_collection` entry point the `rsigma rule reverse` CLI uses (with
 //! a fixed title and logsource) and asserts exact equality with the expected
 //! Sigma YAML.
 

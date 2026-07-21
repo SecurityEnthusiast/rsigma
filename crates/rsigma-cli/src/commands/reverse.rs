@@ -1,31 +1,43 @@
-//! `rule from-lucene`: convert an Elastic Lucene query into a draft Sigma rule.
+//! `rule reverse`: convert a SIEM query into a draft Sigma rule.
 //!
-//! Reads a Lucene / Elasticsearch `query_string` (from a positional argument,
-//! `--file`, or stdin), parses it into the intermediate representation, raises a
+//! Reads a query (from a positional argument, `--file`, or stdin) in the dialect
+//! chosen by `--from`, parses it into the intermediate representation, raises a
 //! Sigma rule, and prints it as Sigma YAML. A query carries no rule metadata, so
 //! the title, id, level, status, and logsource come from flags; the rest is a
-//! best-effort skeleton for a human to review.
+//! best-effort skeleton for a human to review. This is the inverse of
+//! `rsigma backend convert` and the query sibling of `rule draft`.
 //!
 //! The emitted YAML is parsed back before it is printed, so a rule that would
-//! not round-trip never reaches the operator. This is the query sibling of
-//! `rule draft` (events to Sigma) and `rule discover-schemas`.
+//! not round-trip never reaches the operator.
 
 use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use rsigma_convert::{LuceneFrontend, ReverseCtx, reverse_collection};
 use rsigma_parser::{Level, Status};
 
 use crate::output::OutputCtx;
 
-/// Arguments for `rsigma rule from-lucene`.
+/// The query dialect to reverse-convert from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Default)]
+pub(crate) enum Dialect {
+    /// Elastic Lucene / Elasticsearch `query_string`.
+    #[default]
+    Lucene,
+}
+
+/// Arguments for `rsigma rule reverse`.
 #[derive(Args, Debug)]
-pub(crate) struct FromLuceneArgs {
-    /// The Lucene query. Omit to read from `--file` or stdin.
+pub(crate) struct ReverseArgs {
+    /// The query. Omit to read from `--file` or stdin.
     pub query: Option<String>,
+
+    /// Source query dialect.
+    #[arg(long, value_enum, default_value_t = Dialect::Lucene)]
+    pub from: Dialect,
 
     /// Read the query from a file instead of the positional argument.
     #[arg(short = 'f', long)]
@@ -64,7 +76,7 @@ pub(crate) struct FromLuceneArgs {
     pub output: Option<PathBuf>,
 }
 
-pub(crate) fn cmd_from_lucene(args: FromLuceneArgs, _ctx: OutputCtx) {
+pub(crate) fn cmd_reverse(args: ReverseArgs, _ctx: OutputCtx) {
     let query = read_query(&args);
 
     let level = parse_enum::<Level>(args.level.as_deref(), "level");
@@ -81,8 +93,10 @@ pub(crate) fn cmd_from_lucene(args: FromLuceneArgs, _ctx: OutputCtx) {
         strict: false,
     };
 
-    let frontend = LuceneFrontend;
-    let mut output = reverse_collection(&frontend, std::slice::from_ref(&query), &ctx);
+    let queries = std::slice::from_ref(&query);
+    let mut output = match args.from {
+        Dialect::Lucene => reverse_collection(&LuceneFrontend, queries, &ctx),
+    };
     if let Some((_, err)) = output.errors.first() {
         eprintln!("Error converting query: {err}");
         process::exit(crate::exit_code::RULE_ERROR);
@@ -116,7 +130,7 @@ pub(crate) fn cmd_from_lucene(args: FromLuceneArgs, _ctx: OutputCtx) {
     }
 }
 
-fn read_query(args: &FromLuceneArgs) -> String {
+fn read_query(args: &ReverseArgs) -> String {
     let raw = match (&args.query, &args.file) {
         (Some(_), Some(_)) => {
             eprintln!("Provide the query as an argument or --file, not both");
@@ -138,7 +152,7 @@ fn read_query(args: &FromLuceneArgs) -> String {
     };
     let query = raw.trim().to_string();
     if query.is_empty() {
-        eprintln!("Empty query; pass a Lucene query as an argument, via --file, or on stdin");
+        eprintln!("Empty query; pass a query as an argument, via --file, or on stdin");
         process::exit(crate::exit_code::CONFIG_ERROR);
     }
     query

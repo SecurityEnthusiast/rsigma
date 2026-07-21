@@ -1,16 +1,16 @@
-# `rsigma rule from-lucene`
+# `rsigma rule reverse`
 
-Convert an Elastic Lucene query into a draft Sigma rule.
+Convert a SIEM query into a draft Sigma rule (reverse conversion).
 
 ## Synopsis
 
 ```text
-rsigma rule from-lucene [QUERY] [OPTIONS]
+rsigma rule reverse [QUERY] --from <DIALECT> [OPTIONS]
 ```
 
 ## Description
 
-Reverse conversion: parse a Lucene / Elasticsearch `query_string`, build the intermediate representation the forward converter also uses, raise a Sigma rule, and print it as YAML. It is the query sibling of [`rsigma rule draft`](/cli/rule/draft) (events to Sigma) and the inverse of [`rsigma backend convert`](/cli/backend/convert) (Sigma to queries).
+The mirror of [`rsigma backend convert`](/cli/backend/convert): parse a query in the dialect chosen by `--from`, build the intermediate representation the forward converter also uses, raise a Sigma rule, and print it as YAML. It is also the query sibling of [`rsigma rule draft`](/cli/rule/draft) (events to Sigma).
 
 The query is read from the positional argument, from `--file`, or from stdin. Field predicates map to idiomatic Sigma: surrounding `*` wildcards become `|contains`/`|startswith`/`|endswith`, `field:/regex/` becomes `|re`, `field:[a TO b]` and `{a TO b}` ranges become `|gte`/`|lte` (or `|gt`/`|lt`) pairs, `field:>=N` shorthand becomes a numeric comparison, `field:(a OR b)` becomes a value list, `_exists_:field` becomes `|exists`, and bare terms become a `keywords` block. `AND`/`OR`/`NOT` (with `&&`/`||`/`!` and `+`/`-`) and parentheses become the condition; adjacent terms with no operator are ANDed. An `AND` of field predicates is merged into one `selection`, a negated branch becomes a `filter`, and a same-field `OR` collapses into one value list.
 
@@ -20,7 +20,8 @@ A query carries no rule metadata, so the title, id, level, status, and logsource
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `[QUERY]` | stdin | The Lucene query. Omit to read from `--file` or stdin. |
+| `[QUERY]` | stdin | The query. Omit to read from `--file` or stdin. |
+| `--from <DIALECT>` | `lucene` | Source query dialect. `lucene` (Elastic Lucene / Elasticsearch `query_string`) is the only dialect today. |
 | `-f, --file <FILE>` | unset | Read the query from a file instead of the argument. |
 | `--title <TITLE>` | `Converted query` | Rule title (recommended). |
 | `--id <UUID>` | unset | Rule id. |
@@ -33,10 +34,10 @@ A query carries no rule metadata, so the title, id, level, status, and logsource
 
 ## Examples
 
-### Convert a query with a filter
+### Convert a Lucene query with a filter
 
 ```bash
-rsigma rule from-lucene 'Image:*\\cmd.exe AND CommandLine:*whoami* AND NOT User:SYSTEM' \
+rsigma rule reverse --from lucene 'Image:*\\cmd.exe AND CommandLine:*whoami* AND NOT User:SYSTEM' \
   --title "Whoami via cmd" --logsource-product windows --logsource-category process_creation --level medium
 ```
 
@@ -58,7 +59,7 @@ level: medium
 ### Convert a range and a value group from stdin
 
 ```bash
-echo 'DestinationPort:[1024 TO 65535] AND Image:("a.exe" OR "b.exe")' | rsigma rule from-lucene --title "Range and group"
+echo 'DestinationPort:[1024 TO 65535] AND Image:("a.exe" OR "b.exe")' | rsigma rule reverse --title "Range and group"
 ```
 
 ## See also
