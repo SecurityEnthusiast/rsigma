@@ -136,6 +136,17 @@ fn emit_related(out: &mut String, related: &[Related]) {
 }
 
 fn emit_logsource(out: &mut String, logsource: &LogSource) {
+    // An empty `logsource:` key parses as null, which the parser rejects (it
+    // must be a mapping); emit an explicit empty mapping instead.
+    if logsource.category.is_none()
+        && logsource.product.is_none()
+        && logsource.service.is_none()
+        && logsource.definition.is_none()
+        && logsource.custom.is_empty()
+    {
+        let _ = writeln!(out, "logsource: {{}}");
+        return;
+    }
     let _ = writeln!(out, "logsource:");
     if let Some(category) = &logsource.category {
         let _ = writeln!(out, "{STEP}category: {}", scalar(category));
@@ -653,6 +664,14 @@ mod tests {
             emitted.contains(r"a\*b"),
             "expected escaped glob, got:\n{emitted}"
         );
+    }
+
+    #[test]
+    fn empty_logsource_emits_a_mapping_that_reparses() {
+        let emitted = assert_round_trips(
+            "title: No Logsource\nlogsource: {}\ndetection:\n    selection:\n        Field: value\n    condition: selection\n",
+        );
+        assert!(emitted.contains("logsource: {}"), "{emitted}");
     }
 
     #[test]
