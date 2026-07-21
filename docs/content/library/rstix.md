@@ -23,6 +23,7 @@ rstix = "{{ rsigma.version }}"
 | **Pattern Engine** (`pattern` — parse, type-check, full Level 3 evaluation, canonical printer, Indicator wiring, `IndicatorBuilder`) | **Complete** |
 | **Validation Pipeline** (`validate` — `Validator`, profiles, `STIX-E/W/I/H` diagnostics, all twelve checks, raw JSON entry) | **Complete** |
 | **Graph + Marking + Store** (`graph`, `marking`, `store`, `store-fs` — property graph, TLP resolution, in-memory and filesystem store) | **Complete** |
+| **TAXII Client** (`taxii` — HTTP client for all TAXII 2.1 endpoint groups - except Channels (out of scope)) | **Complete** |
 
 ## Quick start
 
@@ -113,7 +114,37 @@ Evaluation notes (STIX §9):
 
 Tests: `tests/fixtures/pattern/` (STIX §9.8), `tests/fixtures/pattern/sco-fields/` (SCO field manifest, 276 cases), `tests/pattern_parse.rs`, `tests/pattern_eval.rs`, `tests/pattern_spec_eval.rs`, `tests/pattern_eval_operators.rs`, `tests/pattern_eval_sco_fields.rs`, `tests/pattern_eval_errors.rs`, `tests/pattern_eval_security.rs`, `tests/pattern_indicator.rs`, unit modules `pattern::parser::level1`, `level23`, `not`, `pattern::typeck::`, `pattern::eval`, `pattern::security`.
 
-Later workspace phases (TAXII Client) may index indicators by `Pattern::observed_types()` but do not reimplement pattern grammar.
+Later workspace phases may index indicators by `Pattern::observed_types()` but do not reimplement pattern grammar.
+
+## TAXII Client
+
+Optional **`taxii`** feature — TAXII 2.1 HTTP client for all normative endpoint groups **except Channels (spec §6, RESERVED — not implemented)**:
+
+| Feature | Module | Highlights |
+| ------- | ------ | ---------- |
+| `taxii` | `rstix::taxii` | TAXII 2.1 HTTP client ([`TaxiiClient`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#public-api-surface-rstixtaxii), rustls TLS 1.2+1.3, PEM and PKCS#12 mTLS, SPKI pin / DANE, auth, pagination, SRV + `dns_nameserver()`). Channels §6 not implemented. |
+
+```rust
+use rstix::taxii::{BearerAuth, TaxiiClient, TaxiiClientConfig, TaxiiFilter};
+use futures::StreamExt;
+
+let client = TaxiiClient::new(
+    TaxiiClientConfig::new("https://taxii.example.com").auth(BearerAuth::new(token)),
+)?;
+let discovery = client.discover().await?;
+let mut stream = client.objects_stream(api_root_url, "col1", TaxiiFilter::new());
+while let Some(obj) = stream.next().await {
+    let _obj = obj?;
+}
+```
+
+```bash
+cargo test -p rstix --features taxii --test taxii_client
+```
+
+Optional live harness: see [`tests/taxii-live/README.md`](https://github.com/timescale/rsigma/blob/main/crates/rstix/tests/taxii-live/README.md).
+
+Full **API surface tables** and **invariant decisions**: [crate README — TAXII Client](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxii-client).
 
 ## Graph + Marking + Store
 
@@ -465,6 +496,7 @@ All twelve pipeline checks are implemented. The conformance harness (`tests/fixt
 | `marking` | TLP and statement marking resolution (`MarkingResolver`, granular selectors). |
 | `store` | In-memory STIX store (`MemoryStore`, `StixQuery`, `ImportReport`). |
 | `store-fs` | Filesystem-backed durable store (`FsStore`; implies `store`). |
+| `taxii` | TAXII 2.1 HTTP client (`TaxiiClient`, `TaxiiEnvelope`, auth, pagination, retry, rustls TLS with PEM and PKCS#12 mTLS). |
 
 ## Related docs
 

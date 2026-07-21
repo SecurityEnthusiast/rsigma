@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/taxii2/"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/taxii+json;version=2.1"
+    },
+    "jsonBody": {
+      "title": "Live Wiremock TAXII",
+      "default": "https://localhost:8443/api1/",
+      "api_roots": ["https://localhost:8443/api1/"]
+    }
+  }
+}

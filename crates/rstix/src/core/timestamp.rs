@@ -141,6 +141,11 @@ impl TaxiiTimestamp {
         parse_utc(s).map(Self)
     }
 
+    /// Shift by `delta` whole seconds (for HTTP `Date` clock skew correction).
+    pub fn adjust_seconds(&self, delta: i64) -> Self {
+        Self(self.0 + time::Duration::seconds(delta))
+    }
+
     /// Format with exactly six fractional digits.
     pub fn to_rfc3339(&self) -> String {
         let date = self.0.date();

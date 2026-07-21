@@ -12,6 +12,7 @@ Six optional Cargo features extend the default `serde` bundle model (each implie
 - `marking` — effective TLP and statement marking resolution (object-level and granular property selectors).
 - `store` — in-memory STIX store with typed queries, SCO fingerprint reporting, and bundle import.
 - `store-fs` — filesystem-backed durable store (`FsStore`; implies `store`).
+- `taxii` — TAXII 2.1 HTTP client: discovery, collections, object CRUD, manifest, status polling, auth providers, pagination, retry, rustls TLS (PEM and PKCS#12 mTLS via `ClientCertificate`; `TaxiiClient`; implies `serde`).
 
 ## Install
 
@@ -60,6 +61,7 @@ This library is part of [rsigma].
 - `graph` (`graph` feature): `StixGraph`, `RelationshipExpander`, … — see [Graph](#graph).
 - `marking` (`marking` feature): `MarkingResolver`, `TlpV2Level`, … — see [Marking](#marking).
 - `store` / `store-fs` (`store` / `store-fs` features): `MemoryStore`, `FsStore`, … — see [Store](#store).
+- `taxii` (`taxii` feature): `TaxiiClient`, envelope POST/GET, auth, pagination — see [TAXII Client](#taxii-client).
 - `serde_impls` (internal, `serde` feature): hand-written serializers for `StixId`, timestamps, and `Confidence`.
 
 ## Feature flags
@@ -71,6 +73,7 @@ This library is part of [rsigma].
 - `marking`: TLP and statement marking resolution (`MarkingResolver`, `TlpV2Level`, granular selectors). Implies `serde`.
 - `store`: in-memory STIX object store (`MemoryStore`, `StixQuery`, `ImportReport`). Implies `serde`.
 - `store-fs`: filesystem-backed durable store (`FsStore`). Implies `store`.
+- `taxii`: TAXII 2.1 HTTP client (`TaxiiClient`, `TaxiiEnvelope`, Bearer/Basic/API-key auth, cursor + header pagination, retry, rustls TLS with PEM and PKCS#12 mTLS). Implies `serde`.
 
 ## Current status
 
@@ -81,6 +84,7 @@ This library is part of [rsigma].
 | **Pattern Engine** (`pattern`) | Level 1–3 parse, type-check, evaluation, canonical printer, Indicator wiring |
 | **Validation Pipeline** (`validate`) | Twelve phases, four profiles, 39 structured diagnostics, conformance corpus + per-code coverage tests |
 | **Graph + Marking + Store** (`graph`, `marking`, `store`, `store-fs`) | Property graph, TLP/granular resolution, in-memory and filesystem store (each feature implies `serde`) |
+| **TAXII Client** (`taxii`) | All seven TAXII 2.1 endpoint groups, auth providers, dual pagination, retry, rustls TLS (PEM + PKCS#12 mTLS), full HTTP error mapping |
 | **Optional corpus** | MITRE ATT&CK via `RSTIX_ATTCK_BUNDLE`; CI uses synthetic 5 000-object streaming tests |
 
 Phase delivery is **complete** for the above surfaces. **STIX 2.1 wire conformance** is [substantially met](#conformance-notes-stix-21) with documented exceptions in vocabulary tables and selected reference rules.
@@ -401,6 +405,195 @@ Acceptance tests: `store::memory::dedup`, `store::memory::fingerprint`, `store::
 | Store search | Full-text index updated on upsert; `StixQuery::text_search` is case-insensitive substring match. | Typed filters compose with text search. |
 | FsStore durability | One JSON file per object id under `objects/`; atomic write via temp file + rename. | `store-fs` feature implies `store`. |
 
+## TAXII Client
+
+The optional **`taxii`** feature provides an OASIS TAXII 2.1 HTTP client for all normative endpoint groups **except Channels (spec §6, RESERVED — not implemented)**. Wire payloads use [`TaxiiEnvelope`](taxii::TaxiiEnvelope) — **not** [`Bundle`](model::Bundle). Never POST a STIX Bundle to `add_objects`.
+
+### Public API surface (`rstix::taxii`)
+
+#### Client
+
+| Type | Role |
+| ---- | ---- |
+| [`TaxiiClient`](taxii::TaxiiClient) | Async HTTP client for all TAXII 2.1 endpoints. |
+| [`TaxiiClientConfig`](taxii::TaxiiClientConfig) | Builder-style configuration (see builder methods below). |
+
+**`TaxiiClient` methods**
+
+| Method | HTTP / behavior |
+| ------ | ---------------- |
+| `new(config)` | Build client with rustls (TLS 1.2 **and** 1.3). |
+| `discover()` | `GET /taxii2/` |
+| `discover_via_srv(domain, config)` | DNS SRV `_taxii2._tcp.{domain}` then discovery |
+| `api_root(url)` | `GET {api_root}/` |
+| `collections(url)` / `collection(url, id)` | List / get collection |
+| `objects` / `objects_stream` | Paginated GET objects |
+| `get_object` / `object_stream` | GET object-by-id (section 5.6) |
+| `add_objects` | POST envelope → 202 + status (auto-polls by default) |
+| `delete_object` | DELETE with version filter |
+| `manifest` / `manifest_stream` | Manifest resource |
+| `object_versions` / `object_versions_stream` | Version list |
+| `get_status` / `poll_status` | Status resource polling |
+
+**`TaxiiClientConfig` builder methods**
+
+| Method | Default | Purpose |
+| ------ | ------- | ------- |
+| `new(base_url)` | — | Server base URL (HTTPS required unless opted out). |
+| `base_url(s)` | — | Override base URL. |
+| `auth(provider)` | none | [`BearerAuth`](taxii::BearerAuth), [`BasicAuth`](taxii::BasicAuth), [`ApiKeyHeader`](taxii::ApiKeyHeader). |
+| `timeout(d)` | 30s | HTTP timeout. |
+| `user_agent(s)` | `rstix/{version}` | User-Agent header. |
+| `retry_policy(p)` | exponential | [`RetryPolicy`](taxii::RetryPolicy). |
+| `preflight(p)` | `Enabled` | [`PreflightPolicy`](taxii::PreflightPolicy) — client-side `can_read`/`can_write` guards. |
+| `post_submit(p)` | `PollUntilComplete` | [`PostSubmitPolicy`](taxii::PostSubmitPolicy) — poll status after POST 202. |
+| `capability(p)` | `Enforce` | [`CapabilityPolicy`](taxii::CapabilityPolicy) — verify API Root `versions` + collection `media_types`. |
+| `server_trust(p)` | `SystemRoots` | [`ServerTrustPolicy`](taxii::ServerTrustPolicy) — PKIX, SPKI pin, or DANE. |
+| `tlsa_cache(c)` | empty | [`TlsaCache`](taxii::TlsaCache) — shared TLSA store for DANE. |
+| `dns_nameserver(addr)` | system resolver | Override DNS for SRV/TLSA lookups (local CoreDNS). |
+| `client_certificate(c)` | none | [`ClientCertificate`](taxii::ClientCertificate) — mTLS (PEM or PKCS#12, rustls). |
+| `allow_insecure_http(b)` | `false` | Allow `http://` (tests/interop only). |
+| `max_response_bytes(n)` | 512 MiB | Reject oversized bodies (`Content-Length` or streaming cap) → [`TaxiiError::ResponseTooLarge`](taxii::TaxiiError::ResponseTooLarge). |
+| `parse_options(o)` | default | STIX parse options for envelope objects. |
+| `status_poll_interval(d)` | 1s | Delay between status polls. |
+| `status_max_polls(n)` | 120 | Max polls before [`TaxiiError::StatusPollTimeout`](taxii::TaxiiError::StatusPollTimeout). |
+
+#### TLS and server trust (section 8.5)
+
+| Type / function | Purpose |
+| --------------- | ------- |
+| [`ServerTrustPolicy`](taxii::ServerTrustPolicy) | `SystemRoots` (default), `PinnedSpki`, `PinnedSpkiOnly`, `Dane`. |
+| [`SpkiPin`](taxii::SpkiPin) | SHA-256 SPKI pin (`from_hex`). |
+| [`TlsaCache`](taxii::TlsaCache) | Thread-safe TLSA record cache for DANE verification. |
+| [`TlsaRecord`](taxii::TlsaRecord) | Parsed TLSA association data (RFC 6698). |
+| [`build_rustls_config`](taxii::build_rustls_config) | Build rustls `ClientConfig` (TLS 1.2+1.3 only; optional `ClientCertificate` for mTLS on the rustls path). |
+| [`resolve_tlsa(host, port)`](taxii::resolve_tlsa) | DNS TLSA lookup via system resolver (`_{port}._tcp.{host}`). |
+| [`resolve_tlsa_with(host, port, nameserver)`](taxii::resolve_tlsa_with) | TLSA lookup via optional custom nameserver. |
+
+TLS version policy: `build_rustls_config` passes `[&TLS12, &TLS13]` to rustls. Negotiation prefers the highest mutually supported version (typically TLS 1.3). TLS 1.0/1.1 are not enabled.
+
+#### Discovery and DNS
+
+| Type / function | Purpose |
+| --------------- | ------- |
+| [`TaxiiDiscovery`](taxii::TaxiiDiscovery) | Discovery resource; `resolved_api_roots`, **`default_api_root()`**. |
+| [`resolve_taxii_srv(domain)`](taxii::resolve_taxii_srv) | SRV lookup (system resolver) with RFC 2782 weighted random; skips `"."` targets. |
+| [`resolve_taxii_srv_with(domain, nameserver)`](taxii::resolve_taxii_srv_with) | SRV lookup via optional custom nameserver (e.g. local CoreDNS). |
+| [`TAXII2_SRV_SERVICE`](taxii::TAXII2_SRV_SERVICE) | Constant `"_taxii2._tcp"`. |
+| [`HttpsPolicy`](taxii::HttpsPolicy) | HTTPS enforcement for URL resolution. |
+
+#### Filters, pagination, wire types
+
+| Type | Purpose |
+| ---- | ------- |
+| [`TaxiiFilter`](taxii::TaxiiFilter) / [`ObjectByIdFilter`](taxii::ObjectByIdFilter) / [`VersionsQueryFilter`](taxii::VersionsQueryFilter) / [`DeleteObjectFilter`](taxii::DeleteObjectFilter) | Query encoding (`match[type]`, `added_after`, `next`, …). |
+| [`VersionFilter`](taxii::VersionFilter) / [`VersionSelector`](taxii::VersionSelector) / [`ObjectVersion`](taxii::ObjectVersion) | Version match encoding. |
+| [`TaxiiEnvelope`](taxii::TaxiiEnvelope) | Wire envelope (not `Bundle`). |
+| [`TaxiiPaged<T>`](taxii::TaxiiPaged) / [`TaxiiPageHeaders`](taxii::TaxiiPageHeaders) | Page body + `X-TAXII-Date-Added-*` headers. |
+| [`TaxiiStatus`](taxii::TaxiiStatus) / [`StatusDetail`](taxii::StatusDetail) / [`StatusState`](taxii::StatusState) | POST 202 / status polling. |
+| [`ManifestRecord`](taxii::ManifestRecord) / [`ManifestResponse`](taxii::ManifestResponse) | Manifest entries. |
+| [`TaxiiApiRoot`](taxii::TaxiiApiRoot) / [`TaxiiCollection`](taxii::TaxiiCollection) / [`VersionsResponse`](taxii::VersionsResponse) | Server metadata resources. |
+
+#### Auth and HTTP errors
+
+| Type | Purpose |
+| ---- | ------- |
+| [`TaxiiAuthProvider`](taxii::TaxiiAuthProvider) | Trait implemented by auth helpers. |
+| [`BearerAuth`](taxii::BearerAuth) / [`BasicAuth`](taxii::BasicAuth) / [`ApiKeyHeader`](taxii::ApiKeyHeader) | Credential injection (`secrecy::SecretString`). |
+| [`AuthChallenge`](taxii::AuthChallenge) / [`parse_www_authenticate`](taxii::parse_www_authenticate) | Parsed `WWW-Authenticate` on HTTP 401. |
+| [`TaxiiError`](taxii::TaxiiError) | Full HTTP + client error mapping (see table below). |
+| [`RetryPolicy`](taxii::RetryPolicy) | Retry/backoff for 5xx/429/network. |
+| [`PreflightPolicy`](taxii::PreflightPolicy) / [`PostSubmitPolicy`](taxii::PostSubmitPolicy) / [`CapabilityPolicy`](taxii::CapabilityPolicy) | Client-side policy enums. |
+
+**Selected [`TaxiiError`](taxii::TaxiiError) variants**
+
+| Variant | When |
+| ------- | ---- |
+| `ReadNotPermitted` / `WriteNotPermitted` / `DeleteNotPermitted` | Preflight guards (`PreflightPolicy::Enabled`). |
+| `MissingContentType` / `InvalidContentType` | Success response media type checks. |
+| `ResponseTooLarge` | Body exceeds `max_response_bytes`. |
+| `MissingPaginationHeaders` | `more=true` without `next` or `X-TAXII-Date-Added-Last`. |
+| `StatusPollTimeout` | Status polling exceeded `status_max_polls`. |
+| `UnsupportedApiRoot` / `UnsupportedCollectionMedia` | Capability checks failed. |
+| `InvalidServerTrust` | Pinning/DANE/TLS config error. |
+| `Unauthorized { challenges, .. }` | HTTP 401 with parsed auth challenges. |
+| `RequestedRangeNotSatisfiable` | HTTP 416 (streams recover automatically). |
+
+### Testing
+
+```bash
+cargo test -p rstix --features taxii --test taxii_client
+```
+
+Optional live TLS / DNS / mTLS harness ([`tests/taxii-live/README.md`](tests/taxii-live/README.md)):
+
+```bash
+./crates/rstix/tests/taxii-live/run-live-tests.sh
+cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture
+```
+
+```rust
+use futures::StreamExt;
+use rstix::taxii::{
+    BearerAuth, CapabilityPolicy, PostSubmitPolicy, ServerTrustPolicy, SpkiPin,
+    TaxiiClient, TaxiiClientConfig, TaxiiEnvelope, TaxiiFilter,
+};
+
+let client = TaxiiClient::new(
+    TaxiiClientConfig::new("https://taxii.example.com")
+        .auth(BearerAuth::new(token))
+        .server_trust(ServerTrustPolicy::PinnedSpki(vec![
+            SpkiPin::from_hex("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")?,
+        ]))
+        .post_submit(PostSubmitPolicy::PollUntilComplete)
+        .capability(CapabilityPolicy::Enforce),
+)?;
+
+let discovery = client.discover().await?;
+let filter = TaxiiFilter::new().object_type("indicator");
+let mut stream = client.objects_stream("https://taxii.example.com/api1/", "col1", filter);
+while let Some(obj) = stream.next().await {
+    let _obj = obj?;
+}
+
+let status = client
+    .add_objects("https://taxii.example.com/api1/", "col1", &TaxiiEnvelope::new(vec![indicator]))
+    .await?; // HTTP 202 → TaxiiStatus
+```
+
+Request invariants (all calls): `Accept: application/taxii+json;version=2.1`, `User-Agent: rstix/{VERSION}` (override via config), trailing slash on endpoint URLs, discovery at fixed `{base}/taxii2/`.
+
+### TAXII Client invariant decisions
+
+| Area | Enforced behavior | Notes |
+| ---- | ----------------- | ----- |
+| Envelope vs Bundle | POST/GET object pages deserialize `TaxiiEnvelope` | Bundle rejected at API boundary |
+| Response media type | Success responses must include TAXII JSON `Content-Type` | `MissingContentType` / `InvalidContentType` |
+| TLS | rustls with **TLS 1.2 and TLS 1.3** (no 1.0/1.1); optional SPKI pinning and DANE | `ServerTrustPolicy`, `build_rustls_config`, `SpkiPin`, `TlsaCache`, `resolve_tlsa` |
+| DANE (`ServerTrustPolicy::Dane`) | Fail-closed (RFC 7671): missing/non-matching TLSA rejects; usage 3 (DANE-EE) and verified usage 2 (DANE-TA) bypass PKIX (no hostname/expiry); usage 0/1 require PKIX after association match | `evaluate_dane`, TLSA prefetch in `TaxiiHttp` |
+| SPKI pin-only | `PinnedSpkiOnly` accepts matching pin without hostname or expiry checks (spec section 8.5.2 pinning) | Documented on `ServerTrustPolicy::PinnedSpkiOnly` |
+| Response size cap | Rejects when `Content-Length` exceeds `max_response_bytes` before read; streaming bodies capped chunk-by-chunk | `read_response_body` |
+| Capability checks | API Root `versions` and collection `media_types` verified before use | `CapabilityPolicy::Enforce` (default); disable for interop |
+| POST status | Poll until complete by default (`PostSubmitPolicy`) | `ReturnInitial` for one-shot 202 |
+| Pagination continuation | `more=true` requires `next` or `X-TAXII-Date-Added-Last` | `MissingPaginationHeaders` |
+| HTTP 416 recovery | Streams reset cursor and restore baseline `added_after` | Pagination streams |
+| Clock skew | `Date` header adjusts `added_after` encoding | Per-response skew cache |
+| HTTP 401 | `WWW-Authenticate` challenges parsed on `Unauthorized` | `AuthChallenge` |
+| SRV selection | RFC 2782 weighted random; `"."` targets skipped | `resolve_taxii_srv` |
+| Discovery default | `TaxiiDiscovery::default_api_root()` helper | Optional `default` field |
+| Status detail version | Optional on wire (spec example omits it) | `StatusDetail.version: Option<String>` |
+| `added_after` precision | Six fractional digits via `TaxiiTimestamp` | Filter encode + header fallback consume |
+| Pagination cursor | `next` is opaque; never constructed client-side | Header fallback when `next` absent |
+| Auth secrets | `SecretString`; redacted `Debug` | Credentials never in `TaxiiError` messages |
+| Pagination headers | `TaxiiPaged<T>` exposes `X-TAXII-Date-Added-First` / `Last` | One-shot GETs and streams |
+| HTTPS | Required by default; `allow_insecure_http(true)` for tests | Spec section 3.3 |
+| DELETE preflight | Requires both `can_read` and `can_write` | Spec section 5.7 |
+| Manifest Accept | TAXII + STIX media types | Spec section 5.3 |
+| DNS SRV discovery | `resolve_taxii_srv` + `TaxiiClient::discover_via_srv` | `_taxii2._tcp` records |
+| mTLS | PEM or PKCS#12 via [`ClientCertificate`](taxii::ClientCertificate), embedded in `build_rustls_config` | Pure-Rust PKCS#12 parse (`p12-keystore`); no OpenSSL TLS backend |
+| Channels | **Not implemented** | Spec §6 RESERVED |
+| Filter validation | `limit > 0`; `all` version rules enforced | Invalid filters rejected before HTTP |
+
 ## Validation Pipeline
 
 The optional **`validate`** feature adds a profile-based validator distinct from advisory [`Bundle::validate()`](model::Bundle::validate) (see **DD-VP-001** below).
@@ -529,6 +722,7 @@ Two layers, consistent across the Data Model + Serialization phase:
 | **Semantic validation** | `tests/validation.rs` + `tests/fixtures/validation/` | `Bundle::validate()` advisory codes (granular selectors, language-content, ISO 3166, region-ov, STIX-W0031, …). |
 | **Validation Pipeline** | `tests/validate_conformance.rs`, `tests/validate_diagnostic_coverage.rs`, `tests/validate_pipeline.rs` + `tests/fixtures/conformance/` | Profile-driven pipeline; one case per `DiagnosticCode::ALL` entry. Requires `validate` feature. |
 | **Graph / Marking / Store** | `tests/graph.rs`, `tests/marking.rs`, `tests/store.rs`, `tests/store_fs.rs` | Optional features; `store-fs` for durable backend. |
+| **TAXII Client** | `tests/taxii_client.rs` (`--features taxii`) | wiremock HTTP integration; auth, pagination, POST/DELETE, errors, retry. |
 | **Streaming / custom types / ATT&CK** | `tests/integration.rs` | `parse_reader`, `TypeRegistry`, optional local ATT&CK corpus via `RSTIX_ATTCK_BUNDLE`. |
 | **Pattern parse + type-check** | `tests/pattern_parse.rs`, `tests/pattern_eval*.rs`, `tests/pattern_indicator.rs`, `tests/pattern_eval_security.rs` + `tests/fixtures/pattern/` | STIX §9.8 examples and manifest-driven SCO field paths; requires `pattern` feature. |
 | **Unit** | `#[cfg(test)]` in `src/` | Invariants, normative constant pins, and parse smoke tests that do not need a dedicated fixture file (or that use `include_str!` for a single inline read). |
