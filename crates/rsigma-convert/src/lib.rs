@@ -24,6 +24,7 @@ pub mod convert;
 pub mod error;
 pub mod ir_convert;
 pub mod output;
+pub mod reverse;
 #[cfg(feature = "sigma-cli")]
 pub mod sigma_cli;
 pub mod state;
@@ -32,4 +33,8 @@ pub use backend::{Backend, TextQueryConfig, TokenType};
 pub use convert::convert_collection;
 pub use error::{ConvertError, Result};
 pub use output::{ConversionOutput, ConversionResult};
+pub use reverse::{
+    Frontend, LUCENE_DIALECT, LuceneFrontend, QueryDialect, QueryExpr, QueryLeaf, ReverseCtx,
+    ReverseOutput, ReverseResult, reverse_collection,
+};
 pub use state::{ConversionState, ConvertResult, DeferredExpression, DeferredTextExpression};
