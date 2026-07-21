@@ -138,7 +138,11 @@ async fn live_mtls_discovery() {
 #[ignore = "live PKCS#12 mTLS: run tests/taxii-live/run-live-tests.sh"]
 async fn live_pkcs12_mtls_discovery() {
     let server_cert = live_cert("server.pem");
-    let p12 = std::fs::read(live_cert("client.p12")).expect("client.p12");
+    let p12 = std::fs::read(live_cert("client.p12")).unwrap_or_else(|err| {
+        panic!(
+            "client.p12: {err} — run ./crates/rstix/tests/taxii-live/generate-certs.sh (fixes permissions)"
+        );
+    });
     let pin = spki_pin_from_cert_pem(&server_cert);
     let client = TaxiiClient::new(
         TaxiiClientConfig::new(LIVE_MTLS_URL)

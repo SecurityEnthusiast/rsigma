@@ -45,4 +45,3 @@ fi
 
 echo "Stack ready. From repo root run:"
 echo "  cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture"
-echo "  cargo test -p rstix --features taxii --test taxii_live -- --ignored --nocapture"

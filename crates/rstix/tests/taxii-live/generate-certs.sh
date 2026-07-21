@@ -66,8 +66,8 @@ write_pkcs12() {
 
 fix_cert_permissions() {
   # Caddy (root in container) and the local Rust test runner must both read these files.
-  chmod 644 "$CA_PEM" "$SERVER_PEM" "$CLIENT_PEM" "$CLIENT_KEY" 2>/dev/null || true
-  chmod 600 "$CA_KEY" "$SERVER_KEY" "$CLIENT_P12" 2>/dev/null || true
+  chmod 644 "$CA_PEM" "$SERVER_PEM" "$CLIENT_PEM" "$CLIENT_KEY" "$CLIENT_P12" 2>/dev/null || true
+  chmod 600 "$CA_KEY" "$SERVER_KEY" 2>/dev/null || true
 }
 
 if [[ -f "$CA_PEM" ]]; then
