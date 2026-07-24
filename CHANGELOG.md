@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### CLI: complete `--output-format` coverage
+### CLI: complete `--output-format` coverage (#389)
 
 - Structured report commands (`backend targets`/`formats`, `rule validate`, `pipeline resolve`/`diff`, `config validate`/`show`/`path`, and the existing eval/lint/fields/report family) honor `json`/`ndjson`/`table`/`csv`/`tsv` through a shared renderer backed by the `csv` crate.
 - `backend convert` emits one NDJSON query record per line for `--output-format ndjson`; table/csv/tsv warn and keep raw query text.
