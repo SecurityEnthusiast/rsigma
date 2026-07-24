@@ -498,8 +498,14 @@ impl DelimitedWriter {
 
 impl Drop for DelimitedWriter {
     fn drop(&mut self) {
-        // Best-effort flush; `finish` already reports hard failures.
+        // Mirror `finish` without exiting: emit a header for empty reports,
+        // then flush. Callers that need hard failure semantics should call
+        // `finish` explicitly.
         if let Some(mut writer) = self.inner.take() {
+            if !self.wrote_header {
+                let _ = writer.write_record(self.headers.iter().copied());
+                self.wrote_header = true;
+            }
             let _ = writer.flush();
         }
     }
