@@ -249,6 +249,25 @@ impl OutputCtx {
             _ => false,
         }
     }
+
+    /// Emit a single stderr warning when an explicit `--output-format` is not
+    /// supported by `command`. Suppressed by `--quiet`.
+    pub(crate) fn warn_unsupported(&self, command: &str, fallback: &str) {
+        if self.explicit_format && self.show_progress() {
+            eprintln!(
+                "warning: `--output-format {}` is not supported by `{command}`; falling back to {fallback}.",
+                self.format.as_str(),
+            );
+        }
+    }
+
+    /// Emit a single stderr warning that a global selector was ignored for
+    /// `command` for `reason`. Suppressed by `--quiet`.
+    pub(crate) fn warn_ignored(&self, command: &str, reason: &str) {
+        if self.show_progress() {
+            eprintln!("warning: `{command}` ignored `--output-format`: {reason}");
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +307,52 @@ pub(crate) fn render_json<T: Serialize>(value: &T, pretty: bool) {
 /// [`render_json`].
 pub(crate) fn render_ndjson<T: Serialize>(value: &T) {
     render_json(value, false);
+}
+
+/// Render a structured report for every supported wire format.
+///
+/// `envelope` is used for `json` (one document). Each row in `rows` is used
+/// for `ndjson` (one logical record per line) and for the shared
+/// table/csv/tsv projection.
+pub(crate) fn render_report<T, R>(ctx: &OutputCtx, envelope: &T, rows: &[R])
+where
+    T: Serialize,
+    R: Serialize + Tabular,
+{
+    match ctx.format {
+        OutputFormat::Json => render_json(envelope, ctx.pretty_json()),
+        OutputFormat::Ndjson => {
+            for row in rows {
+                render_ndjson(row);
+            }
+        }
+        OutputFormat::Table => render_table(rows),
+        OutputFormat::Csv => render_delimited(rows, ','),
+        OutputFormat::Tsv => render_delimited(rows, '\t'),
+    }
+}
+
+/// Render a value that only has a meaningful JSON shape.
+///
+/// Honors `json` / `ndjson`. For table/csv/tsv, warns once and falls back to
+/// JSON so the operator still gets machine-readable data.
+pub(crate) fn render_json_only<T: Serialize>(command: &str, ctx: &OutputCtx, value: &T) {
+    match ctx.format {
+        OutputFormat::Ndjson => render_ndjson(value),
+        OutputFormat::Json => render_json(value, ctx.pretty_json()),
+        OutputFormat::Table | OutputFormat::Csv | OutputFormat::Tsv => {
+            ctx.warn_unsupported(command, "json");
+            render_json(value, ctx.pretty_json() || ctx.stdout_is_tty);
+        }
+    }
+}
+
+fn render_delimited<T: Tabular>(rows: &[T], sep: char) {
+    let mut writer = DelimitedWriter::new(sep, T::headers());
+    for row in rows {
+        writer.push(&row.row());
+    }
+    writer.finish();
 }
 
 /// Render a slice of `Tabular` rows as a width-aligned text table on stdout.
@@ -370,75 +435,63 @@ where
 ///
 /// Created once per command via [`DelimitedWriter::new`]. Calling
 /// [`DelimitedWriter::push`] streams a row immediately, so the format scales
-/// to large match counts without buffering.
+/// to large match counts without buffering. Backed by the `csv` crate with an
+/// explicit LF terminator so CLI output stays platform-stable.
 pub(crate) struct DelimitedWriter {
-    sep: char,
+    inner: Option<csv::Writer<io::Stdout>>,
     headers: &'static [&'static str],
     wrote_header: bool,
 }
 
 impl DelimitedWriter {
     pub(crate) fn new(sep: char, headers: &'static [&'static str]) -> Self {
+        let writer = csv::WriterBuilder::new()
+            .delimiter(sep as u8)
+            .terminator(csv::Terminator::Any(b'\n'))
+            .from_writer(io::stdout());
         Self {
-            sep,
+            inner: Some(writer),
             headers,
             wrote_header: false,
         }
     }
 
     /// Write the header row (if it has not been written) and one data row.
-    /// Cells are escaped according to RFC 4180-style rules: a field that
-    /// contains the separator, a double-quote, a CR, or an LF is wrapped in
-    /// double quotes, and embedded double-quotes are doubled.
     pub(crate) fn push(&mut self, cells: &[String]) {
-        let stdout = io::stdout();
-        let mut out = stdout.lock();
+        let Some(writer) = self.inner.as_mut() else {
+            return;
+        };
         if !self.wrote_header {
-            let _ = write_delimited_row(&mut out, self.headers.iter().copied(), self.sep);
+            if let Err(e) = writer.write_record(self.headers.iter().copied()) {
+                eprintln!("CSV write error: {e}");
+                std::process::exit(crate::exit_code::CONFIG_ERROR);
+            }
             self.wrote_header = true;
         }
-        let _ = write_delimited_row(&mut out, cells.iter().map(String::as_str), self.sep);
+        if let Err(e) = writer.write_record(cells.iter().map(String::as_str)) {
+            eprintln!("CSV write error: {e}");
+            std::process::exit(crate::exit_code::CONFIG_ERROR);
+        }
+    }
+
+    /// Flush buffered delimited output. Called automatically on drop.
+    pub(crate) fn finish(&mut self) {
+        if let Some(mut writer) = self.inner.take()
+            && let Err(e) = writer.flush()
+        {
+            eprintln!("CSV flush error: {e}");
+            std::process::exit(crate::exit_code::CONFIG_ERROR);
+        }
     }
 }
 
-fn write_delimited_row<'a, I, W>(out: &mut W, cells: I, sep: char) -> io::Result<()>
-where
-    I: Iterator<Item = &'a str>,
-    W: Write,
-{
-    let mut first = true;
-    for cell in cells {
-        if !first {
-            write!(out, "{sep}")?;
+impl Drop for DelimitedWriter {
+    fn drop(&mut self) {
+        // Best-effort flush; `finish` already reports hard failures.
+        if let Some(mut writer) = self.inner.take() {
+            let _ = writer.flush();
         }
-        first = false;
-        write!(out, "{}", escape_delimited(cell, sep))?;
     }
-    writeln!(out)
-}
-
-/// Quote `cell` for `csv`/`tsv` output when it carries the separator, a
-/// double-quote, or a CR/LF. Embedded double-quotes are doubled.
-///
-/// Returned as `String` (not `Cow`) for clarity at the cost of a single
-/// allocation per cell; this is well below the cost of writing the row.
-pub(crate) fn escape_delimited(cell: &str, sep: char) -> String {
-    let needs_quote = cell
-        .chars()
-        .any(|c| c == sep || c == '"' || c == '\n' || c == '\r');
-    if !needs_quote {
-        return cell.to_string();
-    }
-    let mut buf = String::with_capacity(cell.len() + 2);
-    buf.push('"');
-    for c in cell.chars() {
-        if c == '"' {
-            buf.push('"');
-        }
-        buf.push(c);
-    }
-    buf.push('"');
-    buf
 }
 
 // ---------------------------------------------------------------------------
@@ -594,19 +647,71 @@ mod tests {
         assert!(ctx.show_progress());
     }
 
+    fn write_delimited_to_string(sep: u8, headers: &[&str], rows: &[&[&str]]) -> String {
+        let mut buf = Vec::new();
+        {
+            let mut writer = csv::WriterBuilder::new()
+                .delimiter(sep)
+                .terminator(csv::Terminator::Any(b'\n'))
+                .from_writer(&mut buf);
+            writer.write_record(headers).unwrap();
+            for row in rows {
+                writer.write_record(*row).unwrap();
+            }
+            writer.flush().unwrap();
+        }
+        String::from_utf8(buf).unwrap()
+    }
+
+    fn read_delimited(sep: u8, input: &str) -> (Vec<String>, Vec<Vec<String>>) {
+        let mut reader = csv::ReaderBuilder::new()
+            .delimiter(sep)
+            .from_reader(input.as_bytes());
+        let headers = reader
+            .headers()
+            .unwrap()
+            .iter()
+            .map(str::to_string)
+            .collect();
+        let rows = reader
+            .records()
+            .map(|r| r.unwrap().iter().map(str::to_string).collect::<Vec<_>>())
+            .collect();
+        (headers, rows)
+    }
+
     #[test]
-    fn escape_delimited_quotes_only_when_needed() {
-        assert_eq!(escape_delimited("hello", ','), "hello");
-        assert_eq!(escape_delimited("a,b", ','), "\"a,b\"");
-        // Tabs are not quoted by the comma escaper but are quoted by the tab
-        // escaper.
-        assert_eq!(escape_delimited("a\tb", ','), "a\tb");
-        assert_eq!(escape_delimited("a\tb", '\t'), "\"a\tb\"");
-        assert_eq!(
-            escape_delimited("she said \"hi\"", ','),
-            "\"she said \"\"hi\"\"\""
+    fn csv_round_trip_quotes_separators_and_newlines() {
+        let raw = write_delimited_to_string(
+            b',',
+            &["NAME", "NOTE"],
+            &[
+                &["hello", "plain"],
+                &["a,b", "has comma"],
+                &["she said \"hi\"", "quotes"],
+                &["line1\nline2", "newline"],
+                &["", "empty"],
+                &["café", "unicode"],
+            ],
         );
-        assert_eq!(escape_delimited("line1\nline2", ','), "\"line1\nline2\"");
+        let (headers, rows) = read_delimited(b',', &raw);
+        assert_eq!(headers, vec!["NAME", "NOTE"]);
+        assert_eq!(rows[0], vec!["hello", "plain"]);
+        assert_eq!(rows[1], vec!["a,b", "has comma"]);
+        assert_eq!(rows[2], vec!["she said \"hi\"", "quotes"]);
+        assert_eq!(rows[3], vec!["line1\nline2", "newline"]);
+        assert_eq!(rows[4], vec!["", "empty"]);
+        assert_eq!(rows[5], vec!["café", "unicode"]);
+    }
+
+    #[test]
+    fn tsv_round_trip_quotes_tabs() {
+        let raw =
+            write_delimited_to_string(b'\t', &["A", "B"], &[&["a\tb", "plain"], &["x", "y"]]);
+        let (headers, rows) = read_delimited(b'\t', &raw);
+        assert_eq!(headers, vec!["A", "B"]);
+        assert_eq!(rows[0], vec!["a\tb", "plain"]);
+        assert_eq!(rows[1], vec!["x", "y"]);
     }
 
     struct Row {
