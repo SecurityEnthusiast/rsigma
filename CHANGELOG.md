@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix: TAXII collection ingest (`taxii-store` feature)
+### rstix: TAXII collection ingest (`taxii-store` feature) (#387)
 
 - **`taxii-store`** — meta-feature (`taxii` + `store`).
 - **`ingest_collection`** / **`ingest_collection_with_bundle_id`** — paginated `objects_stream` → synthetic `Bundle` → `StixStore::import_bundle`; returns `ImportReport`.
