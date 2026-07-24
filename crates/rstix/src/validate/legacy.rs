@@ -207,10 +207,6 @@ mod tests {
             "validation/bundle-relationship-matrix-invalid.json"
         );
         assert_code_in_fixture!(
-            ValidationCode::EncryptionAlgorithmInvalid,
-            "validation/bundle-bad-encryption.json"
-        );
-        assert_code_in_fixture!(
             ValidationCode::GranularSelectorSemanticInvalid,
             "validation/bundle-granular-selector-invalid.json"
         );

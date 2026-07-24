@@ -2,6 +2,7 @@
 
 use crate::model::ModelError;
 use crate::model::common::ExtensionMap;
+use crate::model::validate::validate_hash_map;
 
 use std::collections::BTreeMap;
 
@@ -56,6 +57,7 @@ impl NtfsExt {
             if ads.name.is_empty() {
                 return Err(ModelError::NtfsExtAdsNameEmpty);
             }
+            validate_hash_map(&ads.hashes)?;
         }
 
         Ok(())

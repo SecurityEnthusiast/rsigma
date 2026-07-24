@@ -703,7 +703,7 @@ Recorded engineering choices for wire parsing and SCO value validation. Summarie
 
 **Rationale.** The spec marks these as MUST on the wire; accepting invalid values at parse and failing later breaks the “invalid JSON never becomes a typed object” contract for the most common SCO format mistakes.
 
-**Consequences.** `--no-default-features` builds omit format-validator deps and skip strict checks until `serde` is enabled. URL validation restricts schemes to `http`, `https`, and `ftp` (subset of RFC 3986).
+**Consequences.** `--no-default-features` builds omit format-validator deps and skip strict checks until `serde` is enabled. URL validation uses full RFC 3986 parse via the `url` crate (any valid absolute URL), not a scheme whitelist.
 
 ### Wire-format validation (DD-DM-001)
 
@@ -713,7 +713,7 @@ STIX **MUST** rules for `domain-name.value` (RFC 1034 / RFC 5890), `email-addr.v
 | ----- | -------------- | ------------------------ |
 | `domain-name.value` | RFC 1034 / 5890 | IDNA (UTS #46) + label rules |
 | `email-addr.value` | RFC 5322 | RFC 5322 addr-spec (`email_address`) |
-| `url.value` | RFC 3986 | URL parse (`http`, `https`, `ftp` schemes) |
+| `url.value` | RFC 3986 | RFC 3986 URL parse (`url` crate) |
 
 The Validation Pipeline re-runs the same checks on typed objects during the schema phase.
 
@@ -849,8 +849,8 @@ rstix splits STIX rule enforcement across three surfaces. Use this table to choo
 | Tier | API | Severity | Examples |
 | ---- | --- | -------- | -------- |
 | **T0 — parse** | `Bundle::parse`, `parse_reader`, leaf `Deserialize` | Hard error (`ParseError` / `ModelError`) | Type discriminants, bundle container rules, in-bundle ref existence, ref kind checks (where implemented), DD-DM-001 domain/email/url format, SCO type-specific MUST in `validate()` at deserialize, `_enc` IANA charset + pairing |
-| **T1 — advisory** | `Bundle::validate()` | Warnings in `ValidationReport` (never rejects bundle) | Relationship endpoint matrix, CAPEC/CVE external refs, encryption algorithm, TLP v1 encoding (STIX-W0031), granular selector semantics, language-content mirroring, location ISO 3166 / region-ov, SCO deterministic id |
-| **T2 — pipeline** | `Validator` profiles (`validate` feature) | Structured `STIX-E/W/I/H` diagnostics; profile + leniency control pass/fail | All twelve validation phases, conformance corpus, per-code diagnostic coverage |
+| **T1 — advisory** | `Bundle::validate()` | Warnings in `ValidationReport` (never rejects bundle) | CAPEC/CVE external refs, TLP v1 encoding (STIX-W0031), granular selector semantics, language-content mirroring, location ISO 3166, SCO deterministic id |
+| **T2 — pipeline** | `Validator` profiles (`validate` feature) | Structured `STIX-E/W/I/H` diagnostics; profile + leniency control pass/fail | All twelve validation phases; open-vocabulary extensions (`STIX-I0001`) and relationship matrix (`STIX-I0002`) fail under `interop_strict` (Warning severity) |
 
 There is no `strict` parse flag. Callers that need warnings to fail ingestion use **`Validator`** with `Leniency::Zero` (`interop_strict` profile) or inspect `Bundle::validate()` warnings explicitly.
 
@@ -858,26 +858,11 @@ There is no `strict` parse flag. Callers that need warnings to fail ingestion us
 
 ### Conformance notes (STIX 2.1)
 
-The tables above describe **implemented** behavior. The following rows document places where rstix **does not** enforce a spec MUST at T0, or where vocabulary tables differ from the normative spec. See also [Model invariant decisions](#model-invariant-decisions-modelcommon).
-
-| Topic | Spec rule | rstix behavior today |
-| ----- | --------- | -------------------- |
-| Report / Grouping / Note / Opinion `object_refs` target types | Any STIX Object | Ref kind limited to **SDO or SCO** at bundle parse (`validate_stix_or_sco_ref`). SRO and meta refs are rejected unless `allow_custom` is enabled and the target is a **custom** object present in the bundle. |
-| Report / Grouping / Note / Opinion empty `object_refs` | Non-empty lists required for report and grouping | **Empty lists parse successfully** (no `ModelError`). |
-| SDO `name` / grouping `context` non-empty | Several SDO types require non-empty `name`; grouping requires non-empty `context` | **Empty strings parse successfully** for these fields. |
-| Malware Analysis time ordering | When both timestamps are set, `analysis_ended` MUST NOT precede `analysis_started` | Documented on the type; **not checked** in `MalwareAnalysis::validate()`. |
-| Language-content `object_ref` | Reference to a translatable object | **SDO-only** ref kind at bundle parse; target must exist in the bundle. SCO/SRO/meta targets are rejected. |
-| IPv4 / IPv6 / MAC address `value` | Well-formed address or MAC | **Non-empty string only**; address or MAC syntax is not validated at parse. |
-| URL scheme (`url.value`) | RFC 3986 | **`http`, `https`, `ftp` only** at parse (DD-DM-001 documented subset). |
-| `encryption-algorithm-enum` | STIX closed vocabulary on artifact | Advisory check via `Bundle::validate()` / Validation Pipeline uses `ENCRYPTION_ALGORITHM_ENUM` in `vocab/closed.rs`, which **does not match** the STIX 2.1 normative value set. |
-| `hash-algorithm-ov` | Open vocabulary in STIX 2.1 | `HASH_ALGORITHM_ENUM` exists in `vocab/closed.rs` for reference; **hash map keys are not validated** against it at parse. |
-| Open vocabulary tables | Normative STIX value sets | Tables in `vocab/open.rs` are **curated subsets** used by the Validation Pipeline open-vocabulary phase; unknown values on the wire are not rejected at T0. |
-
-Negative and rich fixtures for enforced rules live under `tests/fixtures/spec/`, `tests/fixtures/validation/`, and `tests/fixtures/conformance/`. Some wire-negative fixtures under `tests/fixtures/spec/` (for example empty SDO names and empty `object_refs`) document permissive parse behavior and are not wired to reject tests.
+The tables above describe **implemented** behavior. Negative and rich fixtures for enforced rules live under `tests/fixtures/spec/`, `tests/fixtures/validation/`, and `tests/fixtures/conformance/`. Wire-negative fixtures under `tests/fixtures/spec/` (empty SDO names, empty `object_refs`, invalid address/hash/url formats, and similar) are wired to `assert_fixture_rejects` in `tests/spec.rs` and fail under `Validator::interop_strict()`.
 
 ### Model invariant decisions (`model::common`)
 
-The **Data Model + Serialization** phase validates STIX invariants at deserialize time (and via `new` / `validate` for programmatic construction). MUST rules enforced at T0 are listed here; SHOULD-level and partial enforcement is in [Validation tiers](#validation-tiers) and [Conformance notes](#conformance-notes-stix-21).
+The **Data Model + Serialization** phase validates STIX invariants at deserialize time (and via `new` / `validate` for programmatic construction). MUST rules enforced at T0 are listed here; SHOULD-level checks are in [Validation tiers](#validation-tiers).
 
 | Area | Enforced behavior | Tier |
 | ---- | ----------------- | ---- |
@@ -889,16 +874,19 @@ The **Data Model + Serialization** phase validates STIX invariants at deserializ
 | `Sighting.summary` | Wire bool or string; stored as `Option<String>` (`true`/`false` normalized); serializes bool for `"true"`/`"false"`. | T0 |
 | SDO/SRO common props | `SdoSroCommonProps::validate`: id prefix matches `type`, `modified >= created`, marking refs not self, ref kind checks for `created_by_ref` / marking refs, `ExtensionMap::validate`. | T0 |
 | Bundle container | Rejects bundle `spec_version`; requires bundle id prefix; `validate_refs` checks existence + ref kinds; serialize merges `x_*` from `extra_properties`. | T0 |
-| Semantic validation (`Bundle::validate()`) | Returns `ValidationReport` with SHOULD-level warnings (STIX-W0031, SCO deterministic id, granular selector semantics, language-content field/type/list checks, ISO 3166 country, region open vocab, CAPEC/CVE, relationship matrix, encryption algorithm). | T1 |
-| SDO type-specific MUST (partial list) | Observed-data XOR + ordering + count range; indicator time window; malware family name when `is_family: true`; malware-analysis `result` or `analysis_sco_refs` + SCO kind on `analysis_sco_refs`; location geo rules; kill-chain phase empties; `OpinionValue` closed vocab. See [Conformance notes](#conformance-notes-stix-21) for SDO rules **not** enforced at T0. | T0 |
-| Report / Grouping / Note / Opinion `object_refs` | Each ref must exist in bundle; ref kind limited to SDO or SCO (custom targets when `allow_custom`). Empty lists accepted — see [Conformance notes](#conformance-notes-stix-21). | T0 partial |
+| Semantic validation (`Bundle::validate()`) | Returns `ValidationReport` with SHOULD-level warnings (STIX-W0031, SCO deterministic id, granular selector semantics, language-content field/type/list checks, ISO 3166 country, region open vocab, CAPEC/CVE, relationship matrix). | T1 |
+| SDO type-specific MUST (partial list) | Observed-data XOR + ordering + count range; indicator time window; malware family name when `is_family: true`; malware-analysis `result` or `analysis_sco_refs` + SCO kind on `analysis_sco_refs` + time ordering; location geo rules; kill-chain phase empties; `OpinionValue` closed vocab; non-empty SDO `name`; non-empty grouping `context`; non-empty report/grouping `object_refs`. | T0 |
+| Report / Grouping / Note / Opinion `object_refs` | Each ref must exist in bundle; ref kind is any STIX Object (`validate_stix_object_ref`); all four types require non-empty lists. | T0 |
+| Grouping `context` / malware-analysis `result` | Non-empty grouping `context` and optional `result` must be valid open-vocabulary values (`grouping-context-ov`, `malware-result-ov`) or `x_` extensions. | T0 |
+| Hash maps on artifact/file/external-reference/x509/PE/NTFS | §2.7 key syntax; keys must be `hash-algorithm-ov` entries or `x_` extensions; known algorithm values match §10.7 formats. | T0 |
+| `windows-pebinary-ext.pe_type` | Must be in `windows-pebinary-type-ov` (`dll`, `exe`, `sys`) or valid `x_` extension. | T0 |
 | `Relationship` per-type matrix | Advisory via `Bundle::validate()` (`ValidationCode::RelationshipEndpointMatrixInvalid`). | T1 |
-| `language-content` | `object_modified` is `Option<StixTimestamp>`; `lang` rejected on common props; bundle requires SDO `object_ref` to exist; `object_modified` mismatch and translation type/list-length/object-shape mirroring are warnings via `Bundle::validate()`; unknown target fields are ignored (§7.1.1). | T0 + T1 |
+| `language-content` | `object_modified` is `Option<StixTimestamp>`; `lang` rejected on common props; bundle requires STIX Object `object_ref` to exist; `object_modified` mismatch and translation type/list-length/object-shape mirroring are warnings via `Bundle::validate()`; unknown target fields are ignored (§7.1.1). | T0 + T1 |
 | SCO `*_enc` (§3.1 / §3.9.1) | Spec-defined: `file.name_enc`, `directory.path_enc` only; additional `_enc` keys in `common.extra` validated with the same IANA charset and pairing rules. | T0 |
 | `email-message` headers (§6.6) | RFC 2047 encoded-words decoded on ingest for `subject`, `message_id`, `body`, `received_lines`, and `additional_header_fields`. | T0 |
 | `marking-definition` | `spec_version` required; legacy `definition_type` + `definition` required when `extensions` empty. | T0 |
 | `extension-definition` | Rejects `extensions`, `confidence`, and `lang` on common props. | T0 |
-| SCO ref/format checks | `file.contains_refs` SCO kind; domain-name/email-addr/url spec MUST format validation at parse (DD-DM-001); observed-data `object_refs` SCO or SRO kind. Artifact `encryption_algorithm` closed vocab is a T1 warning via `Bundle::validate()`. | T0 + T1 |
+| SCO ref/format checks | `file.contains_refs` SCO kind; domain-name/email-addr/url RFC MUST format validation at parse; ipv4/ipv6/mac address format at parse; hash map key syntax and known-algorithm value formats (§2.7 / §10.7); observed-data `object_refs` SCO or SRO kind; artifact `encryption_algorithm` closed vocab at parse. | T0 |
 | Standalone unknown top-level keys | Unmodeled keys captured in `common.extra` (SDO/SRO/SCO) or `MarkingDefinition.extra` at leaf deserialize; strict round-trip preserves them. | T0 |
 | Extension map | Predefined extension keys (`*-ext`, TLP definition id) must not carry `extension_type`; toplevel-property-extension entries peeled before typed deserialize and hoisted keys stored in `extra_properties` (with unmodeled top-level keys captured on reparse via `common.extra` drain). | T0 |
 | `Sighting.count` | `0..=999_999_999` when present. | T0 |

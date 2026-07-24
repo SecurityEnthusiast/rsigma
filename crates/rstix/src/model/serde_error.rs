@@ -111,6 +111,24 @@ enum ModelErrorWire {
     ObservedDataMissingScoContent,
     ObservedDataEmptyObjects,
     ObservedDataEmptyObjectRefs,
+    RequiredStringEmpty {
+        property: String,
+    },
+    SdoEmptyObjectRefs,
+    MalwareAnalysisEndedBeforeStarted,
+    Ipv4AddrFormatInvalid,
+    Ipv6AddrFormatInvalid,
+    MacAddrFormatInvalid,
+    HashAlgorithmKeyInvalid {
+        key: String,
+    },
+    HashAlgorithmValueInvalid {
+        algorithm: String,
+    },
+    OpenVocabValueInvalid {
+        property: String,
+        value: String,
+    },
     ObservedDataLastObservedBeforeFirstObserved,
     ObservedDataNumberObservedOutOfRange,
     OpinionValueInvalid,
@@ -294,6 +312,28 @@ impl From<&ModelError> for ModelErrorWire {
             ModelError::ObservedDataMissingScoContent => Self::ObservedDataMissingScoContent,
             ModelError::ObservedDataEmptyObjects => Self::ObservedDataEmptyObjects,
             ModelError::ObservedDataEmptyObjectRefs => Self::ObservedDataEmptyObjectRefs,
+            ModelError::RequiredStringEmpty { property } => Self::RequiredStringEmpty {
+                property: (*property).to_owned(),
+            },
+            ModelError::SdoEmptyObjectRefs => Self::SdoEmptyObjectRefs,
+            ModelError::MalwareAnalysisEndedBeforeStarted => {
+                Self::MalwareAnalysisEndedBeforeStarted
+            }
+            ModelError::Ipv4AddrFormatInvalid => Self::Ipv4AddrFormatInvalid,
+            ModelError::Ipv6AddrFormatInvalid => Self::Ipv6AddrFormatInvalid,
+            ModelError::MacAddrFormatInvalid => Self::MacAddrFormatInvalid,
+            ModelError::HashAlgorithmKeyInvalid { key } => {
+                Self::HashAlgorithmKeyInvalid { key: key.clone() }
+            }
+            ModelError::HashAlgorithmValueInvalid { algorithm } => {
+                Self::HashAlgorithmValueInvalid {
+                    algorithm: algorithm.clone(),
+                }
+            }
+            ModelError::OpenVocabValueInvalid { property, value } => Self::OpenVocabValueInvalid {
+                property: (*property).to_owned(),
+                value: value.clone(),
+            },
             ModelError::ObservedDataLastObservedBeforeFirstObserved => {
                 Self::ObservedDataLastObservedBeforeFirstObserved
             }
@@ -518,6 +558,28 @@ impl From<ModelErrorWire> for ModelError {
             ModelErrorWire::ObservedDataMissingScoContent => Self::ObservedDataMissingScoContent,
             ModelErrorWire::ObservedDataEmptyObjects => Self::ObservedDataEmptyObjects,
             ModelErrorWire::ObservedDataEmptyObjectRefs => Self::ObservedDataEmptyObjectRefs,
+            ModelErrorWire::RequiredStringEmpty { property } => Self::RequiredStringEmpty {
+                property: Box::leak(property.into_boxed_str()),
+            },
+            ModelErrorWire::SdoEmptyObjectRefs => Self::SdoEmptyObjectRefs,
+            ModelErrorWire::MalwareAnalysisEndedBeforeStarted => {
+                Self::MalwareAnalysisEndedBeforeStarted
+            }
+            ModelErrorWire::Ipv4AddrFormatInvalid => Self::Ipv4AddrFormatInvalid,
+            ModelErrorWire::Ipv6AddrFormatInvalid => Self::Ipv6AddrFormatInvalid,
+            ModelErrorWire::MacAddrFormatInvalid => Self::MacAddrFormatInvalid,
+            ModelErrorWire::HashAlgorithmKeyInvalid { key } => {
+                Self::HashAlgorithmKeyInvalid { key }
+            }
+            ModelErrorWire::HashAlgorithmValueInvalid { algorithm } => {
+                Self::HashAlgorithmValueInvalid { algorithm }
+            }
+            ModelErrorWire::OpenVocabValueInvalid { property, value } => {
+                Self::OpenVocabValueInvalid {
+                    property: Box::leak(property.into_boxed_str()),
+                    value,
+                }
+            }
             ModelErrorWire::ObservedDataLastObservedBeforeFirstObserved => {
                 Self::ObservedDataLastObservedBeforeFirstObserved
             }

@@ -4,7 +4,7 @@ use crate::core::StixId;
 use crate::model::sro::{Relationship, Sighting, SroObject};
 use crate::model::validate::{
     validate_identity_ref, validate_marking_definition_ref, validate_sco_or_sro_ref,
-    validate_sco_ref, validate_sdo_ref, validate_stix_or_sco_ref,
+    validate_sco_ref, validate_sdo_ref, validate_stix_object_ref, validate_stix_or_sco_ref,
 };
 use crate::model::{Bundle, ModelError, StixObject};
 
@@ -99,12 +99,12 @@ fn validate_object_reference_kinds(object: &StixObject) -> Result<(), ModelError
                         validate_sco_or_sro_ref(object_ref)?;
                     }
                 }
-                SdoObject::Grouping(Grouping { object_refs, .. })
+                SdoObject::Report(Report { object_refs, .. })
+                | SdoObject::Grouping(Grouping { object_refs, .. })
                 | SdoObject::Note(Note { object_refs, .. })
-                | SdoObject::Opinion(Opinion { object_refs, .. })
-                | SdoObject::Report(Report { object_refs, .. }) => {
+                | SdoObject::Opinion(Opinion { object_refs, .. }) => {
                     for object_ref in object_refs {
-                        validate_stix_or_sco_ref(object_ref)?;
+                        validate_stix_object_ref(object_ref)?;
                     }
                 }
                 _ => {}
@@ -152,7 +152,7 @@ fn validate_object_reference_kinds(object: &StixObject) -> Result<(), ModelError
                 if let Some(created_by) = &common.created_by_ref {
                     validate_identity_ref(created_by.as_stix_id())?;
                 }
-                validate_sdo_ref(object_ref)?;
+                validate_stix_object_ref(object_ref)?;
             }
         },
         StixObject::Sco(_) | StixObject::Custom(_) => {}

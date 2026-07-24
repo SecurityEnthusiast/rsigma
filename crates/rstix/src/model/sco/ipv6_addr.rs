@@ -4,6 +4,7 @@ use crate::core::{AutonomousSystemId, MacAddrId};
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::ScoCommonProps;
+use crate::model::validate::validate_ipv6_addr_format;
 
 /// A STIX IPv6 address cyber-observable.
 ///
@@ -62,10 +63,7 @@ impl Ipv6Addr {
 
     /// Rejects empty `value`.
     pub fn validate(&self) -> Result<(), ModelError> {
-        if self.value.is_empty() {
-            return Err(ModelError::Ipv6AddrValueEmpty);
-        }
-        Ok(())
+        validate_ipv6_addr_format(&self.value)
     }
 }
 

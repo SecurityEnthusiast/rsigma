@@ -4,6 +4,14 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix: STIX 2.1 spec conformance closure (P0)
+
+- **T0 MUST enforcement** — non-empty SDO `name` and grouping `context`; non-empty report/grouping `object_refs`; `malware-analysis` time ordering; IPv4/IPv6/MAC address format; RFC 3986 URL validation; hash map key syntax and known-algorithm value formats; artifact `encryption_algorithm` closed vocabulary aligned with STIX 2.1 §10.4.
+- **`object_refs` / `language-content` refs** — bundle ref kind checks accept any STIX Object (SDO, SCO, SRO, Meta), not only SDO/SCO.
+- **Open vocabulary tables** — `vocab/open.rs` regenerated from normative STIX 2.1 §10 value tables.
+- **Tests** — negative fixtures wired in `tests/spec.rs`; encryption moved from T1 warning to T0 parse error; pattern eval fixtures updated for valid hash values.
+- **Follow-up closure** — `malware-result-ov` and `windows-pebinary-type-ov` at T0; hash keys restricted to `hash-algorithm-ov` or `x_` extensions; grouping `context` open-vocab at T0; note/opinion non-empty `object_refs`; `STIX-I0001` / `STIX-I0002` promoted to Warning (fail `interop_strict`).
+
 ### rstix: TAXII collection ingest (`taxii-store` feature) (#387)
 
 - **`taxii-store`** — meta-feature (`taxii` + `store`).

@@ -53,15 +53,11 @@ fn relationship_matrix_invalid_parses_and_warns() {
 }
 
 #[test]
-fn bad_encryption_algorithm_parses_and_warns() {
-    let bundle =
-        parse_bundle(&load_fixture("validation/bundle-bad-encryption.json")).expect("parse");
-    let report = bundle.validate();
+fn bad_encryption_algorithm_rejects_at_parse() {
+    let err = parse_bundle(&load_fixture("validation/bundle-bad-encryption.json")).unwrap_err();
     assert!(
-        report
-            .warnings_with_code(ValidationCode::EncryptionAlgorithmInvalid)
-            .next()
-            .is_some()
+        err.to_string().contains("encryption"),
+        "expected encryption parse error, got: {err}"
     );
 }
 

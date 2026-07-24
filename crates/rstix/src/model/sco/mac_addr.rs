@@ -3,6 +3,7 @@
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::ScoCommonProps;
+use crate::model::validate::validate_mac_addr_format;
 
 /// A STIX MAC address cyber-observable.
 ///
@@ -48,10 +49,7 @@ impl MacAddr {
 
     /// Rejects empty `value`.
     pub fn validate(&self) -> Result<(), ModelError> {
-        if self.value.is_empty() {
-            return Err(ModelError::MacAddrValueEmpty);
-        }
-        Ok(())
+        validate_mac_addr_format(&self.value)
     }
 }
 

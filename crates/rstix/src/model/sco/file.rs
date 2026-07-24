@@ -128,6 +128,7 @@ impl File {
         for child in &self.contains_refs {
             validate_sco_ref(child)?;
         }
+        crate::model::validate::validate_hash_map(&self.hashes)?;
         Ok(())
     }
 }

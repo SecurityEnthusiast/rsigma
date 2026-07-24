@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::model::ModelError;
+use crate::model::validate::validate_hash_map;
 
 /// A STIX external reference.
 ///
@@ -85,6 +86,7 @@ impl ExternalReference {
         if self.description.is_none() && self.url.is_none() && self.external_id.is_none() {
             return Err(ModelError::ExternalReferenceMissingDetail);
         }
+        validate_hash_map(&self.hashes)?;
         Ok(())
     }
 }

@@ -45,8 +45,6 @@ fn collect_json_files(dir: &Path) -> Vec<PathBuf> {
 
 fn collect_invalid_conformance_files() -> Vec<PathBuf> {
     const INFO_ONLY_VALIDATION_FIXTURES: &[&str] = &[
-        "bundle-location-bad-region.json",
-        "bundle-relationship-matrix-invalid.json",
         // §7.1.1: unknown target fields are ignored — valid under interop_strict.
         "bundle-language-content-unknown-field.json",
     ];

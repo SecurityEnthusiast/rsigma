@@ -3,6 +3,7 @@
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::SdoSroCommonProps;
+use crate::model::validate::validate_non_empty_object_refs;
 use crate::vocab::OpinionValue;
 
 /// A STIX opinion assessing correctness of related objects (STIX §4.15).
@@ -40,9 +41,10 @@ impl Opinion {
     /// STIX type name for opinions.
     pub const TYPE_NAME: &'static str = "opinion";
 
-    /// Check opinion common properties.
+    /// Check opinion invariants (STIX §4.14.1).
     pub fn validate(&self) -> Result<(), ModelError> {
-        self.common.validate(Self::TYPE_NAME)
+        self.common.validate(Self::TYPE_NAME)?;
+        validate_non_empty_object_refs(&self.object_refs)
     }
 }
 

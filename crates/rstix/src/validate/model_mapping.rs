@@ -22,7 +22,10 @@ pub(crate) fn model_error_pipeline_mapping(
         ModelError::ObservedDataObjectsXorObjectRefs => (DiagnosticCode::E0007, Some("objects")),
         ModelError::ObservedDataMissingScoContent => (DiagnosticCode::E0008, Some("object_refs")),
         ModelError::ObservedDataEmptyObjects => (DiagnosticCode::E0008, Some("objects")),
-        ModelError::ObservedDataEmptyObjectRefs => (DiagnosticCode::E0008, Some("object_refs")),
+        ModelError::ObservedDataEmptyObjectRefs | ModelError::SdoEmptyObjectRefs => {
+            (DiagnosticCode::E0008, Some("object_refs"))
+        }
+        ModelError::RequiredStringEmpty { property } => (DiagnosticCode::E0003, Some(property)),
         ModelError::EmailMessageBodyWithMultipart
         | ModelError::EmailMessageMultipartMissing
         | ModelError::EmailMessageMultipartWhenSinglePart => (DiagnosticCode::E0009, Some("body")),
@@ -43,14 +46,21 @@ pub(crate) fn model_error_pipeline_mapping(
         | ModelError::ObservedDataLastObservedBeforeFirstObserved
         | ModelError::RelationshipStopTimeBeforeStartTime
         | ModelError::NetworkTrafficEndBeforeStart
-        | ModelError::IndicatorValidUntilBeforeValidFrom => (DiagnosticCode::E0015, None),
+        | ModelError::IndicatorValidUntilBeforeValidFrom
+        | ModelError::MalwareAnalysisEndedBeforeStarted => (DiagnosticCode::E0015, None),
         ModelError::OpinionValueInvalid | ModelError::EncryptionAlgorithmInvalid => {
             (DiagnosticCode::E0013, None)
         }
         ModelError::DomainNameFormatInvalid
         | ModelError::EmailAddrFormatInvalid
         | ModelError::UrlFormatInvalid
-        | ModelError::LocationLatitudeOutOfRange
+        | ModelError::Ipv4AddrFormatInvalid
+        | ModelError::Ipv6AddrFormatInvalid
+        | ModelError::MacAddrFormatInvalid
+        | ModelError::HashAlgorithmKeyInvalid { .. }
+        | ModelError::HashAlgorithmValueInvalid { .. }
+        | ModelError::OpenVocabValueInvalid { .. } => (DiagnosticCode::E0003, Some("value")),
+        ModelError::LocationLatitudeOutOfRange
         | ModelError::LocationLongitudeOutOfRange
         | ModelError::RelationshipTypeInvalid => (DiagnosticCode::I0002, Some("relationship_type")),
         ModelError::SightingCountOutOfRange

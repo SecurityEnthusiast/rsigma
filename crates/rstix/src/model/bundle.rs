@@ -13,7 +13,7 @@ use crate::model::sdo::ObservedDataForm;
 use crate::model::stix_object::{StixObject, deserialize_stix_object_from_value};
 use crate::model::validate::{
     validate_identity_ref, validate_marking_definition_ref, validate_sco_or_sro_ref,
-    validate_sco_ref, validate_sdo_ref, validate_stix_or_sco_ref,
+    validate_sco_ref, validate_sdo_ref, validate_stix_object_ref, validate_stix_or_sco_ref,
 };
 
 /// Container trait for bundle navigation.
@@ -217,6 +217,14 @@ impl Bundle {
             .is_some_and(|object| matches!(object, StixObject::Custom(_)))
     }
 
+    fn validate_stix_object_ref_in_bundle(&self, id: &StixId) -> Result<(), ModelError> {
+        match validate_stix_object_ref(id) {
+            Ok(()) => Ok(()),
+            Err(_err) if self.allow_custom && self.custom_object_in_bundle(id) => Ok(()),
+            Err(err) => Err(err),
+        }
+    }
+
     fn validate_stix_or_sco_ref_in_bundle(&self, id: &StixId) -> Result<(), ModelError> {
         match validate_stix_or_sco_ref(id) {
             Ok(()) => Ok(()),
@@ -393,12 +401,12 @@ impl Bundle {
                             self.validate_sco_or_sro_ref_in_bundle(object_ref)?;
                         }
                     }
-                    SdoObject::Grouping(Grouping { object_refs, .. })
+                    SdoObject::Report(Report { object_refs, .. })
+                    | SdoObject::Grouping(Grouping { object_refs, .. })
                     | SdoObject::Note(Note { object_refs, .. })
-                    | SdoObject::Opinion(Opinion { object_refs, .. })
-                    | SdoObject::Report(Report { object_refs, .. }) => {
+                    | SdoObject::Opinion(Opinion { object_refs, .. }) => {
                         for object_ref in object_refs {
-                            self.validate_stix_or_sco_ref_in_bundle(object_ref)?;
+                            self.validate_stix_object_ref_in_bundle(object_ref)?;
                         }
                     }
                     _ => {}
@@ -452,7 +460,7 @@ impl Bundle {
                     if let Some(created_by) = &common.created_by_ref {
                         validate_identity_ref(created_by.as_stix_id())?;
                     }
-                    self.validate_sdo_ref_in_bundle(object_ref)?;
+                    self.validate_stix_object_ref_in_bundle(object_ref)?;
                 }
             },
             StixObject::Sco(_) | StixObject::Custom(_) => {}

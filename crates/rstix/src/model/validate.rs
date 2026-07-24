@@ -1,6 +1,5 @@
 //! Shared STIX model validation helpers used at parse time and by per-type
-//! `validate()` methods. Coverage is intentional and partial — see crate README
-//! conformance notes.
+//! `validate()` methods.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -8,7 +7,7 @@ use crate::core::{LanguageTag, StixId, StixObjectKind, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::{ExternalReference, GranularMarking, SdoSroCommonProps};
 use crate::model::sdo::MalwareSampleRef;
-use crate::vocab::{ENCRYPTION_ALGORITHM_ENUM, is_iana_character_set};
+use crate::vocab::{ENCRYPTION_ALGORITHM_ENUM, HASH_ALGORITHM_ENUM, is_iana_character_set};
 
 /// Marker for relationship matrix entries that accept any SCO target type.
 const SCO_TARGET: &str = "__SCO__";
@@ -86,6 +85,36 @@ pub fn validate_stix_or_sco_ref(id: &StixId) -> Result<(), ModelError> {
             ref_id: id.as_str().to_owned(),
             expected: "SDO or SCO".to_owned(),
         }),
+    }
+}
+
+/// Validate reference to any STIX Object (SDO, SCO, SRO, or Meta).
+pub fn validate_stix_object_ref(id: &StixId) -> Result<(), ModelError> {
+    if StixObjectKind::from_type_str(id.type_name()).is_some() {
+        Ok(())
+    } else {
+        Err(ModelError::InvalidReferenceKind {
+            ref_id: id.as_str().to_owned(),
+            expected: "STIX Object".to_owned(),
+        })
+    }
+}
+
+/// Reject empty required string properties at the wire boundary.
+pub fn validate_non_empty_string(value: &str, property: &'static str) -> Result<(), ModelError> {
+    if value.is_empty() {
+        Err(ModelError::RequiredStringEmpty { property })
+    } else {
+        Ok(())
+    }
+}
+
+/// Reject empty `object_refs` on report and grouping SDOs.
+pub fn validate_non_empty_object_refs(object_refs: &[StixId]) -> Result<(), ModelError> {
+    if object_refs.is_empty() {
+        Err(ModelError::SdoEmptyObjectRefs)
+    } else {
+        Ok(())
     }
 }
 
@@ -490,24 +519,172 @@ pub fn validate_email_addr_format(value: &str) -> Result<(), ModelError> {
 }
 
 /// URL format check (RFC 3986) at the parse boundary.
-///
-/// Full RFC 3986 validation requires the `serde` feature ([DD-DM-001](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#dd-dm-001--wire-must-at-parse) — wire MUST at parse).
 pub fn validate_url_format(value: &str) -> Result<(), ModelError> {
     if value.is_empty() {
         return Err(ModelError::UrlValueEmpty);
     }
     #[cfg(feature = "serde")]
     {
-        let parsed = url::Url::parse(value).map_err(|_| ModelError::UrlFormatInvalid)?;
-        match parsed.scheme() {
-            "http" | "https" | "ftp" => Ok(()),
-            _ => Err(ModelError::UrlFormatInvalid),
+        url::Url::parse(value).map_err(|_| ModelError::UrlFormatInvalid)?;
+    }
+    Ok(())
+}
+
+/// IPv4 address or CIDR format check (STIX §6.8.1).
+pub fn validate_ipv4_addr_format(value: &str) -> Result<(), ModelError> {
+    if value.is_empty() {
+        return Err(ModelError::Ipv4AddrValueEmpty);
+    }
+    if let Some((addr, prefix)) = value.split_once('/') {
+        let ip: std::net::Ipv4Addr = addr
+            .parse()
+            .map_err(|_| ModelError::Ipv4AddrFormatInvalid)?;
+        let prefix_len: u8 = prefix
+            .parse()
+            .map_err(|_| ModelError::Ipv4AddrFormatInvalid)?;
+        if prefix_len > 32 {
+            return Err(ModelError::Ipv4AddrFormatInvalid);
+        }
+        let _ = ip;
+    } else {
+        value
+            .parse::<std::net::Ipv4Addr>()
+            .map_err(|_| ModelError::Ipv4AddrFormatInvalid)?;
+    }
+    Ok(())
+}
+
+/// IPv6 address or CIDR format check (STIX §6.9.1).
+pub fn validate_ipv6_addr_format(value: &str) -> Result<(), ModelError> {
+    if value.is_empty() {
+        return Err(ModelError::Ipv6AddrValueEmpty);
+    }
+    if let Some((addr, prefix)) = value.split_once('/') {
+        let ip: std::net::Ipv6Addr = addr
+            .parse()
+            .map_err(|_| ModelError::Ipv6AddrFormatInvalid)?;
+        let prefix_len: u8 = prefix
+            .parse()
+            .map_err(|_| ModelError::Ipv6AddrFormatInvalid)?;
+        if prefix_len > 128 {
+            return Err(ModelError::Ipv6AddrFormatInvalid);
+        }
+        let _ = ip;
+    } else {
+        value
+            .parse::<std::net::Ipv6Addr>()
+            .map_err(|_| ModelError::Ipv6AddrFormatInvalid)?;
+    }
+    Ok(())
+}
+
+/// MAC-48 format check (STIX §6.10.1): lowercase colon-delimited hex octets.
+pub fn validate_mac_addr_format(value: &str) -> Result<(), ModelError> {
+    if value.is_empty() {
+        return Err(ModelError::MacAddrValueEmpty);
+    }
+    let parts: Vec<&str> = value.split(':').collect();
+    if parts.len() != 6 {
+        return Err(ModelError::MacAddrFormatInvalid);
+    }
+    for part in parts {
+        if part.len() != 2 || !part.chars().all(|ch| matches!(ch, '0'..='9' | 'a'..='f')) {
+            return Err(ModelError::MacAddrFormatInvalid);
         }
     }
-    #[cfg(not(feature = "serde"))]
-    {
-        Ok(())
+    Ok(())
+}
+
+/// Returns true when `hash` matches the format rules for a known `algorithm` (STIX §10.7).
+pub fn hash_value_valid(algorithm: &str, hash: &str) -> bool {
+    let hex_len =
+        |expected: usize| hash.len() == expected && hash.chars().all(|ch| ch.is_ascii_hexdigit());
+    match algorithm {
+        "MD5" => hex_len(32),
+        "SHA-1" => hex_len(40),
+        "SHA-256" => hex_len(64),
+        "SHA-512" => hex_len(128),
+        "SHA3-256" => hex_len(64),
+        "SHA3-512" => hex_len(128),
+        "TLSH" => hash.len() == 70 && hash.chars().all(|ch| ch.is_ascii_hexdigit()),
+        "SSDEEP" => {
+            hash.split(':').count() == 3
+                && hash.chars().all(|ch| {
+                    ch.is_ascii_alphanumeric() || matches!(ch, '+' | '/' | '=' | ':' | '_')
+                })
+        }
+        _ => true,
     }
+}
+
+fn validate_hash_algorithm_key(key: &str) -> Result<(), ModelError> {
+    if !(3..=250).contains(&key.len())
+        || !key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err(ModelError::HashAlgorithmKeyInvalid {
+            key: key.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn hash_algorithm_key_allowed(key: &str) -> bool {
+    HASH_ALGORITHM_ENUM.contains(key) || is_open_vocab_extension(key)
+}
+
+/// Returns true when `value` is a known open-vocabulary entry or valid `x_` extension token.
+pub fn is_open_vocab_extension(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("x_") else {
+        return false;
+    };
+    !rest.is_empty()
+        && rest.len() <= 248
+        && rest
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+}
+
+/// Returns true when `value` is allowed for the given open-vocabulary table.
+pub fn open_vocab_value_allowed(value: &str, vocabulary: &phf::Set<&'static str>) -> bool {
+    vocabulary.contains(value) || is_open_vocab_extension(value)
+}
+
+/// Validate a single open-vocabulary property value at the parse boundary.
+pub fn validate_open_vocab_string(
+    value: &str,
+    property: &'static str,
+    vocabulary: &phf::Set<&'static str>,
+) -> Result<(), ModelError> {
+    if open_vocab_value_allowed(value, vocabulary) {
+        Ok(())
+    } else {
+        Err(ModelError::OpenVocabValueInvalid {
+            property,
+            value: value.to_owned(),
+        })
+    }
+}
+
+/// Validate STIX §2.7 hash map keys for properties that MUST use `hash-algorithm-ov`.
+///
+/// Keys MUST be a normative [`HASH_ALGORITHM_ENUM`] entry or a valid open-vocabulary
+/// extension (`x_` prefix, §2.7 example `x_foo_hash`). Known algorithm values MUST
+/// match §10.7 format rules; extension algorithm values are opaque strings.
+pub fn validate_hash_map(hashes: &BTreeMap<String, String>) -> Result<(), ModelError> {
+    for (key, value) in hashes {
+        validate_hash_algorithm_key(key)?;
+        if !hash_algorithm_key_allowed(key) {
+            return Err(ModelError::HashAlgorithmKeyInvalid { key: key.clone() });
+        }
+        if HASH_ALGORITHM_ENUM.contains(key.as_str()) && !hash_value_valid(key, value) {
+            return Err(ModelError::HashAlgorithmValueInvalid {
+                algorithm: key.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Returns true when `name` is a recognized IANA character set label (STIX §3.9.1).
@@ -579,10 +756,7 @@ pub fn granular_markings_from_wire(wire: &serde_json::Value) -> Vec<GranularMark
         .unwrap_or_default()
 }
 
-/// Validate encryption algorithm against the rstix closed vocabulary table
-/// ([`ENCRYPTION_ALGORITHM_ENUM`]).
-///
-/// This table is a subset of STIX §3.9.1 and does not match the full normative enum.
+/// Validate encryption algorithm against STIX §10.4.
 pub fn validate_encryption_algorithm(value: &str) -> Result<(), ModelError> {
     if ENCRYPTION_ALGORITHM_ENUM.contains(value) {
         Ok(())
@@ -811,5 +985,34 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn hash_map_rejects_unknown_algorithm_keys() {
+        let mut hashes = BTreeMap::new();
+        hashes.insert("bogus-algorithm".into(), "deadbeef".into());
+        assert!(matches!(
+            validate_hash_map(&hashes),
+            Err(ModelError::HashAlgorithmKeyInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn hash_map_accepts_open_vocab_extension_keys() {
+        let mut hashes = BTreeMap::new();
+        hashes.insert("x_custom_hash".into(), "vendor-defined".into());
+        validate_hash_map(&hashes).expect("x_ hash extension");
+    }
+
+    #[test]
+    fn open_vocab_accepts_table_or_x_extension() {
+        use crate::vocab::MALWARE_RESULT_ENUM;
+
+        assert!(open_vocab_value_allowed("malicious", &MALWARE_RESULT_ENUM));
+        assert!(open_vocab_value_allowed(
+            "x_vendor-result",
+            &MALWARE_RESULT_ENUM
+        ));
+        assert!(!open_vocab_value_allowed("not-valid", &MALWARE_RESULT_ENUM));
     }
 }

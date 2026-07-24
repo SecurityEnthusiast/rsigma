@@ -73,9 +73,10 @@ fn check_closed_vocabulary_on_wire(value: &serde_json::Value, report: &mut Valid
                 .and_then(serde_json::Value::as_str)
             && crate::model::validate::validate_encryption_algorithm(algorithm).is_err()
         {
+            // Enforced at T0 parse; retained for raw JSON paths that bypass typed deserialize.
             report.push(
                 Diagnostic::new(
-                    DiagnosticCode::W0010,
+                    DiagnosticCode::E0003,
                     format!(
                         "encryption_algorithm `{algorithm}` is not in the STIX closed vocabulary"
                     ),

@@ -169,7 +169,7 @@ fn coverage_cases() -> Vec<CoverageCase> {
             label: "unknown opinion closed vocabulary",
         },
         CoverageCase {
-            code: DiagnosticCode::W0010,
+            code: DiagnosticCode::E0003,
             source: JsonSource::Fixture("validation/bundle-bad-encryption.json"),
             profile: Profile::ConsumerStrict,
             label: "closed vocabulary encryption_algorithm",

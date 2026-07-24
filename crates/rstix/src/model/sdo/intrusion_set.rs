@@ -4,6 +4,7 @@ use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTime
 use crate::model::ModelError;
 use crate::model::common::SdoSroCommonProps;
 use crate::model::sdo::validate_first_last_seen;
+use crate::model::validate::validate_non_empty_string;
 
 /// A grouped set of adversarial behaviors and resources (STIX §4.9).
 ///
@@ -99,6 +100,7 @@ impl IntrusionSet {
     /// Check intrusion-set invariants (time ordering when both timestamps are set).
     pub fn validate(&self) -> Result<(), ModelError> {
         self.common.validate(Self::TYPE_NAME)?;
+        validate_non_empty_string(&self.name, "name")?;
         validate_first_last_seen(&self.first_seen, &self.last_seen)
     }
 }

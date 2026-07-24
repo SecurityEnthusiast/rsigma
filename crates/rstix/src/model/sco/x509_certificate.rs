@@ -6,6 +6,7 @@ use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTime
 
 use crate::model::ModelError;
 use crate::model::common::ScoCommonProps;
+use crate::model::validate::validate_hash_map;
 
 /// X.509 v3 extensions block (STIX §6.18.2).
 ///
@@ -246,6 +247,7 @@ impl X509Certificate {
         {
             return Err(ModelError::X509V3ExtensionsNoProperties);
         }
+        validate_hash_map(&self.hashes)?;
         Ok(())
     }
 

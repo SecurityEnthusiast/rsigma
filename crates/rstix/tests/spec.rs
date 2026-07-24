@@ -377,6 +377,10 @@ fn sco_file_round_trips_and_rejects_missing_name_and_hash() {
     roundtrip_strict::<File>("sco/file-with-archive-ext.json");
     roundtrip_strict::<File>("sco/file-with-name-enc.json");
     assert_fixture_rejects::<File>("sco/file-no-name-or-hash.json");
+    assert_fixture_rejects::<File>("sco/file-invalid-hash-value.json");
+    assert_fixture_rejects::<File>("sco/file-invalid-hash-key.json");
+    assert_fixture_rejects::<File>("sco/file-hash-key-not-in-ov.json");
+    roundtrip_strict::<File>("sco/file-hash-key-open-vocab-extension.json");
     assert_fixture_rejects::<File>("sco/file-name-enc-without-name.json");
     assert_fixture_rejects::<File>("sco/file-name-enc-invalid.json");
     assert_fixture_rejects::<File>("sco/file-with-invalid-archive-ext.json");
@@ -388,16 +392,19 @@ fn sco_ipv4_addr_round_trips_and_rejects_wrong_resolves_ref() {
     roundtrip_strict::<Ipv4Addr>("sco/ipv4-addr-cidr.json");
     roundtrip_strict::<Ipv4Addr>("sco/ipv4-addr-with-belongs.json");
     assert_fixture_rejects::<Ipv4Addr>("sco/ipv4-addr-resolves-wrong-type.json");
+    assert_fixture_rejects::<Ipv4Addr>("sco/ipv4-addr-invalid-format.json");
 }
 
 #[test]
 fn sco_ipv6_addr_round_trips() {
     roundtrip_strict::<Ipv6Addr>("sco/ipv6-addr-single.json");
+    assert_fixture_rejects::<Ipv6Addr>("sco/ipv6-addr-invalid-format.json");
 }
 
 #[test]
 fn sco_mac_addr_round_trips() {
     roundtrip_strict::<MacAddr>("sco/mac-addr.json");
+    assert_fixture_rejects::<MacAddr>("sco/mac-addr-invalid-format.json");
 }
 
 #[test]
@@ -428,6 +435,7 @@ fn sco_software_round_trips() {
 #[test]
 fn sco_url_round_trips() {
     roundtrip_strict::<Url>("sco/url.json");
+    assert_fixture_rejects::<Url>("sco/url-invalid-format.json");
 }
 
 #[test]
@@ -771,4 +779,43 @@ fn sdo_types_reject_wrong_type_field() {
     assert_fixture_rejects::<Location>("sdo/infrastructure-minimal.json");
     assert_fixture_rejects::<Malware>("sdo/intrusion-set-minimal.json");
     assert_fixture_rejects::<Report>("sdo/vulnerability-minimal.json");
+}
+
+#[test]
+fn sdo_empty_name_rejects_at_parse() {
+    assert_fixture_rejects::<AttackPattern>("sdo/attack-pattern-empty-name.json");
+    assert_fixture_rejects::<Campaign>("sdo/campaign-empty-name.json");
+    assert_fixture_rejects::<CourseOfAction>("sdo/course-of-action-empty-name.json");
+    assert_fixture_rejects::<Identity>("sdo/identity-empty-name.json");
+    assert_fixture_rejects::<Incident>("sdo/incident-empty-name.json");
+    assert_fixture_rejects::<Infrastructure>("sdo/infrastructure-empty-name.json");
+    assert_fixture_rejects::<IntrusionSet>("sdo/intrusion-set-empty-name.json");
+    assert_fixture_rejects::<ThreatActor>("sdo/threat-actor-empty-name.json");
+    assert_fixture_rejects::<Tool>("sdo/tool-empty-name.json");
+    assert_fixture_rejects::<Vulnerability>("sdo/vulnerability-empty-name.json");
+    assert_fixture_rejects::<Grouping>("sdo/grouping-empty-name.json");
+}
+
+#[test]
+fn sdo_empty_object_refs_rejects_at_parse() {
+    assert_fixture_rejects::<Report>("sdo/report-empty-object-refs.json");
+    assert_fixture_rejects::<Grouping>("sdo/grouping-empty-object-refs.json");
+}
+
+#[test]
+fn grouping_empty_context_rejects_at_parse() {
+    assert_fixture_rejects::<Grouping>("sdo/grouping-empty-context.json");
+}
+
+#[test]
+fn malware_analysis_ended_before_started_rejects_at_parse() {
+    assert_fixture_rejects::<MalwareAnalysis>("sdo/malware-analysis-ended-before-started.json");
+}
+
+#[test]
+fn sdo_open_vocab_and_object_refs_reject_at_parse() {
+    assert_fixture_rejects::<Grouping>("sdo/grouping-invalid-context.json");
+    assert_fixture_rejects::<MalwareAnalysis>("sdo/malware-analysis-bad-result.json");
+    assert_fixture_rejects::<Note>("sdo/note-empty-object-refs.json");
+    assert_fixture_rejects::<Opinion>("sdo/opinion-empty-object-refs.json");
 }

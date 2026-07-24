@@ -289,6 +289,47 @@ pub enum ModelError {
     /// An `observed-data` `object_refs` is empty.
     #[error("observed-data object_refs must contain at least one reference")]
     ObservedDataEmptyObjectRefs,
+    /// A required string property is empty on the wire.
+    #[error("required property `{property}` must be non-empty")]
+    RequiredStringEmpty {
+        /// Wire property name.
+        property: &'static str,
+    },
+    /// `report` or `grouping` `object_refs` is empty.
+    #[error("object_refs must contain at least one reference")]
+    SdoEmptyObjectRefs,
+    /// `malware-analysis` `analysis_ended` precedes `analysis_started`.
+    #[error("malware-analysis analysis_ended must not precede analysis_started")]
+    MalwareAnalysisEndedBeforeStarted,
+    /// IPv4 address value failed format validation (STIX §6.8.1).
+    #[error("ipv4-addr value has invalid format")]
+    Ipv4AddrFormatInvalid,
+    /// IPv6 address value failed format validation (STIX §6.9.1).
+    #[error("ipv6-addr value has invalid format")]
+    Ipv6AddrFormatInvalid,
+    /// MAC address value failed format validation (STIX §6.10.1).
+    #[error("mac-addr value has invalid format")]
+    MacAddrFormatInvalid,
+    /// Hash map key failed STIX §2.7 syntax rules.
+    #[error("hash algorithm key `{key}` is invalid")]
+    HashAlgorithmKeyInvalid {
+        /// Offending hash map key.
+        key: String,
+    },
+    /// Hash value failed format rules for a known algorithm (STIX §10.7).
+    #[error("hash value for algorithm `{algorithm}` has invalid format")]
+    HashAlgorithmValueInvalid {
+        /// Hash algorithm name from the map key.
+        algorithm: String,
+    },
+    /// Open-vocabulary property value is not a known table entry or valid `x_` extension.
+    #[error("open vocabulary value `{value}` is invalid for property `{property}`")]
+    OpenVocabValueInvalid {
+        /// Wire property name.
+        property: &'static str,
+        /// Offending value.
+        value: String,
+    },
     /// An `observed-data` `last_observed` is earlier than `first_observed`.
     #[error("observed-data last_observed must be greater than or equal to first_observed")]
     ObservedDataLastObservedBeforeFirstObserved,
@@ -370,8 +411,8 @@ pub enum ModelError {
     /// URL value failed basic format validation.
     #[error("url value has invalid format")]
     UrlFormatInvalid,
-    /// Encryption algorithm is not in the rstix closed vocabulary table.
-    #[error("artifact encryption_algorithm is not in the STIX closed vocabulary")]
+    /// Encryption algorithm is not in the STIX §10.4 closed vocabulary.
+    #[error("encryption_algorithm is not in the STIX closed vocabulary")]
     EncryptionAlgorithmInvalid,
     /// SCO id does not match deterministic id generation from contributing properties.
     #[error("SCO id does not match deterministic id from contributing properties")]
