@@ -9,8 +9,8 @@ use crate::model::validate::{validate_non_empty_object_refs, validate_non_empty_
 ///
 /// Required properties per STIX §4.16.1: common SDO fields plus `name`,
 /// `published`, and `object_refs`. The spec requires a non-empty
-/// [`object_refs`](Self::object_refs) list; empty lists may still parse (see crate
-/// README conformance notes).
+/// [`object_refs`](Self::object_refs) list; empty lists are rejected at parse
+/// ([Model invariant decisions](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#model-invariant-decisions)).
 ///
 /// # Examples
 ///
