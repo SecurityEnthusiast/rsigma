@@ -573,7 +573,9 @@ pub(crate) fn cmd_list_formats(target: String, ctx: OutputCtx) {
                             continue;
                         }
                         let (name, description) = match line.split_once([' ', '\t', '-']) {
-                            Some((name, rest)) => (name.trim(), rest.trim().trim_start_matches('-').trim()),
+                            Some((name, rest)) => {
+                                (name.trim(), rest.trim().trim_start_matches('-').trim())
+                            }
                             None => (line, ""),
                         };
                         rows.push(FormatRow {

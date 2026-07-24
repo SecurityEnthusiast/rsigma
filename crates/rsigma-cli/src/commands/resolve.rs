@@ -46,7 +46,13 @@ struct SourceRow {
 
 impl Tabular for SourceRow {
     fn headers() -> &'static [&'static str] {
-        &["PIPELINE", "SOURCE_ID", "SOURCE_TYPE", "STATUS", "DATA_OR_ERROR"]
+        &[
+            "PIPELINE",
+            "SOURCE_ID",
+            "SOURCE_TYPE",
+            "STATUS",
+            "DATA_OR_ERROR",
+        ]
     }
     fn row(&self) -> Vec<String> {
         vec![
@@ -73,10 +79,7 @@ pub fn cmd_resolve(args: ResolveArgs, ctx: OutputCtx) {
         && !matches!(ctx.format, OutputFormat::Json)
         && ctx.show_progress()
     {
-        ctx.warn_ignored(
-            "pipeline resolve",
-            "--pretty only applies to JSON output",
-        );
+        ctx.warn_ignored("pipeline resolve", "--pretty only applies to JSON output");
     }
 
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -247,9 +250,8 @@ fn emit_resolve(ctx: &OutputCtx, rows: &[SourceRow], pretty: bool) {
             let pretty = pretty || ctx.pretty_json();
             crate::output::render_json(&envelope, pretty);
         }
-        OutputFormat::Ndjson
-        | OutputFormat::Table
-        | OutputFormat::Csv
-        | OutputFormat::Tsv => render_report(ctx, &envelope, rows),
+        OutputFormat::Ndjson | OutputFormat::Table | OutputFormat::Csv | OutputFormat::Tsv => {
+            render_report(ctx, &envelope, rows)
+        }
     }
 }

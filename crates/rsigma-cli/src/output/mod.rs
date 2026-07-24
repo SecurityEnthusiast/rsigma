@@ -706,8 +706,7 @@ mod tests {
 
     #[test]
     fn tsv_round_trip_quotes_tabs() {
-        let raw =
-            write_delimited_to_string(b'\t', &["A", "B"], &[&["a\tb", "plain"], &["x", "y"]]);
+        let raw = write_delimited_to_string(b'\t', &["A", "B"], &[&["a\tb", "plain"], &["x", "y"]]);
         let (headers, rows) = read_delimited(b'\t', &raw);
         assert_eq!(headers, vec!["A", "B"]);
         assert_eq!(rows[0], vec!["a\tb", "plain"]);

@@ -496,8 +496,7 @@ fn resolve_local_or_global(
         // Global formats always work through render_report / render_json.
         // Local-only values like `yaml`/`text` are not produced by the global
         // selector.
-        if local_allowed.contains(&global) || matches!(global, "ndjson" | "table" | "csv" | "tsv")
-        {
+        if local_allowed.contains(&global) || matches!(global, "ndjson" | "table" | "csv" | "tsv") {
             return global.to_string();
         }
         ctx.warn_unsupported(command, default);

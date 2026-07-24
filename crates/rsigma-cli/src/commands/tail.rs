@@ -179,7 +179,7 @@ struct TailRenderer {
 enum RenderState {
     Json { pretty: bool },
     Ndjson,
-    Delimited(DelimitedWriter),
+    Delimited(Box<DelimitedWriter>),
     Table(Vec<TailRow>),
 }
 
@@ -190,8 +190,12 @@ impl TailRenderer {
                 pretty: ctx.pretty_json(),
             },
             OutputFormat::Ndjson => RenderState::Ndjson,
-            OutputFormat::Csv => RenderState::Delimited(DelimitedWriter::new(',', TAIL_HEADERS)),
-            OutputFormat::Tsv => RenderState::Delimited(DelimitedWriter::new('\t', TAIL_HEADERS)),
+            OutputFormat::Csv => {
+                RenderState::Delimited(Box::new(DelimitedWriter::new(',', TAIL_HEADERS)))
+            }
+            OutputFormat::Tsv => {
+                RenderState::Delimited(Box::new(DelimitedWriter::new('\t', TAIL_HEADERS)))
+            }
             OutputFormat::Table => RenderState::Table(Vec::new()),
         };
         Self { state }
