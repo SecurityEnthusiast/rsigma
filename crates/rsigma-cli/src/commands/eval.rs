@@ -1340,7 +1340,7 @@ enum RenderState {
     /// Plain JSON (one object per line, pretty if requested).
     Json { pretty: bool },
     /// Streaming delimited writer (`csv` or `tsv`).
-    Delimited(DelimitedWriter),
+    Delimited(Box<DelimitedWriter>),
     /// Buffer of rows for the width-aligning table renderer.
     Table(Vec<EvalRow>),
 }
@@ -1360,10 +1360,10 @@ impl MatchRenderer {
                 },
                 OutputFormat::Ndjson => RenderState::Json { pretty: false },
                 OutputFormat::Csv => {
-                    RenderState::Delimited(DelimitedWriter::new(',', EvalRow::headers()))
+                    RenderState::Delimited(Box::new(DelimitedWriter::new(',', EvalRow::headers())))
                 }
                 OutputFormat::Tsv => {
-                    RenderState::Delimited(DelimitedWriter::new('\t', EvalRow::headers()))
+                    RenderState::Delimited(Box::new(DelimitedWriter::new('\t', EvalRow::headers())))
                 }
                 OutputFormat::Table => RenderState::Table(Vec::new()),
             }

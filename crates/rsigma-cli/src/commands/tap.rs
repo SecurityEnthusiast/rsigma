@@ -55,6 +55,10 @@ pub(crate) struct TapArgs {
 }
 
 pub(crate) fn cmd_tap(args: TapArgs, ctx: OutputCtx) {
+    // Fixture must stay line-oriented NDJSON for `engine eval -e @fixture`.
+    if ctx.explicit_format && ctx.format != crate::output::OutputFormat::Ndjson {
+        ctx.warn_unsupported("engine tap", "NDJSON fixture");
+    }
     let addr = config::resolve_daemon_addr(args.addr.clone(), args.config.as_deref());
     let url = build_url(&config::api_url(&addr, "/api/v1/tap"), &args);
 

@@ -49,7 +49,7 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 
 * **[Detection diagnostics](https://rsigma.io/cli/engine/explain/):** Explains why a rule did or did not match an event with `engine explain`, diffs pipeline transformations with `pipeline diff`, and introspects live correlation windows
 * **[Corpus backtesting](https://rsigma.io/cli/rule/backtest/):** Replays an event corpus against declared per-rule expectations with `rule backtest`, emitting a JSON or JUnit XML report for CI
-* **[Output formats](https://rsigma.io/reference/output/):** Renders every command's results as JSON, NDJSON, table, CSV, or TSV with a TTY-aware default via a global `--output-format` flag
+* **[Output formats](https://rsigma.io/reference/output/):** Structured commands render JSON, NDJSON, table, CSV, or TSV with a TTY-aware default via a global `--output-format` flag; artifact and protocol commands keep their fixed wire format (see the per-command contract)
 
 ### Deploy
 

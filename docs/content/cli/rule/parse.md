@@ -19,7 +19,7 @@ Multi-document YAML files (action-global/action-reset/action-repeat fragments) p
 | Flag | Description |
 |------|-------------|
 | `<PATH>` | Path to a Sigma YAML file. |
-| `-p, --pretty` | Pretty-print JSON output (two-space indent). |
+| `-p, --pretty` | Pretty-print JSON output (two-space indent). Prefer global `--output-format json|ndjson` for new scripts; `table`/`csv`/`tsv` warn and fall back to JSON. See [Output Formats](../../reference/output.md). |
 
 ## Examples
 

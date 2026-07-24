@@ -23,7 +23,7 @@ By default unknown keys are warnings; `--strict` upgrades them to hard errors so
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-c, --config <PATH>` | discovery chain | Load only this file (bypasses discovery). |
-| `--format <text\|json>` | `text` | Human-readable summary on stderr or a machine-readable envelope on stdout. |
+| `--format <text\|json>` | `text` when unset | Human-readable summary on stderr or a machine-readable envelope on stdout. When unset, the global `--output-format` is used (`json`/`ndjson`/`table`/`csv`/`tsv`). Local `--format` wins over the global selector and prints a precedence warning. See [Output Formats](../../reference/output.md). |
 | `--strict` | off | Exit with code `3` when any unknown key is reported. |
 
 ## Output

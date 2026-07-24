@@ -284,7 +284,7 @@ fn invalid_global_output_format_in_config_warns_then_falls_back() {
         .success()
         .stderr(
             predicate::str::contains("invalid global.output_format 'xml'")
-                .and(predicate::str::contains("falling back to default")),
+                .and(predicate::str::contains("ignoring value")),
         );
 }
 

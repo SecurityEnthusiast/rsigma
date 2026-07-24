@@ -71,7 +71,10 @@ pub(crate) struct McpServeArgs {
 }
 
 /// Dispatch `rsigma mcp <command>`.
-pub(crate) fn dispatch_mcp(cmd: McpCommands) {
+pub(crate) fn dispatch_mcp(cmd: McpCommands, ctx: crate::output::OutputCtx) {
+    if ctx.explicit_format {
+        ctx.warn_unsupported("mcp serve", "MCP protocol stream");
+    }
     match cmd {
         McpCommands::Serve(args) => cmd_mcp_serve(args),
     }

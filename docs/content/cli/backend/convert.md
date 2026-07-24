@@ -29,8 +29,10 @@ For narrative coverage, including the PostgreSQL and LynxDB workflows, see [Rule
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-f, --format <FORMAT>` | `default` | Backend-specific output format. Run [`backend formats <TARGET>`](formats.md) for the list. PostgreSQL examples: `default`, `view`, `timescaledb`, `continuous_aggregate`, `sliding_window`. |
-| `-o, --output <PATH>` | stdout | Write to a file instead of stdout. |
+| `-f, --format <FORMAT>` | `default` | Backend-specific query format. Run [`backend formats <TARGET>`](formats.md) for the list. PostgreSQL examples: `default`, `view`, `timescaledb`, `continuous_aggregate`, `sliding_window`. Distinct from the global `--output-format` wire selector. |
+| `-o, --output <PATH>` | stdout | Write to a file instead of stdout. Always writes raw query text. |
+
+Global `--output-format json` wraps queries in a `{target, format, queries:[…]}` envelope; `ndjson` emits one query record per line; `table`/`csv`/`tsv` warn and keep raw text. See [Output Formats](../../reference/output.md).
 
 ### Pipeline
 
