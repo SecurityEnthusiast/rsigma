@@ -510,3 +510,240 @@ fn quiet_suppresses_convert_fallback_warning() {
     // Cope with `_ = out;`-style unused binding warnings on some compilers.
     let _ = predicate::always();
 }
+
+/// Explicit `--output-format ndjson` on convert emits one query record per line.
+#[test]
+fn convert_output_format_ndjson_is_one_query_per_line() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let out = rsigma()
+        .args([
+            "backend",
+            "convert",
+            rule.path().to_str().unwrap(),
+            "-t",
+            "test",
+            "--output-format",
+            "ndjson",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut saw = false;
+    for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
+        let value: serde_json::Value =
+            serde_json::from_str(line).unwrap_or_else(|e| panic!("invalid NDJSON: {line:?}: {e}"));
+        assert_eq!(value["target"], "test");
+        assert!(value.get("query").is_some());
+        saw = true;
+    }
+    assert!(saw, "expected at least one NDJSON query record");
+}
+
+#[test]
+fn targets_output_format_csv_lists_native_rows() {
+    let out = rsigma()
+        .env("RSIGMA_SIGMA_CLI", "/nonexistent/rsigma-test-sigma-cli")
+        .args(["backend", "targets", "--output-format", "csv"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut lines = stdout.lines().filter(|l| !l.trim().is_empty());
+    assert_eq!(lines.next(), Some("PROVIDER,NAME,DESCRIPTION"));
+    assert!(
+        lines.any(|l| l.starts_with("native,postgres,")),
+        "missing postgres row in {stdout}"
+    );
+}
+
+#[test]
+fn validate_output_format_json_emits_summary_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("rule.yml"), SIMPLE_RULE).unwrap();
+    let out = rsigma()
+        .args([
+            "rule",
+            "validate",
+            dir.path().to_str().unwrap(),
+            "--output-format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON envelope");
+    assert!(value.get("summary").is_some());
+    assert_eq!(value["summary"]["detection_rules"], 1);
+}
+
+#[test]
+fn parse_table_warns_and_falls_back_to_json() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let out = rsigma()
+        .args([
+            "rule",
+            "parse",
+            rule.path().to_str().unwrap(),
+            "--output-format",
+            "table",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stderr.contains("not supported by `rule parse`"),
+        "expected unsupported warning, got: {stderr}"
+    );
+    let _: serde_json::Value = serde_json::from_str(stdout.trim()).expect("JSON fallback");
+}
+
+#[test]
+fn reverse_csv_warns_and_keeps_yaml() {
+    let out = rsigma()
+        .args([
+            "rule",
+            "reverse",
+            "--from",
+            "lucene",
+            "EventID:1",
+            "--output-format",
+            "csv",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stderr.contains("not supported by `rule reverse`"),
+        "expected warning, got: {stderr}"
+    );
+    assert!(
+        stdout.contains("title:") || stdout.contains("detection:"),
+        "expected Sigma YAML, got: {stdout}"
+    );
+}
+
+#[test]
+fn config_path_csv_emits_source_path_rows() {
+    let cfg = temp_file(".yaml", "version: 1\n");
+    let out = rsigma()
+        .args([
+            "config",
+            "path",
+            "-c",
+            cfg.path().to_str().unwrap(),
+            "--output-format",
+            "csv",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("SOURCE,PATH"),
+        "missing CSV header in {stdout}"
+    );
+    assert!(
+        stdout.contains(cfg.path().file_name().unwrap().to_str().unwrap()),
+        "missing path row in {stdout}"
+    );
+}
+
+#[test]
+fn config_validate_local_format_beats_global_output_format() {
+    let cfg = temp_file(".yaml", "version: 1\n");
+    let out = rsigma()
+        .args([
+            "config",
+            "validate",
+            "-c",
+            cfg.path().to_str().unwrap(),
+            "--format",
+            "json",
+            "--output-format",
+            "csv",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stderr.contains("local --format takes precedence"),
+        "expected precedence warning, got: {stderr}"
+    );
+    let value: serde_json::Value = serde_json::from_str(stdout.trim()).expect("JSON from --format");
+    assert_eq!(value["ok"], true);
+}
+
+#[test]
+fn pipeline_diff_csv_emits_per_rule_rows() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let pipe = temp_file(
+        ".yml",
+        r#"
+name: rename
+priority: 10
+transformations:
+  - id: rename_cmd
+    type: field_name_mapping
+    mapping:
+      CommandLine: process.command_line
+"#,
+    );
+    let out = rsigma()
+        .args([
+            "pipeline",
+            "diff",
+            "-r",
+            rule.path().to_str().unwrap(),
+            "-p",
+            pipe.path().to_str().unwrap(),
+            "--output-format",
+            "csv",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut reader = csv::ReaderBuilder::new().from_reader(stdout.as_bytes());
+    let headers: Vec<String> = reader
+        .headers()
+        .unwrap()
+        .iter()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        headers,
+        vec![
+            "RULE_TITLE",
+            "RULE_ID",
+            "CHANGED",
+            "APPLIED_ITEMS",
+            "BEFORE",
+            "AFTER"
+        ]
+    );
+    assert!(reader.records().next().is_some());
+}
