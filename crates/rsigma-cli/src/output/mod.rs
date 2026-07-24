@@ -156,7 +156,7 @@ pub(crate) fn warn_invalid_global_output(
             eprintln!(
                 "warning: invalid global.output_format '{s}' \
                  (expected one of: json, ndjson, table, csv, tsv); \
-                 falling back to default"
+                 ignoring value"
             );
             None
         }
@@ -167,12 +167,29 @@ pub(crate) fn warn_invalid_global_output(
             eprintln!(
                 "warning: invalid global.color '{s}' \
                  (expected one of: auto, always, never); \
-                 falling back to default"
+                 ignoring value"
             );
             None
         }
     });
     (format, color)
+}
+
+/// Resolve file and environment output settings after validating each layer.
+///
+/// Environment values have higher precedence, but an invalid environment
+/// value is treated as absent so a valid file value can still win.
+pub(crate) fn resolve_global_output_layers(
+    file_format: Option<String>,
+    file_color: Option<String>,
+    env_format: Option<String>,
+    env_color: Option<String>,
+) -> (Option<String>, Option<String>) {
+    let (env_format, env_color) = warn_invalid_global_output(env_format, env_color);
+    let file_format = env_format.is_none().then_some(file_format).flatten();
+    let file_color = env_color.is_none().then_some(file_color).flatten();
+    let (file_format, file_color) = warn_invalid_global_output(file_format, file_color);
+    (env_format.or(file_format), env_color.or(file_color))
 }
 
 impl OutputCtx {
@@ -786,5 +803,29 @@ mod tests {
         let (f, c) = warn_invalid_global_output(None, None);
         assert!(f.is_none());
         assert!(c.is_none());
+    }
+
+    #[test]
+    fn invalid_environment_output_falls_back_to_file_layer() {
+        let (f, c) = resolve_global_output_layers(
+            Some("csv".into()),
+            Some("never".into()),
+            Some("xml".into()),
+            Some("rainbow".into()),
+        );
+        assert_eq!(f.as_deref(), Some("csv"));
+        assert_eq!(c.as_deref(), Some("never"));
+    }
+
+    #[test]
+    fn valid_environment_output_wins_over_file_layer() {
+        let (f, c) = resolve_global_output_layers(
+            Some("csv".into()),
+            Some("never".into()),
+            Some("ndjson".into()),
+            Some("always".into()),
+        );
+        assert_eq!(f.as_deref(), Some("ndjson"));
+        assert_eq!(c.as_deref(), Some("always"));
     }
 }

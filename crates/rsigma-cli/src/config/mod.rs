@@ -90,20 +90,29 @@ pub(crate) fn discovered_log_format(explicit: Option<&Path>) -> Option<String> {
 }
 
 /// Best-effort lookup of `global.output_format` and `global.color` from the
-/// config files plus the `RSIGMA_*` env. Returns the two values as raw
-/// strings (the [`crate::output`] module parses them). Quiet: like
+/// config file and `RSIGMA_*` environment layers. Returns each layer
+/// separately so invalid environment values can be rejected before precedence
+/// resolution without discarding a valid file value. Quiet: like
 /// [`discovered_log_format`], it never warns or exits.
 pub(crate) fn discovered_global_output(
     explicit: Option<&Path>,
-) -> (Option<String>, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let Some(loaded) = load_layered(explicit).ok() else {
-        return (None, None);
+        return (None, None, None, None);
     };
-    let merged = loaded.config.merge(resolve::env_partial());
-    let Some(global) = merged.global else {
-        return (None, None);
-    };
-    (global.output_format, global.color)
+    let file_global = loaded.config.global.unwrap_or_default();
+    let env_global = resolve::env_partial().global.unwrap_or_default();
+    (
+        file_global.output_format,
+        file_global.color,
+        env_global.output_format,
+        env_global.color,
+    )
 }
 
 /// Print the effective `section` config (defaults < file < env) as YAML to

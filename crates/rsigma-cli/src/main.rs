@@ -282,8 +282,10 @@ fn main() {
     // Build the global output context once, after the config layer is loaded
     // but before any command runs. The same precedence model that drives
     // --log-format applies here: flag > env > file > default.
-    let (cfg_format, cfg_color) = config::discovered_global_output(cfg_override.as_deref());
-    let (cfg_format, cfg_color) = output::warn_invalid_global_output(cfg_format, cfg_color);
+    let (file_format, file_color, env_format, env_color) =
+        config::discovered_global_output(cfg_override.as_deref());
+    let (cfg_format, cfg_color) =
+        output::resolve_global_output_layers(file_format, file_color, env_format, env_color);
     let stdout_is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
     let ctx = output::OutputCtx::resolve(
         cli.output_format,
@@ -298,17 +300,21 @@ fn main() {
     dispatch(cli.command, &matches, ctx);
 }
 
-/// Pre-scan argv for an explicit `--config <PATH>` / `--config=<PATH>` so the
-/// early log-format resolution honors the same file the subcommand will load.
-/// Only the long form is scanned; the short `-c` belongs to the `config`
-/// subcommands, where `global.log_format` is irrelevant.
+/// Pre-scan argv for an explicit `--config <PATH>` / `--config=<PATH>` /
+/// `-c <PATH>` / `-c<PATH>` so early global setting resolution honors the same
+/// file the subcommand will load.
 fn scan_config_flag() -> Option<PathBuf> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
-        if arg == "--config" {
+        if arg == "--config" || arg == "-c" {
             return args.next().map(PathBuf::from);
         }
         if let Some(value) = arg.strip_prefix("--config=") {
+            return Some(PathBuf::from(value));
+        }
+        if let Some(value) = arg.strip_prefix("-c")
+            && !value.is_empty()
+        {
             return Some(PathBuf::from(value));
         }
     }

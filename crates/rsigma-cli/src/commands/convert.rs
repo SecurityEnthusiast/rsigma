@@ -83,6 +83,10 @@ pub(crate) fn cmd_convert(args: ConvertArgs, ctx: OutputCtx) {
         })
         .collect();
 
+    if ctx.explicit_format && args.output.is_some() {
+        ctx.warn_ignored("backend convert", "--output always writes raw query text");
+    }
+
     // Native-first dispatch: convert with a native rsigma backend when one
     // exists, otherwise delegate the whole conversion to a discovered
     // sigma-cli (or fail with install guidance when neither is available).

@@ -694,6 +694,69 @@ fn config_validate_local_format_beats_global_output_format() {
 }
 
 #[test]
+fn config_short_path_supplies_global_output_format() {
+    let cfg = temp_file(".yaml", "version: 1\nglobal:\n  output_format: csv\n");
+    let out = rsigma()
+        .args(["config", "show", "-c", cfg.path().to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).starts_with("PATH,VALUE,SOURCE\n"),
+        "expected CSV selected from -c config, got: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+#[test]
+fn invalid_environment_format_falls_back_to_config_file() {
+    let cfg = temp_file(".yaml", "version: 1\nglobal:\n  output_format: csv\n");
+    let out = rsigma()
+        .env("RSIGMA_GLOBAL__OUTPUT_FORMAT", "xml")
+        .args(["config", "show", "--config", cfg.path().to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stdout).starts_with("PATH,VALUE,SOURCE\n"),
+        "expected file CSV fallback, got: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(String::from_utf8_lossy(&out.stderr).contains("invalid global.output_format 'xml'"));
+}
+
+#[test]
+fn convert_output_path_warns_when_output_format_is_ignored() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let out = rsigma()
+        .args([
+            "backend",
+            "convert",
+            rule.path().to_str().unwrap(),
+            "-t",
+            "test",
+            "--output-format",
+            "json",
+            "--output",
+            output.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--output always writes raw query text"),
+        "expected precedence warning, got: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
 fn pipeline_diff_csv_emits_per_rule_rows() {
     let rule = temp_file(".yml", SIMPLE_RULE);
     let pipe = temp_file(

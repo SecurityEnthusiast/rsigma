@@ -180,12 +180,30 @@ async fn resolve_async(
                 data_or_error: String::new(),
             })
             .collect();
-        emit_resolve(&ctx, &rows, pretty);
+        let legacy_items: Vec<serde_json::Value> = all_sources
+            .iter()
+            .map(|(pipeline_name, source)| {
+                serde_json::json!({
+                    "pipeline": pipeline_name,
+                    "source_id": &source.id,
+                    "source_type": format!("{:?}", source.source_type)
+                        .split('{')
+                        .next()
+                        .unwrap_or("unknown")
+                        .trim(),
+                    "required": source.required,
+                    "refresh": format!("{:?}", source.refresh),
+                })
+            })
+            .collect();
+        let legacy_output = collapse_json_items(legacy_items);
+        emit_resolve(&ctx, &rows, &legacy_output, pretty);
         return;
     }
 
     let resolver = Arc::new(DefaultSourceResolver::new());
     let mut rows = Vec::new();
+    let mut legacy_items = Vec::new();
     let mut had_error = false;
 
     for (pipeline_name, source) in &all_sources {
@@ -198,35 +216,63 @@ async fn resolve_async(
             .to_string();
         match resolver.resolve(source).await {
             Ok(value) => {
+                let data_or_error = serde_json::to_string(&value.data).unwrap_or_default();
+                legacy_items.push(serde_json::json!({
+                    "pipeline": pipeline_name,
+                    "source_id": source_id.clone(),
+                    "status": "ok",
+                    "data": value.data,
+                }));
                 rows.push(SourceRow {
                     pipeline: pipeline_name.clone(),
                     source_id,
                     source_type,
                     status: "ok".into(),
-                    data_or_error: serde_json::to_string(&value.data).unwrap_or_default(),
+                    data_or_error,
                 });
             }
             Err(e) => {
                 had_error = true;
+                let error = e.to_string();
+                legacy_items.push(serde_json::json!({
+                    "pipeline": pipeline_name,
+                    "source_id": source_id.clone(),
+                    "status": "error",
+                    "error": error.clone(),
+                }));
                 rows.push(SourceRow {
                     pipeline: pipeline_name.clone(),
                     source_id,
                     source_type,
                     status: "error".into(),
-                    data_or_error: e.to_string(),
+                    data_or_error: error,
                 });
             }
         }
     }
 
-    emit_resolve(&ctx, &rows, pretty);
+    let legacy_output = collapse_json_items(legacy_items);
+    emit_resolve(&ctx, &rows, &legacy_output, pretty);
 
     if had_error {
         std::process::exit(1);
     }
 }
 
-fn emit_resolve(ctx: &OutputCtx, rows: &[SourceRow], pretty: bool) {
+fn collapse_json_items(mut items: Vec<serde_json::Value>) -> serde_json::Value {
+    if items.len() == 1 {
+        items.pop().unwrap_or_default()
+    } else {
+        serde_json::Value::Array(items)
+    }
+}
+
+fn emit_resolve(
+    ctx: &OutputCtx,
+    rows: &[SourceRow],
+    legacy_output: &serde_json::Value,
+    pretty: bool,
+) {
     let envelope = if rows.len() == 1 {
         serde_json::to_value(&rows[0]).unwrap_or_default()
     } else {
@@ -237,9 +283,9 @@ fn emit_resolve(ctx: &OutputCtx, rows: &[SourceRow], pretty: bool) {
     // of TTY, when no explicit --output-format was given.
     if !ctx.explicit_format {
         let json_str = if pretty {
-            serde_json::to_string_pretty(&envelope).unwrap()
+            serde_json::to_string_pretty(legacy_output).unwrap()
         } else {
-            serde_json::to_string(&envelope).unwrap()
+            serde_json::to_string(legacy_output).unwrap()
         };
         println!("{json_str}");
         return;
