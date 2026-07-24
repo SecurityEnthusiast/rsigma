@@ -8,6 +8,8 @@ use rsigma_eval::parse_pipeline_file;
 use rsigma_runtime::DefaultSourceResolver;
 use rsigma_runtime::sources::SourceResolver;
 
+use crate::output::OutputCtx;
+
 /// Arguments for `rsigma pipeline resolve` (and the deprecated `rsigma resolve`).
 #[derive(Args, Debug)]
 pub struct ResolveArgs {
@@ -32,7 +34,7 @@ pub struct ResolveArgs {
     pub source_files: Vec<PathBuf>,
 }
 
-pub fn cmd_resolve(args: ResolveArgs) {
+pub fn cmd_resolve(args: ResolveArgs, _ctx: OutputCtx) {
     let ResolveArgs {
         pipelines: pipeline_paths,
         source: source_filter,

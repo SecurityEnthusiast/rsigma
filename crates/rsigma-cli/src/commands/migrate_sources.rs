@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use clap::Args;
 use rsigma_eval::parse_sources;
 
+use crate::output::OutputCtx;
+
 /// Arguments for `rsigma rule migrate-sources`.
 #[derive(Args, Debug)]
 pub(crate) struct MigrateSourcesArgs {
@@ -28,7 +30,7 @@ pub(crate) struct MigrateSourcesArgs {
     pub dry_run: bool,
 }
 
-pub(crate) fn cmd_migrate_sources(args: MigrateSourcesArgs) {
+pub(crate) fn cmd_migrate_sources(args: MigrateSourcesArgs, _ctx: OutputCtx) {
     let MigrateSourcesArgs {
         pipelines: pipeline_paths,
         output,

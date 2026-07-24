@@ -358,7 +358,7 @@ fn run_delegated(args: &ConvertArgs, ctx: &OutputCtx) {
     write_output(queries, output);
 }
 
-pub(crate) fn cmd_list_targets() {
+pub(crate) fn cmd_list_targets(_ctx: OutputCtx) {
     println!("Available conversion targets:");
     println!("  postgres  - PostgreSQL/TimescaleDB (aliases: postgresql, pg)");
     println!("  lynxdb    - LynxDB log analytics engine");
@@ -390,7 +390,7 @@ pub(crate) fn cmd_list_targets() {
     }
 }
 
-pub(crate) fn cmd_list_formats(target: String) {
+pub(crate) fn cmd_list_formats(target: String, _ctx: OutputCtx) {
     if let Some(backend) = try_native_backend(&target, &std::collections::HashMap::new()) {
         println!("Available formats for '{target}':");
         for (name, desc) in backend.formats() {

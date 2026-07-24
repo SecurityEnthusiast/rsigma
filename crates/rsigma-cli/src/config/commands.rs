@@ -13,6 +13,7 @@ use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
 use crate::exit_code;
+use crate::output::OutputCtx;
 
 use super::defaults::defaults_partial;
 use super::resolve::{Source, env_partial, resolve_layers, to_value, value_at};
@@ -103,18 +104,18 @@ pub(crate) struct ReloadArgs {
 }
 
 /// Dispatch a `rsigma config` subcommand.
-pub(crate) fn dispatch(cmd: ConfigCommands) {
+pub(crate) fn dispatch(cmd: ConfigCommands, ctx: OutputCtx) {
     match cmd {
-        ConfigCommands::Init(args) => cmd_init(args),
-        ConfigCommands::Validate(args) => cmd_validate(args),
-        ConfigCommands::Show(args) => cmd_show(args),
-        ConfigCommands::Schema => cmd_schema(),
-        ConfigCommands::Path(args) => cmd_path(args),
-        ConfigCommands::Reload(args) => cmd_reload(args),
+        ConfigCommands::Init(args) => cmd_init(args, ctx),
+        ConfigCommands::Validate(args) => cmd_validate(args, ctx),
+        ConfigCommands::Show(args) => cmd_show(args, ctx),
+        ConfigCommands::Schema => cmd_schema(ctx),
+        ConfigCommands::Path(args) => cmd_path(args, ctx),
+        ConfigCommands::Reload(args) => cmd_reload(args, ctx),
     }
 }
 
-fn cmd_init(args: InitArgs) {
+fn cmd_init(args: InitArgs, _ctx: OutputCtx) {
     let output = args.output.unwrap_or_else(|| PathBuf::from("rsigma.yaml"));
     if output.exists() && !args.force {
         eprintln!(
@@ -130,7 +131,7 @@ fn cmd_init(args: InitArgs) {
     eprintln!("Wrote config template to {}", output.display());
 }
 
-fn cmd_validate(args: ValidateArgs) {
+fn cmd_validate(args: ValidateArgs, _ctx: OutputCtx) {
     let json = args.format == "json";
     match load_layered(args.config.as_deref()) {
         Ok(loaded) => {
@@ -196,7 +197,7 @@ fn cmd_validate(args: ValidateArgs) {
     }
 }
 
-fn cmd_show(args: ShowArgs) {
+fn cmd_show(args: ShowArgs, _ctx: OutputCtx) {
     let loaded = match load_layered(args.config.as_deref()) {
         Ok(loaded) => loaded,
         Err(e) => {
@@ -272,7 +273,7 @@ fn render_scalar(value: &Value) -> String {
     }
 }
 
-fn cmd_schema() {
+fn cmd_schema(_ctx: OutputCtx) {
     let schema = schemars::schema_for!(super::RsigmaConfigPartial);
     match serde_json::to_string_pretty(&schema) {
         Ok(s) => println!("{s}"),
@@ -283,7 +284,7 @@ fn cmd_schema() {
     }
 }
 
-fn cmd_path(args: PathArgs) {
+fn cmd_path(args: PathArgs, _ctx: OutputCtx) {
     let paths = discover(args.config.as_deref());
     if paths.is_empty() {
         println!("none");
@@ -294,7 +295,7 @@ fn cmd_path(args: PathArgs) {
     }
 }
 
-fn cmd_reload(args: ReloadArgs) {
+fn cmd_reload(args: ReloadArgs, _ctx: OutputCtx) {
     let addr = super::resolve_daemon_addr(args.addr, args.config.as_deref());
     let url = super::api_url(&addr, "/api/v1/reload");
 

@@ -332,7 +332,7 @@ fn dispatch(command: Commands, matches: &ArgMatches, ctx: output::OutputCtx) {
         Commands::Pipeline { cmd } => dispatch_pipeline(cmd, ctx),
         #[cfg(feature = "mcp")]
         Commands::Mcp { cmd } => dispatch_mcp(cmd),
-        Commands::Config { cmd } => config::commands::dispatch(cmd),
+        Commands::Config { cmd } => config::commands::dispatch(cmd, ctx),
     }
 }
 
@@ -365,7 +365,7 @@ fn dispatch_engine(cmd: EngineCommands, matches: &ArgMatches, ctx: output::Outpu
 fn dispatch_rule(cmd: RuleCommands, matches: &ArgMatches, ctx: output::OutputCtx) {
     match cmd {
         RuleCommands::Parse(args) => commands::cmd_parse(args, ctx),
-        RuleCommands::Validate(args) => commands::cmd_validate(args),
+        RuleCommands::Validate(args) => commands::cmd_validate(args, ctx),
         RuleCommands::Lint(args) => run_lint(args, ctx),
         RuleCommands::Fields(args) => commands::cmd_fields(args, ctx),
         RuleCommands::Draft(args) => commands::cmd_draft(args, ctx),
@@ -414,15 +414,17 @@ fn dispatch_rule(cmd: RuleCommands, matches: &ArgMatches, ctx: output::OutputCtx
         }
         RuleCommands::Condition(args) => commands::cmd_condition(args, ctx),
         RuleCommands::Stdin(args) => commands::cmd_stdin(args, ctx),
-        RuleCommands::MigrateSources(args) => commands::cmd_migrate_sources(args),
+        RuleCommands::MigrateSources(args) => commands::cmd_migrate_sources(args, ctx),
     }
 }
 
 fn dispatch_backend(cmd: BackendCommands, ctx: output::OutputCtx) {
     match cmd {
         BackendCommands::Convert(args) => commands::cmd_convert(args, ctx),
-        BackendCommands::Targets => commands::cmd_list_targets(),
-        BackendCommands::Formats(ListFormatsArgs { target }) => commands::cmd_list_formats(target),
+        BackendCommands::Targets => commands::cmd_list_targets(ctx),
+        BackendCommands::Formats(ListFormatsArgs { target }) => {
+            commands::cmd_list_formats(target, ctx)
+        }
     }
 }
 
@@ -430,7 +432,7 @@ fn dispatch_pipeline(cmd: PipelineCommands, ctx: output::OutputCtx) {
     match cmd {
         PipelineCommands::Diff(args) => commands::cmd_pipeline_diff(args, ctx),
         #[cfg(feature = "daemon")]
-        PipelineCommands::Resolve(args) => commands::cmd_resolve(args),
+        PipelineCommands::Resolve(args) => commands::cmd_resolve(args, ctx),
     }
 }
 

@@ -5,6 +5,8 @@ use clap::Args;
 use rsigma_eval::Engine;
 use rsigma_parser::parse_sigma_directory;
 
+use crate::output::OutputCtx;
+
 /// Arguments for `rsigma rule validate` (and the deprecated `rsigma validate`).
 #[derive(Args, Debug)]
 pub(crate) struct ValidateArgs {
@@ -29,7 +31,7 @@ pub(crate) struct ValidateArgs {
     pub source_files: Vec<PathBuf>,
 }
 
-pub(crate) fn cmd_validate(args: ValidateArgs) {
+pub(crate) fn cmd_validate(args: ValidateArgs, _ctx: OutputCtx) {
     let ValidateArgs {
         path,
         verbose,
