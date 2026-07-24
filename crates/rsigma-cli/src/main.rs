@@ -331,7 +331,7 @@ fn dispatch(command: Commands, matches: &ArgMatches, ctx: output::OutputCtx) {
         Commands::Backend { cmd } => dispatch_backend(cmd, ctx),
         Commands::Pipeline { cmd } => dispatch_pipeline(cmd, ctx),
         #[cfg(feature = "mcp")]
-        Commands::Mcp { cmd } => dispatch_mcp(cmd),
+        Commands::Mcp { cmd } => dispatch_mcp(cmd, ctx),
         Commands::Config { cmd } => config::commands::dispatch(cmd, ctx),
     }
 }
@@ -357,7 +357,7 @@ fn dispatch_engine(cmd: EngineCommands, matches: &ArgMatches, ctx: output::Outpu
                 .subcommand_matches("engine")
                 .and_then(|m| m.subcommand_matches("daemon"))
                 .expect("engine daemon submatches present");
-            cmd_daemon(args, dm);
+            cmd_daemon(args, dm, ctx);
         }
     }
 }

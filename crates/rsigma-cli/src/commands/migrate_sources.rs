@@ -30,7 +30,10 @@ pub(crate) struct MigrateSourcesArgs {
     pub dry_run: bool,
 }
 
-pub(crate) fn cmd_migrate_sources(args: MigrateSourcesArgs, _ctx: OutputCtx) {
+pub(crate) fn cmd_migrate_sources(args: MigrateSourcesArgs, ctx: OutputCtx) {
+    if ctx.explicit_format {
+        ctx.warn_unsupported("rule migrate-sources", "source YAML / file writes");
+    }
     let MigrateSourcesArgs {
         pipelines: pipeline_paths,
         output,

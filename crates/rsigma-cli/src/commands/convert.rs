@@ -186,42 +186,56 @@ pub(crate) fn cmd_convert(args: ConvertArgs, ctx: OutputCtx) {
                 write_split_output(backend.as_ref(), &output_data, &format, dir, &ctx);
                 return;
             }
-            // `--output-format json` wraps the queries in a JSON envelope.
-            // The other structured formats (`ndjson`/`csv`/`tsv`/`table`)
-            // make no sense for free-form query text -- warn once on stderr
-            // and fall back to the raw text path.
-            if ctx.format == OutputFormat::Json && output.is_none() {
-                let queries: Vec<serde_json::Value> = output_data
-                    .queries
-                    .iter()
-                    .flat_map(|r| {
-                        r.queries.iter().map(move |q| {
-                            serde_json::json!({
-                                "rule_title": r.rule_title,
-                                "rule_id": r.rule_id,
-                                "query": q,
+            // Explicit `--output-format json|ndjson` wraps queries. Raw backend
+            // text remains the default (and the only path when `--output` is
+            // set). Table/csv/tsv warn and fall back to raw text.
+            if ctx.explicit_format && output.is_none() {
+                match ctx.format {
+                    OutputFormat::Json => {
+                        let queries: Vec<serde_json::Value> = output_data
+                            .queries
+                            .iter()
+                            .flat_map(|r| {
+                                r.queries.iter().map(move |q| {
+                                    serde_json::json!({
+                                        "rule_title": r.rule_title,
+                                        "rule_id": r.rule_id,
+                                        "query": q,
+                                    })
+                                })
                             })
-                        })
-                    })
-                    .collect();
-                render_json(
-                    &serde_json::json!({
-                        "target": target,
-                        "format": format,
-                        "queries": queries,
-                    }),
-                    ctx.pretty_json(),
-                );
-                return;
-            }
-            if ctx.explicit_format
-                && !matches!(ctx.format, OutputFormat::Json | OutputFormat::Ndjson)
-                && ctx.show_progress()
-            {
-                eprintln!(
-                    "warning: `--output-format {}` is not supported by `backend convert`; falling back to raw query text.",
-                    ctx.format.as_str(),
-                );
+                            .collect();
+                        render_json(
+                            &serde_json::json!({
+                                "target": target,
+                                "format": format,
+                                "queries": queries,
+                            }),
+                            ctx.pretty_json(),
+                        );
+                        return;
+                    }
+                    OutputFormat::Ndjson => {
+                        for r in &output_data.queries {
+                            for q in &r.queries {
+                                render_json(
+                                    &serde_json::json!({
+                                        "target": target,
+                                        "format": format,
+                                        "rule_title": r.rule_title,
+                                        "rule_id": r.rule_id,
+                                        "query": q,
+                                    }),
+                                    false,
+                                );
+                            }
+                        }
+                        return;
+                    }
+                    OutputFormat::Table | OutputFormat::Csv | OutputFormat::Tsv => {
+                        ctx.warn_unsupported("backend convert", "raw query text");
+                    }
+                }
             }
             let all_queries: Vec<String> = output_data
                 .queries
@@ -326,35 +340,46 @@ fn run_delegated(args: &ConvertArgs, ctx: &OutputCtx) {
 
     let queries = conversion.raw.trim_end_matches('\n');
 
-    // `--output-format json` wraps the delegated queries in the same envelope
-    // shape the native path emits. sigma-cli text backends emit one query per
-    // line, so each non-empty line becomes a query object.
-    if ctx.format == OutputFormat::Json && output.is_none() {
-        let query_objs: Vec<serde_json::Value> = conversion
-            .queries
-            .iter()
-            .map(|q| serde_json::json!({ "query": q }))
-            .collect();
-        render_json(
-            &serde_json::json!({
-                "target": target,
-                "format": format,
-                "engine": "sigma-cli",
-                "queries": query_objs,
-            }),
-            ctx.pretty_json(),
-        );
-        return;
-    }
-
-    if ctx.explicit_format
-        && !matches!(ctx.format, OutputFormat::Json | OutputFormat::Ndjson)
-        && ctx.show_progress()
-    {
-        eprintln!(
-            "warning: `--output-format {}` is not supported by `backend convert`; falling back to raw query text.",
-            ctx.format.as_str(),
-        );
+    // Explicit `--output-format json|ndjson` wraps the delegated queries in
+    // the same envelope shape the native path emits. sigma-cli text backends
+    // emit one query per line, so each non-empty line becomes a query object.
+    if ctx.explicit_format && output.is_none() {
+        match ctx.format {
+            OutputFormat::Json => {
+                let query_objs: Vec<serde_json::Value> = conversion
+                    .queries
+                    .iter()
+                    .map(|q| serde_json::json!({ "query": q }))
+                    .collect();
+                render_json(
+                    &serde_json::json!({
+                        "target": target,
+                        "format": format,
+                        "engine": "sigma-cli",
+                        "queries": query_objs,
+                    }),
+                    ctx.pretty_json(),
+                );
+                return;
+            }
+            OutputFormat::Ndjson => {
+                for q in &conversion.queries {
+                    render_json(
+                        &serde_json::json!({
+                            "target": target,
+                            "format": format,
+                            "engine": "sigma-cli",
+                            "query": q,
+                        }),
+                        false,
+                    );
+                }
+                return;
+            }
+            OutputFormat::Table | OutputFormat::Csv | OutputFormat::Tsv => {
+                ctx.warn_unsupported("backend convert", "raw query text");
+            }
+        }
     }
 
     write_output(queries, output);

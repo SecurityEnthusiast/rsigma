@@ -624,7 +624,14 @@ pub(crate) struct NatsAuthArgs {
 }
 
 /// Entry point for `rsigma engine daemon` (and the deprecated `rsigma daemon`).
-pub(crate) fn cmd_daemon(mut args: DaemonArgs, matches: &ArgMatches) {
+pub(crate) fn cmd_daemon(
+    mut args: DaemonArgs,
+    matches: &ArgMatches,
+    ctx: crate::output::OutputCtx,
+) {
+    if ctx.explicit_format {
+        ctx.warn_unsupported("engine daemon", "configured sink wire format");
+    }
     let base = config::load_and_merge(args.config.as_deref());
     if args.dry_run {
         config::print_dry_run("daemon", &base);

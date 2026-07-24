@@ -5,7 +5,7 @@ use std::process;
 use clap::Args;
 use rsigma_parser::{parse_sigma_file, parse_sigma_yaml};
 
-use crate::output::{OutputCtx, render_json};
+use crate::output::{OutputCtx, OutputFormat, render_json};
 
 /// Arguments for `rsigma rule parse` (and the deprecated `rsigma parse`).
 #[derive(Args, Debug)]
@@ -42,7 +42,7 @@ pub(crate) fn cmd_parse(args: ParseArgs, ctx: OutputCtx) {
     match parse_sigma_file(&path) {
         Ok(collection) => {
             crate::print_warnings(&collection.errors);
-            render_json(&collection, effective_pretty(ctx, pretty));
+            emit_ast("rule parse", &ctx, &collection, pretty);
         }
         Err(e) => {
             eprintln!("Error parsing {}: {e}", path.display());
@@ -56,8 +56,8 @@ pub(crate) fn cmd_condition(args: ConditionArgs, ctx: OutputCtx) {
     match rsigma_parser::parse_condition(&expr) {
         // `--pretty` is implied for condition output; the AST is small and
         // human-friendly is the default. `--output-format ndjson` overrides
-        // to compact via [`effective_pretty`].
-        Ok(ast) => render_json(&ast, effective_pretty(ctx, true)),
+        // to compact via [`emit_ast`].
+        Ok(ast) => emit_ast("rule condition", &ctx, &ast, true),
         Err(e) => {
             eprintln!("Condition parse error: {e}");
             process::exit(crate::exit_code::RULE_ERROR);
@@ -76,7 +76,7 @@ pub(crate) fn cmd_stdin(args: StdinArgs, ctx: OutputCtx) {
     match parse_sigma_yaml(&input) {
         Ok(collection) => {
             crate::print_warnings(&collection.errors);
-            render_json(&collection, effective_pretty(ctx, pretty));
+            emit_ast("rule stdin", &ctx, &collection, pretty);
         }
         Err(e) => {
             eprintln!("Parse error: {e}");
@@ -85,16 +85,17 @@ pub(crate) fn cmd_stdin(args: StdinArgs, ctx: OutputCtx) {
     }
 }
 
-/// Resolve the effective JSON pretty-print decision for `parse` / `stdin` /
-/// `condition`. `--output-format ndjson` always wins (compact); otherwise we
-/// fall back to the per-command `--pretty` flag, which defaults to `true`.
-fn effective_pretty(ctx: OutputCtx, flag: bool) -> bool {
-    use crate::output::OutputFormat;
+/// Emit a parsed AST. Honors json/ndjson; warns and falls back to JSON for
+/// table/csv/tsv. The legacy `--pretty` flag still controls pretty-printing
+/// when the format is JSON (or the JSON fallback).
+fn emit_ast<T: serde::Serialize>(command: &str, ctx: &OutputCtx, value: &T, pretty_flag: bool) {
     match ctx.format {
-        OutputFormat::Ndjson => false,
-        OutputFormat::Json => flag || ctx.pretty_json(),
-        // Table/CSV/TSV do not apply to parser output -- fall back to JSON
-        // with the same `--pretty` semantics.
-        _ => flag,
+        OutputFormat::Ndjson => render_json(value, false),
+        OutputFormat::Json => render_json(value, pretty_flag || ctx.pretty_json()),
+        OutputFormat::Table | OutputFormat::Csv | OutputFormat::Tsv => {
+            // Preserve the caller's pretty preference on the JSON fallback.
+            ctx.warn_unsupported(command, "json");
+            render_json(value, pretty_flag);
+        }
     }
 }
