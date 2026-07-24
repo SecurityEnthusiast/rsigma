@@ -11,6 +11,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 - AST commands (`rule parse`/`condition`/`stdin`) warn and fall back to JSON for table/csv/tsv instead of silently ignoring the selector.
 - Fixed products (`rule reverse`, `rule draft` YAML, `rule migrate-sources`, `engine tap`, `engine daemon`, `mcp serve`, `config init`/`reload`) keep their wire format and emit a standardized unsupported-format warning when an incompatible selector is set.
 - `config validate`/`show` local `--format` wins over global `--output-format` with a precedence warning when both are set.
+- CI runs `scripts/output-format-smoke.sh` against a full-featured binary to keep the per-command contract from drifting.
 
 ### rstix: TAXII collection ingest (`taxii-store` feature) (#387)
 
