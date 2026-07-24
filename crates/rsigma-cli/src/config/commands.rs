@@ -3,17 +3,21 @@
 //!
 //! Output contract (agent-friendly): machine-readable answers go to stdout,
 //! diagnostics and human messages go to stderr. `validate` supports
-//! `--format json` so agents can branch on a structured envelope.
+//! `--format json` so agents can branch on a structured envelope. The global
+//! `--output-format` is honored when the local `--format` is unset.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process;
 
 use clap::{Args, Subcommand};
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::exit_code;
-use crate::output::OutputCtx;
+use crate::output::{
+    OutputCtx, OutputFormat, Tabular, render_json, render_json_only, render_report,
+};
 
 use super::defaults::defaults_partial;
 use super::resolve::{Source, env_partial, resolve_layers, to_value, value_at};
@@ -60,9 +64,10 @@ pub(crate) struct ValidateArgs {
     #[arg(short, long)]
     pub config: Option<PathBuf>,
 
-    /// Output format: text (default) or json
-    #[arg(long, default_value = "text", value_parser = ["text", "json"])]
-    pub format: String,
+    /// Output format: text (default) or json. When unset, the global
+    /// `--output-format` is used.
+    #[arg(long, value_parser = ["text", "json"])]
+    pub format: Option<String>,
 
     /// Treat unknown keys as errors (non-zero exit)
     #[arg(long)]
@@ -79,9 +84,10 @@ pub(crate) struct ShowArgs {
     #[arg(long = "for", value_parser = ["global", "daemon", "eval"])]
     pub section: Option<String>,
 
-    /// Output format: text (default), json, or yaml
-    #[arg(long, default_value = "text", value_parser = ["text", "json", "yaml"])]
-    pub format: String,
+    /// Output format: text (default), json, or yaml. When unset, the global
+    /// `--output-format` is used.
+    #[arg(long, value_parser = ["text", "json", "yaml"])]
+    pub format: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -103,6 +109,53 @@ pub(crate) struct ReloadArgs {
     pub config: Option<PathBuf>,
 }
 
+#[derive(Debug, Serialize)]
+struct PathRow {
+    source: String,
+    path: String,
+}
+
+impl Tabular for PathRow {
+    fn headers() -> &'static [&'static str] {
+        &["SOURCE", "PATH"]
+    }
+    fn row(&self) -> Vec<String> {
+        vec![self.source.clone(), self.path.clone()]
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ValidateIssueRow {
+    kind: String,
+    file: String,
+    detail: String,
+}
+
+impl Tabular for ValidateIssueRow {
+    fn headers() -> &'static [&'static str] {
+        &["KIND", "FILE", "DETAIL"]
+    }
+    fn row(&self) -> Vec<String> {
+        vec![self.kind.clone(), self.file.clone(), self.detail.clone()]
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ShowRow {
+    path: String,
+    value: String,
+    source: String,
+}
+
+impl Tabular for ShowRow {
+    fn headers() -> &'static [&'static str] {
+        &["PATH", "VALUE", "SOURCE"]
+    }
+    fn row(&self) -> Vec<String> {
+        vec![self.path.clone(), self.value.clone(), self.source.clone()]
+    }
+}
+
 /// Dispatch a `rsigma config` subcommand.
 pub(crate) fn dispatch(cmd: ConfigCommands, ctx: OutputCtx) {
     match cmd {
@@ -115,7 +168,10 @@ pub(crate) fn dispatch(cmd: ConfigCommands, ctx: OutputCtx) {
     }
 }
 
-fn cmd_init(args: InitArgs, _ctx: OutputCtx) {
+fn cmd_init(args: InitArgs, ctx: OutputCtx) {
+    if ctx.explicit_format {
+        ctx.warn_unsupported("config init", "file write (no stdout data)");
+    }
     let output = args.output.unwrap_or_else(|| PathBuf::from("rsigma.yaml"));
     if output.exists() && !args.force {
         eprintln!(
@@ -131,50 +187,94 @@ fn cmd_init(args: InitArgs, _ctx: OutputCtx) {
     eprintln!("Wrote config template to {}", output.display());
 }
 
-fn cmd_validate(args: ValidateArgs, _ctx: OutputCtx) {
-    let json = args.format == "json";
+fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
+    let mode = resolve_local_or_global(
+        "config validate",
+        args.format.as_deref(),
+        &ctx,
+        "text",
+        &["text", "json"],
+    );
+
     match load_layered(args.config.as_deref()) {
         Ok(loaded) => {
             let inactive = inactive_sections(&loaded.config);
             let unknown_count = loaded.unknown_keys.len();
             let failed = args.strict && unknown_count > 0;
 
-            if json {
-                let envelope = serde_json::json!({
-                    "ok": !failed,
-                    "sources": loaded.sources,
-                    "unknown_keys": loaded
-                        .unknown_keys
-                        .iter()
-                        .map(|(path, key)| serde_json::json!({
-                            "file": path,
-                            "key": key,
-                        }))
-                        .collect::<Vec<_>>(),
-                    "inactive_sections": inactive,
+            let envelope = serde_json::json!({
+                "ok": !failed,
+                "sources": loaded.sources,
+                "unknown_keys": loaded
+                    .unknown_keys
+                    .iter()
+                    .map(|(path, key)| serde_json::json!({
+                        "file": path,
+                        "key": key,
+                    }))
+                    .collect::<Vec<_>>(),
+                "inactive_sections": inactive,
+            });
+
+            let mut rows = Vec::new();
+            for (path, key) in &loaded.unknown_keys {
+                rows.push(ValidateIssueRow {
+                    kind: "unknown_key".into(),
+                    file: path.display().to_string(),
+                    detail: key.clone(),
                 });
-                println!("{}", serde_json::to_string_pretty(&envelope).unwrap());
-            } else {
-                if loaded.sources.is_empty() {
-                    eprintln!("No config files found; compiled defaults apply.");
-                } else {
-                    eprintln!("Loaded (low to high precedence):");
-                    for source in &loaded.sources {
-                        eprintln!("  - {}", source.display());
+            }
+            for section in &inactive {
+                rows.push(ValidateIssueRow {
+                    kind: "inactive_section".into(),
+                    file: String::new(),
+                    detail: section.to_string(),
+                });
+            }
+            if rows.is_empty() {
+                rows.push(ValidateIssueRow {
+                    kind: if failed { "error" } else { "ok" }.into(),
+                    file: String::new(),
+                    detail: if failed {
+                        format!("{unknown_count} unknown key(s)")
+                    } else {
+                        "valid".into()
+                    },
+                });
+            }
+
+            match mode.as_str() {
+                "json" => render_json(&envelope, true),
+                "ndjson" | "table" | "csv" | "tsv" => {
+                    // Build a temporary ctx with the resolved format so
+                    // render_report branches correctly.
+                    let mut report_ctx = ctx;
+                    report_ctx.format = OutputFormat::parse(&mode).unwrap_or(ctx.format);
+                    report_ctx.explicit_format = true;
+                    render_report(&report_ctx, &envelope, &rows);
+                }
+                _ => {
+                    if loaded.sources.is_empty() {
+                        eprintln!("No config files found; compiled defaults apply.");
+                    } else {
+                        eprintln!("Loaded (low to high precedence):");
+                        for source in &loaded.sources {
+                            eprintln!("  - {}", source.display());
+                        }
                     }
-                }
-                for (path, key) in &loaded.unknown_keys {
-                    eprintln!("warning: unknown key '{key}' in {}", path.display());
-                }
-                for section in &inactive {
-                    eprintln!(
-                        "warning: section '{section}' is set but inert in this build (feature disabled)"
-                    );
-                }
-                if failed {
-                    eprintln!("{unknown_count} unknown key(s) found (--strict)");
-                } else {
-                    eprintln!("Config is valid.");
+                    for (path, key) in &loaded.unknown_keys {
+                        eprintln!("warning: unknown key '{key}' in {}", path.display());
+                    }
+                    for section in &inactive {
+                        eprintln!(
+                            "warning: section '{section}' is set but inert in this build (feature disabled)"
+                        );
+                    }
+                    if failed {
+                        eprintln!("{unknown_count} unknown key(s) found (--strict)");
+                    } else {
+                        eprintln!("Config is valid.");
+                    }
                 }
             }
 
@@ -183,21 +283,46 @@ fn cmd_validate(args: ValidateArgs, _ctx: OutputCtx) {
             }
         }
         Err(e) => {
-            if json {
-                let envelope = serde_json::json!({
-                    "ok": false,
-                    "error": e.to_string(),
-                });
-                println!("{}", serde_json::to_string_pretty(&envelope).unwrap());
-            } else {
-                eprintln!("error: {e}");
+            match mode.as_str() {
+                "json" | "ndjson" => {
+                    let envelope = serde_json::json!({
+                        "ok": false,
+                        "error": e.to_string(),
+                    });
+                    if mode == "ndjson" {
+                        render_json(&envelope, false);
+                    } else {
+                        render_json(&envelope, true);
+                    }
+                }
+                "table" | "csv" | "tsv" => {
+                    let rows = [ValidateIssueRow {
+                        kind: "error".into(),
+                        file: String::new(),
+                        detail: e.to_string(),
+                    }];
+                    let envelope = serde_json::json!({ "ok": false, "error": e.to_string() });
+                    let mut report_ctx = ctx;
+                    report_ctx.format = OutputFormat::parse(&mode).unwrap_or(ctx.format);
+                    report_ctx.explicit_format = true;
+                    render_report(&report_ctx, &envelope, &rows);
+                }
+                _ => eprintln!("error: {e}"),
             }
             process::exit(exit_code::CONFIG_ERROR);
         }
     }
 }
 
-fn cmd_show(args: ShowArgs, _ctx: OutputCtx) {
+fn cmd_show(args: ShowArgs, ctx: OutputCtx) {
+    let mode = resolve_local_or_global(
+        "config show",
+        args.format.as_deref(),
+        &ctx,
+        "text",
+        &["text", "json", "yaml"],
+    );
+
     let loaded = match load_layered(args.config.as_deref()) {
         Ok(loaded) => loaded,
         Err(e) => {
@@ -215,7 +340,20 @@ fn cmd_show(args: ShowArgs, _ctx: OutputCtx) {
     let filter = args.section.as_deref();
     let merged = filter_section(&resolved.merged, filter);
 
-    match args.format.as_str() {
+    let rows: Vec<ShowRow> = resolved
+        .sources
+        .iter()
+        .filter(|(path, _)| section_matches(path, filter))
+        .map(|(path, source)| ShowRow {
+            path: path.clone(),
+            value: value_at(&resolved.merged, path)
+                .map(render_scalar)
+                .unwrap_or_default(),
+            source: source.to_string(),
+        })
+        .collect();
+
+    match mode.as_str() {
         "json" => {
             let sources: BTreeMap<&String, Source> = resolved
                 .sources
@@ -224,20 +362,21 @@ fn cmd_show(args: ShowArgs, _ctx: OutputCtx) {
                 .map(|(path, source)| (path, *source))
                 .collect();
             let envelope = json!({ "config": merged, "sources": sources });
-            println!("{}", serde_json::to_string_pretty(&envelope).unwrap());
+            render_json(&envelope, true);
         }
         "yaml" => {
             println!("{}", yaml_serde::to_string(&merged).unwrap_or_default());
         }
+        "ndjson" | "table" | "csv" | "tsv" => {
+            let envelope = json!({ "config": merged, "rows": rows });
+            let mut report_ctx = ctx;
+            report_ctx.format = OutputFormat::parse(&mode).unwrap_or(ctx.format);
+            report_ctx.explicit_format = true;
+            render_report(&report_ctx, &envelope, &rows);
+        }
         _ => {
-            for (path, source) in &resolved.sources {
-                if !section_matches(path, filter) {
-                    continue;
-                }
-                let value = value_at(&resolved.merged, path)
-                    .map(render_scalar)
-                    .unwrap_or_default();
-                println!("{path} = {value}  ({source})");
+            for row in &rows {
+                println!("{} = {}  ({})", row.path, row.value, row.source);
             }
         }
     }
@@ -273,29 +412,47 @@ fn render_scalar(value: &Value) -> String {
     }
 }
 
-fn cmd_schema(_ctx: OutputCtx) {
+fn cmd_schema(ctx: OutputCtx) {
     let schema = schemars::schema_for!(super::RsigmaConfigPartial);
-    match serde_json::to_string_pretty(&schema) {
-        Ok(s) => println!("{s}"),
-        Err(e) => {
-            eprintln!("could not serialize schema: {e}");
-            process::exit(exit_code::CONFIG_ERROR);
-        }
-    }
+    render_json_only("config schema", &ctx, &schema);
 }
 
-fn cmd_path(args: PathArgs, _ctx: OutputCtx) {
+fn cmd_path(args: PathArgs, ctx: OutputCtx) {
     let paths = discover(args.config.as_deref());
-    if paths.is_empty() {
-        println!("none");
-    } else {
-        for path in paths {
-            println!("{}", path.display());
+    if !ctx.explicit_format {
+        if paths.is_empty() {
+            println!("none");
+        } else {
+            for path in paths {
+                println!("{}", path.display());
+            }
         }
+        return;
     }
+
+    let rows: Vec<PathRow> = if paths.is_empty() {
+        vec![PathRow {
+            source: "none".into(),
+            path: String::new(),
+        }]
+    } else {
+        paths
+            .iter()
+            .enumerate()
+            .map(|(i, path)| PathRow {
+                source: format!("{}", i + 1),
+                path: path.display().to_string(),
+            })
+            .collect()
+    };
+    let envelope = json!({ "paths": rows });
+    render_report(&ctx, &envelope, &rows);
 }
 
-fn cmd_reload(args: ReloadArgs, _ctx: OutputCtx) {
+fn cmd_reload(args: ReloadArgs, ctx: OutputCtx) {
+    if ctx.explicit_format {
+        ctx.warn_unsupported("config reload", "status on stderr (no stdout data)");
+    }
     let addr = super::resolve_daemon_addr(args.addr, args.config.as_deref());
     let url = super::api_url(&addr, "/api/v1/reload");
 
@@ -313,4 +470,38 @@ fn cmd_reload(args: ReloadArgs, _ctx: OutputCtx) {
             process::exit(exit_code::CONFIG_ERROR);
         }
     }
+}
+
+/// Resolve the effective format string for a config subcommand.
+///
+/// Local `--format` wins when set. When both local and global selectors are
+/// explicit, warn and keep the local value. When only the global selector is
+/// set, map it into a mode string (`json`/`ndjson`/`table`/`csv`/`tsv`, or
+/// `text` for unsupported local-only defaults).
+fn resolve_local_or_global(
+    command: &str,
+    local: Option<&str>,
+    ctx: &OutputCtx,
+    default: &str,
+    local_allowed: &[&str],
+) -> String {
+    if let Some(local) = local {
+        if ctx.explicit_format {
+            ctx.warn_ignored(command, "local --format takes precedence");
+        }
+        return local.to_string();
+    }
+    if ctx.explicit_format {
+        let global = ctx.format.as_str();
+        // Global formats always work through render_report / render_json.
+        // Local-only values like `yaml`/`text` are not produced by the global
+        // selector.
+        if local_allowed.contains(&global) || matches!(global, "ndjson" | "table" | "csv" | "tsv")
+        {
+            return global.to_string();
+        }
+        ctx.warn_unsupported(command, default);
+        return default.to_string();
+    }
+    default.to_string()
 }

@@ -3,7 +3,9 @@ use std::process;
 
 use clap::Args;
 
-use crate::output::{OutputCtx, OutputFormat, render_json};
+use serde::Serialize;
+
+use crate::output::{OutputCtx, OutputFormat, Tabular, render_json, render_report};
 
 /// Arguments for `rsigma backend convert` (and the deprecated `rsigma convert`).
 #[derive(Args, Debug)]
@@ -358,12 +360,75 @@ fn run_delegated(args: &ConvertArgs, ctx: &OutputCtx) {
     write_output(queries, output);
 }
 
-pub(crate) fn cmd_list_targets(_ctx: OutputCtx) {
-    println!("Available conversion targets:");
-    println!("  postgres  - PostgreSQL/TimescaleDB (aliases: postgresql, pg)");
-    println!("  lynxdb    - LynxDB log analytics engine");
-    println!("  fibratus  - Fibratus kernel-event detection engine");
-    println!("  test      - Backend-neutral test backend");
+#[derive(Debug, Serialize)]
+struct TargetRow {
+    provider: String,
+    name: String,
+    description: String,
+}
+
+impl Tabular for TargetRow {
+    fn headers() -> &'static [&'static str] {
+        &["PROVIDER", "NAME", "DESCRIPTION"]
+    }
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.provider.clone(),
+            self.name.clone(),
+            self.description.clone(),
+        ]
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct FormatRow {
+    target: String,
+    kind: String,
+    name: String,
+    description: String,
+}
+
+impl Tabular for FormatRow {
+    fn headers() -> &'static [&'static str] {
+        &["TARGET", "KIND", "NAME", "DESCRIPTION"]
+    }
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.target.clone(),
+            self.kind.clone(),
+            self.name.clone(),
+            self.description.clone(),
+        ]
+    }
+}
+
+fn native_target_rows() -> Vec<TargetRow> {
+    vec![
+        TargetRow {
+            provider: "native".into(),
+            name: "postgres".into(),
+            description: "PostgreSQL/TimescaleDB (aliases: postgresql, pg)".into(),
+        },
+        TargetRow {
+            provider: "native".into(),
+            name: "lynxdb".into(),
+            description: "LynxDB log analytics engine".into(),
+        },
+        TargetRow {
+            provider: "native".into(),
+            name: "fibratus".into(),
+            description: "Fibratus kernel-event detection engine".into(),
+        },
+        TargetRow {
+            provider: "native".into(),
+            name: "test".into(),
+            description: "Backend-neutral test backend".into(),
+        },
+    ]
+}
+
+pub(crate) fn cmd_list_targets(ctx: OutputCtx) {
+    let mut rows = native_target_rows();
 
     // Any other target is delegated to sigma-cli when it is installed; list its
     // targets too so the user sees the full set available from this machine.
@@ -373,6 +438,37 @@ pub(crate) fn cmd_list_targets(_ctx: OutputCtx) {
         .ok()
         .and_then(|out| rsigma_convert::sigma_cli::classify_output(&out).ok())
         .filter(|conversion| !conversion.raw.is_empty());
+
+    if ctx.explicit_format {
+        if let Some(conversion) = &listing {
+            for line in conversion.raw.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let (name, description) = match line.split_once([' ', '\t']) {
+                    Some((name, rest)) => (name.trim(), rest.trim()),
+                    None => (line, ""),
+                };
+                rows.push(TargetRow {
+                    provider: "sigma-cli".into(),
+                    name: name.to_string(),
+                    description: description.to_string(),
+                });
+            }
+        }
+        let envelope = serde_json::json!({
+            "targets": rows,
+            "sigma_cli": listing.as_ref().map(|_| cli.program().display().to_string()),
+        });
+        render_report(&ctx, &envelope, &rows);
+        return;
+    }
+
+    println!("Available conversion targets:");
+    for row in &rows {
+        println!("  {:<9} - {}", row.name, row.description);
+    }
     match listing {
         Some(conversion) => {
             println!(
@@ -390,20 +486,49 @@ pub(crate) fn cmd_list_targets(_ctx: OutputCtx) {
     }
 }
 
-pub(crate) fn cmd_list_formats(target: String, _ctx: OutputCtx) {
+pub(crate) fn cmd_list_formats(target: String, ctx: OutputCtx) {
     if let Some(backend) = try_native_backend(&target, &std::collections::HashMap::new()) {
-        println!("Available formats for '{target}':");
+        let mut rows = Vec::new();
         for (name, desc) in backend.formats() {
-            println!("  {name}  - {desc}");
+            rows.push(FormatRow {
+                target: target.clone(),
+                kind: "format".into(),
+                name: name.to_string(),
+                description: desc.to_string(),
+            });
         }
         let methods = backend.correlation_methods();
-        if !methods.is_empty() {
+        for (name, desc) in methods {
+            rows.push(FormatRow {
+                target: target.clone(),
+                kind: "correlation_method".into(),
+                name: name.to_string(),
+                description: desc.to_string(),
+            });
+        }
+
+        if ctx.explicit_format {
+            let envelope = serde_json::json!({
+                "target": target,
+                "default_correlation_method": backend.default_correlation_method(),
+                "items": rows,
+            });
+            render_report(&ctx, &envelope, &rows);
+            return;
+        }
+
+        println!("Available formats for '{target}':");
+        for row in rows.iter().filter(|r| r.kind == "format") {
+            println!("  {}  - {}", row.name, row.description);
+        }
+        let has_methods = rows.iter().any(|r| r.kind == "correlation_method");
+        if has_methods {
             println!(
                 "\nCorrelation methods for '{target}' (select with -O correlation_method=NAME, default: {}):",
                 backend.default_correlation_method()
             );
-            for (name, desc) in methods {
-                println!("  {name}  - {desc}");
+            for row in rows.iter().filter(|r| r.kind == "correlation_method") {
+                println!("  {}  - {}", row.name, row.description);
             }
         }
         return;
@@ -415,11 +540,37 @@ pub(crate) fn cmd_list_formats(target: String, _ctx: OutputCtx) {
     match cli.run(["list", "formats", target.as_str()]) {
         Ok(out) => match sigma_cli::classify_output(&out) {
             Ok(conversion) => {
-                if !conversion.raw.is_empty() {
-                    print!("{}", conversion.raw);
-                }
-                if !conversion.stderr.is_empty() {
-                    eprint!("{}", conversion.stderr);
+                if ctx.explicit_format {
+                    let mut rows = Vec::new();
+                    for line in conversion.raw.lines() {
+                        let line = line.trim();
+                        if line.is_empty() {
+                            continue;
+                        }
+                        let (name, description) = match line.split_once([' ', '\t', '-']) {
+                            Some((name, rest)) => (name.trim(), rest.trim().trim_start_matches('-').trim()),
+                            None => (line, ""),
+                        };
+                        rows.push(FormatRow {
+                            target: target.clone(),
+                            kind: "format".into(),
+                            name: name.to_string(),
+                            description: description.to_string(),
+                        });
+                    }
+                    let envelope = serde_json::json!({
+                        "target": target,
+                        "engine": "sigma-cli",
+                        "items": rows,
+                    });
+                    render_report(&ctx, &envelope, &rows);
+                } else {
+                    if !conversion.raw.is_empty() {
+                        print!("{}", conversion.raw);
+                    }
+                    if !conversion.stderr.is_empty() {
+                        eprint!("{}", conversion.stderr);
+                    }
                 }
             }
             Err(DelegateError::NonZero { stdout, stderr, .. }) => {

@@ -17,7 +17,7 @@ use similar::TextDiff;
 use rsigma_eval::{Pipeline, apply_pipelines_with_state};
 use rsigma_parser::SigmaRule;
 
-use crate::output::{OutputCtx, OutputFormat, Painter, render_json};
+use crate::output::{DelimitedWriter, OutputCtx, OutputFormat, Painter, Tabular, render_json};
 
 #[derive(Args, Debug)]
 pub(crate) struct PipelineDiffArgs {
@@ -112,10 +112,63 @@ pub(crate) fn cmd_pipeline_diff(args: PipelineDiffArgs, ctx: OutputCtx) {
                 render_json(d, false);
             }
         }
-        // The diff is structural, not tabular; csv/tsv fall back to the human
-        // unified diff rather than emitting a misleading flat table.
-        _ => render_human(&diffs, &ctx),
+        OutputFormat::Csv => render_diff_delimited(&diffs, ','),
+        OutputFormat::Tsv => render_diff_delimited(&diffs, '\t'),
+        // Implicit/table: human unified diff.
+        OutputFormat::Table => render_human(&diffs, &ctx),
     }
+}
+
+#[derive(Debug, Serialize)]
+struct DiffRow {
+    rule_title: String,
+    rule_id: String,
+    changed: String,
+    applied_items: String,
+    before: String,
+    after: String,
+}
+
+impl Tabular for DiffRow {
+    fn headers() -> &'static [&'static str] {
+        &[
+            "RULE_TITLE",
+            "RULE_ID",
+            "CHANGED",
+            "APPLIED_ITEMS",
+            "BEFORE",
+            "AFTER",
+        ]
+    }
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.rule_title.clone(),
+            self.rule_id.clone(),
+            self.changed.clone(),
+            self.applied_items.clone(),
+            self.before.clone(),
+            self.after.clone(),
+        ]
+    }
+}
+
+fn render_diff_delimited(diffs: &[RuleDiff], sep: char) {
+    let rows: Vec<DiffRow> = diffs
+        .iter()
+        .map(|d| DiffRow {
+            rule_title: d.rule_title.clone(),
+            rule_id: d.rule_id.clone().unwrap_or_default(),
+            changed: d.changed.to_string(),
+            applied_items: d.applied_items.join(","),
+            before: serde_json::to_string(&d.before).unwrap_or_default(),
+            after: serde_json::to_string(&d.after).unwrap_or_default(),
+        })
+        .collect();
+    let mut writer = DelimitedWriter::new(sep, DiffRow::headers());
+    for row in &rows {
+        writer.push(&row.row());
+    }
+    writer.finish();
 }
 
 fn render_human(diffs: &[RuleDiff], ctx: &OutputCtx) {

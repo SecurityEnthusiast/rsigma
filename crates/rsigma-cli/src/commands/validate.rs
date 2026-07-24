@@ -4,8 +4,9 @@ use std::process;
 use clap::Args;
 use rsigma_eval::Engine;
 use rsigma_parser::parse_sigma_directory;
+use serde::Serialize;
 
-use crate::output::OutputCtx;
+use crate::output::{OutputCtx, OutputFormat, Tabular, render_report};
 
 /// Arguments for `rsigma rule validate` (and the deprecated `rsigma validate`).
 #[derive(Args, Debug)]
@@ -31,7 +32,36 @@ pub(crate) struct ValidateArgs {
     pub source_files: Vec<PathBuf>,
 }
 
-pub(crate) fn cmd_validate(args: ValidateArgs, _ctx: OutputCtx) {
+#[derive(Debug, Serialize)]
+struct ValidateSummary {
+    path: String,
+    total: usize,
+    detection_rules: usize,
+    correlation_rules: usize,
+    filter_rules: usize,
+    parse_errors: usize,
+    compile_ok: usize,
+    compile_errors: usize,
+    pipelines: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct ValidateRow {
+    path: String,
+    status: String,
+    errors: String,
+}
+
+impl Tabular for ValidateRow {
+    fn headers() -> &'static [&'static str] {
+        &["PATH", "STATUS", "ERRORS"]
+    }
+    fn row(&self) -> Vec<String> {
+        vec![self.path.clone(), self.status.clone(), self.errors.clone()]
+    }
+}
+
+pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
     let ValidateArgs {
         path,
         verbose,
@@ -46,6 +76,7 @@ pub(crate) fn cmd_validate(args: ValidateArgs, _ctx: OutputCtx) {
         crate::load_pipelines(&pipeline_paths),
         resolve_sources,
         &source_files,
+        !ctx.explicit_format,
     );
     #[cfg(not(feature = "daemon"))]
     let pipelines = {
@@ -68,21 +99,6 @@ pub(crate) fn cmd_validate(args: ValidateArgs, _ctx: OutputCtx) {
             let filters = collection.filters.len();
             let parse_errors = collection.errors.len();
 
-            println!("Parsed {total} documents from {}", path.display());
-            println!("  Detection rules:   {rules}");
-            println!("  Correlation rules: {correlations}");
-            println!("  Filter rules:      {filters}");
-            println!("  Parse errors:      {parse_errors}");
-            tracing::info!(
-                total,
-                detection_rules = rules,
-                correlation_rules = correlations,
-                filter_rules = filters,
-                parse_errors,
-                rules_path = %path.display(),
-                "Validation parsed",
-            );
-
             let mut engine = Engine::new();
             for p in &pipelines {
                 engine.add_pipeline(p.clone());
@@ -103,23 +119,93 @@ pub(crate) fn cmd_validate(args: ValidateArgs, _ctx: OutputCtx) {
                 })
                 .collect();
 
-            if !pipelines.is_empty() {
-                println!("  Pipeline applied:  {} pipeline(s)", pipelines.len(),);
-            }
-            println!("  Compiled OK:       {compile_ok}");
-            println!("  Compile errors:    {}", compile_errors.len());
+            let parse_error_msgs: Vec<String> =
+                collection.errors.iter().map(|e| e.to_string()).collect();
 
-            if verbose {
-                if !collection.errors.is_empty() {
-                    println!("\nParse errors:");
-                    for err in &collection.errors {
-                        println!("  - {err}");
+            let summary = ValidateSummary {
+                path: path.display().to_string(),
+                total,
+                detection_rules: rules,
+                correlation_rules: correlations,
+                filter_rules: filters,
+                parse_errors,
+                compile_ok,
+                compile_errors: compile_errors.len(),
+                pipelines: pipelines.len(),
+            };
+
+            if ctx.explicit_format {
+                let mut rows = Vec::new();
+                for err in &parse_error_msgs {
+                    rows.push(ValidateRow {
+                        path: path.display().to_string(),
+                        status: "parse_error".into(),
+                        errors: err.clone(),
+                    });
+                }
+                for err in &compile_errors {
+                    rows.push(ValidateRow {
+                        path: path.display().to_string(),
+                        status: "compile_error".into(),
+                        errors: err.clone(),
+                    });
+                }
+                if rows.is_empty() {
+                    rows.push(ValidateRow {
+                        path: path.display().to_string(),
+                        status: "ok".into(),
+                        errors: String::new(),
+                    });
+                }
+                let envelope = serde_json::json!({
+                    "summary": summary,
+                    "parse_errors": parse_error_msgs,
+                    "compile_errors": compile_errors,
+                });
+                // NDJSON: one row per finding (or a single ok row). JSON: envelope.
+                match ctx.format {
+                    OutputFormat::Ndjson
+                    | OutputFormat::Table
+                    | OutputFormat::Csv
+                    | OutputFormat::Tsv => render_report(&ctx, &envelope, &rows),
+                    OutputFormat::Json => {
+                        crate::output::render_json(&envelope, ctx.pretty_json());
                     }
                 }
-                if !compile_errors.is_empty() {
-                    println!("\nCompile errors:");
-                    for err in &compile_errors {
-                        println!("  - {err}");
+            } else {
+                println!("Parsed {total} documents from {}", path.display());
+                println!("  Detection rules:   {rules}");
+                println!("  Correlation rules: {correlations}");
+                println!("  Filter rules:      {filters}");
+                println!("  Parse errors:      {parse_errors}");
+                tracing::info!(
+                    total,
+                    detection_rules = rules,
+                    correlation_rules = correlations,
+                    filter_rules = filters,
+                    parse_errors,
+                    rules_path = %path.display(),
+                    "Validation parsed",
+                );
+
+                if !pipelines.is_empty() {
+                    println!("  Pipeline applied:  {} pipeline(s)", pipelines.len(),);
+                }
+                println!("  Compiled OK:       {compile_ok}");
+                println!("  Compile errors:    {}", compile_errors.len());
+
+                if verbose {
+                    if !collection.errors.is_empty() {
+                        println!("\nParse errors:");
+                        for err in &collection.errors {
+                            println!("  - {err}");
+                        }
+                    }
+                    if !compile_errors.is_empty() {
+                        println!("\nCompile errors:");
+                        for err in &compile_errors {
+                            println!("  - {err}");
+                        }
                     }
                 }
             }
@@ -143,6 +229,7 @@ fn resolve_validate_sources(
     mut pipelines: Vec<rsigma_eval::Pipeline>,
     resolve_sources: bool,
     source_files: &[PathBuf],
+    print_human_ok: bool,
 ) -> Vec<rsigma_eval::Pipeline> {
     // Load external sources alongside pipeline-embedded ones (validating that
     // the source files parse, regardless of whether we resolve them).
@@ -215,7 +302,9 @@ fn resolve_validate_sources(
             }
 
             pipelines = resolved_pipelines;
-            println!("  Sources resolved:  OK");
+            if print_human_ok {
+                println!("  Sources resolved:  OK");
+            }
         }
     }
 
