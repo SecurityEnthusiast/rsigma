@@ -452,6 +452,99 @@ fn native_target_rows() -> Vec<TargetRow> {
     ]
 }
 
+/// Parse a sigma-cli ASCII table into data rows, skipping border lines and the
+/// header row. Each returned row is the list of trimmed cell strings.
+///
+/// sigma-cli (`list targets`, `list formats`, …) renders pretty tables like:
+///
+/// ```text
+/// +------------+-----------------------+
+/// | Identifier | Target Query Language |
+/// +------------+-----------------------+
+/// | loki       | Grafana Loki          |
+/// +------------+-----------------------+
+/// ```
+fn parse_sigma_cli_table(raw: &str) -> Vec<Vec<String>> {
+    let mut rows = Vec::new();
+    let mut saw_header = false;
+    for line in raw.lines() {
+        let line = line.trim();
+        // Borders (`+---+`) and non-table prose are ignored.
+        if line.is_empty() || line.starts_with('+') || !line.starts_with('|') {
+            continue;
+        }
+        let cells: Vec<String> = line
+            .trim_matches('|')
+            .split('|')
+            .map(|c| c.trim().to_string())
+            .collect();
+        if cells.iter().all(|c| c.is_empty()) {
+            continue;
+        }
+        if !saw_header {
+            saw_header = true;
+            continue;
+        }
+        rows.push(cells);
+    }
+    rows
+}
+
+fn sigma_cli_target_rows(raw: &str) -> Vec<TargetRow> {
+    parse_sigma_cli_table(raw)
+        .into_iter()
+        .filter_map(|cells| {
+            let name = cells.first()?.trim();
+            if name.is_empty() {
+                return None;
+            }
+            // Column 1 is the query language / description; column 2 (when
+            // present) notes whether a processing pipeline is required.
+            let language = cells.get(1).map(|s| s.trim()).unwrap_or("");
+            let pipeline = cells.get(2).map(|s| s.trim()).unwrap_or("");
+            let description = match (language.is_empty(), pipeline.is_empty()) {
+                (true, true) => String::new(),
+                (false, true) => language.to_string(),
+                (true, false) => format!("pipeline required: {pipeline}"),
+                (false, false) => format!("{language} (pipeline required: {pipeline})"),
+            };
+            Some(TargetRow {
+                provider: "sigma-cli".into(),
+                name: name.to_string(),
+                description,
+            })
+        })
+        .collect()
+}
+
+fn sigma_cli_format_rows(target: &str, raw: &str) -> Vec<FormatRow> {
+    parse_sigma_cli_table(raw)
+        .into_iter()
+        .filter_map(|cells| {
+            let name = cells.first()?.trim();
+            if name.is_empty() {
+                return None;
+            }
+            let description = cells
+                .get(1..)
+                .map(|rest| {
+                    rest.iter()
+                        .map(|c| c.trim())
+                        .filter(|c| !c.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" — ")
+                })
+                .unwrap_or_default();
+            Some(FormatRow {
+                target: target.to_string(),
+                kind: "format".into(),
+                name: name.to_string(),
+                description,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn cmd_list_targets(ctx: OutputCtx) {
     let mut rows = native_target_rows();
 
@@ -466,21 +559,7 @@ pub(crate) fn cmd_list_targets(ctx: OutputCtx) {
 
     if ctx.explicit_format {
         if let Some(conversion) = &listing {
-            for line in conversion.raw.lines() {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                let (name, description) = match line.split_once([' ', '\t']) {
-                    Some((name, rest)) => (name.trim(), rest.trim()),
-                    None => (line, ""),
-                };
-                rows.push(TargetRow {
-                    provider: "sigma-cli".into(),
-                    name: name.to_string(),
-                    description: description.to_string(),
-                });
-            }
+            rows.extend(sigma_cli_target_rows(&conversion.raw));
         }
         let envelope = serde_json::json!({
             "targets": rows,
@@ -566,25 +645,7 @@ pub(crate) fn cmd_list_formats(target: String, ctx: OutputCtx) {
         Ok(out) => match sigma_cli::classify_output(&out) {
             Ok(conversion) => {
                 if ctx.explicit_format {
-                    let mut rows = Vec::new();
-                    for line in conversion.raw.lines() {
-                        let line = line.trim();
-                        if line.is_empty() {
-                            continue;
-                        }
-                        let (name, description) = match line.split_once([' ', '\t', '-']) {
-                            Some((name, rest)) => {
-                                (name.trim(), rest.trim().trim_start_matches('-').trim())
-                            }
-                            None => (line, ""),
-                        };
-                        rows.push(FormatRow {
-                            target: target.clone(),
-                            kind: "format".into(),
-                            name: name.to_string(),
-                            description: description.to_string(),
-                        });
-                    }
+                    let rows = sigma_cli_format_rows(&target, &conversion.raw);
                     let envelope = serde_json::json!({
                         "target": target,
                         "engine": "sigma-cli",
@@ -828,5 +889,60 @@ mod tests {
     fn directory_target_detects_trailing_separator() {
         assert!(is_directory_target(std::path::Path::new("rules/")));
         assert!(!is_directory_target(std::path::Path::new("rules.yml")));
+    }
+
+    #[test]
+    fn parse_sigma_cli_table_skips_borders_and_header() {
+        let raw = "\
++------------+-----------------------+------------------------------+
+| Identifier | Target Query Language | Processing Pipeline Required |
++------------+-----------------------+------------------------------+
+| loki       | Grafana Loki          | No                           |
+| splunk     | Splunk SPL            | Yes                          |
++------------+-----------------------+------------------------------+
+";
+        let rows = parse_sigma_cli_table(raw);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec!["loki", "Grafana Loki", "No"]);
+        assert_eq!(rows[1], vec!["splunk", "Splunk SPL", "Yes"]);
+    }
+
+    #[test]
+    fn sigma_cli_target_rows_ignore_ascii_chrome() {
+        let raw = "\
++------------+-----------------------+------------------------------+
+| Identifier | Target Query Language | Processing Pipeline Required |
++------------+-----------------------+------------------------------+
+| loki       | Grafana Loki          | No                           |
++------------+-----------------------+------------------------------+
+";
+        let rows = sigma_cli_target_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].provider, "sigma-cli");
+        assert_eq!(rows[0].name, "loki");
+        assert_eq!(rows[0].description, "Grafana Loki (pipeline required: No)");
+        // No border or header fragments leaked into the name column.
+        assert!(
+            !rows
+                .iter()
+                .any(|r| r.name.starts_with('+') || r.name == "|")
+        );
+    }
+
+    #[test]
+    fn sigma_cli_format_rows_parse_format_table() {
+        let raw = "\
++---------+--------------------------------------------------+
+| Format  | Description                                      |
++---------+--------------------------------------------------+
+| default | Plain Loki queries                               |
+| ruler   | Loki 'ruler' output format for generating alerts |
++---------+--------------------------------------------------+
+";
+        let rows = sigma_cli_format_rows("loki", raw);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "default");
+        assert_eq!(rows[0].description, "Plain Loki queries");
+        assert_eq!(rows[1].name, "ruler");
     }
 }
