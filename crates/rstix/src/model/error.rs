@@ -450,6 +450,18 @@ pub enum ModelError {
         /// Invalid selector string.
         selector: String,
     },
+    /// granular-marking selector does not resolve on the object (STIX §7.2.3.1).
+    #[error("granular marking selector `{selector}` does not resolve on object")]
+    GranularSelectorSemanticInvalid {
+        /// Selector that failed to resolve.
+        selector: String,
+    },
+    /// language-content translation does not mirror the target property (STIX §7.1.1).
+    #[error("language-content translation for `{detail}` does not mirror target property")]
+    LanguageContentValueMismatch {
+        /// Language tag and field path (for example `de.name`).
+        detail: String,
+    },
 }
 
 #[cfg(feature = "serde")]

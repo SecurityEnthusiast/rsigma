@@ -37,6 +37,10 @@ pub(crate) fn model_error_pipeline_mapping(
         ModelError::GranularSelectorSyntaxInvalid { .. } => {
             (DiagnosticCode::E0024, Some("selectors"))
         }
+        ModelError::GranularSelectorSemanticInvalid { .. } => {
+            (DiagnosticCode::E0024, Some("selectors"))
+        }
+        ModelError::LanguageContentValueMismatch { .. } => (DiagnosticCode::E0024, None),
         ModelError::IdTypeMismatch { .. } | ModelError::BundleIdPrefixInvalid => {
             (DiagnosticCode::E0003, Some("id"))
         }

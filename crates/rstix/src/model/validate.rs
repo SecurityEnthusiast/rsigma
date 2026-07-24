@@ -3,9 +3,11 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::core::{LanguageTag, StixId, StixObjectKind, StixTimestamp};
+use crate::core::{LanguageTag, QueryableStixObject, StixId, StixObjectKind, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::{ExternalReference, GranularMarking, SdoSroCommonProps};
+use crate::model::meta::{LanguageContent, MetaObject};
+use crate::model::stix_object::StixObject;
 use crate::model::sdo::MalwareSampleRef;
 use crate::vocab::{ENCRYPTION_ALGORITHM_ENUM, HASH_ALGORITHM_ENUM, is_iana_character_set};
 
@@ -841,6 +843,75 @@ pub fn language_content_translation_matches_target(
         }
         _ => false,
     }
+}
+
+/// Validate granular-marking selectors resolve on the object wire JSON (STIX §7.2.3.1).
+pub fn validate_granular_markings_semantics(
+    wire: &serde_json::Value,
+    granular_markings: &[GranularMarking],
+) -> Result<(), ModelError> {
+    for granular in granular_markings {
+        for selector in &granular.selectors {
+            validate_granular_selector_syntax(selector)?;
+            if resolve_selector_value(wire, selector).is_none() {
+                return Err(ModelError::GranularSelectorSemanticInvalid {
+                    selector: selector.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Collect granular markings from any STIX object variant.
+pub fn granular_markings_for_object(object: &StixObject) -> Vec<GranularMarking> {
+    match object {
+        StixObject::Sdo(sdo) => sdo.common_props().granular_markings.clone(),
+        StixObject::Sro(sro) => sro.common_props().granular_markings.clone(),
+        StixObject::Sco(sco) => sco.common_props().granular_markings.clone(),
+        StixObject::Meta(MetaObject::MarkingDefinition(marking)) => {
+            marking.granular_markings.clone()
+        }
+        StixObject::Meta(MetaObject::LanguageContent(content)) => {
+            content.common.granular_markings.clone()
+        }
+        StixObject::Meta(MetaObject::ExtensionDefinition(ext)) => {
+            ext.common.granular_markings.clone()
+        }
+        StixObject::Custom(custom) => granular_markings_from_wire(&custom.raw),
+    }
+}
+
+/// Validate language-content bundle semantics against the target object wire JSON (STIX §7.1.1).
+pub fn validate_language_content_semantics(
+    content: &LanguageContent,
+    target: &StixObject,
+    target_wire: &serde_json::Value,
+) -> Result<(), ModelError> {
+    if let Some(object_modified) = &content.object_modified {
+        match QueryableStixObject::modified(target) {
+            Some(target_modified) if object_modified != target_modified => {
+                return Err(ModelError::LanguageContentObjectModifiedMismatch);
+            }
+            None => return Err(ModelError::LanguageContentObjectModifiedMismatch),
+            _ => {}
+        }
+    }
+
+    for (lang, fields) in &content.contents {
+        for (field, translation) in fields {
+            let Some(target_value) = resolve_selector_value(target_wire, field) else {
+                // §7.1.1: keys for properties that do not exist on the target MUST be ignored.
+                continue;
+            };
+            if !language_content_translation_matches_target(target_value, translation) {
+                return Err(ModelError::LanguageContentValueMismatch {
+                    detail: format!("{lang}.{field}"),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Validate language-content `contents` top-level keys as RFC 5646 tags.

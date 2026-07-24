@@ -12,6 +12,13 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 - **Validation Pipeline** — `STIX-I0001` / `STIX-I0002` promoted to Warning severity (fail `Validator::interop_strict()`).
 - **Tests** — negative fixtures wired in `tests/spec.rs`; encryption moved from T1 warning to T0 parse error; pattern eval fixtures updated for valid hash values.
 
+### rstix: OASIS STIX 2.1 spec-exact semantics (fix)
+
+- **§7.1.1 language-content** — keys for properties that do not exist on the target object are silently ignored at parse and validation (removed over-strict `LanguageContentFieldUnknown` rejection and advisory warnings); `object_modified` mismatch and translation mirroring for existing target fields remain MUST at parse.
+- **Unmodeled top-level properties** — restore bundle capture in `common.extra` / `Bundle::extra_properties()` instead of rejecting non-`x_` keys at parse (removed `UnknownTopLevelProperty`).
+- **§7.2.3 granular selectors** — selectors MUST resolve on object wire JSON at parse (unchanged).
+- **Docs** — README, library docs, plan audit files, and cursor rules aligned with MUST vs SHOULD vs ignore tiers.
+
 ### rstix: TAXII collection ingest (`taxii-store` feature) (#387)
 
 - **`taxii-store`** — meta-feature (`taxii` + `store`).

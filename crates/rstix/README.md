@@ -192,16 +192,16 @@ for w in report.warnings_with_code(ValidationCode::StixW0031TlpV1Encoding) {
 | ---------------- | ------- |
 | `StixW0031TlpV1Encoding` | Legacy TLP 1.x marking encoding or TLP1 marking ref (STIX-W0031). |
 | `ScoDeterministicIdMismatch` | SCO `id` does not match UUIDv5 from id-contributing properties. |
-| `GranularSelectorSemanticInvalid` | Granular-marking selector does not resolve on the object. |
-| `LanguageContentValueMismatch` | Translation type, list length, or nested object shape does not mirror the target (§7.1.1). |
-| `LanguageContentObjectModifiedMismatch` | `object_modified` does not match target `modified` (§7.1.1 MUST). |
+| `GranularSelectorSemanticInvalid` | Granular-marking selector does not resolve on the object (also rejected at parse). |
+| `LanguageContentValueMismatch` | Translation type, list length, or nested object shape does not mirror the target (§7.1.1; also rejected at parse). |
+| `LanguageContentObjectModifiedMismatch` | `object_modified` does not match target `modified` (§7.1.1 MUST; also rejected at parse). |
 | `LocationCountryNotIso3166` | `country` is not ISO 3166-1 alpha-2. |
 | `LocationRegionNotInOpenVocab` | `region` is not in STIX `region-ov`. |
 | `InvalidCapecExternalReference` | CAPEC `external_id` shape (attack-pattern). |
 | `InvalidCveExternalReference` | CVE `external_id` shape (vulnerability). |
 | `RelationshipEndpointMatrixInvalid` | Relationship source/target types outside STIX 2.1 matrix (also `STIX-I0002` under `interop_strict`). |
 
-`ValidationCode::LanguageContentFieldUnknown` exists for pipeline/legacy mapping but is **not emitted** by `Bundle::validate()` (§7.1.1 unknown target fields are ignored without a warning). Artifact `encryption_algorithm` and other T0 MUST rules are rejected at parse (`ModelError`), not via this advisory table.
+`GranularSelectorSemanticInvalid`, `LanguageContentValueMismatch`, and `LanguageContentObjectModifiedMismatch` are enforced at parse (`ModelError`) and mirrored as T1 warnings when validating bundles built via `Bundle::from_objects()` without re-parsing wire JSON. Language-content keys for properties that do not exist on the target object are silently ignored at parse and validation (§7.1.1 MUST be ignored). Artifact `encryption_algorithm` and other T0 MUST rules are rejected at parse (`ModelError`), not only via this advisory table.
 
 ## Pattern Engine (STIX §9)
 
@@ -747,7 +747,7 @@ SCO `*_enc` properties (§3.1 / §3.9.1) MUST be IANA character-set names and MU
 
 `email-message` RFC 2047 encoded-words in header string fields (`subject`, `message_id`, `body`, `received_lines`, `additional_header_fields`) are decoded on ingest (§6.6). Pattern evaluation can still address vendor `_enc` siblings through `common.extra` (for example `[email-message:subject_enc = 'UTF-8']` when the wire object carries `subject_enc` alongside `subject`).
 
-Negative fixtures: `tests/fixtures/spec/sco/file-name-enc-*.json`, `directory-path-enc-*.json`, `file-extra-enc-without-base.json`; observed-data SRO embedding: `tests/fixtures/spec/sdo/observed-data-deprecated-objects-sro.json`; standalone `common.extra`: `tests/fixtures/spec/sdo/identity-standalone-extra.json`.
+Negative fixtures: `tests/fixtures/spec/sco/file-name-enc-*.json`, `directory-path-enc-*.json`, `file-extra-enc-without-base.json`; observed-data SRO embedding: `tests/fixtures/spec/sdo/observed-data-deprecated-objects-sro.json`; standalone `x_*` custom props: `tests/fixtures/spec/sdo/identity-standalone-extra.json`; bundle unmodeled top-level capture: `tests/bundle.rs` (`unmodeled_top_level_property_captured_in_extra_properties`).
 
 <a id="local-mitre-attck-corpus-test"></a>
 
@@ -904,20 +904,20 @@ The **Data Model + Serialization** phase validates STIX invariants at deserializ
 | `Sighting.summary` | Wire bool or string; stored as `Option<String>` (`true`/`false` normalized); serializes bool for `"true"`/`"false"`. | T0 |
 | SDO/SRO common props | `SdoSroCommonProps::validate`: id prefix matches `type`, `modified >= created`, marking refs not self, ref kind checks for `created_by_ref` / marking refs, `ExtensionMap::validate`. | T0 |
 | Bundle container | Rejects bundle `spec_version`; requires bundle id prefix; `validate_refs` checks existence + ref kinds; serialize merges `x_*` from `extra_properties`. | T0 |
-| Semantic validation (`Bundle::validate()`) | Returns `ValidationReport` with SHOULD-level warnings (STIX-W0031, SCO deterministic id, granular selector semantics, language-content field/type/list checks, ISO 3166 country, region open vocab, CAPEC/CVE, relationship matrix). | T1 |
+| Semantic validation (`Bundle::validate()`) | Returns `ValidationReport` with SHOULD-level warnings (STIX-W0031, SCO deterministic id, ISO 3166 country, region open vocab, CAPEC/CVE, relationship matrix). Granular selector semantics and language-content §7.1.1 rules are enforced at parse; `Bundle::validate()` still emits matching warnings for bundles assembled without wire re-parse. | T1 |
 | SDO type-specific MUST (partial list) | Observed-data XOR + ordering + count range; indicator time window; malware family name when `is_family: true`; malware-analysis `result` or `analysis_sco_refs` + SCO kind on `analysis_sco_refs` + time ordering; location geo rules; kill-chain phase empties; `OpinionValue` closed vocab; non-empty SDO `name`; non-empty grouping `context`; non-empty report/grouping `object_refs`. | T0 |
 | Report / Grouping / Note / Opinion `object_refs` | Each ref must exist in bundle; ref kind is any STIX Object (`validate_stix_object_ref`); all four types require non-empty lists. | T0 |
 | Grouping `context` / malware-analysis `result` | Non-empty grouping `context` and optional `result` must be valid open-vocabulary values (`grouping-context-ov`, `malware-result-ov`) or `x_` extensions. | T0 |
 | Hash maps on artifact/file/external-reference/x509/PE/NTFS | §2.7 key syntax; keys must be `hash-algorithm-ov` entries or `x_` extensions; known algorithm values match §10.7 formats. | T0 |
 | `windows-pebinary-ext.pe_type` | Must be in `windows-pebinary-type-ov` (`dll`, `exe`, `sys`) or valid `x_` extension. | T0 |
 | `Relationship` per-type matrix | Advisory via `Bundle::validate()` (`ValidationCode::RelationshipEndpointMatrixInvalid`). | T1 |
-| `language-content` | `object_modified` is `Option<StixTimestamp>`; `lang` rejected on common props; bundle requires STIX Object `object_ref` to exist; `object_modified` mismatch and translation type/list-length/object-shape mirroring are warnings via `Bundle::validate()`; unknown target fields are ignored (§7.1.1). | T0 + T1 |
+| `language-content` | `object_modified` is `Option<StixTimestamp>`; `lang` rejected on common props; bundle requires STIX Object `object_ref` to exist; `object_modified` mismatch and translation type/list-length/object-shape mirroring for existing target fields rejected at parse (§7.1.1); keys for properties that do not exist on the target MUST be ignored (no error, no warning). | T0 |
 | SCO `*_enc` (§3.1 / §3.9.1) | Spec-defined: `file.name_enc`, `directory.path_enc` only; additional `_enc` keys in `common.extra` validated with the same IANA charset and pairing rules. | T0 |
 | `email-message` headers (§6.6) | RFC 2047 encoded-words decoded on ingest for `subject`, `message_id`, `body`, `received_lines`, and `additional_header_fields`. | T0 |
 | `marking-definition` | `spec_version` required; legacy `definition_type` + `definition` required when `extensions` empty. | T0 |
 | `extension-definition` | Rejects `extensions`, `confidence`, and `lang` on common props. | T0 |
 | SCO ref/format checks | `file.contains_refs` SCO kind; domain-name/email-addr/url RFC MUST format validation at parse; ipv4/ipv6/mac address format at parse; hash map key syntax and known-algorithm value formats (§2.7 / §10.7); observed-data `object_refs` SCO or SRO kind; artifact `encryption_algorithm` closed vocab at parse. | T0 |
-| Standalone unknown top-level keys | Unmodeled keys captured in `common.extra` (SDO/SRO/SCO) or `MarkingDefinition.extra` at leaf deserialize; strict round-trip preserves them. | T0 |
+| Standalone unknown top-level keys | On bundle parse, unmodeled keys are captured in `common.extra` / `Bundle::extra_properties()` and re-merged on serialize; not rejected at parse unless a type-specific MUST applies. Standalone leaf `Deserialize` may drop unmodeled keys (serde default). | Capture on bundle path |
 | Extension map | Predefined extension keys (`*-ext`, TLP definition id) must not carry `extension_type`; toplevel-property-extension entries peeled before typed deserialize and hoisted keys stored in `extra_properties` (with unmodeled top-level keys captured on reparse via `common.extra` drain). | T0 |
 | `Sighting.count` | `0..=999_999_999` when present. | T0 |
 | `Sighting` time window | `last_seen >= first_seen` when both set. | T0 |
@@ -940,8 +940,9 @@ The **Data Model + Serialization** phase validates STIX invariants at deserializ
 | `ExtensionMap` | Public `insert()` mirrors `BTreeMap` semantics; inner map is `BTreeMap` for stable JSON key order. | T0 |
 | JSON map key order | Wire-facing property bags use `BTreeMap`; internal id indexes use `HashMap`. | T0 |
 | Round-trip helpers (`tests/support/roundtrip.rs`) | `roundtrip_strict`: re-serialized JSON must equal the fixture (complete types — meta, SDO, SRO, SCO, common leaf types). `roundtrip`: subset compare for `SdoSroCommonProps` / `ScoCommonProps` fixtures only. | Tests |
-| Language-content unknown fields | Keys not on the target object are **ignored** (§7.1.1); no advisory is emitted. | T0 |
-| Granular selectors on custom objects | Selector resolution runs on custom object wire JSON when `allow_custom` is enabled. | T0 + T1 |
+| Granular-marking selectors | Syntax validated at deserialize; selectors must resolve on the object wire JSON at bundle parse (§7.2.3.1). | T0 |
+| Language-content unknown fields | Keys not on the target object MUST be ignored (§7.1.1); no parse error and no advisory warning. | Ignore |
+| Granular selectors on custom objects | Selector resolution runs on custom object wire JSON when `allow_custom` is enabled. | T0 |
 
 ## License
 

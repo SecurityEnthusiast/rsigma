@@ -43,8 +43,6 @@ pub enum ValidationCode {
     ScoDeterministicIdMismatch,
     /// Granular-marking selector does not resolve to a property on the object.
     GranularSelectorSemanticInvalid,
-    /// Language-content translation key is not a property on the target object.
-    LanguageContentFieldUnknown,
     /// Language-content translation type or list length does not mirror the target property.
     LanguageContentValueMismatch,
     /// Language-content `object_modified` does not match the target object's `modified`.
@@ -444,10 +442,10 @@ fn selector_resolves(value: &serde_json::Value, selector: &str) -> bool {
 /// Language-content nested rules (STIX 2.1 Specification §7.1.1).
 ///
 /// When **`object_modified`** is present it MUST exactly match the referenced object's
-/// **`modified`** timestamp (§7.1.1). Mismatch is reported at validate time rather than
-/// during parse. [`Bundle::validate()`] emits
-/// [`ValidationCode::LanguageContentObjectModifiedMismatch`] when the target is in the
-/// bundle and the timestamps differ.
+/// **`modified`** timestamp (§7.1.1). Translation keys for properties that do not exist on
+/// the target MUST be ignored (§7.1.1). Mirroring failures and `object_modified` mismatch
+/// are rejected during bundle parse via [`Bundle::validate_refs()`].
+/// [`Bundle::validate()`] emits matching warnings for bundles built without wire re-parse.
 #[cfg(not(feature = "validate"))]
 fn check_language_content(
     bundle: &Bundle,
@@ -486,6 +484,7 @@ fn check_language_content(
     for (lang, fields) in &content.contents {
         for (field, translation) in fields {
             let Some(target_value) = resolve_selector_value(&target_wire, field) else {
+                // §7.1.1: keys for properties that do not exist on the target MUST be ignored.
                 continue;
             };
             if !language_content_translation_matches_target(target_value, translation) {

@@ -133,9 +133,6 @@ fn peel_toplevel_property_extensions(
             }
         }
     }
-    for (prop, value) in &peeled {
-        obj.insert(prop.clone(), value.clone());
-    }
     if !ext_map.is_empty() {
         obj.insert("extensions".into(), serde_json::Value::Object(ext_map));
     }

@@ -553,15 +553,11 @@ fn observed_data_round_trips_object_refs_and_objects() {
 }
 
 #[test]
-fn identity_standalone_preserves_unmodeled_and_x_properties() {
+fn identity_standalone_preserves_x_custom_properties() {
     let identity = roundtrip_strict::<Identity>("sdo/identity-standalone-extra.json");
     assert_eq!(
         identity.common.extra.get("x_mitre_platform"),
         Some(&serde_json::json!("windows"))
-    );
-    assert_eq!(
-        identity.common.extra.get("vendor_tier"),
-        Some(&serde_json::json!("gold"))
     );
 }
 

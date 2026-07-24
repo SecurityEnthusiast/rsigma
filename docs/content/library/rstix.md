@@ -331,16 +331,16 @@ Default **`serde` parse** enforces MUST rules wired at the deserialize boundary 
 | ---------------- | ------- |
 | `StixW0031TlpV1Encoding` | Legacy TLP 1.x marking encoding or TLP1 marking ref (STIX-W0031). |
 | `ScoDeterministicIdMismatch` | SCO `id` does not match UUIDv5 from id-contributing properties. |
-| `GranularSelectorSemanticInvalid` | Granular-marking selector does not resolve on the object. |
-| `LanguageContentValueMismatch` | Translation type, list length, or nested object shape does not mirror the target (§7.1.1). |
-| `LanguageContentObjectModifiedMismatch` | `object_modified` does not match target `modified`. |
+| `GranularSelectorSemanticInvalid` | Granular-marking selector does not resolve on the object (also rejected at parse). |
+| `LanguageContentValueMismatch` | Translation type, list length, or nested object shape does not mirror the target (§7.1.1; also rejected at parse). |
+| `LanguageContentObjectModifiedMismatch` | `object_modified` does not match target `modified` (also rejected at parse). |
 | `LocationCountryNotIso3166` | `country` is not ISO 3166-1 alpha-2. |
 | `LocationRegionNotInOpenVocab` | `region` is not in STIX `region-ov`. |
 | `InvalidCapecExternalReference` | CAPEC `external_id` shape (attack-pattern). |
 | `InvalidCveExternalReference` | CVE `external_id` shape (vulnerability). |
 | `RelationshipEndpointMatrixInvalid` | Relationship source/target types outside STIX 2.1 matrix (also `STIX-I0002` under `interop_strict`). |
 
-`ValidationCode::LanguageContentFieldUnknown` exists for pipeline/legacy mapping but is **not emitted** by `Bundle::validate()` (§7.1.1 unknown target fields are ignored without a warning).
+`GranularSelectorSemanticInvalid`, `LanguageContentValueMismatch`, and `LanguageContentObjectModifiedMismatch` are enforced at parse (`ModelError`) and mirrored as T1 warnings when validating bundles built via `Bundle::from_objects()` without re-parsing wire JSON. Language-content keys for properties that do not exist on the target object are silently ignored (§7.1.1 MUST be ignored).
 
 There is no `strict` parse flag on `Bundle::parse`. Use **`Validator`** profiles when structured diagnostics or profile-driven pass/fail is required.
 
@@ -441,8 +441,8 @@ Full developer guide: [crate README — STIX version vs TLP marking encoding](ht
 
 | Tier | API | Severity | Examples |
 | ---- | --- | -------- | -------- |
-| **T0 — parse** | `Bundle::parse`, `parse_reader`, leaf `Deserialize` | Hard error | Type discriminants, bundle container rules, in-bundle ref existence and ref kinds, DD-DM-001 domain/email/url format, ipv4/ipv6/mac address format, hash-algorithm-ov keys, open-vocabulary checks at parse, SCO MUST in `validate()` at deserialize |
-| **T1 — advisory** | `Bundle::validate()` | Warnings only | CAPEC/CVE external refs, TLP v1 (STIX-W0031), granular selector semantics, language-content mirroring, location ISO 3166, SCO deterministic id |
+| **T0 — parse** | `Bundle::parse`, `parse_reader`, leaf `Deserialize` | Hard error | Type discriminants, bundle container rules, in-bundle ref existence and ref kinds, DD-DM-001 domain/email/url format, ipv4/ipv6/mac address format, hash-algorithm-ov keys, open-vocabulary checks at parse, granular selector semantics, language-content §7.1.1 mirroring for existing target fields, SCO MUST in `validate()` at deserialize |
+| **T1 — advisory** | `Bundle::validate()` | Warnings only | CAPEC/CVE external refs, TLP v1 (STIX-W0031), location ISO 3166, SCO deterministic id; parse-enforced rules still warn on `Bundle::from_objects()` bundles |
 | **T2 — pipeline** | `Validator` profiles (`validate` feature) | Structured diagnostics | All twelve validation phases; open-vocabulary extensions (`STIX-I0001`) and relationship matrix (`STIX-I0002`) fail under `interop_strict` (Warning severity) |
 
 Full detail: [crate README — Validation tiers](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#validation-tiers).
@@ -457,8 +457,8 @@ Full invariant table: [crate README — Model invariant decisions](https://githu
 
 Full table: [crate README — Model invariant decisions](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#model-invariant-decisions).
 
-- **T0 (parse):** id/type match, in-bundle ref resolution, extension routing, SCO forbidden common props, SDO/SRO time ordering, DD-DM-001 domain/email/url format (full RFC 3986 for URLs), ipv4/ipv6/mac address format, hash-algorithm-ov key policy (`HASH_ALGORITHM_ENUM` or `x_` extension), open-vocab checks on grouping `context` and malware-analysis `result`, non-empty SDO `name`, non-empty report/grouping/note/opinion `object_refs`, artifact `encryption_algorithm` closed enum, `_enc` IANA charset + pairing, and type-specific MUST rules in `ModelError`.
-- **T1 (`Bundle::validate()`):** relationship matrix advisory on the bundle path, CAPEC/CVE, TLP v1 warnings (STIX-W0031), granular selector semantics, language-content rules, location country ISO 3166, SCO deterministic id.
+- **T0 (parse):** id/type match, in-bundle ref resolution, extension routing, SCO forbidden common props, SDO/SRO time ordering, DD-DM-001 domain/email/url format (full RFC 3986 for URLs), ipv4/ipv6/mac address format, hash-algorithm-ov key policy (`HASH_ALGORITHM_ENUM` or `x_` extension), open-vocab checks on grouping `context` and malware-analysis `result`, non-empty SDO `name`, non-empty report/grouping/note/opinion `object_refs`, artifact `encryption_algorithm` closed enum, granular selector resolution, language-content §7.1.1 mirroring for existing target fields (unknown target fields ignored), `_enc` IANA charset + pairing, and type-specific MUST rules in `ModelError`.
+- **T1 (`Bundle::validate()`):** relationship matrix advisory on the bundle path, CAPEC/CVE, TLP v1 warnings (STIX-W0031), location country ISO 3166, SCO deterministic id; parse-enforced semantics still warn on bundles assembled with `Bundle::from_objects()`.
 - **T2 (`interop_strict`):** `STIX-I0001` (open-vocab extension values such as unknown `location.region`) and `STIX-I0002` (relationship matrix) emit **Warning** severity and fail validation under zero leniency.
 - **Map types:** wire-facing property bags use `BTreeMap` for deterministic JSON key order; internal id indexes use `HashMap`.
 

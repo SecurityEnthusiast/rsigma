@@ -44,20 +44,12 @@ fn collect_json_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn collect_invalid_conformance_files() -> Vec<PathBuf> {
-    const INFO_ONLY_VALIDATION_FIXTURES: &[&str] = &[
-        // §7.1.1: unknown target fields are ignored — valid under interop_strict.
-        "bundle-language-content-unknown-field.json",
-    ];
-
     let mut files = collect_json_files(&corpus_root().join("invalid"));
     for file in collect_json_files(&validation_root()) {
         let Some(name) = file.file_name().and_then(|v| v.to_str()) else {
             continue;
         };
-        if name.starts_with("bundle-")
-            && name.ends_with(".json")
-            && !INFO_ONLY_VALIDATION_FIXTURES.contains(&name)
-        {
+        if name.starts_with("bundle-") && name.ends_with(".json") {
             files.push(file);
         }
     }

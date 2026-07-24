@@ -178,6 +178,12 @@ enum ModelErrorWire {
     GranularSelectorSyntaxInvalid {
         selector: String,
     },
+    GranularSelectorSemanticInvalid {
+        selector: String,
+    },
+    LanguageContentValueMismatch {
+        detail: String,
+    },
 }
 
 impl From<&ModelError> for ModelErrorWire {
@@ -407,6 +413,16 @@ impl From<&ModelError> for ModelErrorWire {
                     selector: selector.clone(),
                 }
             }
+            ModelError::GranularSelectorSemanticInvalid { selector } => {
+                Self::GranularSelectorSemanticInvalid {
+                    selector: selector.clone(),
+                }
+            }
+            ModelError::LanguageContentValueMismatch { detail } => {
+                Self::LanguageContentValueMismatch {
+                    detail: detail.clone(),
+                }
+            },
         }
     }
 }
@@ -648,6 +664,12 @@ impl From<ModelErrorWire> for ModelError {
             }
             ModelErrorWire::GranularSelectorSyntaxInvalid { selector } => {
                 Self::GranularSelectorSyntaxInvalid { selector }
+            }
+            ModelErrorWire::GranularSelectorSemanticInvalid { selector } => {
+                Self::GranularSelectorSemanticInvalid { selector }
+            }
+            ModelErrorWire::LanguageContentValueMismatch { detail } => {
+                Self::LanguageContentValueMismatch { detail }
             }
         }
     }

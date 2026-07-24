@@ -8,11 +8,13 @@ use crate::model::BundleObjectCast;
 use crate::model::ModelError;
 use crate::model::json_limits::{LimitedReader, validate_value_limits};
 use crate::model::meta::LanguageContent;
+use crate::model::meta::MetaObject;
 use crate::model::parse_options::ParseOptions;
 use crate::model::sdo::ObservedDataForm;
 use crate::model::stix_object::{StixObject, deserialize_stix_object_from_value};
 use crate::model::validate::{
-    validate_identity_ref, validate_marking_definition_ref, validate_sco_or_sro_ref,
+    granular_markings_for_object, validate_granular_markings_semantics, validate_identity_ref,
+    validate_language_content_semantics, validate_marking_definition_ref, validate_sco_or_sro_ref,
     validate_sco_ref, validate_sdo_ref, validate_stix_object_ref, validate_stix_or_sco_ref,
 };
 
@@ -301,7 +303,42 @@ impl Bundle {
         }
 
         self.validate_property_extensions()?;
+        self.validate_semantics()?;
 
+        Ok(())
+    }
+
+    fn object_wire_value(&self, object: &StixObject) -> Option<serde_json::Value> {
+        let mut wire = serde_json::to_value(object).ok()?;
+        if let Some(extra) = self.extra_properties(object.id())
+            && let Some(obj) = wire.as_object_mut()
+        {
+            for (key, value) in extra {
+                obj.insert(key.clone(), value.clone());
+            }
+        }
+        Some(wire)
+    }
+
+    fn validate_semantics(&self) -> Result<(), ModelError> {
+        for object in &self.objects {
+            let Some(wire) = self.object_wire_value(object) else {
+                continue;
+            };
+            validate_granular_markings_semantics(&wire, &granular_markings_for_object(object))?;
+
+            if let StixObject::Meta(MetaObject::LanguageContent(content)) = object {
+                let target = self.get(&content.object_ref).ok_or_else(|| {
+                    ModelError::BundleReferenceMissing {
+                        ref_id: content.object_ref.as_str().to_owned(),
+                    }
+                })?;
+                let Some(target_wire) = self.object_wire_value(target) else {
+                    continue;
+                };
+                validate_language_content_semantics(content, target, &target_wire)?;
+            }
+        }
         Ok(())
     }
 
@@ -470,6 +507,102 @@ impl Bundle {
 }
 
 #[cfg(feature = "serde")]
+fn merge_extra_properties_for_wire(
+    object: &StixObject,
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    extra: &BTreeMap<String, serde_json::Value>,
+) {
+    use crate::model::common::ExtensionType;
+
+    let mut extension_props = BTreeMap::new();
+    for (key, prop) in extra {
+        if key.starts_with("x_") {
+            obj.insert(key.clone(), prop.clone());
+        } else {
+            extension_props.insert(key.clone(), prop.clone());
+        }
+    }
+    if extension_props.is_empty() {
+        return;
+    }
+
+    let extension_id = extension_maps_for_object(object)
+        .into_iter()
+        .find_map(|map| {
+            map.0.iter().find_map(|(key, entry)| {
+                (key.starts_with("extension-definition--")
+                    && entry.extension_type == Some(ExtensionType::ToplevelPropertyExtension))
+                .then(|| key.clone())
+            })
+        })
+        .unwrap_or_else(|| "extension-definition--unknown".to_owned());
+
+    let extensions = obj
+        .entry("extensions".to_owned())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let Some(ext_map) = extensions.as_object_mut() else {
+        return;
+    };
+    let entry = ext_map
+        .entry(extension_id)
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let Some(entry_obj) = entry.as_object_mut() else {
+        return;
+    };
+    entry_obj.insert(
+        "extension_type".to_owned(),
+        serde_json::Value::String(ExtensionType::ToplevelPropertyExtension.as_str().to_owned()),
+    );
+    for (key, prop) in extension_props {
+        entry_obj.insert(key, prop);
+    }
+}
+
+#[cfg(feature = "serde")]
+fn extension_maps_for_object(
+    object: &StixObject,
+) -> Vec<&crate::model::common::ExtensionMap> {
+    use crate::model::meta::{ExtensionDefinition, MarkingDefinition, MetaObject};
+    use crate::model::sco::ScoObject;
+
+    match object {
+        StixObject::Sdo(sdo) => vec![&sdo.common_props().extensions],
+        StixObject::Sro(sro) => vec![&sro.common_props().extensions],
+        StixObject::Sco(sco) => match sco {
+            ScoObject::Artifact(v) => vec![&v.common.extensions],
+            ScoObject::AutonomousSystem(v) => vec![&v.common.extensions],
+            ScoObject::Directory(v) => vec![&v.common.extensions],
+            ScoObject::DomainName(v) => vec![&v.common.extensions],
+            ScoObject::EmailAddr(v) => vec![&v.common.extensions],
+            ScoObject::EmailMessage(v) => vec![&v.common.extensions],
+            ScoObject::File(v) => vec![&v.common.extensions],
+            ScoObject::Ipv4Addr(v) => vec![&v.common.extensions],
+            ScoObject::Ipv6Addr(v) => vec![&v.common.extensions],
+            ScoObject::MacAddr(v) => vec![&v.common.extensions],
+            ScoObject::Mutex(v) => vec![&v.common.extensions],
+            ScoObject::NetworkTraffic(v) => vec![&v.common.extensions],
+            ScoObject::Process(v) => vec![&v.common.extensions],
+            ScoObject::Software(v) => vec![&v.common.extensions],
+            ScoObject::Url(v) => vec![&v.common.extensions],
+            ScoObject::UserAccount(v) => vec![&v.common.extensions],
+            ScoObject::WindowsRegistryKey(v) => vec![&v.common.extensions],
+            ScoObject::X509Certificate(v) => vec![&v.common.extensions],
+            ScoObject::Custom(v) => vec![&v.common.extensions],
+        },
+        StixObject::Meta(meta) => match meta {
+            MetaObject::MarkingDefinition(MarkingDefinition { extensions, .. }) => {
+                vec![extensions]
+            }
+            MetaObject::ExtensionDefinition(ExtensionDefinition { common, .. }) => {
+                vec![&common.extensions]
+            }
+            MetaObject::LanguageContent(content) => vec![&content.common.extensions],
+        },
+        StixObject::Custom(_) => Vec::new(),
+    }
+}
+
+#[cfg(feature = "serde")]
 impl serde::Serialize for Bundle {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -488,9 +621,7 @@ impl serde::Serialize for Bundle {
                 if let Some(extra) = self.extra_properties(object.id())
                     && let Some(obj) = value.as_object_mut()
                 {
-                    for (key, prop) in extra {
-                        obj.insert(key.clone(), prop.clone());
-                    }
+                    merge_extra_properties_for_wire(object, obj, extra);
                 }
                 serialized_objects.push(value);
             }
