@@ -10,7 +10,7 @@ rsigma rule validate [OPTIONS] <PATH>
 
 ## Description
 
-Walks a directory, parses every `*.yml`/`*.yaml` Sigma file with `rsigma-parser`, optionally applies one or more processing pipelines, and compiles each rule with the evaluator's compiler. Reports the counts on stdout. Exits with code `2` if any rule fails to parse or compile.
+Walks a directory, parses every `*.yml`/`*.yaml` Sigma file with `rsigma-parser`, optionally applies one or more processing pipelines, and compiles each rule with the evaluator's compiler. Reports the counts on stdout (human summary by default). Pass `--output-format json|ndjson|table|csv|tsv` for a structured envelope or `PATH,STATUS,ERRORS` rows. Exits with code `2` if any rule fails to parse or compile. See [Output Formats](../../reference/output.md).
 
 This is the cheapest CI gate: no events are evaluated, just rules and pipelines. Wire it as the first step of every detection-as-code pipeline before [`rule lint`](lint.md) and [`engine eval`](../engine/eval.md) fixture tests.
 

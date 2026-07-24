@@ -16,7 +16,7 @@ When an external [sigma-cli](https://github.com/SigmaHQ/sigma-cli) is discoverab
 
 ## Flags
 
-This command takes no command-specific flags.
+This command takes no command-specific flags. The global `--output-format` selector is honored: the human listing is the default, and `json`/`ndjson`/`table`/`csv`/`tsv` emit `PROVIDER,NAME,DESCRIPTION` rows. See [Output Formats](../../reference/output.md).
 
 ## Examples
 
