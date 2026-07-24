@@ -4,7 +4,7 @@ The `engine daemon` exposes Prometheus metrics on `GET /metrics` on the same `--
 
 The exact source of truth is the [`daemon/metrics`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-cli/src/daemon/metrics.rs) module.
 
-## Engine core (18 metrics)
+## Engine core (26 metrics)
 
 These always show up. They cover ingest, matches, queue depth, back-pressure, reloads, and resource usage.
 

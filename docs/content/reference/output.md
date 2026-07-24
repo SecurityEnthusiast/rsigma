@@ -104,7 +104,7 @@ warning: `--output-format csv` is not supported by `rule reverse`; falling back 
 
 | Command | Behaviour |
 |---------|-----------|
-| `rule parse` / `rule condition` / `rule stdin` | Pretty JSON by default. `--output-format ndjson` is compact. `table`/`csv`/`tsv` warn and fall back to JSON. |
+| `rule parse` / `rule condition` / `rule stdin` | Pretty JSON on a TTY; compact NDJSON when piped or redirected. `table`/`csv`/`tsv` warn and fall back to JSON. |
 
 ### Fixed artifacts and protocols
 
