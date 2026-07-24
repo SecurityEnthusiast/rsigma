@@ -475,10 +475,21 @@ impl DelimitedWriter {
     }
 
     /// Flush buffered delimited output. Called automatically on drop.
+    ///
+    /// When no data rows were pushed, still emit the header so empty reports
+    /// (for example `discover-schemas` with zero candidates) remain valid CSV/TSV.
     pub(crate) fn finish(&mut self) {
-        if let Some(mut writer) = self.inner.take()
-            && let Err(e) = writer.flush()
-        {
+        let Some(mut writer) = self.inner.take() else {
+            return;
+        };
+        if !self.wrote_header {
+            if let Err(e) = writer.write_record(self.headers.iter().copied()) {
+                eprintln!("CSV write error: {e}");
+                std::process::exit(crate::exit_code::CONFIG_ERROR);
+            }
+            self.wrote_header = true;
+        }
+        if let Err(e) = writer.flush() {
             eprintln!("CSV flush error: {e}");
             std::process::exit(crate::exit_code::CONFIG_ERROR);
         }
