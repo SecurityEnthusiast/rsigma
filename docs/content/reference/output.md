@@ -62,6 +62,10 @@ The contract is the same across every subcommand:
 
 This is what lets `rsigma engine eval … | jq '.rule_title'` work cleanly: `jq` only sees the detection objects.
 
+## Not the same as a daemon sink format
+
+`--output-format` selects how a **command** renders its product. The streaming daemon's sinks have their own, separate wire-format selector: `?format=` on a sink spec, which sets how that one sink serializes findings. `--output-format` does not apply to daemon sinks, and `?format=` does not apply to batch commands.
+
 ## Unsupported formats
 
 When a command cannot honor an explicit `--output-format`, it prints one stderr warning and keeps its documented product:

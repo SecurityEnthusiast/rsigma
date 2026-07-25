@@ -54,6 +54,7 @@ daemon:
     buffer_size: 10000
   output:
     sinks: [stdout]        # stdout | file://... | nats://... | otlp://... | unix:///run/rsigma/out.sock (Unix)
+                           # query params: ?on_full=drop, ?format=ndjson (line sinks), ?compression=gzip (OTLP), TLS ?ca=/?client_cert=/?client_key=/?tls_domain=
     drain_timeout: 5
     # webhooks: [/etc/rsigma/webhooks/]   # template-driven HTTP sinks
   correlation:

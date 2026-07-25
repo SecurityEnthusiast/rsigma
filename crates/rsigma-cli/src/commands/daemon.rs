@@ -126,9 +126,10 @@ pub(crate) struct DaemonArgs {
     /// `nats://<host>:<port>/<subject>`, `otlp(s)://<host>:<port>` (OTLP/gRPC),
     /// `otlphttp(s)://<host>:<port>` (OTLP/HTTP); the `s` variants use TLS.
     /// On Unix, `unix:///path/to.sock` writes NDJSON to a local socket.
-    /// Query params: `?on_full=drop` (best-effort), `?compression=gzip` (OTLP),
-    /// and for TLS `?ca=`, `?client_cert=`, `?client_key=` (PEM paths, the last
-    /// two for mutual TLS) and `?tls_domain=` (SNI override).
+    /// Query params: `?on_full=drop` (best-effort), `?format=ndjson` (wire
+    /// format; stdout, file, NATS, and unix sinks only), `?compression=gzip`
+    /// (OTLP), and for TLS `?ca=`, `?client_cert=`, `?client_key=` (PEM paths,
+    /// the last two for mutual TLS) and `?tls_domain=` (SNI override).
     #[arg(long = "output", default_value = config::defaults::STDOUT_SINK)]
     pub output: Vec<String>,
 

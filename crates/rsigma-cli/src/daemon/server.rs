@@ -17,9 +17,9 @@ use rsigma_runtime::{
     AckToken, AlertPipeline, AlertPipelineState, DeliveryConfig, DeliveryFailure, Dispatcher,
     EnrichmentPipeline, FieldObserver, FileSink, IncidentEnvelope, IncludeMode, InputFormat,
     LogProcessor, MetricsHook, OnFull, RawEvent, RiskLayer, RiskState, RoutingSpec, RuntimeEngine,
-    SchemaClassifier, SchemaObserver, Silence, SilenceOrigin, SilenceSpec, Sink, StdinSource,
-    StdoutSink, build_alert_pipeline, build_risk_layer, load_alert_pipeline_file, load_risk_file,
-    load_schema_signatures, spawn_source,
+    SchemaClassifier, SchemaObserver, Silence, SilenceOrigin, SilenceSpec, Sink, SinkFormat,
+    StdinSource, StdoutSink, build_alert_pipeline, build_risk_layer, load_alert_pipeline_file,
+    load_risk_file, load_schema_signatures, spawn_source,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -868,7 +868,7 @@ pub async fn run_daemon(config: DaemonConfig) {
             .expect("audit enabled without state db");
         let sink = if let Some(ref spec) = config.audit.sink {
             let spec = super::audit::audit_sink_spec(spec);
-            let (sink, _on_full) = build_sink(&spec, config.pretty, &config).await;
+            let (sink, _on_full) = build_sink(&spec, config.pretty, SinkRole::Audit, &config).await;
             Some(Arc::new(tokio::sync::Mutex::new(sink)))
         } else {
             None
@@ -1433,7 +1433,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     // Build optional DLQ sink from --dlq flag
     let (dlq_tx, mut dlq_rx) = mpsc::channel::<DlqEntry>(buffer_size);
     let dlq_sink = if let Some(ref dlq_spec) = config.dlq {
-        let (sink, _) = build_sink(dlq_spec, false, &config).await;
+        let (sink, _) = build_sink(dlq_spec, false, SinkRole::Dlq, &config).await;
         tracing::info!(dlq = dlq_spec, "Dead-letter queue enabled");
         Some(sink)
     } else {
@@ -1622,7 +1622,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     };
     let mut leaves: Vec<(Sink, OnFull, DeliveryConfig)> = Vec::new();
     for spec in &output_specs {
-        let (sink, on_full) = build_sink(spec, pretty, &config).await;
+        let (sink, on_full) = build_sink(spec, pretty, SinkRole::Findings, &config).await;
         for leaf in sink.into_leaves() {
             leaves.push((leaf, on_full, config.delivery_config));
         }
@@ -1820,10 +1820,7 @@ pub async fn run_daemon(config: DaemonConfig) {
                         };
                         for line in out.dedup_lines {
                             dispatcher
-                                .dispatch_incident(IncidentEnvelope::new(
-                                    line.to_string(),
-                                    None,
-                                ))
+                                .dispatch_incident(IncidentEnvelope::new(line.to_string(), None))
                                 .await;
                         }
                         let subject =
@@ -2125,6 +2122,71 @@ pub(super) fn split_query(spec: &str) -> (&str, Vec<(&str, &str)>) {
     }
 }
 
+/// Which daemon channel a sink spec was declared for.
+///
+/// Only the findings channel carries serialized results, so only it accepts a
+/// `format` parameter: the DLQ writes `DlqEntry` records and the audit sink
+/// writes API audit records, neither of which is a finding.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SinkRole {
+    /// `--output` / `daemon.output.sinks`: detections, correlations, incidents.
+    Findings,
+    /// `--dlq` / `daemon.dlq`.
+    Dlq,
+    /// `daemon.audit.sink`.
+    Audit,
+}
+
+impl SinkRole {
+    /// The flag or config key that declared the spec, for error messages.
+    fn label(self) -> &'static str {
+        match self {
+            SinkRole::Findings => "--output",
+            SinkRole::Dlq => "--dlq",
+            SinkRole::Audit => "audit.sink",
+        }
+    }
+}
+
+/// Resolve the wire format from query params, exiting on any spec that cannot
+/// honor it.
+///
+/// `format` is accepted only on a line-oriented findings sink: OTLP owns its
+/// log-record mapping, and the DLQ and audit channels do not carry findings at
+/// all. Unlike the `on_full` warn-and-default path, an unusable `format` is a
+/// startup config error, so a daemon never silently emits a format the
+/// operator did not ask for.
+fn format_from_params(params: &[(&str, &str)], base: &str, role: SinkRole) -> SinkFormat {
+    let Some(value) = params.iter().find(|(k, _)| *k == "format").map(|(_, v)| *v) else {
+        return SinkFormat::default();
+    };
+
+    if role != SinkRole::Findings {
+        tracing::error!(
+            spec = base,
+            channel = role.label(),
+            "format= is only supported on findings sinks"
+        );
+        std::process::exit(crate::exit_code::CONFIG_ERROR);
+    }
+
+    if base.starts_with("otlp") {
+        tracing::error!(
+            spec = base,
+            "format= is not supported on OTLP sinks (they emit OTLP log records)"
+        );
+        std::process::exit(crate::exit_code::CONFIG_ERROR);
+    }
+
+    match value {
+        "ndjson" => SinkFormat::Ndjson,
+        other => {
+            tracing::error!(value = other, "Unknown sink format (supported: ndjson)");
+            std::process::exit(crate::exit_code::CONFIG_ERROR);
+        }
+    }
+}
+
 /// Resolve the full-queue policy from query params. Defaults to `Block`
 /// (at-least-once); `on_full=drop` opts into best-effort delivery.
 fn on_full_from_params(params: &[(&str, &str)]) -> OnFull {
@@ -2170,13 +2232,18 @@ fn build_otlp_tls(params: &[(&str, &str)]) -> rsigma_runtime::OtlpClientTls {
 async fn build_sink(
     spec: &str,
     pretty: bool,
+    role: SinkRole,
     #[cfg_attr(not(feature = "daemon-nats"), allow(unused))] config: &DaemonConfig,
 ) -> (Sink, OnFull) {
     let (base, params) = split_query(spec);
     let on_full = on_full_from_params(&params);
+    let format = format_from_params(&params, base, role);
 
     if base == "stdout" || base == "stdout://" {
-        return (Sink::Stdout(StdoutSink::new(pretty)), on_full);
+        return (
+            Sink::Stdout(StdoutSink::new(pretty).with_format(format)),
+            on_full,
+        );
     }
 
     if let Some(path) = base.strip_prefix("file://") {
@@ -2184,7 +2251,7 @@ async fn build_sink(
         return match FileSink::open(path) {
             Ok(file_sink) => {
                 tracing::info!(path = %path.display(), "File sink opened");
-                (Sink::File(file_sink), on_full)
+                (Sink::File(file_sink.with_format(format)), on_full)
             }
             Err(e) => {
                 tracing::error!(path = %path.display(), error = %e, "Failed to open file sink");
@@ -2201,7 +2268,7 @@ async fn build_sink(
         return match rsigma_runtime::NatsSink::connect(&nats_cfg, &subject).await {
             Ok(nats_sink) => {
                 tracing::info!(url = url, subject = subject, "NATS sink started");
-                (Sink::Nats(Box::new(nats_sink)), on_full)
+                (Sink::Nats(Box::new(nats_sink.with_format(format))), on_full)
             }
             Err(e) => {
                 tracing::error!(error = %e, url = url, "Failed to connect NATS sink");
@@ -2260,7 +2327,7 @@ async fn build_sink(
         return match rsigma_runtime::UnixSocketSink::connect(std::path::Path::new(path)).await {
             Ok(unix_sink) => {
                 tracing::info!(path, "Unix socket sink started");
-                (Sink::Unix(Box::new(unix_sink)), on_full)
+                (Sink::Unix(Box::new(unix_sink.with_format(format))), on_full)
             }
             Err(e) => {
                 tracing::error!(path, error = %e, "Failed to connect unix socket sink");
