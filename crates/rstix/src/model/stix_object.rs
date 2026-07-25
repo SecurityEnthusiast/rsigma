@@ -176,7 +176,11 @@ fn serde_json_error_to_parse_error(err: serde_json::Error) -> crate::ParseError 
 }
 
 #[cfg(feature = "serde")]
-pub(crate) fn deserialize_stix_object_from_value(
+/// Deserialize one STIX object value with bundle-equivalent property capture.
+///
+/// Returns the typed object and a side map of peeled `x_*` keys, hoisted toplevel-property
+/// extensions, and wire keys not modeled on the typed struct.
+pub fn deserialize_stix_object_from_value(
     value: serde_json::Value,
     opts: &ParseOptions,
 ) -> Result<(StixObject, BTreeMap<String, serde_json::Value>), crate::ParseError> {

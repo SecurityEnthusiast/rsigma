@@ -7,6 +7,7 @@
 
 #[path = "support/fixtures_spec.rs"]
 mod fixtures_spec;
+use fixtures_spec::load_spec_fixture;
 #[path = "support/roundtrip.rs"]
 mod roundtrip;
 
@@ -348,7 +349,10 @@ fn sco_autonomous_system_round_trips() {
 #[test]
 fn sco_directory_round_trips_and_rejects_wrong_contains_ref() {
     roundtrip_strict::<Directory>("sco/directory-basic.json");
+    roundtrip_strict::<Directory>("sco/directory-with-path-enc.json");
     assert_fixture_rejects::<Directory>("sco/directory-contains-wrong-type.json");
+    assert_fixture_rejects::<Directory>("sco/directory-path-enc-invalid.json");
+    assert_fixture_rejects::<Directory>("sco/directory-path-enc-without-path.json");
 }
 
 #[test]
@@ -559,6 +563,37 @@ fn identity_standalone_preserves_x_custom_properties() {
         identity.common.extra.get("x_mitre_platform"),
         Some(&serde_json::json!("windows"))
     );
+}
+
+#[test]
+fn identity_standalone_preserves_unmodeled_top_level_properties() {
+    let identity = roundtrip_strict::<Identity>("sdo/identity-standalone-vendor-tier.json");
+    assert_eq!(
+        identity.common.extra.get("vendor_tier"),
+        Some(&serde_json::json!("gold"))
+    );
+    let extra = rstix::parse_object_with_extras(&load_spec_fixture(
+        "sdo/identity-standalone-vendor-tier.json",
+    ))
+    .expect("parse_object")
+    .1;
+    assert_eq!(
+        extra.get("vendor_tier"),
+        Some(&serde_json::json!("gold")),
+        "parse_object captures vendor_tier like bundle parse"
+    );
+}
+
+#[test]
+fn observed_data_deprecated_objects_sro_parses_in_bundle() {
+    use rstix::parse_bundle;
+    let object_json = load_spec_fixture("sdo/observed-data-deprecated-objects-sro.json");
+    let bundle_json = format!(
+        r#"{{"type":"bundle","id":"bundle--00000000-0000-0000-0000-000000000001","objects":[{}]}}"#,
+        object_json
+    );
+    let bundle = parse_bundle(&bundle_json).expect("bundle with embedded SRO should parse");
+    assert_eq!(bundle.objects().len(), 1);
 }
 
 #[test]

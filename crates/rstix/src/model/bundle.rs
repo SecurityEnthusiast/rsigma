@@ -1,6 +1,6 @@
 //! STIX 2.1 bundle container and parsing.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read;
 
 use crate::core::StixId;
@@ -10,7 +10,7 @@ use crate::model::json_limits::{LimitedReader, validate_value_limits};
 use crate::model::meta::LanguageContent;
 use crate::model::meta::MetaObject;
 use crate::model::parse_options::ParseOptions;
-use crate::model::sdo::ObservedDataForm;
+use crate::model::sdo::{ObservedData, ObservedDataEmbeddedObject, ObservedDataForm, SdoObject};
 use crate::model::stix_object::{StixObject, deserialize_stix_object_from_value};
 use crate::model::validate::{
     granular_markings_for_object, validate_granular_markings_semantics, validate_identity_ref,
@@ -251,6 +251,84 @@ impl Bundle {
         }
     }
 
+    fn embedded_object_ids(&self) -> HashSet<String> {
+        let mut ids = HashSet::new();
+        for object in &self.objects {
+            let StixObject::Sdo(SdoObject::ObservedData(ObservedData {
+                form: ObservedDataForm::DeprecatedObjects(objects),
+                ..
+            })) = object
+            else {
+                continue;
+            };
+            for embedded in objects.values() {
+                ids.insert(embedded.id().as_str().to_string());
+            }
+        }
+        ids
+    }
+
+    fn ref_resolves_in_bundle(&self, id: &StixId, embedded_ids: &HashSet<String>) -> bool {
+        self.id_index.contains_key(id.as_str()) || embedded_ids.contains(id.as_str())
+    }
+
+    fn validate_ref_resolves_in_bundle(
+        &self,
+        id: &StixId,
+        embedded_ids: &HashSet<String>,
+    ) -> Result<(), ModelError> {
+        if self.ref_resolves_in_bundle(id, embedded_ids) {
+            Ok(())
+        } else {
+            Err(ModelError::BundleReferenceMissing {
+                ref_id: id.as_str().to_owned(),
+            })
+        }
+    }
+
+    fn validate_embedded_observed_data_refs(
+        &self,
+        objects: &BTreeMap<String, ObservedDataEmbeddedObject>,
+    ) -> Result<(), ModelError> {
+        let embedded_ids: HashSet<String> = objects
+            .values()
+            .map(|embedded| embedded.id().as_str().to_string())
+            .collect();
+        for embedded in objects.values() {
+            match embedded {
+                ObservedDataEmbeddedObject::Sco(sco) => {
+                    let mut refs = Vec::new();
+                    StixObject::Sco(sco.clone()).collect_internal_refs(&mut refs);
+                    for reference in refs {
+                        self.validate_ref_resolves_in_bundle(&reference, &embedded_ids)?;
+                    }
+                }
+                ObservedDataEmbeddedObject::Sro(sro) => {
+                    use crate::model::sro::{Relationship, Sighting, SroObject};
+                    match sro {
+                        SroObject::Relationship(Relationship {
+                            source_ref,
+                            target_ref,
+                            ..
+                        }) => {
+                            validate_stix_or_sco_ref(source_ref)?;
+                            validate_stix_or_sco_ref(target_ref)?;
+                            self.validate_ref_resolves_in_bundle(source_ref, &embedded_ids)?;
+                            self.validate_ref_resolves_in_bundle(target_ref, &embedded_ids)?;
+                        }
+                        SroObject::Sighting(Sighting {
+                            sighting_of_ref, ..
+                        }) => {
+                            validate_sdo_ref(sighting_of_ref)?;
+                            self.validate_ref_resolves_in_bundle(sighting_of_ref, &embedded_ids)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Bundle identifier.
     pub fn id(&self) -> &StixId {
         &self.id
@@ -285,13 +363,14 @@ impl Bundle {
 
     /// Validate that collected object references resolve within this bundle.
     pub fn validate_refs(&self) -> Result<(), ModelError> {
+        let embedded_ids = self.embedded_object_ids();
         let mut refs = Vec::new();
         for object in &self.objects {
             object.collect_internal_refs(&mut refs);
         }
 
         for reference in refs {
-            if !self.id_index.contains_key(reference.as_str()) {
+            if !self.ref_resolves_in_bundle(&reference, &embedded_ids) {
                 return Err(ModelError::BundleReferenceMissing {
                     ref_id: reference.as_str().to_owned(),
                 });
@@ -430,14 +509,16 @@ impl Bundle {
                             validate_sco_ref(sco_ref)?;
                         }
                     }
-                    SdoObject::ObservedData(ObservedData {
-                        form: ObservedDataForm::ObjectRefs(object_refs),
-                        ..
-                    }) => {
-                        for object_ref in object_refs {
-                            self.validate_sco_or_sro_ref_in_bundle(object_ref)?;
+                    SdoObject::ObservedData(ObservedData { form, .. }) => match form {
+                        ObservedDataForm::ObjectRefs(object_refs) => {
+                            for object_ref in object_refs {
+                                self.validate_sco_or_sro_ref_in_bundle(object_ref)?;
+                            }
                         }
-                    }
+                        ObservedDataForm::DeprecatedObjects(objects) => {
+                            self.validate_embedded_observed_data_refs(objects)?;
+                        }
+                    },
                     SdoObject::Report(Report { object_refs, .. })
                     | SdoObject::Grouping(Grouping { object_refs, .. })
                     | SdoObject::Note(Note { object_refs, .. })

@@ -59,7 +59,9 @@ impl DomainName {
 
     /// Rejects empty `value`.
     pub fn validate(&self) -> Result<(), ModelError> {
-        validate_domain_name_format(&self.value)
+        validate_domain_name_format(&self.value)?;
+        self.common
+            .validate_vendor_enc_pairings(&[("value", Some(self.value.as_str()))])
     }
 }
 

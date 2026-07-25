@@ -1,0 +1,10 @@
+{
+  "type": "identity",
+  "spec_version": "2.1",
+  "id": "identity--22222222-2222-4222-8222-222222222222",
+  "created": "2016-05-12T08:17:27.000Z",
+  "modified": "2016-05-12T08:17:27.000Z",
+  "name": "Example Org",
+  "identity_class": "organization",
+  "vendor_tier": "gold"
+}

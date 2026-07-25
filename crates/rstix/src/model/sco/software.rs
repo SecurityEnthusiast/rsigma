@@ -85,7 +85,13 @@ impl Software {
         if self.name.is_empty() {
             return Err(ModelError::SoftwareNameEmpty);
         }
-        Ok(())
+        self.common.validate_vendor_enc_pairings(&[
+            ("name", Some(self.name.as_str())),
+            ("vendor", self.vendor.as_deref()),
+            ("version", self.version.as_deref()),
+            ("cpe", self.cpe.as_deref()),
+            ("swid", self.swid.as_deref()),
+        ])
     }
 }
 

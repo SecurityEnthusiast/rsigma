@@ -63,7 +63,9 @@ impl Ipv4Addr {
 
     /// Rejects empty `value`.
     pub fn validate(&self) -> Result<(), ModelError> {
-        validate_ipv4_addr_format(&self.value)
+        validate_ipv4_addr_format(&self.value)?;
+        self.common
+            .validate_vendor_enc_pairings(&[("value", Some(self.value.as_str()))])
     }
 }
 

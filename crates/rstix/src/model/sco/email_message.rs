@@ -156,6 +156,12 @@ pub struct EmailMessage {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub subject: Option<String>,
+    /// Alternate encoding of `subject` (STIX §3.1 / §3.9.1).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub subject_enc: Option<String>,
     /// `Received` header lines in order (STIX §6.6.1).
     #[cfg_attr(
         feature = "serde",
@@ -174,6 +180,12 @@ pub struct EmailMessage {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub body: Option<String>,
+    /// Alternate encoding of `body` (STIX §3.1 / §3.9.1).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub body_enc: Option<String>,
     /// MIME parts of a multipart message (STIX §6.6.1; required when `is_multipart` is true).
     #[cfg_attr(
         feature = "serde",
@@ -204,6 +216,16 @@ impl EmailMessage {
         } else if self.body_multipart.is_some() {
             return Err(ModelError::EmailMessageMultipartWhenSinglePart);
         }
+        crate::model::validate::validate_sco_string_encoding_pair(
+            &self.subject,
+            &self.subject_enc,
+            "subject_enc",
+        )?;
+        crate::model::validate::validate_sco_string_encoding_pair(
+            &self.body,
+            &self.body_enc,
+            "body_enc",
+        )?;
         crate::model::validate::validate_extra_enc_pairings(
             &self.common.extra,
             &[
@@ -261,11 +283,15 @@ impl<'de> serde::Deserialize<'de> for EmailMessage {
             #[serde(default)]
             subject: Option<String>,
             #[serde(default)]
+            subject_enc: Option<String>,
+            #[serde(default)]
             received_lines: Vec<String>,
             #[serde(default)]
             additional_header_fields: BTreeMap<String, Vec<String>>,
             #[serde(default)]
             body: Option<String>,
+            #[serde(default)]
+            body_enc: Option<String>,
             #[serde(default)]
             body_multipart: Option<Vec<EmailMimePart>>,
             #[serde(default)]
@@ -295,6 +321,7 @@ impl<'de> serde::Deserialize<'de> for EmailMessage {
             subject: raw
                 .subject
                 .map(|value| crate::model::rfc2047::decode_header_value(&value)),
+            subject_enc: raw.subject_enc,
             received_lines: raw
                 .received_lines
                 .into_iter()
@@ -304,6 +331,7 @@ impl<'de> serde::Deserialize<'de> for EmailMessage {
             body: raw
                 .body
                 .map(|value| crate::model::rfc2047::decode_header_value(&value)),
+            body_enc: raw.body_enc,
             body_multipart: raw.body_multipart,
             raw_email_ref: raw.raw_email_ref,
         };
@@ -341,19 +369,9 @@ impl QueryableStixObject for EmailMessage {
             ["content_type"] => self.content_type.as_deref().map(QueryValue::Str),
             ["message_id"] => self.message_id.as_deref().map(QueryValue::Str),
             ["subject"] => self.subject.as_deref().map(QueryValue::Str),
-            ["subject_enc"] => self
-                .common
-                .extra
-                .get("subject_enc")
-                .and_then(serde_json::Value::as_str)
-                .map(QueryValue::Str),
+            ["subject_enc"] => self.subject_enc.as_deref().map(QueryValue::Str),
             ["body"] => self.body.as_deref().map(QueryValue::Str),
-            ["body_enc"] => self
-                .common
-                .extra
-                .get("body_enc")
-                .and_then(serde_json::Value::as_str)
-                .map(QueryValue::Str),
+            ["body_enc"] => self.body_enc.as_deref().map(QueryValue::Str),
             ["received_lines"] if !self.received_lines.is_empty() => Some(QueryValue::Null),
             ["additional_header_fields"] if !self.additional_header_fields.is_empty() => {
                 Some(QueryValue::Null)

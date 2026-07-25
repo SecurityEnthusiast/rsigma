@@ -111,7 +111,8 @@ impl WindowsRegistryKey {
                 return Err(ModelError::WindowsRegistryValueNoProperties);
             }
         }
-        Ok(())
+        self.common
+            .validate_vendor_enc_pairings(&[("key", self.key.as_deref())])
     }
 }
 

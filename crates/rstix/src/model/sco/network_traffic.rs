@@ -166,7 +166,7 @@ impl NetworkTraffic {
         IcmpExt::validate_in_map(&self.common.extensions)?;
         SocketExt::validate_in_map(&self.common.extensions)?;
         TcpExt::validate_in_map(&self.common.extensions)?;
-        Ok(())
+        self.common.validate_vendor_enc_pairings(&[])
     }
 }
 

@@ -51,7 +51,8 @@ impl Mutex {
         if self.name.is_empty() {
             return Err(ModelError::MutexNameEmpty);
         }
-        Ok(())
+        self.common
+            .validate_vendor_enc_pairings(&[("name", Some(self.name.as_str()))])
     }
 }
 

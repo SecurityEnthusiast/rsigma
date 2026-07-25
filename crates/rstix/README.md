@@ -743,7 +743,7 @@ STIX **MUST** rules for `domain-name.value` (RFC 1034 / RFC 5890), `email-addr.v
 
 The Validation Pipeline re-runs the same checks on typed objects during the schema phase.
 
-SCO `*_enc` properties (§3.1 / §3.9.1) MUST be IANA character-set names and MUST NOT appear without their base property. Spec-defined properties are **`file.name_enc`** and **`directory.path_enc`** only; additional `_enc` keys that land in [`ScoCommonProps::extra`](model::common::ScoCommonProps) (for example vendor extensions or pattern fixtures) follow the same pairing and charset rules via `validate_extra_enc_pairings()`.
+SCO `*_enc` properties (§3.1 / §3.9.1) MUST be IANA character-set names and MUST NOT appear without their base property. Typed fields: **`file.name_enc`**, **`directory.path_enc`**, **`email-message.subject_enc`**, **`email-message.body_enc`**. Vendor `_enc` keys in [`ScoCommonProps::extra`](model::common::ScoCommonProps) follow the same pairing and charset rules via [`validate_vendor_enc_pairings`](model::common::ScoCommonProps::validate_vendor_enc_pairings) on every SCO type.
 
 `email-message` RFC 2047 encoded-words in header string fields (`subject`, `message_id`, `body`, `received_lines`, `additional_header_fields`) are decoded on ingest (§6.6). Pattern evaluation can still address vendor `_enc` siblings through `common.extra` (for example `[email-message:subject_enc = 'UTF-8']` when the wire object carries `subject_enc` alongside `subject`).
 
@@ -911,12 +911,13 @@ The **Data Model + Serialization** phase validates STIX invariants at deserializ
 | Hash maps on artifact/file/external-reference/x509/PE/NTFS | §2.7 key syntax; keys must be `hash-algorithm-ov` entries or `x_` extensions; known algorithm values match §10.7 formats. | T0 |
 | `Relationship` per-type matrix | Advisory via `Bundle::validate()` (`ValidationCode::RelationshipEndpointMatrixInvalid`). | T1 |
 | `language-content` | `object_modified` is `Option<StixTimestamp>`; `lang` rejected on common props; bundle requires STIX Object `object_ref` to exist; `object_modified` mismatch and translation type/list-length/object-shape mirroring for existing target fields rejected at parse (§7.1.1); keys for properties that do not exist on the target MUST be ignored (no error, no warning). | T0 |
-| SCO `*_enc` (§3.1 / §3.9.1) | Spec-defined: `file.name_enc`, `directory.path_enc` only; additional `_enc` keys in `common.extra` validated with the same IANA charset and pairing rules. | T0 |
+| SCO `*_enc` (§3.1 / §3.9.1) | Typed `file.name_enc`, `directory.path_enc`, `email-message.subject_enc` / `body_enc`; all SCO types validate vendor `_enc` keys in `common.extra` via `validate_vendor_enc_pairings`. | T0 |
 | `email-message` headers (§6.6) | RFC 2047 encoded-words decoded on ingest for `subject`, `message_id`, `body`, `received_lines`, and `additional_header_fields`. | T0 |
 | `marking-definition` | `spec_version` required; legacy `definition_type` + `definition` required when `extensions` empty. | T0 |
 | `extension-definition` | Rejects `extensions`, `confidence`, and `lang` on common props. | T0 |
 | SCO ref/format checks | `file.contains_refs` SCO kind; domain-name/email-addr/url RFC MUST format validation at parse; ipv4/ipv6/mac address format at parse; hash map key syntax and known-algorithm value formats (§2.7 / §10.7); observed-data `object_refs` SCO or SRO kind; artifact `encryption_algorithm` closed vocab at parse. | T0 |
-| Standalone unknown top-level keys | On bundle parse, unmodeled keys are captured in `common.extra` / `Bundle::extra_properties()` and re-merged on serialize; not rejected at parse unless a type-specific MUST applies. Standalone leaf `Deserialize` may drop unmodeled keys (serde default). | Capture on bundle path |
+| Standalone unknown top-level keys | `serde_json::from_str::<T>()` captures unmodeled keys in `common.extra` / meta `extra` via flatten; [`parse_object_with_extras`](crate::parse_object_with_extras) matches bundle peel/hoist/capture. Bundle parse drains into `Bundle::extra_properties()`. | T0 capture |
+| Observed-data deprecated `objects` | Embedded map accepts SCO and SRO members; refs between embedded members resolve at bundle parse (not required as top-level bundle objects). | T0 |
 | Extension map | Predefined extension keys (`*-ext`, TLP definition id) must not carry `extension_type`; toplevel-property-extension entries peeled before typed deserialize and hoisted keys stored in `extra_properties` (with unmodeled top-level keys captured on reparse via `common.extra` drain). | T0 |
 | `Sighting.count` | `0..=999_999_999` when present. | T0 |
 | `Sighting` time window | `last_seen >= first_seen` when both set. | T0 |

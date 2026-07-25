@@ -44,6 +44,6 @@ pub use sco::ScoObject;
 pub use sdo::SdoObject;
 pub use sro::SroObject;
 #[cfg(feature = "serde")]
-pub use stix_object::{CustomStixObject, StixObject};
+pub use stix_object::{CustomStixObject, StixObject, deserialize_stix_object_from_value};
 #[cfg(feature = "serde")]
 pub use validation::{ValidationCode, ValidationFinding, ValidationReport};

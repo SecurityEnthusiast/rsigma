@@ -101,7 +101,10 @@ impl Artifact {
         if let Some(algorithm) = &self.encryption_algorithm {
             validate_encryption_algorithm(algorithm)?;
         }
-        Ok(())
+        self.common.validate_vendor_enc_pairings(&[
+            ("url", self.url.as_deref()),
+            ("mime_type", self.mime_type.as_deref()),
+        ])
     }
 }
 

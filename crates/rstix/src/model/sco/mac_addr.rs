@@ -49,7 +49,9 @@ impl MacAddr {
 
     /// Rejects empty `value`.
     pub fn validate(&self) -> Result<(), ModelError> {
-        validate_mac_addr_format(&self.value)
+        validate_mac_addr_format(&self.value)?;
+        self.common
+            .validate_vendor_enc_pairings(&[("value", Some(self.value.as_str()))])
     }
 }
 

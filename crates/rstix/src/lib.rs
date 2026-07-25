@@ -159,3 +159,42 @@ pub use taxii::{
 pub fn parse_bundle(json: &str) -> Result<Bundle, ParseError> {
     Bundle::parse(json)
 }
+
+/// Parse a single STIX object with the same wire capture rules as [`Bundle::parse`].
+///
+/// Unmodeled top-level keys and `x_*` custom properties are returned in the side map
+/// (and drained from typed `common.extra` / meta `extra`, matching bundle ingest).
+#[cfg(feature = "serde")]
+pub fn parse_object_with_extras(
+    json: &str,
+) -> Result<
+    (
+        StixObject,
+        std::collections::BTreeMap<String, serde_json::Value>,
+    ),
+    ParseError,
+> {
+    parse_object_with_extras_and_options(json, &ParseOptions::default())
+}
+
+/// Parse a single STIX object with explicit [`ParseOptions`].
+#[cfg(feature = "serde")]
+pub fn parse_object_with_extras_and_options(
+    json: &str,
+    opts: &ParseOptions,
+) -> Result<
+    (
+        StixObject,
+        std::collections::BTreeMap<String, serde_json::Value>,
+    ),
+    ParseError,
+> {
+    let value: serde_json::Value = serde_json::from_str(json)?;
+    model::deserialize_stix_object_from_value(value, opts)
+}
+
+/// Parse a single STIX object using default options (extras discarded).
+#[cfg(feature = "serde")]
+pub fn parse_object(json: &str) -> Result<StixObject, ParseError> {
+    parse_object_with_extras(json).map(|(object, _)| object)
+}
