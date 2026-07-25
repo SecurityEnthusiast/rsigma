@@ -282,8 +282,10 @@ fn main() {
     // Build the global output context once, after the config layer is loaded
     // but before any command runs. The same precedence model that drives
     // --log-format applies here: flag > env > file > default.
-    let (cfg_format, cfg_color) = config::discovered_global_output(cfg_override.as_deref());
-    let (cfg_format, cfg_color) = output::warn_invalid_global_output(cfg_format, cfg_color);
+    let (file_format, file_color, env_format, env_color) =
+        config::discovered_global_output(cfg_override.as_deref());
+    let (cfg_format, cfg_color) =
+        output::resolve_global_output_layers(file_format, file_color, env_format, env_color);
     let stdout_is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
     let ctx = output::OutputCtx::resolve(
         cli.output_format,
@@ -298,17 +300,21 @@ fn main() {
     dispatch(cli.command, &matches, ctx);
 }
 
-/// Pre-scan argv for an explicit `--config <PATH>` / `--config=<PATH>` so the
-/// early log-format resolution honors the same file the subcommand will load.
-/// Only the long form is scanned; the short `-c` belongs to the `config`
-/// subcommands, where `global.log_format` is irrelevant.
+/// Pre-scan argv for an explicit `--config <PATH>` / `--config=<PATH>` /
+/// `-c <PATH>` / `-c<PATH>` so early global setting resolution honors the same
+/// file the subcommand will load.
 fn scan_config_flag() -> Option<PathBuf> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
-        if arg == "--config" {
+        if arg == "--config" || arg == "-c" {
             return args.next().map(PathBuf::from);
         }
         if let Some(value) = arg.strip_prefix("--config=") {
+            return Some(PathBuf::from(value));
+        }
+        if let Some(value) = arg.strip_prefix("-c")
+            && !value.is_empty()
+        {
             return Some(PathBuf::from(value));
         }
     }
@@ -331,8 +337,8 @@ fn dispatch(command: Commands, matches: &ArgMatches, ctx: output::OutputCtx) {
         Commands::Backend { cmd } => dispatch_backend(cmd, ctx),
         Commands::Pipeline { cmd } => dispatch_pipeline(cmd, ctx),
         #[cfg(feature = "mcp")]
-        Commands::Mcp { cmd } => dispatch_mcp(cmd),
-        Commands::Config { cmd } => config::commands::dispatch(cmd),
+        Commands::Mcp { cmd } => dispatch_mcp(cmd, ctx),
+        Commands::Config { cmd } => config::commands::dispatch(cmd, ctx),
     }
 }
 
@@ -357,7 +363,7 @@ fn dispatch_engine(cmd: EngineCommands, matches: &ArgMatches, ctx: output::Outpu
                 .subcommand_matches("engine")
                 .and_then(|m| m.subcommand_matches("daemon"))
                 .expect("engine daemon submatches present");
-            cmd_daemon(args, dm);
+            cmd_daemon(args, dm, ctx);
         }
     }
 }
@@ -365,7 +371,7 @@ fn dispatch_engine(cmd: EngineCommands, matches: &ArgMatches, ctx: output::Outpu
 fn dispatch_rule(cmd: RuleCommands, matches: &ArgMatches, ctx: output::OutputCtx) {
     match cmd {
         RuleCommands::Parse(args) => commands::cmd_parse(args, ctx),
-        RuleCommands::Validate(args) => commands::cmd_validate(args),
+        RuleCommands::Validate(args) => commands::cmd_validate(args, ctx),
         RuleCommands::Lint(args) => run_lint(args, ctx),
         RuleCommands::Fields(args) => commands::cmd_fields(args, ctx),
         RuleCommands::Draft(args) => commands::cmd_draft(args, ctx),
@@ -414,15 +420,17 @@ fn dispatch_rule(cmd: RuleCommands, matches: &ArgMatches, ctx: output::OutputCtx
         }
         RuleCommands::Condition(args) => commands::cmd_condition(args, ctx),
         RuleCommands::Stdin(args) => commands::cmd_stdin(args, ctx),
-        RuleCommands::MigrateSources(args) => commands::cmd_migrate_sources(args),
+        RuleCommands::MigrateSources(args) => commands::cmd_migrate_sources(args, ctx),
     }
 }
 
 fn dispatch_backend(cmd: BackendCommands, ctx: output::OutputCtx) {
     match cmd {
         BackendCommands::Convert(args) => commands::cmd_convert(args, ctx),
-        BackendCommands::Targets => commands::cmd_list_targets(),
-        BackendCommands::Formats(ListFormatsArgs { target }) => commands::cmd_list_formats(target),
+        BackendCommands::Targets => commands::cmd_list_targets(ctx),
+        BackendCommands::Formats(ListFormatsArgs { target }) => {
+            commands::cmd_list_formats(target, ctx)
+        }
     }
 }
 
@@ -430,7 +438,7 @@ fn dispatch_pipeline(cmd: PipelineCommands, ctx: output::OutputCtx) {
     match cmd {
         PipelineCommands::Diff(args) => commands::cmd_pipeline_diff(args, ctx),
         #[cfg(feature = "daemon")]
-        PipelineCommands::Resolve(args) => commands::cmd_resolve(args),
+        PipelineCommands::Resolve(args) => commands::cmd_resolve(args, ctx),
     }
 }
 

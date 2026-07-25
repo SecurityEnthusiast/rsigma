@@ -904,6 +904,15 @@ fn cli_resolve_command_resolves_sources() {
         .find(|s| s["source_id"] == "cmd_list" || s["id"] == "cmd_list")
         .unwrap_or(&sources[0]);
     assert_eq!(cmd_list_source["status"], "ok");
+    assert_eq!(
+        cmd_list_source["data"],
+        serde_json::json!(["malware.exe", "evil.bat"]),
+        "default JSON must preserve typed source data: {stdout}"
+    );
+    assert!(
+        cmd_list_source.get("data_or_error").is_none(),
+        "default JSON must preserve the legacy schema: {stdout}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -939,10 +948,21 @@ fn cli_resolve_dry_run_shows_metadata() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
-    // dry-run output should include source metadata
+    let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let fallback = vec![value.clone()];
+    let sources = value.as_array().unwrap_or(&fallback);
+    let source = sources
+        .iter()
+        .find(|source| source["source_id"] == "cmd_list")
+        .expect("dry-run should include cmd_list metadata");
     assert!(
-        stdout.contains("cmd_list"),
-        "dry-run should mention source id: {stdout}"
+        source.get("required").is_some(),
+        "missing required: {stdout}"
+    );
+    assert!(source.get("refresh").is_some(), "missing refresh: {stdout}");
+    assert!(
+        source.get("data_or_error").is_none(),
+        "default dry-run JSON must preserve the legacy schema: {stdout}"
     );
 }
 

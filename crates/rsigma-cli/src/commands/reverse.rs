@@ -103,7 +103,10 @@ struct GatheredQuery {
     name: Option<String>,
 }
 
-pub(crate) fn cmd_reverse(args: ReverseArgs, _ctx: OutputCtx) {
+pub(crate) fn cmd_reverse(args: ReverseArgs, ctx: OutputCtx) {
+    if ctx.explicit_format {
+        ctx.warn_unsupported("rule reverse", "Sigma YAML");
+    }
     let mut queries = collect_queries(
         args.query.as_deref(),
         &args.file,

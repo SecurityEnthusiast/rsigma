@@ -163,6 +163,9 @@ pub(crate) fn cmd_draft(args: DraftArgs, ctx: OutputCtx) {
 
     match args.emit {
         EmitMode::Yaml => {
+            if ctx.explicit_format {
+                ctx.warn_unsupported("rule draft", "Sigma YAML");
+            }
             print!("{}", report.rule_yaml);
             if ctx.show_stats() {
                 eprintln!();

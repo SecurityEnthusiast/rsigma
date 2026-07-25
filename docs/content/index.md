@@ -2,6 +2,8 @@
 
 RSigma is a complete [Sigma](https://sigmahq.io/) detection engineering toolkit: parser, linter, evaluator, correlation engine, conversion framework, streaming daemon, MCP and LSP servers. Or, as Zack Allen put it in [Detection Engineering Weekly #149](https://www.detectionengineering.net/i/191079258/detection-engineering-gem), "RSigma is essentially a SIEM."
 
+RSigma builds on open industry standards throughout: [Sigma](https://sigmahq.io/) for detection rules, [OpenTelemetry](https://opentelemetry.io/) for log ingestion and detection export, and [STIX](https://oasis-open.github.io/cti-documentation/stix/intro) and [TAXII](https://oasis-open.github.io/cti-documentation/taxii/intro) for threat intelligence.
+
 ::: grids
 ::: grid
 ::: card "Install RSigma" icon:download
@@ -102,10 +104,6 @@ RSigma is the only Sigma toolkit that combines pySigma-style conversion with a r
 "Instead of hardcoding IOC values in rule YAML, you declare external sources in the pipeline config, and RSigma fetches and injects them at evaluation time. This works very similarly to how I've seen SIEMs implement threat intelligence pipelines, but since it's RSigma, it's self-contained within its ecosystem."
 
 [DEW #157](https://www.detectionengineering.net/p/dew-157-shai-hulud-goes-open-source)
-:::
-
-::: callout info "Awesome Rust"
-Listed under [Security tools](https://github.com/rust-unofficial/awesome-rust#security-tools) in the Awesome Rust curated list.
 :::
 
 ## Built with RSigma

@@ -27,6 +27,8 @@ You can send events in many formats, including JSON, syslog (RFC 3164/5424), log
 
 For rule quality and editor integration, a built-in linter validates rules against 85 checks derived from the Sigma v2.1.0 specification, and an LSP server provides real-time diagnostics, completions, hover documentation, and quick-fix code actions in any editor.
 
+RSigma builds on open industry standards throughout: [Sigma](https://sigmahq.io/) for detection rules, [OpenTelemetry](https://opentelemetry.io/) for log ingestion and detection export, and [STIX](https://oasis-open.github.io/cti-documentation/stix/intro) and [TAXII](https://oasis-open.github.io/cti-documentation/taxii/intro) for threat intelligence.
+
 Full documentation, including guides, CLI reference, and library API docs, lives at [timescale.github.io/rsigma](https://rsigma.io/).
 
 ![Detection Engineering Loop](assets/detection-loop.svg)
@@ -47,7 +49,7 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 
 * **[Detection diagnostics](https://rsigma.io/cli/engine/explain/):** Explains why a rule did or did not match an event with `engine explain`, diffs pipeline transformations with `pipeline diff`, and introspects live correlation windows
 * **[Corpus backtesting](https://rsigma.io/cli/rule/backtest/):** Replays an event corpus against declared per-rule expectations with `rule backtest`, emitting a JSON or JUnit XML report for CI
-* **[Output formats](https://rsigma.io/reference/output/):** Renders every command's results as JSON, NDJSON, table, CSV, or TSV with a TTY-aware default via a global `--output-format` flag
+* **[Output formats](https://rsigma.io/reference/output/):** Structured commands render JSON, NDJSON, table, CSV, or TSV with a TTY-aware default via a global `--output-format` flag; artifact and protocol commands keep their fixed wire format (see the per-command contract)
 
 ### Deploy
 

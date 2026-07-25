@@ -12,7 +12,7 @@ RSigma ships as a single self-contained binary on every supported platform. Pick
 
 ## With Cargo
 
-The recommended path for Rust users. Installs the latest released `{{ rsigma.version }}` build with default features (`daemon` enabled, NATS and OTLP off):
+The recommended path for Rust users. Installs the latest released `{{ rsigma.version }}` build with default features (only `daemon` on; the MCP server, NATS, OTLP, TLS, and the extra input formats are opt-in):
 
 ```bash
 cargo install --locked rsigma
@@ -21,11 +21,17 @@ cargo install --locked rsigma
 Add optional features as needed:
 
 ```bash
+# MCP server for AI agents (`rsigma mcp serve`)
+cargo install --locked rsigma --features mcp
+
 # Streaming over NATS JetStream
 cargo install --locked rsigma --features daemon-nats
 
-# OTLP HTTP + gRPC ingestion
+# OTLP HTTP + gRPC ingestion and detection export
 cargo install --locked rsigma --features daemon-otlp
+
+# In-process TLS/mTLS for the daemon and MCP HTTP listeners
+cargo install --locked rsigma --features daemon-tls
 
 # Windows Event Log (.evtx) input
 cargo install --locked rsigma --features evtx
@@ -33,8 +39,8 @@ cargo install --locked rsigma --features evtx
 # Cross-rule Aho-Corasick prefilter for large rule sets
 cargo install --locked rsigma --features daachorse-index
 
-# Everything at once
-cargo install --locked rsigma --features daemon-nats,daemon-otlp,logfmt,cef,evtx,daachorse-index
+# Match the prebuilt binaries and Docker image exactly
+cargo install --locked rsigma --all-features
 ```
 
 The `--locked` flag pins the dependency graph to the published `Cargo.lock`, which is what CI builds and signs. The [LSP server](../editors/vscode.md) ships in its own crate:
@@ -124,7 +130,7 @@ rsigma --version
 rsigma --help
 ```
 
-You should see `rsigma {{ rsigma.version }}` and a list of the top-level command groups (`engine`, `rule`, `backend`, `pipeline`).
+You should see `rsigma {{ rsigma.version }}` and a list of the top-level command groups (`engine`, `rule`, `backend`, `pipeline`, `config`, and `mcp` when built with the `mcp` feature).
 
 ## Next steps
 

@@ -107,7 +107,7 @@ Stderr closes with a `Processed 3 events, 2 matches.` summary.
 
 ## 4. Lint and validate the rule
 
-`rule lint` checks the rule against 66 Sigma spec checks. By default, only a summary line is printed:
+`rule lint` checks the rule against {{ rsigma.lint.rules }} Sigma spec checks. By default, only a summary line is printed:
 
 ```bash
 rsigma rule lint rules/
@@ -194,18 +194,18 @@ curl -sS http://127.0.0.1:9090/api/v1/status
 ```
 
 ```bash
-curl -sS http://127.0.0.1:9090/metrics | head -n 5
+curl -sS http://127.0.0.1:9090/metrics | grep '^# HELP rsigma_' | head -n 5
 ```
 
 ```text
+# HELP rsigma_alert_pipeline_duration_seconds Alert-pipeline stage duration in seconds
+# HELP rsigma_audit_records_total Control-plane API calls recorded in the audit trail
+# HELP rsigma_audit_write_errors_total Audit trail SQLite or sink write failures
 # HELP rsigma_back_pressure_events_total Times a source was blocked on a full event channel
-# TYPE rsigma_back_pressure_events_total counter
-rsigma_back_pressure_events_total 0
 # HELP rsigma_batch_size Number of events processed per batch
-# TYPE rsigma_batch_size histogram
 ```
 
-The metrics endpoint exposes 27 labeled counters, gauges, and histograms covering input, detection, correlation, and dynamic sources. Per-rule labels make Grafana alerting straightforward:
+The metrics endpoint exposes {{ rsigma.metrics.names }} labeled counters, gauges, and histograms covering input, detection, correlation, and dynamic sources. Per-rule labels make Grafana alerting straightforward:
 
 ```text
 rsigma_detection_matches_by_rule_total{level="medium",rule_title="Suspicious whoami invocation"} 1

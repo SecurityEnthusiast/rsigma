@@ -1,6 +1,6 @@
 # Output Formats
 
-Every rsigma subcommand can emit its structured output in one of five formats. The selector, color policy, and noise controls are global flags that resolve through the same precedence model as the rest of the [configuration](configuration.md).
+Structured rsigma commands can emit results in one of five formats. Artifact producers (Sigma YAML, backend query text, replay fixtures) and protocol streams keep their fixed wire format. The selector, color policy, and noise controls are global flags that resolve through the same precedence model as the rest of the [configuration](configuration.md).
 
 ## Selector
 
@@ -10,9 +10,9 @@ Every rsigma subcommand can emit its structured output in one of five formats. T
 
 | Format | When to use it |
 |--------|----------------|
-| `json` | Default on a TTY; a single pretty-printed JSON object per record. |
-| `ndjson` | Default when piped; one compact JSON object per line. Stream-friendly. |
-| `table` | Width-aligned text table for `engine eval` (`LEVEL | RULE | TYPE | DETAIL`), `rule fields`, and `rule lint`. Numeric columns are right-aligned. `rule validate` keeps its bespoke per-file summary and ignores the format selector. |
+| `json` | Default on a TTY for structured commands; a single pretty-printed JSON document (envelope or array). |
+| `ndjson` | Default when piped for structured commands; one compact JSON object per logical record. Stream-friendly. |
+| `table` | Width-aligned text table. Numeric columns are right-aligned. |
 | `csv` | RFC 4180-style comma-separated values. Header row first, then one row per record. |
 | `tsv` | Tab-separated equivalent of `csv`. Friendlier for `cut` and `awk`. |
 
@@ -23,9 +23,11 @@ Highest precedence first:
 1. `--output-format` flag on the command line.
 2. `RSIGMA_GLOBAL__OUTPUT_FORMAT` environment variable.
 3. `global.output_format` in the discovered config file (or the file behind `--config`).
-4. TTY-aware default:
+4. TTY-aware default for structured commands:
    - `json` when stdout is a terminal (pretty-printed for human reading).
    - `ndjson` when stdout is piped or redirected (so `| jq` / `| fluent-bit` / `>file.ndjson` do the right thing without an extra flag).
+
+Some commands keep a legacy human default when the selector is unset (for example `rule fields`, `rule lint`, `rule validate`, `backend targets`). Passing `--output-format` always overrides that default.
 
 ## Color
 
@@ -46,7 +48,7 @@ Use `--color always` in CI to keep colour in build logs; `--color never` to stri
 
 | Flag | Effect |
 |------|--------|
-| `--quiet`, `-q` | Suppress every non-data line: progress (`Loaded N rules…`), stat summaries (`Processed N events, M matches.`), and the warning printed when `backend convert` falls back to raw text for non-tabular formats. Errors still go to stderr; exit codes are unchanged. |
+| `--quiet`, `-q` | Suppress every non-data line: progress (`Loaded N rules…`), stat summaries (`Processed N events, M matches.`), and unsupported-format warnings. Errors still go to stderr; exit codes are unchanged. |
 | `--no-stats` | Suppress the trailing summary line only. Progress messages still appear, so you can watch a long-running stream but skip the footer when piping into a tool that does not expect one. |
 
 `--quiet` implies `--no-stats`.
@@ -55,22 +57,67 @@ Use `--color always` in CI to keep colour in build logs; `--color never` to stri
 
 The contract is the same across every subcommand:
 
-* **Stdout** carries the data (matches, fields, lint findings, queries).
+* **Stdout** carries the data (matches, fields, lint findings, queries, YAML, fixtures).
 * **Stderr** carries diagnostics, progress, the optional stats summary, and any warnings.
 
 This is what lets `rsigma engine eval … | jq '.rule_title'` work cleanly: `jq` only sees the detection objects.
 
+## Unsupported formats
+
+When a command cannot honor an explicit `--output-format`, it prints one stderr warning and keeps its documented product:
+
+```text
+warning: `--output-format csv` is not supported by `rule reverse`; falling back to Sigma YAML.
+```
+
+`--quiet` suppresses that warning. The command never silently pretends the requested format was produced.
+
 ## Per-command behaviour
 
-| Command | TTY default | When piped | Notes |
-|---------|------------|-----------|-------|
-| `engine eval` | Pretty JSON | NDJSON | `table` renders one row per match (`LEVEL | RULE | TYPE | DETAIL`). `csv` / `tsv` write a header line then one row per match (streaming). `--pretty` still forces pretty JSON for backwards compatibility. |
-| `engine daemon` | Daemon output stays NDJSON on its configured sinks. `--output-format` does not change the sink wire format. |
-| `rule parse`, `rule condition`, `rule stdin` | Pretty JSON | Pretty JSON | These commands emit a parsed AST; pretty-printing stays the default. `--output-format ndjson` switches to compact. |
-| `rule fields` | Table | Table | Default is the legacy table view even when piped, so existing pipelines do not change. Explicit `--output-format json|ndjson|csv|tsv` overrides. The hidden `--json` flag still works and is equivalent to `--output-format json`. |
-| `rule lint` | Coloured human view | Coloured human view (without ANSI when piped) | Same default-as-before behaviour. `--output-format json` emits `{summary, findings}`. `--output-format ndjson` emits one `Finding` per line. `--output-format csv|tsv` emits a `PATH,SEVERITY,RULE,LINE,MESSAGE` view. |
-| `rule validate` | Human summary | Human summary | The format selector is reserved here; the existing summary is unchanged. |
-| `backend convert` | Raw query text | Raw query text | The backend keeps its own `-f, --format` for the query format (SQL view, sliding_window, …). `--output-format json` wraps the queries in `{target, format, queries: [{rule_title, rule_id, query}, …]}`. The non-JSON tabular formats are not meaningful for free-form query text; the command prints a stderr warning and falls back to raw text. |
+### Structured (all five formats)
+
+| Command | Implicit default | Notes |
+|---------|------------------|-------|
+| `engine eval` | Pretty JSON on TTY; NDJSON when piped | `table` / `csv` / `tsv` project `LEVEL | RULE | TYPE | DETAIL`. `--pretty` still forces pretty JSON for backwards compatibility. |
+| `engine explain` | Human table/tree | Explicit selector overrides. |
+| `engine classify` | TTY-aware json/ndjson | Full five-format support. |
+| `engine discover-schemas` | TTY-aware json/ndjson | Full five-format support. |
+| `engine status` | TTY-aware json/ndjson | Table/csv/tsv project metric rows. |
+| `engine tail` | TTY-aware json/ndjson | Streaming detections. |
+| `rule lint` | Coloured human view | Explicit `json` emits `{summary, findings}`; `ndjson` one finding per line; `csv`/`tsv` use `PATH,SEVERITY,RULE,LINE,MESSAGE`. |
+| `rule fields` | Table (even when piped) | Hidden `--json` aliases `--output-format json`. |
+| `rule backtest` / `coverage` / `scorecard` / `visibility` / `hygiene` | TTY-aware or table | Full five-format support. |
+| `rule draft --emit report` | TTY-aware | Full five-format support. |
+| `rule validate` | Human summary | Explicit selector emits `{summary, …}` for `json` and `PATH,STATUS,ERRORS` rows for table/csv/tsv/ndjson. |
+| `backend targets` / `backend formats` | Human listing | Explicit selector emits `PROVIDER,NAME,DESCRIPTION` or `TARGET,KIND,NAME,DESCRIPTION` rows. |
+| `pipeline resolve` | Compact JSON (`--pretty` optional) | Explicit selector emits `PIPELINE,SOURCE_ID,SOURCE_TYPE,STATUS,DATA_OR_ERROR` rows. |
+| `pipeline diff` | Human unified diff | `json`/`ndjson` keep the AST envelope; `csv`/`tsv` emit per-rule rows with compact JSON in `BEFORE`/`AFTER`. |
+| `config validate` / `show` / `path` | Text / path lines | Local `--format` (when set) wins over global `--output-format` and prints a precedence warning. Global `json`/`ndjson`/`table`/`csv`/`tsv` are honored when local `--format` is unset. `show --format yaml` remains available. |
+
+### Query artifacts
+
+| Command | Default | Explicit formats |
+|---------|---------|------------------|
+| `backend convert` | Raw backend query text | `json` wraps `{target, format, queries:[…]}`; `ndjson` emits one query record per line; `table`/`csv`/`tsv` warn and keep raw text. `--output` always writes raw text. |
+
+### AST (json/ndjson only)
+
+| Command | Behaviour |
+|---------|-----------|
+| `rule parse` / `rule condition` / `rule stdin` | Pretty JSON on a TTY; compact NDJSON when piped or redirected. `table`/`csv`/`tsv` warn and fall back to JSON. |
+
+### Fixed artifacts and protocols
+
+| Command | Product | Explicit incompatible formats |
+|---------|---------|-------------------------------|
+| `rule reverse` | Sigma YAML | Warn; keep YAML. |
+| `rule draft` (default `--emit yaml`) | Sigma YAML | Warn; keep YAML. |
+| `rule migrate-sources` | Source YAML + pipeline rewrites | Warn; keep file/YAML product. |
+| `engine tap` | Replayable NDJSON fixture | Warn unless `ndjson`; never array-wrap or pretty-print. |
+| `engine daemon` | Configured sink wire format | Warn; sinks unchanged. |
+| `mcp serve` | MCP protocol stream | Warn; protocol unchanged. |
+| `config init` / `config reload` | File write / HTTP status | Warn; no stdout data product. |
+| `config schema` | JSON Schema document | `json`/`ndjson` supported; `table`/`csv`/`tsv` warn and fall back to JSON. |
 
 ## Examples
 

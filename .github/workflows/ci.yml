@@ -361,3 +361,26 @@ jobs:
         run: |
           python3 scripts/mcp-smoke.py --bin target/debug/rsigma
           python3 scripts/mcp-smoke.py --http --bin target/debug/rsigma
+
+  output-format-smoke:
+    name: Output Format Smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # read repo
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup override set stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Build the full CLI so daemon-gated commands (`pipeline resolve`) and
+      # the shared output renderer are exercised against a real binary.
+      - name: Build rsigma with all features
+        run: cargo build --locked -p rsigma --all-features
+      - name: Smoke-test --output-format across CLI commands
+        run: ./scripts/output-format-smoke.sh --bin target/debug/rsigma

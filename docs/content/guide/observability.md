@@ -91,7 +91,7 @@ Spans are emitted alongside events. To capture them in a structured aggregator (
 
 ## Prometheus metrics
 
-The daemon binds `/metrics` on the same `--api-addr` as the REST API. It exposes 38 metric definitions across seven concerns under `--all-features` (33 always-present plus 3 OTLP + 2 TLS gated on the matching build features):
+The daemon binds `/metrics` on the same `--api-addr` as the REST API. It exposes {{ rsigma.metrics.names }} metric definitions under `--all-features` ({{ rsigma.metrics.always }} always-present plus {{ rsigma.metrics.otlp }} OTLP + {{ rsigma.metrics.tls }} TLS gated on the matching build features):
 
 | Concern | Metrics | What they answer |
 |---------|---------|------------------|
@@ -104,7 +104,7 @@ The daemon binds `/metrics` on the same `--api-addr` as the REST API. It exposes
 | **OTLP** (with `daemon-otlp` feature) | `rsigma_otlp_requests_total`, `rsigma_otlp_log_records_total`, `rsigma_otlp_errors_total` | How are upstream OTLP agents behaving? |
 | **TLS** (with `daemon-tls` feature) | `rsigma_tls_certificate_expiry_seconds`, `rsigma_tls_active_connections` | When does the server cert expire (alert on `< 7d`) and how many TLS clients are connected? |
 
-Some metrics only appear after their first relevant event (per-rule labels, enrichment counters, OTLP counters, TLS handshake failures). A startup `/metrics` scrape shows about 20 distinct metric names; the full 38 emerge as the daemon does real work and as the feature-gated surfaces are exercised.
+Some metrics only appear after their first relevant event (per-rule labels, enrichment counters, OTLP counters, TLS handshake failures). A startup `/metrics` scrape shows a subset of the catalogue; the full {{ rsigma.metrics.names }} emerge as the daemon does real work and as the feature-gated surfaces are exercised.
 
 Scrape `/metrics` at 15-30 s intervals. The histograms (`event_processing_seconds`, `pipeline_latency_seconds`, `batch_size`) use the default Prometheus bucket boundaries; alert on the `_bucket{le="..."}` quantiles you care about rather than on the raw average.
 
@@ -234,7 +234,7 @@ curl -s http://127.0.0.1:9090/metrics | head -20
 rsigma engine daemon -r rules/ 2>&1 | head -3
 ```
 
-The first line of `/metrics` should be a `# HELP rsigma_back_pressure_events_total ...` block. The first daemon log line should be a `Rules loaded` event with `target=rsigma::daemon::server`. If either is missing, the build is probably without the `daemon` feature or with a broken `--api-addr`.
+The first lines of `/metrics` should be `# HELP rsigma_...` blocks (Prometheus text format; family order is not stable across builds). The first daemon log line should be a `Rules loaded` event with `target=rsigma::daemon::server`. If either is missing, the build is probably without the `daemon` feature or with a broken `--api-addr`.
 
 ## See also
 
@@ -243,6 +243,6 @@ The first line of `/metrics` should be a `# HELP rsigma_back_pressure_events_tot
 - [NATS Streaming](nats-streaming.md) for the NATS-specific log targets (`async_nats::connector`).
 - [Visibility and Data Sources](visibility-and-data-sources.md) for turning the `--observe-fields` signal into DeTT&CT and Navigator visibility artifacts.
 - [Rule Hygiene](rule-hygiene.md) for the report that consumes this broken-coverage snapshot (`--fields`) to flag rules whose referenced fields are never seen.
-- [Prometheus metrics reference](../reference/metrics.md) for the full 38-metric catalog.
+- [Prometheus metrics reference](../reference/metrics.md) for the full {{ rsigma.metrics.names }}-metric catalog.
 - [HTTP API reference](../reference/http-api.md) for every endpoint exposed alongside `/metrics`.
 - [`tracing` filter syntax](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) for the exact `RUST_LOG` directive grammar.
