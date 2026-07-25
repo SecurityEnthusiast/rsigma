@@ -3,9 +3,10 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read;
 
-use crate::core::StixId;
+use crate::core::{QueryableStixObject, StixId};
 use crate::model::BundleObjectCast;
 use crate::model::ModelError;
+use crate::model::common::GranularMarking;
 use crate::model::json_limits::{LimitedReader, validate_value_limits};
 use crate::model::meta::LanguageContent;
 use crate::model::meta::MetaObject;
@@ -13,9 +14,10 @@ use crate::model::parse_options::ParseOptions;
 use crate::model::sdo::{ObservedData, ObservedDataEmbeddedObject, ObservedDataForm, SdoObject};
 use crate::model::stix_object::{StixObject, deserialize_stix_object_from_value};
 use crate::model::validate::{
-    granular_markings_for_object, validate_granular_markings_semantics, validate_identity_ref,
-    validate_language_content_semantics, validate_marking_definition_ref, validate_sco_or_sro_ref,
-    validate_sco_ref, validate_sdo_ref, validate_stix_object_ref, validate_stix_or_sco_ref,
+    granular_markings_from_wire, language_content_translation_matches_target,
+    resolve_selector_value, validate_granular_markings_semantics, validate_identity_ref,
+    validate_marking_definition_ref, validate_sco_or_sro_ref, validate_sco_ref, validate_sdo_ref,
+    validate_stix_object_ref, validate_stix_or_sco_ref,
 };
 
 /// Container trait for bundle navigation.
@@ -585,6 +587,57 @@ impl Bundle {
         }
         Ok(())
     }
+}
+
+/// Collect granular markings from any bundle object variant for wire semantic checks.
+fn granular_markings_for_object(object: &StixObject) -> Vec<GranularMarking> {
+    match object {
+        StixObject::Sdo(sdo) => sdo.common_props().granular_markings.clone(),
+        StixObject::Sro(sro) => sro.common_props().granular_markings.clone(),
+        StixObject::Sco(sco) => sco.common_props().granular_markings.clone(),
+        StixObject::Meta(MetaObject::MarkingDefinition(marking)) => {
+            marking.granular_markings.clone()
+        }
+        StixObject::Meta(MetaObject::LanguageContent(content)) => {
+            content.common.granular_markings.clone()
+        }
+        StixObject::Meta(MetaObject::ExtensionDefinition(ext)) => {
+            ext.common.granular_markings.clone()
+        }
+        StixObject::Custom(custom) => granular_markings_from_wire(&custom.raw),
+    }
+}
+
+/// Validate language-content bundle semantics against the target object wire JSON (STIX §7.1.1).
+fn validate_language_content_semantics(
+    content: &LanguageContent,
+    target: &StixObject,
+    target_wire: &serde_json::Value,
+) -> Result<(), ModelError> {
+    if let Some(object_modified) = &content.object_modified {
+        match QueryableStixObject::modified(target) {
+            Some(target_modified) if object_modified != target_modified => {
+                return Err(ModelError::LanguageContentObjectModifiedMismatch);
+            }
+            None => return Err(ModelError::LanguageContentObjectModifiedMismatch),
+            _ => {}
+        }
+    }
+
+    for (lang, fields) in &content.contents {
+        for (field, translation) in fields {
+            let Some(target_value) = resolve_selector_value(target_wire, field) else {
+                // §7.1.1: keys for properties that do not exist on the target MUST be ignored.
+                continue;
+            };
+            if !language_content_translation_matches_target(target_value, translation) {
+                return Err(ModelError::LanguageContentValueMismatch {
+                    detail: format!("{lang}.{field}"),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "serde")]
