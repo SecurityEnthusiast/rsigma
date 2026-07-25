@@ -38,6 +38,8 @@
 //! assert_eq!(finding["finding_info"]["title"], "Suspicious PowerShell");
 //! ```
 
+mod attack;
+
 use serde_json::{Map, Value, json};
 
 use rsigma_eval::{EvaluationResult, ResultBody};
@@ -134,6 +136,9 @@ pub fn detection_finding_with(result: &EvaluationResult, src: &dyn FindingSource
     // and one rule produces many. Rule identity lives in `analytic.uid`.
     finding_info.insert("uid".to_string(), json!(src.uid()));
     finding_info.insert("analytic".to_string(), Value::Object(analytic));
+    if let Some(attacks) = attack::attacks_from_tags(&header.tags) {
+        finding_info.insert("attacks".to_string(), attacks);
+    }
 
     // The risk layer's reserved enrichments have real OCSF homes; the rest of
     // the enrichment map rides under `unmapped`.
