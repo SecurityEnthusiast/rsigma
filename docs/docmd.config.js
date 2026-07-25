@@ -105,6 +105,7 @@ export default {
           children: [
             { title: "Alert Pipeline", path: "/guide/alert-pipeline" },
             { title: "Risk-Based Alerting", path: "/guide/risk-based-alerting" },
+            { title: "OCSF Findings", path: "/guide/ocsf-findings" },
             { title: "Webhooks", path: "/guide/webhooks" },
             { title: "Triage Feedback Loop", path: "/guide/triage-feedback" },
             { title: "Disposition Source Recipes", path: "/guide/disposition-recipes" },
