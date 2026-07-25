@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Per-sink output format seam
+### Per-sink output format seam (#396)
 
 - Line-oriented sinks (stdout, file, NATS, unix socket) carry a `SinkFormat` and serialize through it, so a sink's wire format is a property of the sink rather than hard-coded NDJSON. `ndjson` remains the default and its bytes are unchanged.
 - Sink specs accept a `format` query parameter (`file:///findings.ndjson?format=ndjson`) on findings sinks only. `format` on an OTLP spec, a `--dlq` spec, or the audit sink is a startup config error, as is an unknown value; webhooks are declared in YAML files and have no query surface.
