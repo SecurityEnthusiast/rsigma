@@ -4,7 +4,9 @@
 
 mod common;
 
-use common::{SIMPLE_RULE, rsigma, temp_file, terminate_child};
+#[cfg(unix)]
+use common::terminate_child;
+use common::{SIMPLE_RULE, rsigma, temp_file};
 use rusqlite::params;
 use tempfile::TempDir;
 
