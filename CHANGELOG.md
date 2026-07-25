@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### CI: harden coverage against corrupt LLVM profraw files
+### CI: harden coverage against corrupt LLVM profraw files (#393)
 
 - Daemon integration tests now prefer SIGINT (with SIGKILL fallback) when tearing down instrumented `rsigma` children so LLVM coverage counters can flush.
 - The Coverage job scrubs unreadable `.profraw` files before `llvm-profdata merge`, preventing intermittent `file header is corrupt` / `no profile can be merged` failures.
