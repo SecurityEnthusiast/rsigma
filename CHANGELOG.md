@@ -17,6 +17,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 - **§7.2.3 granular selectors** — selectors MUST resolve on object wire JSON at parse (unchanged).
 - **Docs** — README, library docs, plan audit files, and cursor rules aligned with MUST vs SHOULD vs ignore tiers.
 
+### Documentation site analytics and privacy controls (#392)
+
+- The documentation site uses GA4 with explicit cookie consent, Google Consent Mode defaults that keep analytics storage disabled until acceptance, permanently disabled advertising consent, and a dedicated privacy notice.
+
 ### CLI: complete `--output-format` coverage (#389)
 
 - Structured report commands (`backend targets`/`formats`, `rule validate`, `pipeline resolve`/`diff`, `config validate`/`show`/`path`, and the existing eval/lint/fields/report family) honor `json`/`ndjson`/`table`/`csv`/`tsv` through a shared renderer backed by the `csv` crate.
