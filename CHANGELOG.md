@@ -8,7 +8,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 - Line-oriented sinks (stdout, file, NATS, unix socket) carry a `SinkFormat` and serialize through it, so a sink's wire format is a property of the sink rather than hard-coded NDJSON. `ndjson` remains the default and its bytes are unchanged.
 - Sink specs accept a `format` query parameter (`file:///findings.ndjson?format=ndjson`) on findings sinks only. `format` on an OTLP spec, a `--dlq` spec, or the audit sink is a startup config error, as is an unknown value; webhooks are declared in YAML files and have no query surface.
-- `IncidentEnvelope` carries one pre-serialized line per configured format instead of a single string, so incidents are serialized once per format and each sink delivers its own.
+- `FormattedIncidentEnvelope` wraps the source-compatible native `IncidentEnvelope` with one pre-serialized line per configured format, so incidents can be serialized once per format and each sink can deliver its own without breaking existing runtime callers.
 
 ### Fix fuzz CI rustc ICE on floating nightly (#395)
 

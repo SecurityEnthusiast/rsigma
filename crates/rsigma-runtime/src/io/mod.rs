@@ -51,6 +51,7 @@ use crate::metrics::MetricsHook;
 /// line sink (stdout, file, NATS, unix socket) accepts every format, while
 /// OTLP has its own log-record mapping and webhooks render from templates.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum SinkFormat {
     /// rsigma-native NDJSON, one result object per line.
     #[default]
@@ -126,18 +127,14 @@ impl AckToken {
     }
 }
 
-/// Pre-serialized incident lines, one per configured sink format, plus an
-/// optional NATS subject override.
+/// A pre-serialized native incident line plus an optional NATS subject override.
 ///
 /// The alert pipeline produces structured `IncidentResult`s; the sink task
-/// serializes each once per format present in the leaf-sink set and pairs the
-/// lines with the configured subject override (if any) so the delivery layer
-/// can route incidents without depending on the alert-pipeline types. Each
-/// sink then picks the line for its own format in [`Sink::send_incident`].
+/// pairs its NDJSON representation with the configured subject override so the
+/// delivery layer can route it without depending on alert-pipeline types.
 pub struct IncidentEnvelope {
-    /// Serialized lines keyed by format. Never empty: the NDJSON line is
-    /// always present, so every sink has a line to fall back to.
-    lines: Vec<(SinkFormat, String)>,
+    /// The serialized incident NDJSON line.
+    pub json: String,
     /// Optional NATS subject override for incident consumers.
     pub nats_subject: Option<String>,
 }
@@ -145,15 +142,34 @@ pub struct IncidentEnvelope {
 impl IncidentEnvelope {
     /// Build an envelope from the native NDJSON line.
     pub fn new(json: String, nats_subject: Option<String>) -> Self {
-        IncidentEnvelope {
-            lines: vec![(SinkFormat::Ndjson, json)],
-            nats_subject,
+        IncidentEnvelope { json, nats_subject }
+    }
+}
+
+/// Pre-serialized incident lines keyed by sink format.
+///
+/// This wrapper leaves [`IncidentEnvelope`] source-compatible for downstream
+/// callers while allowing the daemon to provide additional wire formats.
+pub struct FormattedIncidentEnvelope {
+    native: IncidentEnvelope,
+    lines: Vec<(SinkFormat, String)>,
+}
+
+impl FormattedIncidentEnvelope {
+    /// Wrap a native incident before adding alternate serializations.
+    pub fn new(native: IncidentEnvelope) -> Self {
+        Self {
+            lines: vec![(SinkFormat::Ndjson, native.json.clone())],
+            native,
         }
     }
 
     /// Add the line for another format, replacing any line already held for it.
     #[must_use]
     pub fn with_line(mut self, format: SinkFormat, json: String) -> Self {
+        if format == SinkFormat::Ndjson {
+            self.native.json = json.clone();
+        }
         match self.lines.iter_mut().find(|(f, _)| *f == format) {
             Some((_, existing)) => *existing = json,
             None => self.lines.push((format, json)),
@@ -167,9 +183,12 @@ impl IncidentEnvelope {
         self.lines
             .iter()
             .find(|(f, _)| *f == format)
-            .or_else(|| self.lines.first())
-            .map(|(_, json)| json.as_str())
-            .unwrap_or_default()
+            .map_or(self.native.json.as_str(), |(_, json)| json.as_str())
+    }
+
+    /// The native envelope, including its optional NATS subject override.
+    pub fn native(&self) -> &IncidentEnvelope {
+        &self.native
     }
 }
 
@@ -323,30 +342,59 @@ impl Sink {
     {
         Box::pin(async move {
             match self {
-                Sink::Stdout(s) => {
-                    let line = env.line(s.format());
-                    tokio::task::block_in_place(|| s.send_raw(line))
-                }
-                Sink::File(s) => {
-                    let line = env.line(s.format());
-                    tokio::task::block_in_place(|| s.send_raw(line))
-                }
+                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_raw(&env.json)),
+                Sink::File(s) => tokio::task::block_in_place(|| s.send_raw(&env.json)),
                 #[cfg(feature = "nats")]
                 Sink::Nats(s) => {
-                    s.send_incident(env.line(s.format()), env.nats_subject.as_deref())
+                    s.send_incident(&env.json, env.nats_subject.as_deref())
                         .await
                 }
                 #[cfg(feature = "otlp")]
                 Sink::Otlp(_) => Ok(()),
                 Sink::Webhook(_) => Ok(()),
                 #[cfg(all(unix, feature = "uds"))]
-                Sink::Unix(s) => {
-                    let line = env.line(s.format()).to_string();
-                    s.send_raw(&line).await
-                }
+                Sink::Unix(s) => s.send_raw(&env.json).await,
                 Sink::FanOut(sinks) => {
                     for (idx, sink) in sinks.iter_mut().enumerate() {
                         if let Err(e) = sink.send_incident(env).await {
+                            tracing::warn!(
+                                sink_index = idx,
+                                sink_type = sink.kind_label(),
+                                error = %e,
+                                "Fan-out child sink failed (incident)",
+                            );
+                            return Err(e);
+                        }
+                    }
+                    Ok(())
+                }
+            }
+        })
+    }
+
+    /// Deliver an incident using the serialization selected by each sink.
+    pub fn send_formatted_incident<'a>(
+        &'a mut self,
+        env: &'a FormattedIncidentEnvelope,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RuntimeError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            match self {
+                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_raw(env.line(s.format()))),
+                Sink::File(s) => tokio::task::block_in_place(|| s.send_raw(env.line(s.format()))),
+                #[cfg(feature = "nats")]
+                Sink::Nats(s) => {
+                    s.send_incident(env.line(s.format()), env.native().nats_subject.as_deref())
+                        .await
+                }
+                #[cfg(feature = "otlp")]
+                Sink::Otlp(_) => Ok(()),
+                Sink::Webhook(_) => Ok(()),
+                #[cfg(all(unix, feature = "uds"))]
+                Sink::Unix(s) => s.send_raw(env.line(s.format())).await,
+                Sink::FanOut(sinks) => {
+                    for (idx, sink) in sinks.iter_mut().enumerate() {
+                        if let Err(e) = sink.send_formatted_incident(env).await {
                             tracing::warn!(
                                 sink_index = idx,
                                 sink_type = sink.kind_label(),
@@ -458,18 +506,28 @@ mod tests {
 
     #[test]
     fn envelope_serves_the_line_for_a_format() {
-        let env = IncidentEnvelope::new(
+        let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new(
             "{\"incident_id\":\"i-1\"}".to_string(),
             Some("incidents".to_string()),
-        );
+        ));
         assert_eq!(env.line(SinkFormat::Ndjson), "{\"incident_id\":\"i-1\"}");
-        assert_eq!(env.nats_subject.as_deref(), Some("incidents"));
+        assert_eq!(env.native().nats_subject.as_deref(), Some("incidents"));
     }
 
     #[test]
     fn with_line_replaces_an_existing_format() {
-        let env = IncidentEnvelope::new("first".to_string(), None)
+        let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new("first".to_string(), None))
             .with_line(SinkFormat::Ndjson, "second".to_string());
         assert_eq!(env.line(SinkFormat::Ndjson), "second");
+        assert_eq!(env.native().json, "second");
+    }
+
+    #[test]
+    fn native_envelope_keeps_its_public_struct_literal() {
+        let env = IncidentEnvelope {
+            json: "native".to_string(),
+            nats_subject: None,
+        };
+        assert_eq!(env.json, "native");
     }
 }
