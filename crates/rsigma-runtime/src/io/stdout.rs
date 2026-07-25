@@ -3,15 +3,32 @@ use std::io::Write;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
+use crate::io::{SinkFormat, serialize_result};
 
-/// Serializes ProcessResult to NDJSON and writes to stdout.
+/// Serializes ProcessResult to one line per result and writes it to stdout.
 pub struct StdoutSink {
     pretty: bool,
+    format: SinkFormat,
 }
 
 impl StdoutSink {
     pub fn new(pretty: bool) -> Self {
-        StdoutSink { pretty }
+        StdoutSink {
+            pretty,
+            format: SinkFormat::default(),
+        }
+    }
+
+    /// Select the wire format this sink serializes results into.
+    #[must_use]
+    pub fn with_format(mut self, format: SinkFormat) -> Self {
+        self.format = format;
+        self
+    }
+
+    /// The wire format this sink serializes results into.
+    pub fn format(&self) -> SinkFormat {
+        self.format
     }
 
     /// Serialize and write a ProcessResult to stdout.
@@ -24,11 +41,7 @@ impl StdoutSink {
         let mut out = stdout.lock();
 
         for m in result {
-            let json = if self.pretty {
-                serde_json::to_string_pretty(m)?
-            } else {
-                serde_json::to_string(m)?
-            };
+            let json = serialize_result(m, self.format, self.pretty)?;
             writeln!(out, "{json}")?;
         }
 

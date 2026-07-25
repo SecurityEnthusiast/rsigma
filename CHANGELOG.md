@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Per-sink output format seam (#396)
+
+- Line-oriented sinks (stdout, file, NATS, unix socket) carry a `SinkFormat` and serialize through it, so a sink's wire format is a property of the sink rather than hard-coded NDJSON. `ndjson` remains the default and its bytes are unchanged.
+- Sink specs accept a `format` query parameter (`file:///findings.ndjson?format=ndjson`) on findings sinks only. `format` on an OTLP spec, a `--dlq` spec, or the audit sink is a startup config error, as is an unknown value; webhooks are declared in YAML files and have no query surface.
+- `FormattedIncidentEnvelope` wraps the source-compatible native `IncidentEnvelope` with one pre-serialized line per configured format, so incidents can be serialized once per format and each sink can deliver its own without breaking existing runtime callers.
+
 ### Fix fuzz CI rustc ICE on floating nightly (#395)
 
 - Pin the fuzz workflow to `nightly-2026-07-23` so AddressSanitizer builds no longer hit the rustc ICE compiling `tokio` that started on `nightly-2026-07-24` ([rust-lang/rust#159815](https://github.com/rust-lang/rust/issues/159815)).

@@ -39,10 +39,50 @@ pub use unix_source::UnixSocketSource;
 
 use std::sync::Arc;
 
-use rsigma_eval::ProcessResult;
+use rsigma_eval::{EvaluationResult, ProcessResult};
 
 use crate::error::RuntimeError;
 use crate::metrics::MetricsHook;
+
+/// Wire format a line-oriented sink serializes findings into.
+///
+/// Selected per sink with the `format` query parameter on an output spec
+/// (`file:///findings.ndjson?format=ndjson`). Transport-independent: every
+/// line sink (stdout, file, NATS, unix socket) accepts every format, while
+/// OTLP has its own log-record mapping and webhooks render from templates.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SinkFormat {
+    /// rsigma-native NDJSON, one result object per line.
+    #[default]
+    Ndjson,
+}
+
+impl SinkFormat {
+    /// Lowercase wire name, as written in a sink spec and in logs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SinkFormat::Ndjson => "ndjson",
+        }
+    }
+}
+
+/// Serialize one result in the sink's format.
+///
+/// `pretty` applies to every format; only stdout sets it today.
+pub(crate) fn serialize_result(
+    result: &EvaluationResult,
+    format: SinkFormat,
+    pretty: bool,
+) -> Result<String, RuntimeError> {
+    match format {
+        SinkFormat::Ndjson => Ok(if pretty {
+            serde_json::to_string_pretty(result)?
+        } else {
+            serde_json::to_string(result)?
+        }),
+    }
+}
 
 /// Opaque acknowledgment handle returned alongside each event.
 ///
@@ -87,17 +127,69 @@ impl AckToken {
     }
 }
 
-/// A pre-serialized incident line plus an optional NATS subject override.
+/// A pre-serialized native incident line plus an optional NATS subject override.
 ///
 /// The alert pipeline produces structured `IncidentResult`s; the sink task
-/// serializes each to NDJSON and pairs it with the configured subject override
-/// (if any) so the delivery layer can route incidents without depending on the
-/// alert-pipeline types. Delivered via [`Sink::send_incident`].
+/// pairs its NDJSON representation with the configured subject override so the
+/// delivery layer can route it without depending on alert-pipeline types.
 pub struct IncidentEnvelope {
     /// The serialized incident NDJSON line.
     pub json: String,
     /// Optional NATS subject override for incident consumers.
     pub nats_subject: Option<String>,
+}
+
+impl IncidentEnvelope {
+    /// Build an envelope from the native NDJSON line.
+    pub fn new(json: String, nats_subject: Option<String>) -> Self {
+        IncidentEnvelope { json, nats_subject }
+    }
+}
+
+/// Pre-serialized incident lines keyed by sink format.
+///
+/// This wrapper leaves [`IncidentEnvelope`] source-compatible for downstream
+/// callers while allowing the daemon to provide additional wire formats.
+pub struct FormattedIncidentEnvelope {
+    native: IncidentEnvelope,
+    lines: Vec<(SinkFormat, String)>,
+}
+
+impl FormattedIncidentEnvelope {
+    /// Wrap a native incident before adding alternate serializations.
+    pub fn new(native: IncidentEnvelope) -> Self {
+        Self {
+            lines: vec![(SinkFormat::Ndjson, native.json.clone())],
+            native,
+        }
+    }
+
+    /// Add the line for another format, replacing any line already held for it.
+    #[must_use]
+    pub fn with_line(mut self, format: SinkFormat, json: String) -> Self {
+        if format == SinkFormat::Ndjson {
+            self.native.json = json.clone();
+        }
+        match self.lines.iter_mut().find(|(f, _)| *f == format) {
+            Some((_, existing)) => *existing = json,
+            None => self.lines.push((format, json)),
+        }
+        self
+    }
+
+    /// The line for `format`, falling back to the always-present NDJSON line
+    /// when the sink task did not serialize that format.
+    pub fn line(&self, format: SinkFormat) -> &str {
+        self.lines
+            .iter()
+            .find(|(f, _)| *f == format)
+            .map_or(self.native.json.as_str(), |(_, json)| json.as_str())
+    }
+
+    /// The native envelope, including its optional NATS subject override.
+    pub fn native(&self) -> &IncidentEnvelope {
+        &self.native
+    }
 }
 
 /// An event payload bundled with its acknowledgment token.
@@ -280,6 +372,63 @@ impl Sink {
         })
     }
 
+    /// Deliver an incident using the serialization selected by each sink.
+    pub fn send_formatted_incident<'a>(
+        &'a mut self,
+        env: &'a FormattedIncidentEnvelope,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RuntimeError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            match self {
+                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_raw(env.line(s.format()))),
+                Sink::File(s) => tokio::task::block_in_place(|| s.send_raw(env.line(s.format()))),
+                #[cfg(feature = "nats")]
+                Sink::Nats(s) => {
+                    s.send_incident(env.line(s.format()), env.native().nats_subject.as_deref())
+                        .await
+                }
+                #[cfg(feature = "otlp")]
+                Sink::Otlp(_) => Ok(()),
+                Sink::Webhook(_) => Ok(()),
+                #[cfg(all(unix, feature = "uds"))]
+                Sink::Unix(s) => s.send_raw(env.line(s.format())).await,
+                Sink::FanOut(sinks) => {
+                    for (idx, sink) in sinks.iter_mut().enumerate() {
+                        if let Err(e) = sink.send_formatted_incident(env).await {
+                            tracing::warn!(
+                                sink_index = idx,
+                                sink_type = sink.kind_label(),
+                                error = %e,
+                                "Fan-out child sink failed (incident)",
+                            );
+                            return Err(e);
+                        }
+                    }
+                    Ok(())
+                }
+            }
+        })
+    }
+
+    /// The wire format this sink serializes into, for line-oriented sinks.
+    ///
+    /// `None` for sinks that own their encoding (OTLP log records, templated
+    /// webhook bodies) and for a `FanOut`, whose leaves each carry their own.
+    pub fn format(&self) -> Option<SinkFormat> {
+        match self {
+            Sink::Stdout(s) => Some(s.format()),
+            Sink::File(s) => Some(s.format()),
+            #[cfg(feature = "nats")]
+            Sink::Nats(s) => Some(s.format()),
+            #[cfg(feature = "otlp")]
+            Sink::Otlp(_) => None,
+            Sink::Webhook(_) => None,
+            #[cfg(all(unix, feature = "uds"))]
+            Sink::Unix(s) => Some(s.format()),
+            Sink::FanOut(_) => None,
+        }
+    }
+
     /// Short label for the sink variant, used in structured logs and per-sink
     /// delivery metrics.
     pub(crate) fn kind_label(&self) -> &'static str {
@@ -349,4 +498,36 @@ pub fn spawn_source<S: EventSource>(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn envelope_serves_the_line_for_a_format() {
+        let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new(
+            "{\"incident_id\":\"i-1\"}".to_string(),
+            Some("incidents".to_string()),
+        ));
+        assert_eq!(env.line(SinkFormat::Ndjson), "{\"incident_id\":\"i-1\"}");
+        assert_eq!(env.native().nats_subject.as_deref(), Some("incidents"));
+    }
+
+    #[test]
+    fn with_line_replaces_an_existing_format() {
+        let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new("first".to_string(), None))
+            .with_line(SinkFormat::Ndjson, "second".to_string());
+        assert_eq!(env.line(SinkFormat::Ndjson), "second");
+        assert_eq!(env.native().json, "second");
+    }
+
+    #[test]
+    fn native_envelope_keeps_its_public_struct_literal() {
+        let env = IncidentEnvelope {
+            json: "native".to_string(),
+            nats_subject: None,
+        };
+        assert_eq!(env.json, "native");
+    }
 }

@@ -13,11 +13,14 @@ use tokio::net::UnixStream;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
+use crate::io::{SinkFormat, serialize_result};
 
-/// Writes NDJSON to a Unix domain socket, reconnecting on transient failures.
+/// Writes one line per result to a Unix domain socket, reconnecting on
+/// transient failures.
 pub struct UnixSocketSink {
     path: PathBuf,
     stream: Option<UnixStream>,
+    format: SinkFormat,
 }
 
 impl UnixSocketSink {
@@ -27,16 +30,29 @@ impl UnixSocketSink {
         Ok(Self {
             path: path.to_path_buf(),
             stream: Some(stream),
+            format: SinkFormat::default(),
         })
     }
 
-    /// Serialize and deliver each entry of a `ProcessResult` as one NDJSON line.
+    /// Select the wire format this sink serializes results into.
+    #[must_use]
+    pub fn with_format(mut self, format: SinkFormat) -> Self {
+        self.format = format;
+        self
+    }
+
+    /// The wire format this sink serializes results into.
+    pub fn format(&self) -> SinkFormat {
+        self.format
+    }
+
+    /// Serialize and deliver each entry of a `ProcessResult` as one line.
     pub async fn send(&mut self, result: &ProcessResult) -> Result<(), RuntimeError> {
         if result.is_empty() {
             return Ok(());
         }
         for m in result {
-            let json = serde_json::to_string(m)?;
+            let json = serialize_result(m, self.format, false)?;
             self.write_line(&json).await?;
         }
         Ok(())

@@ -21,7 +21,7 @@ use uuid::Uuid;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
-use crate::io::{AckToken, IncidentEnvelope, Sink};
+use crate::io::{AckToken, FormattedIncidentEnvelope, IncidentEnvelope, Sink};
 use crate::metrics::MetricsHook;
 
 type DeliveryFuture<'a> = Pin<Box<dyn Future<Output = Result<(), RuntimeError>> + Send + 'a>>;
@@ -50,6 +50,14 @@ pub trait DeliverySink: Send + 'static {
     ) -> DeliveryFuture<'a> {
         Box::pin(async { Ok(()) })
     }
+    /// Deliver an incident with one pre-serialized line per sink format.
+    fn deliver_formatted_incident<'a>(
+        &'a mut self,
+        incident: &'a FormattedIncidentEnvelope,
+        ctx: &'a DeliveryContext,
+    ) -> DeliveryFuture<'a> {
+        self.deliver_incident(incident.native(), ctx)
+    }
     /// Short, stable label used for structured logs and per-sink metrics.
     fn label(&self) -> &'static str;
 }
@@ -68,6 +76,13 @@ impl DeliverySink for Sink {
         _ctx: &'a DeliveryContext,
     ) -> DeliveryFuture<'a> {
         self.send_incident(incident)
+    }
+    fn deliver_formatted_incident<'a>(
+        &'a mut self,
+        incident: &'a FormattedIncidentEnvelope,
+        _ctx: &'a DeliveryContext,
+    ) -> DeliveryFuture<'a> {
+        self.send_formatted_incident(incident)
     }
     fn label(&self) -> &'static str {
         self.kind_label()
@@ -213,6 +228,7 @@ impl Drop for AckGuard {
 enum DeliveryPayload {
     Result(Arc<ProcessResult>),
     Incident(Arc<IncidentEnvelope>),
+    FormattedIncident(Arc<FormattedIncidentEnvelope>),
 }
 
 /// One unit of work handed to a worker: a shared payload plus the shared ack
@@ -350,6 +366,26 @@ impl Dispatcher {
         }
     }
 
+    /// Fan one format-keyed incident into every worker.
+    pub async fn dispatch_formatted_incident(&self, incident: FormattedIncidentEnvelope) {
+        if self.workers.is_empty() {
+            return;
+        }
+        let guard = Arc::new(AckGuard {
+            tokens: Mutex::new(Vec::new()),
+            ack_tx: self.ack_tx.clone(),
+        });
+        let incident = Arc::new(incident);
+        for worker in &self.workers {
+            worker
+                .enqueue(DeliveryItem {
+                    payload: DeliveryPayload::FormattedIncident(incident.clone()),
+                    _guard: guard.clone(),
+                })
+                .await;
+        }
+    }
+
     /// Close every worker queue and await drain. The caller bounds this with
     /// the drain timeout; un-drained items stay unacked so the source
     /// redelivers them on restart.
@@ -389,6 +425,7 @@ async fn worker_loop<S: DeliverySink>(
             let target = match &item.payload {
                 DeliveryPayload::Result(r) => DeliverTarget::Result(r),
                 DeliveryPayload::Incident(e) => DeliverTarget::Incident(e),
+                DeliveryPayload::FormattedIncident(e) => DeliverTarget::FormattedIncident(e),
             };
             deliver_one(&mut sink, target, &cfg, dlq_tx.as_ref(), &metrics, label).await;
         }
@@ -402,6 +439,7 @@ async fn worker_loop<S: DeliverySink>(
 enum DeliverTarget<'a> {
     Result(&'a ProcessResult),
     Incident(&'a IncidentEnvelope),
+    FormattedIncident(&'a FormattedIncidentEnvelope),
 }
 
 async fn deliver_one<S: DeliverySink>(
@@ -420,6 +458,7 @@ async fn deliver_one<S: DeliverySink>(
         let outcome = match target {
             DeliverTarget::Result(r) => sink.deliver(r, &ctx).await,
             DeliverTarget::Incident(e) => sink.deliver_incident(e, &ctx).await,
+            DeliverTarget::FormattedIncident(e) => sink.deliver_formatted_incident(e, &ctx).await,
         };
         match outcome {
             Ok(()) => return,
@@ -436,7 +475,10 @@ async fn deliver_one<S: DeliverySink>(
                                 DeliverTarget::Result(r) => {
                                     serde_json::to_string(r).unwrap_or_default()
                                 }
+                                // The native line, so a DLQ replay stays in
+                                // the format the rest of the DLQ speaks.
                                 DeliverTarget::Incident(e) => e.json.clone(),
+                                DeliverTarget::FormattedIncident(e) => e.native().json.clone(),
                             };
                             let _ = dlq
                                 .send(DeliveryFailure {
