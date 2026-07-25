@@ -1,11 +1,11 @@
 //! Open vocabulary findings (info only).
 
 use crate::vocab::{
-    ATTACK_MOTIVATION_OV, ATTACK_RESOURCE_LEVEL_OV, GROUPING_CONTEXT_OV, IDENTITY_CLASS_OV,
-    IMPLEMENTATION_LANGUAGE_OV, INDICATOR_TYPE_OV, INDUSTRY_SECTOR_OV, INFRASTRUCTURE_TYPE_OV,
-    MALWARE_CAPABILITIES_OV, MALWARE_TYPE_OV, PATTERN_TYPE_OV, PROCESSOR_ARCHITECTURE_OV,
-    REGION_OV, REPORT_TYPE_OV, THREAT_ACTOR_ROLE_OV, THREAT_ACTOR_SOPHISTICATION_OV,
-    THREAT_ACTOR_TYPE_OV, TOOL_TYPE_OV,
+    ACCOUNT_TYPE_OV, ATTACK_MOTIVATION_OV, ATTACK_RESOURCE_LEVEL_OV, GROUPING_CONTEXT_OV,
+    IDENTITY_CLASS_OV, IMPLEMENTATION_LANGUAGE_OV, INDICATOR_TYPE_OV, INDUSTRY_SECTOR_OV,
+    INFRASTRUCTURE_TYPE_OV, MALWARE_CAPABILITIES_OV, MALWARE_RESULT_OV, MALWARE_TYPE_OV,
+    PATTERN_TYPE_OV, PROCESSOR_ARCHITECTURE_OV, REGION_OV, REPORT_TYPE_OV, THREAT_ACTOR_ROLE_OV,
+    THREAT_ACTOR_SOPHISTICATION_OV, THREAT_ACTOR_TYPE_OV, TOOL_TYPE_OV, WINDOWS_PE_BINARY_TYPE_OV,
 };
 
 use super::super::diagnostic::{Diagnostic, DiagnosticCode};
@@ -121,11 +121,34 @@ pub fn run(ctx: &ValidationContext<'_>, report: &mut ValidationReport) {
             "grouping" => {
                 check_string_field(object, "context", &GROUPING_CONTEXT_OV, &prefix, report);
             }
+            "malware-analysis" => {
+                check_string_field(object, "result", &MALWARE_RESULT_OV, &prefix, report);
+            }
+            "user-account" => {
+                check_string_field(object, "account_type", &ACCOUNT_TYPE_OV, &prefix, report);
+            }
+            "file" => check_file_pe_type(object, &prefix, report),
             "report" => check_string_list(object, "report_types", &REPORT_TYPE_OV, &prefix, report),
             "location" => check_string_field(object, "region", &REGION_OV, &prefix, report),
             _ => {}
         }
     }
+}
+
+fn check_file_pe_type(object: &serde_json::Value, prefix: &str, report: &mut ValidationReport) {
+    let Some(ext) = object
+        .get("extensions")
+        .and_then(|extensions| extensions.get("windows-pebinary-ext"))
+    else {
+        return;
+    };
+    check_string_field(
+        ext,
+        "pe_type",
+        &WINDOWS_PE_BINARY_TYPE_OV,
+        &format!("{prefix}.extensions.windows-pebinary-ext"),
+        report,
+    );
 }
 
 fn check_string_field(

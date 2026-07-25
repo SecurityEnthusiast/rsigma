@@ -4,6 +4,7 @@ use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTime
 use crate::model::ModelError;
 use crate::model::common::{KillChainPhase, SdoSroCommonProps};
 use crate::model::sdo::validate_kill_chain_phases;
+use crate::model::validate::validate_non_empty_string;
 
 /// A STIX tool representing legitimate software used during attacks (STIX §4.18).
 ///
@@ -84,6 +85,7 @@ impl Tool {
     /// Check tool-specific invariants (kill-chain phases).
     pub fn validate(&self) -> Result<(), ModelError> {
         self.common.validate(Self::TYPE_NAME)?;
+        validate_non_empty_string(&self.name, "name")?;
         validate_kill_chain_phases(&self.kill_chain_phases)
     }
 }

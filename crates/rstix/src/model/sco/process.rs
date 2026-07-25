@@ -119,7 +119,10 @@ impl Process {
         }
         WindowsProcessExt::validate_in_map(&self.common.extensions)?;
         WindowsServiceExt::validate_in_map(&self.common.extensions)?;
-        Ok(())
+        self.common.validate_vendor_enc_pairings(&[
+            ("command_line", self.command_line.as_deref()),
+            ("cwd", self.cwd.as_deref()),
+        ])
     }
 
     fn has_specific_property(&self) -> bool {

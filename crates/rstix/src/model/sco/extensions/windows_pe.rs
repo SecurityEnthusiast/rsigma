@@ -2,6 +2,7 @@
 
 use crate::model::ModelError;
 use crate::model::common::ExtensionMap;
+use crate::model::validate::validate_hash_map;
 
 use std::collections::BTreeMap;
 
@@ -308,6 +309,11 @@ impl WindowsPeBinaryExt {
             if section.name.is_empty() {
                 return Err(ModelError::WindowsPeSectionNameEmpty);
             }
+            validate_hash_map(&section.hashes)?;
+        }
+        validate_hash_map(&self.file_header_hashes)?;
+        if let Some(header) = &self.optional_header {
+            validate_hash_map(&header.hashes)?;
         }
 
         Ok(())
@@ -348,5 +354,16 @@ mod tests {
             parsed.validate(),
             Err(ModelError::WindowsPeBinaryExtNoOptionalProperties)
         );
+    }
+
+    #[test]
+    fn validate_accepts_custom_pe_type() {
+        let json = include_str!(
+            "../../../../tests/fixtures/spec/sco/extensions/windows-pebinary-ext-bad-pe-type.json"
+        );
+        let parsed: WindowsPeBinaryExt = serde_json::from_str(json).expect("parse");
+        parsed
+            .validate()
+            .expect("custom open-vocab pe_type is spec-legal");
     }
 }

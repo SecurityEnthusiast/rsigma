@@ -3,6 +3,7 @@
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::SdoSroCommonProps;
+use crate::model::validate::validate_non_empty_object_refs;
 
 /// A STIX note conveying analyst commentary about related objects (STIX §4.13).
 #[derive(Clone, Debug, PartialEq)]
@@ -39,9 +40,10 @@ impl Note {
     /// STIX type name for notes.
     pub const TYPE_NAME: &'static str = "note";
 
-    /// Check note common properties.
+    /// Check note invariants (STIX §4.13.1).
     pub fn validate(&self) -> Result<(), ModelError> {
-        self.common.validate(Self::TYPE_NAME)
+        self.common.validate(Self::TYPE_NAME)?;
+        validate_non_empty_object_refs(&self.object_refs)
     }
 }
 

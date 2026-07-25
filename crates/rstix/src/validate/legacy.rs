@@ -5,7 +5,7 @@ use crate::validate::ValidationReport as PipelineReport;
 use crate::validate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::validate::legacy_paths::{
     EXTERNAL_REF_CAPEC, EXTERNAL_REF_CVE, GRANULAR_SELECTOR_UNRESOLVED_PREFIX,
-    LANGUAGE_CONTENT_MISMATCH_PREFIX, LANGUAGE_CONTENT_UNKNOWN_PREFIX,
+    LANGUAGE_CONTENT_MISMATCH_PREFIX,
 };
 use crate::validate::semantic::{run_cross_object_semantics, run_tlp_marking_semantics};
 
@@ -56,11 +56,6 @@ pub(crate) fn legacy_validation_code(diagnostic: &Diagnostic) -> Option<Validati
             Some(ValidationCode::LanguageContentObjectModifiedMismatch)
         }
         DiagnosticCode::E0024
-            if path.is_some_and(|p| p.starts_with(LANGUAGE_CONTENT_UNKNOWN_PREFIX)) =>
-        {
-            Some(ValidationCode::LanguageContentFieldUnknown)
-        }
-        DiagnosticCode::E0024
             if path.is_some_and(|p| p.starts_with(LANGUAGE_CONTENT_MISMATCH_PREFIX)) =>
         {
             Some(ValidationCode::LanguageContentValueMismatch)
@@ -93,13 +88,7 @@ mod tests {
 
     use super::*;
     use crate::model::Bundle;
-    use crate::validate::legacy_paths::{
-        LANGUAGE_CONTENT_UNKNOWN_PREFIX, language_content_mismatch,
-    };
-
-    fn language_content_unknown(lang: &str, field: &str) -> String {
-        format!("{LANGUAGE_CONTENT_UNKNOWN_PREFIX}{lang}.{field}")
-    }
+    use crate::validate::legacy_paths::language_content_mismatch;
 
     #[test]
     fn legacy_validation_code_mapping_is_structural() {
@@ -146,11 +135,6 @@ mod tests {
                 ValidationCode::LanguageContentObjectModifiedMismatch,
             ),
             (
-                Diagnostic::new(DiagnosticCode::E0024, "unknown")
-                    .with_property_path(language_content_unknown("en", "name")),
-                ValidationCode::LanguageContentFieldUnknown,
-            ),
-            (
                 Diagnostic::new(DiagnosticCode::E0024, "mismatch")
                     .with_property_path(language_content_mismatch("en", "name")),
                 ValidationCode::LanguageContentValueMismatch,
@@ -194,6 +178,36 @@ mod tests {
             };
         }
 
+        macro_rules! assert_code_in_fixture_objects {
+            ($code:expr, $path:literal) => {{
+                use crate::model::parse_options::ParseOptions;
+                use crate::model::stix_object::deserialize_stix_object_from_value;
+
+                let root: serde_json::Value =
+                    serde_json::from_str(include_str!(concat!("../../tests/fixtures/", $path)))
+                        .expect(concat!("json ", $path));
+                let bundle_id = serde_json::from_value(root["id"].clone()).expect("bundle id");
+                let opts = ParseOptions::default();
+                let objects = root["objects"]
+                    .as_array()
+                    .expect("objects array")
+                    .iter()
+                    .map(|value| {
+                        deserialize_stix_object_from_value(value.clone(), &opts)
+                            .unwrap_or_else(|err| panic!("deserialize object in {}: {err}", $path))
+                            .0
+                    })
+                    .collect();
+                let bundle = Bundle::from_objects(bundle_id, objects);
+                assert!(
+                    bundle.validate().warnings_with_code($code).next().is_some(),
+                    "missing legacy code {:?} in fixture {}",
+                    $code,
+                    $path
+                );
+            }};
+        }
+
         assert_code_in_fixture!(
             ValidationCode::InvalidCapecExternalReference,
             "validation/bundle-bad-capec.json"
@@ -206,11 +220,7 @@ mod tests {
             ValidationCode::RelationshipEndpointMatrixInvalid,
             "validation/bundle-relationship-matrix-invalid.json"
         );
-        assert_code_in_fixture!(
-            ValidationCode::EncryptionAlgorithmInvalid,
-            "validation/bundle-bad-encryption.json"
-        );
-        assert_code_in_fixture!(
+        assert_code_in_fixture_objects!(
             ValidationCode::GranularSelectorSemanticInvalid,
             "validation/bundle-granular-selector-invalid.json"
         );
@@ -222,11 +232,11 @@ mod tests {
             ValidationCode::LocationRegionNotInOpenVocab,
             "validation/bundle-location-bad-region.json"
         );
-        assert_code_in_fixture!(
+        assert_code_in_fixture_objects!(
             ValidationCode::LanguageContentValueMismatch,
             "validation/bundle-language-content-list-length.json"
         );
-        assert_code_in_fixture!(
+        assert_code_in_fixture_objects!(
             ValidationCode::LanguageContentObjectModifiedMismatch,
             "validation/bundle-language-content-object-modified-mismatch.json"
         );

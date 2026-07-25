@@ -1,0 +1,9 @@
+{
+  "type": "file",
+  "spec_version": "2.1",
+  "id": "file--00000000-0000-0000-0000-000000000705",
+  "name": "example.bin",
+  "hashes": {
+    "MD5": "not-a-valid-md5"
+  }
+}

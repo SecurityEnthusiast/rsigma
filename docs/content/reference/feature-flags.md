@@ -62,7 +62,7 @@ The Model Context Protocol server library. No Cargo features of its own; it is g
 
 ## `rstix`
 
-STIX 2.1 library crate. **Data Model + Serialization** is complete with `serde` (default): typed objects, bundle parse/stream, advisory `Bundle::validate`, [wire MUST at parse (DD-DM-001)](../library/rstix.md#rstix-wire-format-validation-dd-dm-001), and documented [conformance notes](../library/rstix.md#rstix-conformance-notes-stix-21). **Pattern Engine** is complete with `pattern`. **Validation Pipeline** is complete with `validate` (all twelve checks, conformance corpus, per-code diagnostic coverage). **Graph + Marking + Store** are complete with `graph`, `marking`, `store`, and `store-fs`. **TAXII Client** is available with `taxii` (see [TAXII Client](../library/rstix.md#rstix-taxii-client)).
+STIX 2.1 library crate. **Data Model + Serialization** is complete with `serde` (default): typed objects, bundle parse/stream, advisory `Bundle::validate`, [wire MUST at parse (DD-DM-001)](../library/rstix.md#rstix-wire-format-validation-dd-dm-001), and [wire conformance (STIX 2.1)](../library/rstix.md#rstix-wire-conformance-stix-21). **Pattern Engine** is complete with `pattern`. **Validation Pipeline** is complete with `validate` (all twelve checks, conformance corpus, per-code diagnostic coverage). **Graph + Marking + Store** are complete with `graph`, `marking`, `store`, and `store-fs`. **TAXII Client** is available with `taxii` (see [TAXII Client](../library/rstix.md#rstix-taxii-client)).
 
 | Feature | Default | Pulls in | What it enables |
 |---------|---------|----------|-----------------|
@@ -75,7 +75,7 @@ STIX 2.1 library crate. **Data Model + Serialization** is complete with `serde` 
 | `store-fs` | no | `store` | `FsStore` — filesystem-backed durable store. |
 | `taxii` | no | `serde`, `reqwest`, `tokio`, `secrecy`, `futures`, `hickory-resolver`, `p12-keystore`, rustls stack | `TaxiiClient`, `TaxiiEnvelope`, auth providers, pagination, retry, rustls TLS (PEM + PKCS#12 mTLS), DANE (`dane_require_dnssec`), DNS SRV — OASIS TAXII 2.1 HTTP client. See [TAXII Client](../library/rstix.md#rstix-taxii-client). |
 
-Without `serde`, only `core`, `id`, `vocab`, and programmatic `model` types are available (no bundle parsing). Enable `pattern` for STIX patterning (implies `serde`). Enable `validate` for the profile-based Validation Pipeline (`cargo build -p rstix --features validate`).
+Without the `serde` feature, only **Core Foundation** APIs are available (typed IDs, vocab tables, programmatic model types — no bundle parsing). Enable `pattern` for the Pattern Engine (implies `serde`). Enable `validate` for the Validation Pipeline (`cargo build -p rstix --features validate`).
 
 ## Building with features
 

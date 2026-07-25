@@ -3,6 +3,7 @@
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::SdoSroCommonProps;
+use crate::model::validate::validate_non_empty_string;
 
 /// A STIX identity representing individuals, organizations, or groups (STIX §4.5).
 ///
@@ -82,7 +83,9 @@ impl Identity {
 
     /// Check common SDO properties.
     pub fn validate(&self) -> Result<(), ModelError> {
-        self.common.validate(Self::TYPE_NAME)
+        self.common.validate(Self::TYPE_NAME)?;
+        validate_non_empty_string(&self.name, "name")?;
+        Ok(())
     }
 }
 

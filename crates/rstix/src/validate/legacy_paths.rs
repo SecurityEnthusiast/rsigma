@@ -13,9 +13,6 @@ pub const EXTERNAL_REF_CVE: &str = "external_references.cve";
 /// Prefix for unresolved granular selector paths (`GranularSelectorSemanticInvalid`).
 pub const GRANULAR_SELECTOR_UNRESOLVED_PREFIX: &str = "granular_markings.selectors.unresolved[";
 
-/// Prefix for language-content unknown target field paths (legacy DD-VP-001 mapping).
-pub const LANGUAGE_CONTENT_UNKNOWN_PREFIX: &str = "contents.unknown.";
-
 /// Prefix for language-content type/length mismatch paths (`LanguageContentValueMismatch`).
 pub const LANGUAGE_CONTENT_MISMATCH_PREFIX: &str = "contents.mismatch.";
 

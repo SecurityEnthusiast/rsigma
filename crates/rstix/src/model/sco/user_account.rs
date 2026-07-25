@@ -117,7 +117,13 @@ impl UserAccount {
             return Err(ModelError::UserAccountNoProperties);
         }
         UnixAccountExt::validate_in_map(&self.common.extensions)?;
-        Ok(())
+        self.common.validate_vendor_enc_pairings(&[
+            ("user_id", self.user_id.as_deref()),
+            ("credential", self.credential.as_deref()),
+            ("account_login", self.account_login.as_deref()),
+            ("account_type", self.account_type.as_deref()),
+            ("display_name", self.display_name.as_deref()),
+        ])
     }
 
     fn has_specific_property(&self) -> bool {

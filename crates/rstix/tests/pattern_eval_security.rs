@@ -84,18 +84,17 @@ fn too_many_observations_in_context_is_rejected() {
 fn like_nfc_normalizes_pattern_constant() {
     let composed = "\u{00F2}z";
     let decomposed = "o\u{0300}z";
-    let ipv4_json = format!(
+    let mutex_json = format!(
         r#"{{
-          "type": "ipv4-addr",
+          "type": "mutex",
           "spec_version": "2.1",
-          "id": "ipv4-addr--00000000-0000-0000-0000-000000000601",
-          "value": "{composed}example.com"
+          "id": "mutex--00000000-0000-0000-0000-000000000601",
+          "name": "{composed}example"
         }}"#
     );
-    let ipv4 = parse_sco_json(&ipv4_json);
-    let pattern =
-        Pattern::parse(&format!("[ipv4-addr:value LIKE '{decomposed}%']")).expect("parse");
-    assert!(pattern.matches_single(&ipv4).expect("eval"));
+    let mutex = parse_sco_json(&mutex_json);
+    let pattern = Pattern::parse(&format!("[mutex:name LIKE '{decomposed}%']")).expect("parse");
+    assert!(pattern.matches_single(&mutex).expect("eval"));
 }
 
 /// STIX §9.6.1: MATCHES NFC-normalizes string properties before regex search.
@@ -103,32 +102,31 @@ fn like_nfc_normalizes_pattern_constant() {
 fn matches_nfc_normalizes_haystack() {
     let composed = "caf\u{00E9}";
     let decomposed = "cafe\u{0301}";
-    let ipv4_json = format!(
+    let mutex_json = format!(
         r#"{{
-          "type": "ipv4-addr",
+          "type": "mutex",
           "spec_version": "2.1",
-          "id": "ipv4-addr--00000000-0000-0000-0000-000000000602",
-          "value": "{decomposed}"
+          "id": "mutex--00000000-0000-0000-0000-000000000602",
+          "name": "{decomposed}"
         }}"#
     );
-    let ipv4 = parse_sco_json(&ipv4_json);
-    let pattern =
-        Pattern::parse(&format!("[ipv4-addr:value MATCHES '^{composed}$']")).expect("parse");
-    assert!(pattern.matches_single(&ipv4).expect("eval"));
+    let mutex = parse_sco_json(&mutex_json);
+    let pattern = Pattern::parse(&format!("[mutex:name MATCHES '^{composed}$']")).expect("parse");
+    assert!(pattern.matches_single(&mutex).expect("eval"));
 }
 
 /// STIX §9.6.1 MATCHES: DOTALL (`.` matches newlines) via PCRE semantics.
 #[test]
 fn matches_dotall_allows_dot_across_newline() {
-    let ipv4_json = r#"{
-      "type": "ipv4-addr",
+    let mutex_json = r#"{
+      "type": "mutex",
       "spec_version": "2.1",
-      "id": "ipv4-addr--00000000-0000-0000-0000-000000000603",
-      "value": "line1\nline2"
+      "id": "mutex--00000000-0000-0000-0000-000000000603",
+      "name": "line1\nline2"
     }"#;
-    let ipv4 = parse_sco_json(ipv4_json);
-    let pattern = Pattern::parse("[ipv4-addr:value MATCHES 'line1.line2']").expect("parse");
-    assert!(pattern.matches_single(&ipv4).expect("eval"));
+    let mutex = parse_sco_json(mutex_json);
+    let pattern = Pattern::parse("[mutex:name MATCHES 'line1.line2']").expect("parse");
+    assert!(pattern.matches_single(&mutex).expect("eval"));
 }
 
 /// STIX §9.5: AND inside one observation must match the same network-traffic SCO.

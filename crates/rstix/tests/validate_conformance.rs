@@ -44,11 +44,10 @@ fn collect_json_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn collect_invalid_conformance_files() -> Vec<PathBuf> {
-    const INFO_ONLY_VALIDATION_FIXTURES: &[&str] = &[
+    /// Bundle fixtures that are spec-legal under STIX §2.14 / §7.1.1 (Info or ignored) — not interop_strict failures.
+    const INTEROP_STRICT_VALID_BUNDLE_FIXTURES: &[&str] = &[
         "bundle-location-bad-region.json",
-        "bundle-relationship-matrix-invalid.json",
-        // §7.1.1: unknown target fields are ignored — valid under interop_strict.
-        "bundle-language-content-unknown-field.json",
+        "language-content-unknown-field-ignored.json",
     ];
 
     let mut files = collect_json_files(&corpus_root().join("invalid"));
@@ -56,10 +55,10 @@ fn collect_invalid_conformance_files() -> Vec<PathBuf> {
         let Some(name) = file.file_name().and_then(|v| v.to_str()) else {
             continue;
         };
-        if name.starts_with("bundle-")
-            && name.ends_with(".json")
-            && !INFO_ONLY_VALIDATION_FIXTURES.contains(&name)
-        {
+        if name.starts_with("bundle-") && name.ends_with(".json") {
+            if INTEROP_STRICT_VALID_BUNDLE_FIXTURES.contains(&name) {
+                continue;
+            }
             files.push(file);
         }
     }

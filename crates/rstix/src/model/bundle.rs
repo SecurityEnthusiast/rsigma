@@ -1,19 +1,23 @@
 //! STIX 2.1 bundle container and parsing.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read;
 
-use crate::core::StixId;
+use crate::core::{QueryableStixObject, StixId};
 use crate::model::BundleObjectCast;
 use crate::model::ModelError;
+use crate::model::common::GranularMarking;
 use crate::model::json_limits::{LimitedReader, validate_value_limits};
 use crate::model::meta::LanguageContent;
+use crate::model::meta::MetaObject;
 use crate::model::parse_options::ParseOptions;
-use crate::model::sdo::ObservedDataForm;
+use crate::model::sdo::{ObservedData, ObservedDataEmbeddedObject, ObservedDataForm, SdoObject};
 use crate::model::stix_object::{StixObject, deserialize_stix_object_from_value};
 use crate::model::validate::{
-    validate_identity_ref, validate_marking_definition_ref, validate_sco_or_sro_ref,
-    validate_sco_ref, validate_sdo_ref, validate_stix_or_sco_ref,
+    granular_markings_from_wire, language_content_translation_matches_target,
+    resolve_selector_value, validate_granular_markings_semantics, validate_identity_ref,
+    validate_marking_definition_ref, validate_sco_or_sro_ref, validate_sco_ref, validate_sdo_ref,
+    validate_stix_object_ref, validate_stix_or_sco_ref,
 };
 
 /// Container trait for bundle navigation.
@@ -217,6 +221,14 @@ impl Bundle {
             .is_some_and(|object| matches!(object, StixObject::Custom(_)))
     }
 
+    fn validate_stix_object_ref_in_bundle(&self, id: &StixId) -> Result<(), ModelError> {
+        match validate_stix_object_ref(id) {
+            Ok(()) => Ok(()),
+            Err(_err) if self.allow_custom && self.custom_object_in_bundle(id) => Ok(()),
+            Err(err) => Err(err),
+        }
+    }
+
     fn validate_stix_or_sco_ref_in_bundle(&self, id: &StixId) -> Result<(), ModelError> {
         match validate_stix_or_sco_ref(id) {
             Ok(()) => Ok(()),
@@ -239,6 +251,84 @@ impl Bundle {
             Err(_err) if self.allow_custom && self.custom_object_in_bundle(id) => Ok(()),
             Err(err) => Err(err),
         }
+    }
+
+    fn embedded_object_ids(&self) -> HashSet<String> {
+        let mut ids = HashSet::new();
+        for object in &self.objects {
+            let StixObject::Sdo(SdoObject::ObservedData(ObservedData {
+                form: ObservedDataForm::DeprecatedObjects(objects),
+                ..
+            })) = object
+            else {
+                continue;
+            };
+            for embedded in objects.values() {
+                ids.insert(embedded.id().as_str().to_string());
+            }
+        }
+        ids
+    }
+
+    fn ref_resolves_in_bundle(&self, id: &StixId, embedded_ids: &HashSet<String>) -> bool {
+        self.id_index.contains_key(id.as_str()) || embedded_ids.contains(id.as_str())
+    }
+
+    fn validate_ref_resolves_in_bundle(
+        &self,
+        id: &StixId,
+        embedded_ids: &HashSet<String>,
+    ) -> Result<(), ModelError> {
+        if self.ref_resolves_in_bundle(id, embedded_ids) {
+            Ok(())
+        } else {
+            Err(ModelError::BundleReferenceMissing {
+                ref_id: id.as_str().to_owned(),
+            })
+        }
+    }
+
+    fn validate_embedded_observed_data_refs(
+        &self,
+        objects: &BTreeMap<String, ObservedDataEmbeddedObject>,
+    ) -> Result<(), ModelError> {
+        let embedded_ids: HashSet<String> = objects
+            .values()
+            .map(|embedded| embedded.id().as_str().to_string())
+            .collect();
+        for embedded in objects.values() {
+            match embedded {
+                ObservedDataEmbeddedObject::Sco(sco) => {
+                    let mut refs = Vec::new();
+                    StixObject::Sco(sco.clone()).collect_internal_refs(&mut refs);
+                    for reference in refs {
+                        self.validate_ref_resolves_in_bundle(&reference, &embedded_ids)?;
+                    }
+                }
+                ObservedDataEmbeddedObject::Sro(sro) => {
+                    use crate::model::sro::{Relationship, Sighting, SroObject};
+                    match sro {
+                        SroObject::Relationship(Relationship {
+                            source_ref,
+                            target_ref,
+                            ..
+                        }) => {
+                            validate_stix_or_sco_ref(source_ref)?;
+                            validate_stix_or_sco_ref(target_ref)?;
+                            self.validate_ref_resolves_in_bundle(source_ref, &embedded_ids)?;
+                            self.validate_ref_resolves_in_bundle(target_ref, &embedded_ids)?;
+                        }
+                        SroObject::Sighting(Sighting {
+                            sighting_of_ref, ..
+                        }) => {
+                            validate_sdo_ref(sighting_of_ref)?;
+                            self.validate_ref_resolves_in_bundle(sighting_of_ref, &embedded_ids)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Bundle identifier.
@@ -275,13 +365,14 @@ impl Bundle {
 
     /// Validate that collected object references resolve within this bundle.
     pub fn validate_refs(&self) -> Result<(), ModelError> {
+        let embedded_ids = self.embedded_object_ids();
         let mut refs = Vec::new();
         for object in &self.objects {
             object.collect_internal_refs(&mut refs);
         }
 
         for reference in refs {
-            if !self.id_index.contains_key(reference.as_str()) {
+            if !self.ref_resolves_in_bundle(&reference, &embedded_ids) {
                 return Err(ModelError::BundleReferenceMissing {
                     ref_id: reference.as_str().to_owned(),
                 });
@@ -293,7 +384,42 @@ impl Bundle {
         }
 
         self.validate_property_extensions()?;
+        self.validate_semantics()?;
 
+        Ok(())
+    }
+
+    fn object_wire_value(&self, object: &StixObject) -> Option<serde_json::Value> {
+        let mut wire = serde_json::to_value(object).ok()?;
+        if let Some(extra) = self.extra_properties(object.id())
+            && let Some(obj) = wire.as_object_mut()
+        {
+            for (key, value) in extra {
+                obj.insert(key.clone(), value.clone());
+            }
+        }
+        Some(wire)
+    }
+
+    fn validate_semantics(&self) -> Result<(), ModelError> {
+        for object in &self.objects {
+            let Some(wire) = self.object_wire_value(object) else {
+                continue;
+            };
+            validate_granular_markings_semantics(&wire, &granular_markings_for_object(object))?;
+
+            if let StixObject::Meta(MetaObject::LanguageContent(content)) = object {
+                let target = self.get(&content.object_ref).ok_or_else(|| {
+                    ModelError::BundleReferenceMissing {
+                        ref_id: content.object_ref.as_str().to_owned(),
+                    }
+                })?;
+                let Some(target_wire) = self.object_wire_value(target) else {
+                    continue;
+                };
+                validate_language_content_semantics(content, target, &target_wire)?;
+            }
+        }
         Ok(())
     }
 
@@ -385,20 +511,22 @@ impl Bundle {
                             validate_sco_ref(sco_ref)?;
                         }
                     }
-                    SdoObject::ObservedData(ObservedData {
-                        form: ObservedDataForm::ObjectRefs(object_refs),
-                        ..
-                    }) => {
-                        for object_ref in object_refs {
-                            self.validate_sco_or_sro_ref_in_bundle(object_ref)?;
+                    SdoObject::ObservedData(ObservedData { form, .. }) => match form {
+                        ObservedDataForm::ObjectRefs(object_refs) => {
+                            for object_ref in object_refs {
+                                self.validate_sco_or_sro_ref_in_bundle(object_ref)?;
+                            }
                         }
-                    }
-                    SdoObject::Grouping(Grouping { object_refs, .. })
+                        ObservedDataForm::DeprecatedObjects(objects) => {
+                            self.validate_embedded_observed_data_refs(objects)?;
+                        }
+                    },
+                    SdoObject::Report(Report { object_refs, .. })
+                    | SdoObject::Grouping(Grouping { object_refs, .. })
                     | SdoObject::Note(Note { object_refs, .. })
-                    | SdoObject::Opinion(Opinion { object_refs, .. })
-                    | SdoObject::Report(Report { object_refs, .. }) => {
+                    | SdoObject::Opinion(Opinion { object_refs, .. }) => {
                         for object_ref in object_refs {
-                            self.validate_stix_or_sco_ref_in_bundle(object_ref)?;
+                            self.validate_stix_object_ref_in_bundle(object_ref)?;
                         }
                     }
                     _ => {}
@@ -452,12 +580,157 @@ impl Bundle {
                     if let Some(created_by) = &common.created_by_ref {
                         validate_identity_ref(created_by.as_stix_id())?;
                     }
-                    self.validate_sdo_ref_in_bundle(object_ref)?;
+                    self.validate_stix_object_ref_in_bundle(object_ref)?;
                 }
             },
             StixObject::Sco(_) | StixObject::Custom(_) => {}
         }
         Ok(())
+    }
+}
+
+/// Collect granular markings from any bundle object variant for wire semantic checks.
+fn granular_markings_for_object(object: &StixObject) -> Vec<GranularMarking> {
+    match object {
+        StixObject::Sdo(sdo) => sdo.common_props().granular_markings.clone(),
+        StixObject::Sro(sro) => sro.common_props().granular_markings.clone(),
+        StixObject::Sco(sco) => sco.common_props().granular_markings.clone(),
+        StixObject::Meta(MetaObject::MarkingDefinition(marking)) => {
+            marking.granular_markings.clone()
+        }
+        StixObject::Meta(MetaObject::LanguageContent(content)) => {
+            content.common.granular_markings.clone()
+        }
+        StixObject::Meta(MetaObject::ExtensionDefinition(ext)) => {
+            ext.common.granular_markings.clone()
+        }
+        StixObject::Custom(custom) => granular_markings_from_wire(&custom.raw),
+    }
+}
+
+/// Validate language-content bundle semantics against the target object wire JSON (STIX §7.1.1).
+fn validate_language_content_semantics(
+    content: &LanguageContent,
+    target: &StixObject,
+    target_wire: &serde_json::Value,
+) -> Result<(), ModelError> {
+    if let Some(object_modified) = &content.object_modified {
+        match QueryableStixObject::modified(target) {
+            Some(target_modified) if object_modified != target_modified => {
+                return Err(ModelError::LanguageContentObjectModifiedMismatch);
+            }
+            None => return Err(ModelError::LanguageContentObjectModifiedMismatch),
+            _ => {}
+        }
+    }
+
+    for (lang, fields) in &content.contents {
+        for (field, translation) in fields {
+            let Some(target_value) = resolve_selector_value(target_wire, field) else {
+                // §7.1.1: keys for properties that do not exist on the target MUST be ignored.
+                continue;
+            };
+            if !language_content_translation_matches_target(target_value, translation) {
+                return Err(ModelError::LanguageContentValueMismatch {
+                    detail: format!("{lang}.{field}"),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "serde")]
+fn merge_extra_properties_for_wire(
+    object: &StixObject,
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    extra: &BTreeMap<String, serde_json::Value>,
+) {
+    use crate::model::common::ExtensionType;
+
+    let mut extension_props = BTreeMap::new();
+    for (key, prop) in extra {
+        if key.starts_with("x_") {
+            obj.insert(key.clone(), prop.clone());
+        } else {
+            extension_props.insert(key.clone(), prop.clone());
+        }
+    }
+    if extension_props.is_empty() {
+        return;
+    }
+
+    let extension_id = extension_maps_for_object(object)
+        .into_iter()
+        .find_map(|map| {
+            map.0.iter().find_map(|(key, entry)| {
+                (key.starts_with("extension-definition--")
+                    && entry.extension_type == Some(ExtensionType::ToplevelPropertyExtension))
+                .then(|| key.clone())
+            })
+        })
+        .unwrap_or_else(|| "extension-definition--unknown".to_owned());
+
+    let extensions = obj
+        .entry("extensions".to_owned())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let Some(ext_map) = extensions.as_object_mut() else {
+        return;
+    };
+    let entry = ext_map
+        .entry(extension_id)
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let Some(entry_obj) = entry.as_object_mut() else {
+        return;
+    };
+    entry_obj.insert(
+        "extension_type".to_owned(),
+        serde_json::Value::String(ExtensionType::ToplevelPropertyExtension.as_str().to_owned()),
+    );
+    for (key, prop) in extension_props {
+        entry_obj.insert(key, prop);
+    }
+}
+
+#[cfg(feature = "serde")]
+fn extension_maps_for_object(object: &StixObject) -> Vec<&crate::model::common::ExtensionMap> {
+    use crate::model::meta::{ExtensionDefinition, MarkingDefinition, MetaObject};
+    use crate::model::sco::ScoObject;
+
+    match object {
+        StixObject::Sdo(sdo) => vec![&sdo.common_props().extensions],
+        StixObject::Sro(sro) => vec![&sro.common_props().extensions],
+        StixObject::Sco(sco) => match sco {
+            ScoObject::Artifact(v) => vec![&v.common.extensions],
+            ScoObject::AutonomousSystem(v) => vec![&v.common.extensions],
+            ScoObject::Directory(v) => vec![&v.common.extensions],
+            ScoObject::DomainName(v) => vec![&v.common.extensions],
+            ScoObject::EmailAddr(v) => vec![&v.common.extensions],
+            ScoObject::EmailMessage(v) => vec![&v.common.extensions],
+            ScoObject::File(v) => vec![&v.common.extensions],
+            ScoObject::Ipv4Addr(v) => vec![&v.common.extensions],
+            ScoObject::Ipv6Addr(v) => vec![&v.common.extensions],
+            ScoObject::MacAddr(v) => vec![&v.common.extensions],
+            ScoObject::Mutex(v) => vec![&v.common.extensions],
+            ScoObject::NetworkTraffic(v) => vec![&v.common.extensions],
+            ScoObject::Process(v) => vec![&v.common.extensions],
+            ScoObject::Software(v) => vec![&v.common.extensions],
+            ScoObject::Url(v) => vec![&v.common.extensions],
+            ScoObject::UserAccount(v) => vec![&v.common.extensions],
+            ScoObject::WindowsRegistryKey(v) => vec![&v.common.extensions],
+            ScoObject::X509Certificate(v) => vec![&v.common.extensions],
+            ScoObject::Custom(v) => vec![&v.common.extensions],
+        },
+        StixObject::Meta(meta) => match meta {
+            MetaObject::MarkingDefinition(MarkingDefinition { extensions, .. }) => {
+                vec![extensions]
+            }
+            MetaObject::ExtensionDefinition(ExtensionDefinition { common, .. }) => {
+                vec![&common.extensions]
+            }
+            MetaObject::LanguageContent(content) => vec![&content.common.extensions],
+        },
+        StixObject::Custom(_) => Vec::new(),
     }
 }
 
@@ -480,9 +753,7 @@ impl serde::Serialize for Bundle {
                 if let Some(extra) = self.extra_properties(object.id())
                     && let Some(obj) = value.as_object_mut()
                 {
-                    for (key, prop) in extra {
-                        obj.insert(key.clone(), prop.clone());
-                    }
+                    merge_extra_properties_for_wire(object, obj, extra);
                 }
                 serialized_objects.push(value);
             }

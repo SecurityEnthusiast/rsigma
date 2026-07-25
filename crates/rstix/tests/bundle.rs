@@ -135,3 +135,27 @@ fn toplevel_property_extension_round_trips_via_extra_properties() {
         Some(&serde_json::Value::String("finance".into()))
     );
 }
+
+#[test]
+fn unmodeled_top_level_property_captured_in_extra_properties() {
+    let raw = r#"{
+      "type": "bundle",
+      "id": "bundle--00000000-0000-0000-0000-000000000002",
+      "objects": [{
+        "type": "identity",
+        "spec_version": "2.1",
+        "id": "identity--11111111-1111-4111-8111-111111111111",
+        "created": "2016-05-12T08:17:27.000Z",
+        "modified": "2016-05-12T08:17:27.000Z",
+        "name": "Example Org",
+        "identity_class": "organization",
+        "vendor_tier": "gold"
+      }]
+    }"#;
+    let bundle = parse_bundle(raw).expect("parse");
+    let id = StixId::parse("identity--11111111-1111-4111-8111-111111111111").unwrap();
+    let extra = bundle
+        .extra_properties(&id)
+        .expect("unmodeled top-level property captured");
+    assert_eq!(extra.get("vendor_tier"), Some(&serde_json::json!("gold")));
+}

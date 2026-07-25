@@ -4,6 +4,7 @@ use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTime
 use crate::model::ModelError;
 use crate::model::common::{KillChainPhase, SdoSroCommonProps};
 use crate::model::sdo::{validate_first_last_seen, validate_kill_chain_phases};
+use crate::model::validate::validate_non_empty_string;
 
 /// Infrastructure supporting adversary operations (STIX §4.8).
 ///
@@ -67,6 +68,7 @@ impl Infrastructure {
     /// Check infrastructure invariants (kill-chain phases, time ordering).
     pub fn validate(&self) -> Result<(), ModelError> {
         self.common.validate(Self::TYPE_NAME)?;
+        validate_non_empty_string(&self.name, "name")?;
         validate_kill_chain_phases(&self.kill_chain_phases)?;
         validate_first_last_seen(&self.first_seen, &self.last_seen)
     }

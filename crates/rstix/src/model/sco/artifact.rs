@@ -5,6 +5,9 @@ use std::collections::BTreeMap;
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::ScoCommonProps;
+use crate::model::validate::{
+    validate_encryption_algorithm, validate_hash_map, validate_url_format,
+};
 
 /// Binary or textual payload captured as a cyber-observable (STIX §6.1).
 ///
@@ -91,7 +94,17 @@ impl Artifact {
         if self.decryption_key.is_some() && self.encryption_algorithm.is_none() {
             return Err(ModelError::ArtifactDecryptionKeyWithoutEncryption);
         }
-        Ok(())
+        if let Some(url) = &self.url {
+            validate_url_format(url)?;
+        }
+        validate_hash_map(&self.hashes)?;
+        if let Some(algorithm) = &self.encryption_algorithm {
+            validate_encryption_algorithm(algorithm)?;
+        }
+        self.common.validate_vendor_enc_pairings(&[
+            ("url", self.url.as_deref()),
+            ("mime_type", self.mime_type.as_deref()),
+        ])
     }
 }
 

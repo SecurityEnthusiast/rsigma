@@ -419,6 +419,7 @@ fn check_language_content(
     for (lang, fields) in &content.contents {
         for (field, translation) in fields {
             let Some(target_value) = resolve_selector_value(&target_wire, field) else {
+                // §7.1.1: keys for properties that do not exist on the target MUST be ignored.
                 continue;
             };
             if !language_content_translation_matches_target(target_value, translation) {

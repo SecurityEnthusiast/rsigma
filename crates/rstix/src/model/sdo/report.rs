@@ -3,13 +3,14 @@
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::SdoSroCommonProps;
+use crate::model::validate::{validate_non_empty_object_refs, validate_non_empty_string};
 
 /// A collection of related STIX objects published as a threat-intelligence report (STIX §4.16).
 ///
 /// Required properties per STIX §4.16.1: common SDO fields plus `name`,
 /// `published`, and `object_refs`. The spec requires a non-empty
-/// [`object_refs`](Self::object_refs) list; empty lists may still parse (see crate
-/// README conformance notes).
+/// [`object_refs`](Self::object_refs) list; empty lists are rejected at parse
+/// ([Model invariant decisions](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#model-invariant-decisions)).
 ///
 /// # Examples
 ///
@@ -71,9 +72,11 @@ impl Report {
     /// STIX type name for report objects.
     pub const TYPE_NAME: &'static str = "report";
 
-    /// Check report common properties.
+    /// Check report invariants (STIX §4.16.1).
     pub fn validate(&self) -> Result<(), ModelError> {
-        self.common.validate(Self::TYPE_NAME)
+        self.common.validate(Self::TYPE_NAME)?;
+        validate_non_empty_string(&self.name, "name")?;
+        validate_non_empty_object_refs(&self.object_refs)
     }
 }
 

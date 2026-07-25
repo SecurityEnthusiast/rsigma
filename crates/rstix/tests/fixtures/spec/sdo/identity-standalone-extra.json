@@ -6,6 +6,5 @@
   "modified": "2016-05-12T08:17:27.000Z",
   "name": "Example Org",
   "identity_class": "organization",
-  "x_mitre_platform": "windows",
-  "vendor_tier": "gold"
+  "x_mitre_platform": "windows"
 }

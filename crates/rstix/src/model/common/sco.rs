@@ -76,4 +76,12 @@ impl ScoCommonProps {
             extra: BTreeMap::new(),
         }
     }
+
+    /// Validate `_enc` keys stored in [`Self::extra`] against typed string bases (STIX §3.1 / §3.9.1).
+    pub fn validate_vendor_enc_pairings(
+        &self,
+        typed_bases: &[(&str, Option<&str>)],
+    ) -> Result<(), crate::model::ModelError> {
+        crate::model::validate::validate_extra_enc_pairings(&self.extra, typed_bases)
+    }
 }

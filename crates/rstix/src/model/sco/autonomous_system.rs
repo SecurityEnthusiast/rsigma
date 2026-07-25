@@ -66,7 +66,8 @@ impl AutonomousSystem {
 
     /// No type-specific invariants are currently enforced.
     pub fn validate(&self) -> Result<(), ModelError> {
-        Ok(())
+        self.common
+            .validate_vendor_enc_pairings(&[("name", self.name.as_deref())])
     }
 }
 

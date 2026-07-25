@@ -6,6 +6,7 @@ use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTime
 
 use crate::model::ModelError;
 use crate::model::common::ScoCommonProps;
+use crate::model::validate::validate_hash_map;
 
 /// X.509 v3 extensions block (STIX §6.18.2).
 ///
@@ -246,7 +247,13 @@ impl X509Certificate {
         {
             return Err(ModelError::X509V3ExtensionsNoProperties);
         }
-        Ok(())
+        validate_hash_map(&self.hashes)?;
+        self.common.validate_vendor_enc_pairings(&[
+            ("serial_number", self.serial_number.as_deref()),
+            ("signature_algorithm", self.signature_algorithm.as_deref()),
+            ("issuer", self.issuer.as_deref()),
+            ("subject", self.subject.as_deref()),
+        ])
     }
 
     fn has_specific_property(&self) -> bool {

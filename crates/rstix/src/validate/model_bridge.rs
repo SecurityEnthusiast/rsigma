@@ -50,7 +50,8 @@ fn map_model_error(
 
 fn granular_selector_path(err: &ModelError) -> Option<String> {
     match err {
-        ModelError::GranularSelectorSyntaxInvalid { selector } => {
+        ModelError::GranularSelectorSyntaxInvalid { selector }
+        | ModelError::GranularSelectorSemanticInvalid { selector } => {
             Some(format!("selectors[{selector}]"))
         }
         _ => None,

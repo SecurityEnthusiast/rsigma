@@ -3,6 +3,7 @@
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::SdoSroCommonProps;
+use crate::model::validate::validate_non_empty_string;
 
 /// A STIX course of action describing preventive or responsive measures (STIX §4.3).
 ///
@@ -66,7 +67,9 @@ impl CourseOfAction {
 
     /// Check common SDO properties.
     pub fn validate(&self) -> Result<(), ModelError> {
-        self.common.validate(Self::TYPE_NAME)
+        self.common.validate(Self::TYPE_NAME)?;
+        validate_non_empty_string(&self.name, "name")?;
+        Ok(())
     }
 }
 

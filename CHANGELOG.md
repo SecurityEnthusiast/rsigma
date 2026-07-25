@@ -4,6 +4,19 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix: STIX 2.1 wire conformance closure (#388)
+
+- **T0 MUST enforcement** — non-empty SDO `name` and grouping `context`; non-empty report, grouping, note, and opinion `object_refs`; `malware-analysis` time ordering; IPv4/IPv6/MAC address format; RFC 3986 URL validation; hash map keys in `HASH_ALGORITHM_ENUM` or `x_` extension form with known-algorithm value formats; artifact `encryption_algorithm` closed vocabulary aligned with STIX 2.1 §10.4.
+- **Open vocabulary (`*-ov`) at parse** — `grouping.context`, `malware-analysis.result`, and `windows-pebinary-ext.pe_type` accept any string at parse (STIX §2.14); suggested-vocabulary membership is reported as `STIX-I0001` (Info) and does not fail `Validator::interop_strict()`.
+- **`object_refs` / `language-content` refs** — bundle ref kind checks accept any STIX Object (SDO, SCO, SRO, Meta), not only SDO/SCO.
+- **Open vocabulary tables** — `vocab/open.rs` regenerated from normative STIX 2.1 §10 value tables.
+- **Validation Pipeline** — `STIX-I0001` open-vocabulary extensions default to Info severity (spec-legal custom values pass `interop_strict`); `STIX-I0002` relationship matrix remains Warning (fails `interop_strict`).
+- **Tests** — negative fixtures wired in `tests/spec.rs`; encryption moved from T1 warning to T0 parse error; pattern eval fixtures updated for valid hash values.
+- **§7.1.1 language-content** — keys for properties that do not exist on the target object are silently ignored at parse and validation (removed over-strict `LanguageContentFieldUnknown` rejection and advisory warnings); `object_modified` mismatch and translation mirroring for existing target fields remain MUST at parse.
+- **Unmodeled top-level properties** — restore bundle capture in `common.extra` / `Bundle::extra_properties()` instead of rejecting non-`x_` keys at parse (removed `UnknownTopLevelProperty`).
+- **§7.2.3 granular selectors** — selectors MUST resolve on object wire JSON at parse (unchanged).
+- **Docs** — README, library docs, plan audit files, and cursor rules aligned with MUST vs SHOULD vs ignore tiers.
+
 ### Documentation site analytics and privacy controls (#392)
 
 - The documentation site uses GA4 with explicit cookie consent, Google Consent Mode defaults that keep analytics storage disabled until acceptance, permanently disabled advertising consent, and a dedicated privacy notice.

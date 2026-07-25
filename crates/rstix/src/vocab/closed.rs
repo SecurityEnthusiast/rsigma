@@ -1,17 +1,12 @@
 //! Closed vocabulary tables used by parse-time and bundle validation.
 //!
-//! Unknown values are rejected only when the corresponding validator runs.
-//! The encryption-algorithm table is a rstix subset, not the full STIX §3.9.1 enum.
+//! Values match STIX 2.1 §10 normative enumerations unless noted in crate README.
 
-/// Encryption algorithm enum.
+/// Encryption algorithm enum (STIX §10.4).
 pub static ENCRYPTION_ALGORITHM_ENUM: phf::Set<&'static str> = phf::phf_set! {
     "AES-256-GCM",
     "ChaCha20-Poly1305",
-    "magma",
-    "rc4",
-    "DES",
-    "3DES",
-    "Camellia",
+    "mime-type-indicated",
 };
 
 /// Extension type enum.
@@ -23,9 +18,9 @@ pub static EXTENSION_TYPE_ENUM: phf::Set<&'static str> = phf::phf_set! {
     "toplevel-property-extension",
 };
 
-/// Hash algorithm enum.
+/// Hash algorithm open vocabulary (STIX §10.7) — used for SHOULD conformance checks.
 pub static HASH_ALGORITHM_ENUM: phf::Set<&'static str> = phf::phf_set! {
-    "MD5", "SHA-1", "SHA-256", "SHA-512", "SHA3-256", "SHA3-512", "SSDEEP", "TLSH", "SM3"
+    "MD5", "SHA-1", "SHA-256", "SHA-512", "SHA3-256", "SHA3-512", "SSDEEP", "TLSH"
 };
 
 /// Network socket address family enum.
@@ -46,11 +41,6 @@ pub static OPINION_ENUM: phf::Set<&'static str> = phf::phf_set! {
 /// Windows integrity level enum.
 pub static WINDOWS_INTEGRITY_LEVEL_ENUM: phf::Set<&'static str> = phf::phf_set! {
     "low", "medium", "high", "system", "untrusted"
-};
-
-/// Windows PE binary type enum (treated as closed in rstix).
-pub static WINDOWS_PE_BINARY_TYPE_OV: phf::Set<&'static str> = phf::phf_set! {
-    "exe", "dll", "sys", "driver"
 };
 
 /// Windows registry datatype enum.
@@ -76,11 +66,6 @@ pub static WINDOWS_SERVICE_STATUS_ENUM: phf::Set<&'static str> = phf::phf_set! {
 pub static WINDOWS_SERVICE_TYPE_ENUM: phf::Set<&'static str> = phf::phf_set! {
     "SERVICE_FILE_SYSTEM_DRIVER", "SERVICE_KERNEL_DRIVER", "SERVICE_WIN32_OWN_PROCESS",
     "SERVICE_WIN32_SHARE_PROCESS", "SERVICE_INTERACTIVE_PROCESS", "SERVICE_USER_OWN_PROCESS"
-};
-
-/// Malware analysis result enum.
-pub static MALWARE_RESULT_ENUM: phf::Set<&'static str> = phf::phf_set! {
-    "malicious", "suspicious", "benign", "unknown"
 };
 
 /// Bundle object type enum.
