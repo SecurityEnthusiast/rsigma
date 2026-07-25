@@ -3,7 +3,7 @@ use std::io::Write;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
-use crate::io::{SinkFormat, serialize_result};
+use crate::io::{DeliveryContext, SinkFormat, serialize_result};
 
 /// Serializes ProcessResult to one line per result and writes it to stdout.
 pub struct StdoutSink {
@@ -33,6 +33,22 @@ impl StdoutSink {
 
     /// Serialize and write a ProcessResult to stdout.
     pub fn send(&self, result: &ProcessResult) -> Result<(), RuntimeError> {
+        self.send_inner(result, None)
+    }
+
+    pub(crate) fn send_with_context(
+        &self,
+        result: &ProcessResult,
+        ctx: &DeliveryContext,
+    ) -> Result<(), RuntimeError> {
+        self.send_inner(result, Some(ctx))
+    }
+
+    fn send_inner(
+        &self,
+        result: &ProcessResult,
+        ctx: Option<&DeliveryContext>,
+    ) -> Result<(), RuntimeError> {
         if result.is_empty() {
             return Ok(());
         }
@@ -40,8 +56,8 @@ impl StdoutSink {
         let stdout = std::io::stdout();
         let mut out = stdout.lock();
 
-        for m in result {
-            let json = serialize_result(m, self.format, self.pretty)?;
+        for (index, m) in result.iter().enumerate() {
+            let json = serialize_result(m, self.format, self.pretty, ctx.map(|ctx| (ctx, index)))?;
             writeln!(out, "{json}")?;
         }
 

@@ -8,7 +8,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 - Any line-oriented sink can emit [OCSF](https://ocsf.io) Detection Finding (class 2004) JSON instead of native NDJSON: `--output 'file:///findings.ocsf.ndjson?format=ocsf'`, or the same suffix on a `daemon.output.sinks` entry. Findings then flow natively into Splunk, Elastic, CrowdStrike NG-SIEM, and anything else that consumes OCSF.
 - All four emitted shapes map to class 2004: detections and correlations as `Create`, alert-pipeline incidents as `Create`/`Update`/`Close` by trigger, and risk incidents as `Create`. ATT&CK tags become `finding_info.attacks[]`, the rule becomes `finding_info.analytic`, the level becomes `severity_id`, and the risk layer's `risk.score` and `risk.objects` enrichments become `risk_score`, `resources[]`, and `actor.user.name`.
-- The mapping is lossless: anything without a faithful OCSF home rides under `unmapped` with its native key. Detections stamp `time` with the serialization clock because an `EvaluationResult` carries no event timestamp; the incident shapes carry real window bounds. Dedup summary records and compact risk events stay native NDJSON sidecar lines, documented as such.
+- The mapping is lossless: anything without a faithful OCSF home rides under `unmapped` with its native key. Detections stamp `time` with the serialization clock because an `EvaluationResult` carries no event timestamp; the incident shapes carry real window bounds. Per-result OCSF identifiers and timestamps remain stable across fan-out and delivery retries. Dedup summary records and compact risk events stay native NDJSON sidecar lines, documented as such.
 - Output only. rsigma does not deserialize OCSF and its input handling is unchanged. The schema version is pinned to `1.1.0`, recorded in `metadata.version`, and validated by a committed class-2004 conformance fixture (no network in CI).
 - New public `rsigma_runtime::ocsf` module with an injectable clock and uid source, plus a new [OCSF Findings](https://rsigma.io/guide/ocsf-findings/) guide.
 
@@ -16,7 +16,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 - Line-oriented sinks (stdout, file, NATS, unix socket) carry a `SinkFormat` and serialize through it, so a sink's wire format is a property of the sink rather than hard-coded NDJSON. `ndjson` remains the default and its bytes are unchanged.
 - Sink specs accept a `format` query parameter (`file:///findings.ndjson?format=ndjson`) on findings sinks only. `format` on an OTLP spec, a `--dlq` spec, or the audit sink is a startup config error, as is an unknown value; webhooks are declared in YAML files and have no query surface.
-- `FormattedIncidentEnvelope` wraps the source-compatible native `IncidentEnvelope` with one pre-serialized line per configured format, so incidents can be serialized once per format and each sink can deliver its own without breaking existing runtime callers.
+- `FormattedIncidentEnvelope` wraps the source-compatible native `IncidentEnvelope` with one pre-serialized line per configured format, so incidents are serialized once per format and each sink delivers its own without breaking existing runtime callers.
 
 ### Fix fuzz CI rustc ICE on floating nightly (#395)
 

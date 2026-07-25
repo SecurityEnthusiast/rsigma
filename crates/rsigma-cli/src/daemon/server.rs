@@ -15,11 +15,11 @@ use rsigma_eval::{
 };
 use rsigma_runtime::{
     AckToken, AlertPipeline, AlertPipelineState, DeliveryConfig, DeliveryFailure, Dispatcher,
-    EnrichmentPipeline, FieldObserver, FileSink, IncidentEnvelope, IncludeMode, InputFormat,
-    LogProcessor, MetricsHook, OnFull, RawEvent, RiskLayer, RiskState, RoutingSpec, RuntimeEngine,
-    SchemaClassifier, SchemaObserver, Silence, SilenceOrigin, SilenceSpec, Sink, SinkFormat,
-    StdinSource, StdoutSink, build_alert_pipeline, build_risk_layer, load_alert_pipeline_file,
-    load_risk_file, load_schema_signatures, spawn_source,
+    EnrichmentPipeline, FieldObserver, FileSink, FormattedIncidentEnvelope, IncidentEnvelope,
+    IncludeMode, InputFormat, LogProcessor, MetricsHook, OnFull, RawEvent, RiskLayer, RiskState,
+    RoutingSpec, RuntimeEngine, SchemaClassifier, SchemaObserver, Silence, SilenceOrigin,
+    SilenceSpec, Sink, SinkFormat, StdinSource, StdoutSink, build_alert_pipeline, build_risk_layer,
+    load_alert_pipeline_file, load_risk_file, load_schema_signatures, spawn_source,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -1756,8 +1756,9 @@ pub async fn run_daemon(config: DaemonConfig) {
                             for incident in out.incidents {
                                 match serde_json::to_string(&incident) {
                                     Ok(json) => {
-                                        let mut env =
-                                            IncidentEnvelope::new(json, subject.clone());
+                                        let mut env = FormattedIncidentEnvelope::new(
+                                            IncidentEnvelope::new(json, subject.clone()),
+                                        );
                                         if ocsf_incidents {
                                             let finding =
                                                 rsigma_runtime::ocsf::risk_incident_finding(
@@ -1772,7 +1773,7 @@ pub async fn run_daemon(config: DaemonConfig) {
                                                 }
                                             }
                                         }
-                                        dispatcher.dispatch_incident(env).await;
+                                        dispatcher.dispatch_formatted_incident(env).await;
                                     }
                                     Err(e) => {
                                         tracing::warn!(error = %e, "Failed to serialize risk incident");
@@ -1844,7 +1845,9 @@ pub async fn run_daemon(config: DaemonConfig) {
                         for incident in out.incidents {
                             match serde_json::to_string(&incident) {
                                 Ok(json) => {
-                                    let mut env = IncidentEnvelope::new(json, subject.clone());
+                                    let mut env = FormattedIncidentEnvelope::new(
+                                        IncidentEnvelope::new(json, subject.clone()),
+                                    );
                                     if ocsf_incidents {
                                         let finding =
                                             rsigma_runtime::ocsf::incident_finding(&incident);
@@ -1857,7 +1860,7 @@ pub async fn run_daemon(config: DaemonConfig) {
                                             }
                                         }
                                     }
-                                    dispatcher.dispatch_incident(env).await;
+                                    dispatcher.dispatch_formatted_incident(env).await;
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "Failed to serialize incident");

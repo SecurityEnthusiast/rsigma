@@ -37,7 +37,9 @@ pub use unix_sink::UnixSocketSink;
 #[cfg(all(unix, feature = "uds"))]
 pub use unix_source::UnixSocketSource;
 
+use std::cell::Cell;
 use std::sync::Arc;
+use std::time::UNIX_EPOCH;
 
 use rsigma_eval::{EvaluationResult, ProcessResult};
 
@@ -77,6 +79,7 @@ pub(crate) fn serialize_result(
     result: &EvaluationResult,
     format: SinkFormat,
     pretty: bool,
+    delivery: Option<(&DeliveryContext, usize)>,
 ) -> Result<String, RuntimeError> {
     match format {
         SinkFormat::Ndjson => Ok(if pretty {
@@ -85,13 +88,59 @@ pub(crate) fn serialize_result(
             serde_json::to_string(result)?
         }),
         SinkFormat::Ocsf => {
-            let finding = crate::ocsf::detection_finding(result);
+            let finding = match delivery {
+                Some((ctx, index)) => {
+                    let source = DeliveryFindingSource::new(ctx, index);
+                    crate::ocsf::detection_finding_with(result, &source)
+                }
+                None => crate::ocsf::detection_finding(result),
+            };
             Ok(if pretty {
                 serde_json::to_string_pretty(&finding)?
             } else {
                 serde_json::to_string(&finding)?
             })
         }
+    }
+}
+
+/// Stable finding identity and timestamp derived from one dispatched result.
+///
+/// A fresh instance is created for each result and sink, but every instance
+/// starts from the same delivery context and result index. That makes the two
+/// generated OCSF identifiers and the timestamp identical across fan-out and
+/// across retries of the same queued item.
+struct DeliveryFindingSource<'a> {
+    ctx: &'a DeliveryContext,
+    index: usize,
+    minted: Cell<u8>,
+}
+
+impl<'a> DeliveryFindingSource<'a> {
+    fn new(ctx: &'a DeliveryContext, index: usize) -> Self {
+        Self {
+            ctx,
+            index,
+            minted: Cell::new(0),
+        }
+    }
+}
+
+impl crate::ocsf::FindingSource for DeliveryFindingSource<'_> {
+    fn now_ms(&self) -> i64 {
+        self.ctx
+            .first_attempt()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .try_into()
+            .unwrap_or(i64::MAX)
+    }
+
+    fn uid(&self) -> String {
+        let sequence = self.minted.get();
+        self.minted.set(sequence.saturating_add(1));
+        format!("{}_{:04}_{sequence}", self.ctx.id_base(), self.index)
     }
 }
 
@@ -286,6 +335,41 @@ impl Sink {
                 Sink::FanOut(sinks) => {
                     for (idx, sink) in sinks.iter_mut().enumerate() {
                         if let Err(e) = sink.send(result).await {
+                            tracing::warn!(
+                                sink_index = idx,
+                                sink_type = sink.kind_label(),
+                                error = %e,
+                                "Fan-out child sink failed",
+                            );
+                            return Err(e);
+                        }
+                    }
+                    Ok(())
+                }
+            }
+        })
+    }
+
+    pub(crate) fn send_with_context<'a>(
+        &'a mut self,
+        result: &'a ProcessResult,
+        ctx: &'a DeliveryContext,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RuntimeError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            match self {
+                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_with_context(result, ctx)),
+                Sink::File(s) => tokio::task::block_in_place(|| s.send_with_context(result, ctx)),
+                #[cfg(feature = "nats")]
+                Sink::Nats(s) => s.send_with_context(result, ctx).await,
+                #[cfg(feature = "otlp")]
+                Sink::Otlp(s) => s.send(result).await,
+                Sink::Webhook(s) => s.send(result, ctx).await,
+                #[cfg(all(unix, feature = "uds"))]
+                Sink::Unix(s) => s.send_with_context(result, ctx).await,
+                Sink::FanOut(sinks) => {
+                    for (idx, sink) in sinks.iter_mut().enumerate() {
+                        if let Err(e) = sink.send_with_context(result, ctx).await {
                             tracing::warn!(
                                 sink_index = idx,
                                 sink_type = sink.kind_label(),
@@ -514,6 +598,7 @@ pub fn spawn_source<S: EventSource>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ocsf::FindingSource;
 
     #[test]
     fn envelope_falls_back_to_the_native_line() {
@@ -543,14 +628,17 @@ mod tests {
 
     #[test]
     fn with_line_replaces_an_existing_format() {
-        let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new(
-            "native".to_string(),
-            None,
-        ))
+        let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new("native".to_string(), None))
             .with_line(SinkFormat::Ocsf, "first".to_string())
             .with_line(SinkFormat::Ocsf, "second".to_string());
         assert_eq!(env.line(SinkFormat::Ocsf), "second");
         assert_eq!(env.line(SinkFormat::Ndjson), "native");
+
+        let native =
+            FormattedIncidentEnvelope::new(IncidentEnvelope::new("first".to_string(), None))
+                .with_line(SinkFormat::Ndjson, "second".to_string());
+        assert_eq!(native.line(SinkFormat::Ndjson), "second");
+        assert_eq!(native.native().json, "second");
     }
 
     #[test]
@@ -560,5 +648,16 @@ mod tests {
             nats_subject: None,
         };
         assert_eq!(env.json, "native");
+    }
+
+    #[test]
+    fn delivery_finding_source_is_stable_for_the_same_result() {
+        let ctx = DeliveryContext::new();
+        let first = DeliveryFindingSource::new(&ctx, 2);
+        let second = DeliveryFindingSource::new(&ctx, 2);
+
+        assert_eq!(first.now_ms(), second.now_ms());
+        assert_eq!(first.uid(), second.uid());
+        assert_eq!(first.uid(), second.uid());
     }
 }

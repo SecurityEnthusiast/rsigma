@@ -108,10 +108,7 @@ fn bare_format_parameter_is_a_startup_error() {
 #[test]
 fn duplicate_format_parameter_is_a_startup_error() {
     let out = temp_file(".ndjson", "");
-    let spec = format!(
-        "file://{}?format=ndjson&format=ndjson",
-        out.path().display()
-    );
+    let spec = format!("file://{}?format=ndjson&format=ocsf", out.path().display());
     daemon_with(&["--output", &spec], "")
         .failure()
         .stderr(contains("may be specified only once"));
@@ -189,6 +186,7 @@ fn mixed_format_fan_out_serializes_per_sink() {
 
     let finding = wait_for_line(ocsf.path(), |line| line["class_uid"] == 2004)
         .expect("the OCSF sink never received a class-2004 finding");
+    assert_eq!(finding["action_id"], 0);
     assert_eq!(finding["type_uid"], 200401);
     assert_eq!(finding["finding_info"]["title"], "Test Rule");
     assert_eq!(finding["finding_info"]["analytic"]["uid"], SIMPLE_RULE_ID);
@@ -205,6 +203,30 @@ fn mixed_format_fan_out_serializes_per_sink() {
         native.get("class_uid").is_none(),
         "the default sink must be untouched by the OCSF sibling: {native}",
     );
+}
+
+#[test]
+fn ocsf_fan_out_preserves_finding_identity_and_time() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let first = temp_file(".ndjson", "");
+    let second = temp_file(".ndjson", "");
+    let first_spec = format!("file://{}?format=ocsf", first.path().display());
+    let second_spec = format!("file://{}?format=ocsf", second.path().display());
+    let daemon = DaemonProcess::spawn_http_with_args(
+        rule.path().to_str().unwrap(),
+        &["--output", &first_spec, "--output", &second_spec],
+    );
+
+    let (status, _) = http_post(&daemon.url("/api/v1/events"), EVENT_BODY);
+    assert_eq!(status, 200);
+
+    let first = wait_for_line(first.path(), |line| line["class_uid"] == 2004)
+        .expect("the first OCSF sink never received the finding");
+    let second = wait_for_line(second.path(), |line| line["class_uid"] == 2004)
+        .expect("the second OCSF sink never received the finding");
+    assert_eq!(first["finding_info"]["uid"], second["finding_info"]["uid"]);
+    assert_eq!(first["metadata"]["uid"], second["metadata"]["uid"]);
+    assert_eq!(first["time"], second["time"]);
 }
 
 const SIMPLE_RULE_ID: &str = "00000000-0000-0000-0000-000000000001";

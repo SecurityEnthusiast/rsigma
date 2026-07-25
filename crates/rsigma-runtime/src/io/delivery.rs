@@ -66,9 +66,9 @@ impl DeliverySink for Sink {
     fn deliver<'a>(
         &'a mut self,
         result: &'a ProcessResult,
-        _ctx: &'a DeliveryContext,
+        ctx: &'a DeliveryContext,
     ) -> DeliveryFuture<'a> {
-        self.send(result)
+        self.send_with_context(result, ctx)
     }
     fn deliver_incident<'a>(
         &'a mut self,
@@ -235,6 +235,7 @@ enum DeliveryPayload {
 /// guard whose lifetime gates the ack.
 struct DeliveryItem {
     payload: DeliveryPayload,
+    context: Arc<DeliveryContext>,
     _guard: Arc<AckGuard>,
 }
 
@@ -335,10 +336,12 @@ impl Dispatcher {
             ack_tx: self.ack_tx.clone(),
         });
         let result = Arc::new(result);
+        let context = Arc::new(DeliveryContext::new());
         for worker in &self.workers {
             worker
                 .enqueue(DeliveryItem {
                     payload: DeliveryPayload::Result(result.clone()),
+                    context: context.clone(),
                     _guard: guard.clone(),
                 })
                 .await;
@@ -356,10 +359,12 @@ impl Dispatcher {
             ack_tx: self.ack_tx.clone(),
         });
         let incident = Arc::new(incident);
+        let context = Arc::new(DeliveryContext::new());
         for worker in &self.workers {
             worker
                 .enqueue(DeliveryItem {
                     payload: DeliveryPayload::Incident(incident.clone()),
+                    context: context.clone(),
                     _guard: guard.clone(),
                 })
                 .await;
@@ -376,10 +381,12 @@ impl Dispatcher {
             ack_tx: self.ack_tx.clone(),
         });
         let incident = Arc::new(incident);
+        let context = Arc::new(DeliveryContext::new());
         for worker in &self.workers {
             worker
                 .enqueue(DeliveryItem {
                     payload: DeliveryPayload::FormattedIncident(incident.clone()),
+                    context: context.clone(),
                     _guard: guard.clone(),
                 })
                 .await;
@@ -427,7 +434,16 @@ async fn worker_loop<S: DeliverySink>(
                 DeliveryPayload::Incident(e) => DeliverTarget::Incident(e),
                 DeliveryPayload::FormattedIncident(e) => DeliverTarget::FormattedIncident(e),
             };
-            deliver_one(&mut sink, target, &cfg, dlq_tx.as_ref(), &metrics, label).await;
+            deliver_one(
+                &mut sink,
+                target,
+                &item.context,
+                &cfg,
+                dlq_tx.as_ref(),
+                &metrics,
+                label,
+            )
+            .await;
         }
         // Dropping `batch` drops each item's `Arc<AckGuard>` clone, advancing
         // the ack-join.
@@ -445,20 +461,18 @@ enum DeliverTarget<'a> {
 async fn deliver_one<S: DeliverySink>(
     sink: &mut S,
     target: DeliverTarget<'_>,
+    ctx: &DeliveryContext,
     cfg: &DeliveryConfig,
     dlq_tx: Option<&mpsc::Sender<DeliveryFailure>>,
     metrics: &Arc<dyn MetricsHook>,
     label: &'static str,
 ) {
-    // Minted once and reused on every retry so a signed sink reproduces the
-    // same id/timestamp/signature on a re-send.
-    let ctx = DeliveryContext::new();
     let mut attempt: u32 = 0;
     loop {
         let outcome = match target {
-            DeliverTarget::Result(r) => sink.deliver(r, &ctx).await,
-            DeliverTarget::Incident(e) => sink.deliver_incident(e, &ctx).await,
-            DeliverTarget::FormattedIncident(e) => sink.deliver_formatted_incident(e, &ctx).await,
+            DeliverTarget::Result(r) => sink.deliver(r, ctx).await,
+            DeliverTarget::Incident(e) => sink.deliver_incident(e, ctx).await,
+            DeliverTarget::FormattedIncident(e) => sink.deliver_formatted_incident(e, ctx).await,
         };
         match outcome {
             Ok(()) => return,
@@ -617,6 +631,25 @@ mod tests {
                 Ok(())
             })
         }
+        fn deliver_incident<'a>(
+            &'a mut self,
+            _incident: &'a IncidentEnvelope,
+            _ctx: &'a DeliveryContext,
+        ) -> DeliveryFuture<'a> {
+            let always_fail = self.always_fail;
+            let permanent = self.permanent;
+            Box::pin(async move {
+                if always_fail {
+                    Err(if permanent {
+                        RuntimeError::Permanent("mock permanent".to_string())
+                    } else {
+                        RuntimeError::Io(std::io::Error::other("mock always fails"))
+                    })
+                } else {
+                    Ok(())
+                }
+            })
+        }
         fn label(&self) -> &'static str {
             self.label
         }
@@ -676,6 +709,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fanout_shares_one_delivery_context() {
+        let (ack_tx, _ack_rx) = mpsc::unbounded_channel();
+        let first = MockSink::new("first");
+        let first_ids = first.ctx_ids.clone();
+        let second = MockSink::new("second");
+        let second_ids = second.ctx_ids.clone();
+        let dispatcher = Dispatcher::spawn(
+            vec![
+                (first, OnFull::Block, fast_cfg()),
+                (second, OnFull::Block, fast_cfg()),
+            ],
+            None,
+            ack_tx,
+            noop_metrics(),
+        );
+
+        dispatcher.dispatch(result(), vec![AckToken::Noop]).await;
+        dispatcher.shutdown().await;
+
+        assert_eq!(
+            first_ids.lock().unwrap().as_slice(),
+            second_ids.lock().unwrap().as_slice(),
+            "every sink must derive identity from the same dispatched result",
+        );
+    }
+
+    #[tokio::test]
     async fn retries_then_succeeds() {
         let (ack_tx, mut ack_rx) = mpsc::unbounded_channel();
         let (dlq_tx, mut dlq_rx) = mpsc::channel(8);
@@ -722,6 +782,35 @@ mod tests {
             ack_rx.try_recv().is_ok(),
             "token acked after DLQ parking (matches prior behavior)",
         );
+    }
+
+    #[tokio::test]
+    async fn formatted_incident_failure_routes_native_line_to_dlq() {
+        let (ack_tx, _ack_rx) = mpsc::unbounded_channel();
+        let (dlq_tx, mut dlq_rx) = mpsc::channel(8);
+        let mut sink = MockSink::new("mock");
+        sink.always_fail = true;
+        sink.permanent = true;
+        let dispatcher = Dispatcher::spawn(
+            vec![(sink, OnFull::Block, fast_cfg())],
+            Some(dlq_tx),
+            ack_tx,
+            noop_metrics(),
+        );
+        let incident = FormattedIncidentEnvelope::new(IncidentEnvelope::new(
+            "{\"incident_id\":\"i-1\"}".to_string(),
+            None,
+        ))
+        .with_line(
+            crate::io::SinkFormat::Ocsf,
+            "{\"class_uid\":2004}".to_string(),
+        );
+
+        dispatcher.dispatch_formatted_incident(incident).await;
+        dispatcher.shutdown().await;
+
+        let failure = dlq_rx.try_recv().expect("incident failure routed to DLQ");
+        assert_eq!(failure.serialized, "{\"incident_id\":\"i-1\"}");
     }
 
     #[tokio::test]

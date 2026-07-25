@@ -13,7 +13,7 @@ use tokio::net::UnixStream;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
-use crate::io::{SinkFormat, serialize_result};
+use crate::io::{DeliveryContext, SinkFormat, serialize_result};
 
 /// Writes one line per result to a Unix domain socket, reconnecting on
 /// transient failures.
@@ -48,11 +48,27 @@ impl UnixSocketSink {
 
     /// Serialize and deliver each entry of a `ProcessResult` as one line.
     pub async fn send(&mut self, result: &ProcessResult) -> Result<(), RuntimeError> {
+        self.send_inner(result, None).await
+    }
+
+    pub(crate) async fn send_with_context(
+        &mut self,
+        result: &ProcessResult,
+        ctx: &DeliveryContext,
+    ) -> Result<(), RuntimeError> {
+        self.send_inner(result, Some(ctx)).await
+    }
+
+    async fn send_inner(
+        &mut self,
+        result: &ProcessResult,
+        ctx: Option<&DeliveryContext>,
+    ) -> Result<(), RuntimeError> {
         if result.is_empty() {
             return Ok(());
         }
-        for m in result {
-            let json = serialize_result(m, self.format, false)?;
+        for (index, m) in result.iter().enumerate() {
+            let json = serialize_result(m, self.format, false, ctx.map(|ctx| (ctx, index)))?;
             self.write_line(&json).await?;
         }
         Ok(())
