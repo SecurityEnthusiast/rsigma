@@ -1,7 +1,7 @@
 //! Integration tests for the per-sink `?format=` parameter: the channels that
 //! accept it, the specs that reject it at startup, the byte-for-byte
-//! neutrality of the default NDJSON path, and OCSF detections end to end
-//! through the daemon.
+//! neutrality of the default NDJSON path, and OCSF output end to end through
+//! the daemon.
 
 #![cfg(feature = "daemon")]
 
@@ -208,3 +208,82 @@ fn mixed_format_fan_out_serializes_per_sink() {
 }
 
 const SIMPLE_RULE_ID: &str = "00000000-0000-0000-0000-000000000001";
+
+const GROUP_AND_DEDUP_PIPELINE: &str = r#"
+dedup:
+  fingerprint:
+    - rule
+  repeat_interval: 1s
+  resolve_timeout: 1h
+group:
+  by:
+    - match.CommandLine
+  group_wait: 0s
+  resolve_timeout: 2s
+"#;
+
+/// Incidents reach an OCSF sink as findings (a `Create` on the first emission,
+/// a `Close` once the incident resolves), while the alert pipeline's dedup
+/// sidecar lines stay native NDJSON on that same sink.
+#[test]
+fn incidents_are_findings_and_dedup_lines_stay_native() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let pipeline = temp_file(".yml", GROUP_AND_DEDUP_PIPELINE);
+    let ocsf = temp_file(".ndjson", "");
+    let ocsf_spec = format!("file://{}?format=ocsf", ocsf.path().display());
+    let daemon = DaemonProcess::spawn_http_with_args(
+        rule.path().to_str().unwrap(),
+        &[
+            "--alert-pipeline",
+            pipeline.path().to_str().unwrap(),
+            "--output",
+            &ocsf_spec,
+        ],
+    );
+
+    // Three identical events: the first opens the incident, the rest fold into
+    // the dedup alert so a `repeat` sidecar record is due on the next tick.
+    for _ in 0..3 {
+        let (status, _) = http_post(&daemon.url("/api/v1/events"), EVENT_BODY);
+        assert_eq!(status, 200);
+    }
+
+    let created = wait_for_line(ocsf.path(), |line| {
+        line["class_uid"] == 2004 && line["unmapped"]["state"] == "open"
+    })
+    .expect("an open incident never reached the OCSF sink as a finding");
+    assert_eq!(created["activity_name"], "Create");
+    assert_eq!(created["status"], "New");
+    assert_eq!(created["count"], 1);
+    assert_eq!(
+        created["finding_info"]["related_analytics"][0]["name"],
+        SIMPLE_RULE_ID
+    );
+
+    // A dedup repeat record is an opaque native payload on the incident
+    // channel, so it stays NDJSON even on an OCSF sink.
+    let dedup = wait_for_line(ocsf.path(), |line| {
+        line.pointer("/enrichments/dedup_state").is_some()
+    })
+    .expect("a dedup sidecar line never reached the sink");
+    assert!(
+        dedup.get("class_uid").is_none(),
+        "dedup sidecar lines are documented as native NDJSON: {dedup}",
+    );
+
+    // Once `resolve_timeout` elapses with no further results, the incident
+    // resolves and closes the finding.
+    let closed = wait_for_line(ocsf.path(), |line| {
+        line["class_uid"] == 2004 && line["unmapped"]["state"] == "resolved"
+    })
+    .expect("the resolved incident never reached the OCSF sink");
+    assert_eq!(closed["activity_name"], "Close");
+    assert_eq!(closed["activity_id"], 3);
+    assert_eq!(closed["type_uid"], 200403);
+    assert_eq!(closed["status"], "Resolved");
+    assert_eq!(closed["status_id"], 4);
+    assert_eq!(
+        closed["finding_info"]["uid"], created["finding_info"]["uid"],
+        "both emissions describe the same incident",
+    );
+}

@@ -1646,6 +1646,11 @@ pub async fn run_daemon(config: DaemonConfig) {
             }
         }
     }
+    // Incidents are serialized centrally, once per format the leaf sinks
+    // actually ask for, so an all-NDJSON daemon never pays for an OCSF line.
+    let ocsf_incidents = leaves
+        .iter()
+        .any(|(sink, _, _)| sink.format() == Some(SinkFormat::Ocsf));
     tracing::info!(output = ?output_specs, sinks = leaves.len(), "Sink started");
 
     // Bridge the delivery layer's terminal failures into the existing DLQ
@@ -1751,12 +1756,23 @@ pub async fn run_daemon(config: DaemonConfig) {
                             for incident in out.incidents {
                                 match serde_json::to_string(&incident) {
                                     Ok(json) => {
-                                        dispatcher
-                                            .dispatch_incident(IncidentEnvelope::new(
-                                                json,
-                                                subject.clone(),
-                                            ))
-                                            .await;
+                                        let mut env =
+                                            IncidentEnvelope::new(json, subject.clone());
+                                        if ocsf_incidents {
+                                            let finding =
+                                                rsigma_runtime::ocsf::risk_incident_finding(
+                                                    &incident,
+                                                );
+                                            match serde_json::to_string(&finding) {
+                                                Ok(line) => {
+                                                    env = env.with_line(SinkFormat::Ocsf, line);
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!(error = %e, "Failed to serialize OCSF risk incident");
+                                                }
+                                            }
+                                        }
+                                        dispatcher.dispatch_incident(env).await;
                                     }
                                     Err(e) => {
                                         tracing::warn!(error = %e, "Failed to serialize risk incident");
@@ -1828,12 +1844,20 @@ pub async fn run_daemon(config: DaemonConfig) {
                         for incident in out.incidents {
                             match serde_json::to_string(&incident) {
                                 Ok(json) => {
-                                    dispatcher
-                                        .dispatch_incident(IncidentEnvelope::new(
-                                            json,
-                                            subject.clone(),
-                                        ))
-                                        .await;
+                                    let mut env = IncidentEnvelope::new(json, subject.clone());
+                                    if ocsf_incidents {
+                                        let finding =
+                                            rsigma_runtime::ocsf::incident_finding(&incident);
+                                        match serde_json::to_string(&finding) {
+                                            Ok(line) => {
+                                                env = env.with_line(SinkFormat::Ocsf, line);
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(error = %e, "Failed to serialize OCSF incident finding");
+                                            }
+                                        }
+                                    }
+                                    dispatcher.dispatch_incident(env).await;
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "Failed to serialize incident");

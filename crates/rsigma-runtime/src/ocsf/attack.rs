@@ -41,6 +41,21 @@ pub(super) fn attacks_from_tags(tags: &[String]) -> Option<Value> {
     (!out.is_empty()).then(|| Value::Array(out))
 }
 
+/// Build the `attacks[]` array from canonical tactic slugs, as the risk layer
+/// records them on a risk incident (`credential-access`).
+pub(super) fn attacks_from_tactics(tactics: &[String]) -> Option<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    for slug in tactics {
+        if let Some((name, uid)) = tactic(&slug.to_ascii_lowercase()) {
+            let entry = json!({ "tactic": { "name": name, "uid": uid } });
+            if !out.contains(&entry) {
+                out.push(entry);
+            }
+        }
+    }
+    (!out.is_empty()).then(|| Value::Array(out))
+}
+
 /// `t1059` / `t1059.001` to the OCSF technique uid `T1059` / `T1059.001`.
 ///
 /// The technique number must be four digits and the optional sub-technique
@@ -101,6 +116,15 @@ mod tests {
     #[test]
     fn tactics_resolve_through_the_shipped_table() {
         let out = attacks_from_tags(&tags(&["attack.credential_access"])).unwrap();
+        assert_eq!(
+            out,
+            json!([{ "tactic": { "name": "Credential Access", "uid": "TA0006" } }])
+        );
+    }
+
+    #[test]
+    fn hyphenated_risk_layer_slugs_resolve_to_the_same_tactic() {
+        let out = attacks_from_tactics(&tags(&["credential-access"])).unwrap();
         assert_eq!(
             out,
             json!([{ "tactic": { "name": "Credential Access", "uid": "TA0006" } }])
