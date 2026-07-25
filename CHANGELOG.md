@@ -9,6 +9,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 - Daemon integration tests now prefer SIGINT (with SIGKILL fallback) when tearing down instrumented `rsigma` children so LLVM coverage counters can flush.
 - The Coverage job scrubs unreadable `.profraw` files before `llvm-profdata merge`, preventing intermittent `file header is corrupt` / `no profile can be merged` failures.
 
+### Fix scheduled fuzz failures (#394)
+
+- **rstix pattern lexer:** `decode_hex` walks ASCII nibbles by byte instead of slicing the `&str` at fixed offsets, so multi-byte UTF-8 in an `h'…'` literal returns a lex error instead of panicking on a mid-character boundary.
+- **fuzz_template_expand:** drop removed `Pipeline::sources` field after source declarations moved out of pipeline structs.
+- **fuzz CI:** create missing `seeds/<target>` directories before `cargo fuzz run`, and seed `fuzz_rstix_parse_bundle` so the weekly job no longer exits on a missing seeds path.
+
 ### rstix: STIX 2.1 wire conformance closure (#388)
 
 - **T0 MUST enforcement** — non-empty SDO `name` and grouping `context`; non-empty report, grouping, note, and opinion `object_refs`; `malware-analysis` time ordering; IPv4/IPv6/MAC address format; RFC 3986 URL validation; hash map keys in `HASH_ALGORITHM_ENUM` or `x_` extension form with known-algorithm value formats; artifact `encryption_algorithm` closed vocabulary aligned with STIX 2.1 §10.4.
