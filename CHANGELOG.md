@@ -4,6 +4,11 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### CI: harden coverage against corrupt LLVM profraw files
+
+- Daemon integration tests now prefer SIGINT (with SIGKILL fallback) when tearing down instrumented `rsigma` children so LLVM coverage counters can flush.
+- The Coverage job scrubs unreadable `.profraw` files before `llvm-profdata merge`, preventing intermittent `file header is corrupt` / `no profile can be merged` failures.
+
 ### rstix: STIX 2.1 wire conformance closure (#388)
 
 - **T0 MUST enforcement** — non-empty SDO `name` and grouping `context`; non-empty report, grouping, note, and opinion `object_refs`; `malware-analysis` time ordering; IPv4/IPv6/MAC address format; RFC 3986 URL validation; hash map keys in `HASH_ALGORITHM_ENUM` or `x_` extension form with known-algorithm value formats; artifact `encryption_algorithm` closed vocabulary aligned with STIX 2.1 §10.4.

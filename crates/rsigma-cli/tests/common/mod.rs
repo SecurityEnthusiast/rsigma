@@ -41,6 +41,33 @@ enum StartupEvent {
     SinkStarted,
 }
 
+/// Prefer a graceful SIGINT so instrumented daemon children can flush LLVM
+/// coverage counters. `Child::kill` is SIGKILL on Unix and leaves empty or
+/// header-corrupt `.profraw` files that make `cargo llvm-cov` profile merges
+/// fail with "invalid instrumentation profile data (file header is corrupt)".
+///
+/// Falls back to `Child::kill` after `timeout` (or immediately on non-Unix).
+pub fn terminate_child(child: &mut std::process::Child, timeout: Duration) {
+    #[cfg(unix)]
+    {
+        let _ = StdCommand::new("kill")
+            .args(["-INT", &child.id().to_string()])
+            .status();
+        let deadline = Instant::now() + timeout;
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Ok(None) | Err(_) => break,
+            }
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// Scope guard that owns a `Child` and kills + waits on drop. Used during
 /// daemon startup so that a handshake panic does not leak a daemon process.
 struct ChildGuard(Option<std::process::Child>);
@@ -58,6 +85,8 @@ impl ChildGuard {
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if let Some(mut child) = self.0.take() {
+            // Startup may not have installed signal handlers yet; keep this
+            // path hard-kill so a failed handshake cannot hang the suite.
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -241,8 +270,7 @@ impl DaemonProcess {
     }
 
     fn kill(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        terminate_child(&mut self.child, Duration::from_secs(5));
     }
 }
 
@@ -286,8 +314,7 @@ pub fn spawn_expect_failure(args: &[&str], deadline: Duration) -> String {
             Err(_) => continue,
         }
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    terminate_child(&mut child, Duration::from_secs(2));
     // The child may exit before the reader thread forwards its final
     // lines, so drain what is still in flight. `wait()` closed the
     // pipe, so the reader thread hits EOF and drops the sender, which
