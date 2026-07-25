@@ -4,6 +4,8 @@
 
 mod common;
 
+#[cfg(unix)]
+use common::terminate_child;
 use common::{SIMPLE_RULE, rsigma, temp_file};
 use rusqlite::params;
 use tempfile::TempDir;
@@ -946,8 +948,7 @@ fn daemon_stdin_exits_promptly_on_sigint() {
     });
 
     let kill_and_reap = |child: &mut std::process::Child| {
-        let _ = child.kill();
-        let _ = child.wait();
+        terminate_child(child, Duration::from_secs(2));
     };
 
     // Wait for the "API server listening" line and pull out the address.

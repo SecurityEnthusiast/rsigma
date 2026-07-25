@@ -12,7 +12,7 @@
 
 mod common;
 
-use common::{SIMPLE_RULE, temp_file};
+use common::{SIMPLE_RULE, temp_file, terminate_child};
 use futures::StreamExt;
 use rusqlite::params;
 use std::io::{BufRead, BufReader};
@@ -91,8 +91,7 @@ impl DaemonProcess {
     }
 
     fn kill(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        terminate_child(&mut self.child, Duration::from_secs(5));
     }
 }
 

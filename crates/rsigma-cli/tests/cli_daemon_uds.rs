@@ -17,15 +17,14 @@ use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use common::{SIMPLE_RULE, rsigma_bin, temp_file};
+use common::{SIMPLE_RULE, rsigma_bin, temp_file, terminate_child};
 
-/// Kills + reaps the daemon on drop so a failed assertion never leaks it.
+/// Terminates + reaps the daemon on drop so a failed assertion never leaks it.
 struct Daemon(std::process::Child);
 
 impl Drop for Daemon {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        terminate_child(&mut self.0, Duration::from_secs(5));
     }
 }
 
@@ -130,8 +129,7 @@ fn tls_cert_with_unix_api_addr_is_rejected() {
             break;
         }
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    terminate_child(&mut child, Duration::from_secs(5));
 
     assert!(
         message.contains("cannot be combined with a unix://"),

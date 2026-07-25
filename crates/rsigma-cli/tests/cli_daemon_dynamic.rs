@@ -17,7 +17,7 @@
 
 mod common;
 
-use common::temp_file;
+use common::{temp_file, terminate_child};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -112,7 +112,7 @@ impl DaemonProcess {
                 return status;
             }
             if start.elapsed() > timeout {
-                let _ = child.kill();
+                terminate_child(&mut child, Duration::from_secs(2));
                 panic!("daemon did not exit within timeout");
             }
             std::thread::sleep(Duration::from_millis(100));
@@ -129,8 +129,7 @@ impl DaemonProcess {
     }
 
     fn kill(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        terminate_child(&mut self.child, Duration::from_secs(5));
     }
 }
 

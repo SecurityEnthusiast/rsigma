@@ -225,11 +225,27 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Generate coverage
         run: |
-          cargo llvm-cov --workspace --all-features --locked --lcov --output-path lcov.info
-          echo '## Coverage Report' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cargo llvm-cov report --summary-only 2>&1 >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # Run tests without merging yet. Daemon integration tests used to
+          # SIGKILL instrumented children, which leaves empty/header-corrupt
+          # .profraw files; even with graceful SIGINT shutdown, scrub any
+          # unreadable profiles so llvm-profdata merge cannot fail the job.
+          cargo llvm-cov --workspace --all-features --locked --no-report
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          llvm_profdata="$(rustc --print sysroot)/lib/rustlib/${host}/bin/llvm-profdata"
+          find target/llvm-cov-target -name '*.profraw' -print0 |
+            while IFS= read -r -d '' f; do
+              if ! "$llvm_profdata" show "$f" >/dev/null 2>&1; then
+                echo "removing unreadable profraw: $f ($(wc -c <"$f" | tr -d ' ') bytes)"
+                rm -f "$f"
+              fi
+            done
+          cargo llvm-cov report --lcov --output-path lcov.info
+          {
+            echo '## Coverage Report'
+            echo '```'
+            cargo llvm-cov report --summary-only 2>&1
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       # Upload the lcov report so external coverage trackers (Codecov,
       # Coveralls, …) can ingest it without re-running the suite, and
       # so PR reviewers can download the raw file from the run summary.

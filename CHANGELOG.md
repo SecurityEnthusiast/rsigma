@@ -4,6 +4,11 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### CI: harden coverage against corrupt LLVM profraw files (#393)
+
+- Daemon integration tests now prefer SIGINT (with SIGKILL fallback) when tearing down instrumented `rsigma` children so LLVM coverage counters can flush.
+- The Coverage job scrubs unreadable `.profraw` files before `llvm-profdata merge`, preventing intermittent `file header is corrupt` / `no profile can be merged` failures.
+
 ### Fix scheduled fuzz failures (#394)
 
 - **rstix pattern lexer:** `decode_hex` walks ASCII nibbles by byte instead of slicing the `&str` at fixed offsets, so multi-byte UTF-8 in an `h'…'` literal returns a lex error instead of panicking on a mid-character boundary.
