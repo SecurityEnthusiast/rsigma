@@ -39,10 +39,49 @@ pub use unix_source::UnixSocketSource;
 
 use std::sync::Arc;
 
-use rsigma_eval::ProcessResult;
+use rsigma_eval::{EvaluationResult, ProcessResult};
 
 use crate::error::RuntimeError;
 use crate::metrics::MetricsHook;
+
+/// Wire format a line-oriented sink serializes findings into.
+///
+/// Selected per sink with the `format` query parameter on an output spec
+/// (`file:///findings.ndjson?format=ndjson`). Transport-independent: every
+/// line sink (stdout, file, NATS, unix socket) accepts every format, while
+/// OTLP has its own log-record mapping and webhooks render from templates.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum SinkFormat {
+    /// rsigma-native NDJSON, one result object per line.
+    #[default]
+    Ndjson,
+}
+
+impl SinkFormat {
+    /// Lowercase wire name, as written in a sink spec and in logs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SinkFormat::Ndjson => "ndjson",
+        }
+    }
+}
+
+/// Serialize one result in the sink's format.
+///
+/// `pretty` applies to every format; only stdout sets it today.
+pub(crate) fn serialize_result(
+    result: &EvaluationResult,
+    format: SinkFormat,
+    pretty: bool,
+) -> Result<String, RuntimeError> {
+    match format {
+        SinkFormat::Ndjson => Ok(if pretty {
+            serde_json::to_string_pretty(result)?
+        } else {
+            serde_json::to_string(result)?
+        }),
+    }
+}
 
 /// Opaque acknowledgment handle returned alongside each event.
 ///
@@ -278,6 +317,25 @@ impl Sink {
                 }
             }
         })
+    }
+
+    /// The wire format this sink serializes into, for line-oriented sinks.
+    ///
+    /// `None` for sinks that own their encoding (OTLP log records, templated
+    /// webhook bodies) and for a `FanOut`, whose leaves each carry their own.
+    pub fn format(&self) -> Option<SinkFormat> {
+        match self {
+            Sink::Stdout(s) => Some(s.format()),
+            Sink::File(s) => Some(s.format()),
+            #[cfg(feature = "nats")]
+            Sink::Nats(s) => Some(s.format()),
+            #[cfg(feature = "otlp")]
+            Sink::Otlp(_) => None,
+            Sink::Webhook(_) => None,
+            #[cfg(all(unix, feature = "uds"))]
+            Sink::Unix(s) => Some(s.format()),
+            Sink::FanOut(_) => None,
+        }
     }
 
     /// Short label for the sink variant, used in structured logs and per-sink

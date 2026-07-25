@@ -5,10 +5,12 @@ use std::path::Path;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
+use crate::io::{SinkFormat, serialize_result};
 
-/// Appends ProcessResult as NDJSON to a file with buffered writes.
+/// Appends ProcessResult to a file as one line per result, buffered.
 pub struct FileSink {
     writer: BufWriter<File>,
+    format: SinkFormat,
 }
 
 impl FileSink {
@@ -17,7 +19,20 @@ impl FileSink {
         let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(FileSink {
             writer: BufWriter::new(file),
+            format: SinkFormat::default(),
         })
+    }
+
+    /// Select the wire format this sink serializes results into.
+    #[must_use]
+    pub fn with_format(mut self, format: SinkFormat) -> Self {
+        self.format = format;
+        self
+    }
+
+    /// The wire format this sink serializes results into.
+    pub fn format(&self) -> SinkFormat {
+        self.format
     }
 
     /// Serialize and append a ProcessResult to the file.
@@ -27,7 +42,7 @@ impl FileSink {
         }
 
         for m in result {
-            let json = serde_json::to_string(m)?;
+            let json = serialize_result(m, self.format, false)?;
             writeln!(self.writer, "{json}")?;
         }
 

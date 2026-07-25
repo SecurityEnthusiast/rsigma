@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
+use crate::io::{SinkFormat, serialize_result};
 
 use super::nats_config::NatsConnectConfig;
 use super::nats_source::derive_nats_name;
@@ -23,6 +24,7 @@ pub struct NatsSink {
     /// Subjects whose JetStream stream has been ensured, so an incident subject
     /// override only triggers stream creation once.
     ensured: Mutex<HashSet<String>>,
+    format: SinkFormat,
 }
 
 impl NatsSink {
@@ -51,7 +53,20 @@ impl NatsSink {
             jetstream: js,
             subject: Subject::from(subject),
             ensured,
+            format: SinkFormat::default(),
         })
+    }
+
+    /// Select the wire format this sink serializes results into.
+    #[must_use]
+    pub fn with_format(mut self, format: SinkFormat) -> Self {
+        self.format = format;
+        self
+    }
+
+    /// The wire format this sink serializes results into.
+    pub fn format(&self) -> SinkFormat {
+        self.format
     }
 
     /// Serialize and publish a ProcessResult to the configured JetStream subject.
@@ -65,7 +80,7 @@ impl NatsSink {
 
         let mut published = 0_usize;
         for m in result {
-            let json = serde_json::to_string(m)?;
+            let json = serialize_result(m, self.format, false)?;
             self.publish_one(&self.subject, &json).await?;
             published += 1;
         }
