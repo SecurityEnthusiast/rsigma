@@ -166,7 +166,8 @@ impl DiagnosticCode {
     /// Default severity for this code in the validation pipeline.
     pub fn default_severity(self) -> Severity {
         match self {
-            Self::I0001 | Self::I0002 => Severity::Warning,
+            Self::I0001 => Severity::Info,
+            Self::I0002 => Severity::Warning,
             _ => match self.0.as_bytes().get(5) {
                 Some(b'E') => Severity::Error,
                 Some(b'W') => Severity::Warning,
@@ -303,7 +304,7 @@ mod tests {
     fn error_codes_default_to_error_severity() {
         assert_eq!(DiagnosticCode::E0001.default_severity(), Severity::Error);
         assert_eq!(DiagnosticCode::W0031.default_severity(), Severity::Warning);
-        assert_eq!(DiagnosticCode::I0001.default_severity(), Severity::Warning);
+        assert_eq!(DiagnosticCode::I0001.default_severity(), Severity::Info);
         assert_eq!(DiagnosticCode::I0002.default_severity(), Severity::Warning);
         assert_eq!(DiagnosticCode::H0001.default_severity(), Severity::Hint);
     }
@@ -335,7 +336,8 @@ mod tests {
     fn every_code_has_expected_default_severity() {
         for code in DiagnosticCode::ALL {
             let expected = match code {
-                DiagnosticCode::I0001 | DiagnosticCode::I0002 => Severity::Warning,
+                DiagnosticCode::I0001 => Severity::Info,
+                DiagnosticCode::I0002 => Severity::Warning,
                 _ => match code.as_str().as_bytes()[5] {
                     b'E' => Severity::Error,
                     b'W' => Severity::Warning,

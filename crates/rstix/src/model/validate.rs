@@ -7,8 +7,8 @@ use crate::core::{LanguageTag, QueryableStixObject, StixId, StixObjectKind, Stix
 use crate::model::ModelError;
 use crate::model::common::{ExternalReference, GranularMarking, SdoSroCommonProps};
 use crate::model::meta::{LanguageContent, MetaObject};
-use crate::model::stix_object::StixObject;
 use crate::model::sdo::MalwareSampleRef;
+use crate::model::stix_object::StixObject;
 use crate::vocab::{ENCRYPTION_ALGORITHM_ENUM, HASH_ALGORITHM_ENUM, is_iana_character_set};
 
 /// Marker for relationship matrix entries that accept any SCO target type.
@@ -636,7 +636,7 @@ fn hash_algorithm_key_allowed(key: &str) -> bool {
     HASH_ALGORITHM_ENUM.contains(key) || is_open_vocab_extension(key)
 }
 
-/// Returns true when `value` is a known open-vocabulary entry or valid `x_` extension token.
+/// Returns true when `value` uses the `x_` extension prefix (§2.7 hash keys, not open-vocab values).
 pub fn is_open_vocab_extension(value: &str) -> bool {
     let Some(rest) = value.strip_prefix("x_") else {
         return false;
@@ -646,27 +646,6 @@ pub fn is_open_vocab_extension(value: &str) -> bool {
         && rest
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
-}
-
-/// Returns true when `value` is allowed for the given open-vocabulary table.
-pub fn open_vocab_value_allowed(value: &str, vocabulary: &phf::Set<&'static str>) -> bool {
-    vocabulary.contains(value) || is_open_vocab_extension(value)
-}
-
-/// Validate a single open-vocabulary property value at the parse boundary.
-pub fn validate_open_vocab_string(
-    value: &str,
-    property: &'static str,
-    vocabulary: &phf::Set<&'static str>,
-) -> Result<(), ModelError> {
-    if open_vocab_value_allowed(value, vocabulary) {
-        Ok(())
-    } else {
-        Err(ModelError::OpenVocabValueInvalid {
-            property,
-            value: value.to_owned(),
-        })
-    }
 }
 
 /// Validate STIX §2.7 hash map keys for properties that MUST use `hash-algorithm-ov`.
@@ -1073,17 +1052,5 @@ mod tests {
         let mut hashes = BTreeMap::new();
         hashes.insert("x_custom_hash".into(), "vendor-defined".into());
         validate_hash_map(&hashes).expect("x_ hash extension");
-    }
-
-    #[test]
-    fn open_vocab_accepts_table_or_x_extension() {
-        use crate::vocab::MALWARE_RESULT_ENUM;
-
-        assert!(open_vocab_value_allowed("malicious", &MALWARE_RESULT_ENUM));
-        assert!(open_vocab_value_allowed(
-            "x_vendor-result",
-            &MALWARE_RESULT_ENUM
-        ));
-        assert!(!open_vocab_value_allowed("not-valid", &MALWARE_RESULT_ENUM));
     }
 }

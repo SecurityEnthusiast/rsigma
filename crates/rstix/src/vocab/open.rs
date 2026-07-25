@@ -1,4 +1,4 @@
-//! Open vocabulary tables (unknown values are extensions).
+//! Open vocabulary tables (STIX §2.14 suggested values; consumers MAY use extensions).
 //!
 //! Generated from STIX 2.1 §10 normative value tables in `plan/stix-v2.1-spec.md`.
 
@@ -124,6 +124,16 @@ pub static THREAT_ACTOR_TYPE_OV: phf::Set<&'static str> = phf::phf_set! {
 pub static TOOL_TYPE_OV: phf::Set<&'static str> = phf::phf_set! {
     "credential-exploitation", "denial-of-service", "exploitation", "information-gathering",
     "network-capture", "remote-access", "unknown", "vulnerability-scanning"
+};
+
+/// Malware analysis result open vocabulary (STIX §10.18).
+pub static MALWARE_RESULT_OV: phf::Set<&'static str> = phf::phf_set! {
+    "malicious", "suspicious", "benign", "unknown"
+};
+
+/// Windows PE binary type open vocabulary (STIX §10.26).
+pub static WINDOWS_PE_BINARY_TYPE_OV: phf::Set<&'static str> = phf::phf_set! {
+    "dll", "exe", "sys"
 };
 
 /// Open vocabulary value.

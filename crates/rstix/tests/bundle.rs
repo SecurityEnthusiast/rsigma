@@ -157,8 +157,5 @@ fn unmodeled_top_level_property_captured_in_extra_properties() {
     let extra = bundle
         .extra_properties(&id)
         .expect("unmodeled top-level property captured");
-    assert_eq!(
-        extra.get("vendor_tier"),
-        Some(&serde_json::json!("gold"))
-    );
+    assert_eq!(extra.get("vendor_tier"), Some(&serde_json::json!("gold")));
 }

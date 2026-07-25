@@ -422,7 +422,7 @@ impl From<&ModelError> for ModelErrorWire {
                 Self::LanguageContentValueMismatch {
                     detail: detail.clone(),
                 }
-            },
+            }
         }
     }
 }

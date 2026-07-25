@@ -179,40 +179,33 @@ mod tests {
         }
 
         macro_rules! assert_code_in_fixture_objects {
-            ($code:expr, $path:literal) => {
-                {
-                    use crate::model::parse_options::ParseOptions;
-                    use crate::model::stix_object::deserialize_stix_object_from_value;
+            ($code:expr, $path:literal) => {{
+                use crate::model::parse_options::ParseOptions;
+                use crate::model::stix_object::deserialize_stix_object_from_value;
 
-                    let root: serde_json::Value = serde_json::from_str(include_str!(concat!(
-                        "../../tests/fixtures/",
-                        $path
-                    )))
-                    .expect(concat!("json ", $path));
-                    let bundle_id =
-                        serde_json::from_value(root["id"].clone()).expect("bundle id");
-                    let opts = ParseOptions::default();
-                    let objects = root["objects"]
-                        .as_array()
-                        .expect("objects array")
-                        .iter()
-                        .map(|value| {
-                            deserialize_stix_object_from_value(value.clone(), &opts)
-                                .unwrap_or_else(|err| {
-                                    panic!("deserialize object in {}: {err}", $path)
-                                })
-                                .0
-                        })
-                        .collect();
-                    let bundle = Bundle::from_objects(bundle_id, objects);
-                    assert!(
-                        bundle.validate().warnings_with_code($code).next().is_some(),
-                        "missing legacy code {:?} in fixture {}",
-                        $code,
-                        $path
-                    );
-                }
-            };
+                let root: serde_json::Value =
+                    serde_json::from_str(include_str!(concat!("../../tests/fixtures/", $path)))
+                        .expect(concat!("json ", $path));
+                let bundle_id = serde_json::from_value(root["id"].clone()).expect("bundle id");
+                let opts = ParseOptions::default();
+                let objects = root["objects"]
+                    .as_array()
+                    .expect("objects array")
+                    .iter()
+                    .map(|value| {
+                        deserialize_stix_object_from_value(value.clone(), &opts)
+                            .unwrap_or_else(|err| panic!("deserialize object in {}: {err}", $path))
+                            .0
+                    })
+                    .collect();
+                let bundle = Bundle::from_objects(bundle_id, objects);
+                assert!(
+                    bundle.validate().warnings_with_code($code).next().is_some(),
+                    "missing legacy code {:?} in fixture {}",
+                    $code,
+                    $path
+                );
+            }};
         }
 
         assert_code_in_fixture!(

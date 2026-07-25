@@ -43,11 +43,6 @@ pub static WINDOWS_INTEGRITY_LEVEL_ENUM: phf::Set<&'static str> = phf::phf_set! 
     "low", "medium", "high", "system", "untrusted"
 };
 
-/// Windows PE binary type open vocabulary (STIX §10.26).
-pub static WINDOWS_PE_BINARY_TYPE_OV: phf::Set<&'static str> = phf::phf_set! {
-    "dll", "exe", "sys"
-};
-
 /// Windows registry datatype enum.
 pub static WINDOWS_REGISTRY_DATATYPE_ENUM: phf::Set<&'static str> = phf::phf_set! {
     "REG_NONE", "REG_SZ", "REG_EXPAND_SZ", "REG_BINARY", "REG_DWORD", "REG_DWORD_BIG_ENDIAN",
@@ -71,11 +66,6 @@ pub static WINDOWS_SERVICE_STATUS_ENUM: phf::Set<&'static str> = phf::phf_set! {
 pub static WINDOWS_SERVICE_TYPE_ENUM: phf::Set<&'static str> = phf::phf_set! {
     "SERVICE_FILE_SYSTEM_DRIVER", "SERVICE_KERNEL_DRIVER", "SERVICE_WIN32_OWN_PROCESS",
     "SERVICE_WIN32_SHARE_PROCESS", "SERVICE_INTERACTIVE_PROCESS", "SERVICE_USER_OWN_PROCESS"
-};
-
-/// Malware analysis result enum.
-pub static MALWARE_RESULT_ENUM: phf::Set<&'static str> = phf::phf_set! {
-    "malicious", "suspicious", "benign", "unknown"
 };
 
 /// Bundle object type enum.

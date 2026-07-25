@@ -559,9 +559,7 @@ fn merge_extra_properties_for_wire(
 }
 
 #[cfg(feature = "serde")]
-fn extension_maps_for_object(
-    object: &StixObject,
-) -> Vec<&crate::model::common::ExtensionMap> {
+fn extension_maps_for_object(object: &StixObject) -> Vec<&crate::model::common::ExtensionMap> {
     use crate::model::meta::{ExtensionDefinition, MarkingDefinition, MetaObject};
     use crate::model::sco::ScoObject;
 

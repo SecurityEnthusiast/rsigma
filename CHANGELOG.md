@@ -6,10 +6,11 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ### rstix: STIX 2.1 wire conformance closure (#388)
 
-- **T0 MUST enforcement** — non-empty SDO `name` and grouping `context`; non-empty report, grouping, note, and opinion `object_refs`; `malware-analysis` time ordering; IPv4/IPv6/MAC address format; RFC 3986 URL validation; hash map keys in `HASH_ALGORITHM_ENUM` or `x_` extension form with known-algorithm value formats; artifact `encryption_algorithm` closed vocabulary aligned with STIX 2.1 §10.4; `malware-analysis.result` (`malware-result-ov` or `x_` extension); `grouping.context` (`grouping-context-ov`); `windows-pebinary-ext.pe_type` (`windows-pebinary-type-ov`).
+- **T0 MUST enforcement** — non-empty SDO `name` and grouping `context`; non-empty report, grouping, note, and opinion `object_refs`; `malware-analysis` time ordering; IPv4/IPv6/MAC address format; RFC 3986 URL validation; hash map keys in `HASH_ALGORITHM_ENUM` or `x_` extension form with known-algorithm value formats; artifact `encryption_algorithm` closed vocabulary aligned with STIX 2.1 §10.4.
+- **Open vocabulary (`*-ov`) at parse** — `grouping.context`, `malware-analysis.result`, and `windows-pebinary-ext.pe_type` accept any string at parse (STIX §2.14); suggested-vocabulary membership is reported as `STIX-I0001` (Info) and does not fail `Validator::interop_strict()`.
 - **`object_refs` / `language-content` refs** — bundle ref kind checks accept any STIX Object (SDO, SCO, SRO, Meta), not only SDO/SCO.
 - **Open vocabulary tables** — `vocab/open.rs` regenerated from normative STIX 2.1 §10 value tables.
-- **Validation Pipeline** — `STIX-I0001` / `STIX-I0002` promoted to Warning severity (fail `Validator::interop_strict()`).
+- **Validation Pipeline** — `STIX-I0001` open-vocabulary extensions default to Info severity (spec-legal custom values pass `interop_strict`); `STIX-I0002` relationship matrix remains Warning (fails `interop_strict`).
 - **Tests** — negative fixtures wired in `tests/spec.rs`; encryption moved from T1 warning to T0 parse error; pattern eval fixtures updated for valid hash values.
 
 ### rstix: OASIS STIX 2.1 spec-exact semantics (fix)

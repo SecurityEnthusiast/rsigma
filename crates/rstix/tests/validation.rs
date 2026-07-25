@@ -207,3 +207,20 @@ fn validate_is_clean_for_minimal_bundle() {
     let bundle = Bundle::parse(&raw).expect("parse");
     assert!(bundle.validate().is_clean());
 }
+
+#[cfg(feature = "validate")]
+#[test]
+fn open_vocab_custom_values_pass_interop_strict() {
+    use rstix::{DiagnosticCode, Validator};
+
+    let json = load_fixture("validation/bundle-location-bad-region.json");
+    let report = Validator::interop_strict().validate_json_str(&json);
+    assert!(
+        report.is_valid(),
+        "custom location.region is spec-legal open-vocab (STIX §2.14) and must pass interop_strict"
+    );
+    assert!(
+        report.with_code(DiagnosticCode::I0001).next().is_some(),
+        "expected STIX-I0001 info for custom location.region"
+    );
+}

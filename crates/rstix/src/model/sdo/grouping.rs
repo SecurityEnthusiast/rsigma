@@ -3,15 +3,13 @@
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
 use crate::model::ModelError;
 use crate::model::common::SdoSroCommonProps;
-use crate::model::validate::{
-    validate_non_empty_object_refs, validate_non_empty_string, validate_open_vocab_string,
-};
-use crate::vocab::GROUPING_CONTEXT_OV;
+use crate::model::validate::{validate_non_empty_object_refs, validate_non_empty_string};
 
 /// A STIX grouping asserting shared context among referenced objects (STIX §4.4).
 ///
-/// Required properties per STIX §4.4.1: common SDO fields, non-empty `name`, `context`
-/// from `grouping-context-ov` (or valid `x_` extension), and non-empty `object_refs`.
+/// Required properties per STIX §4.4.1: common SDO fields, non-empty `name`, non-empty
+/// `context` (open vocabulary — suggested values in `grouping-context-ov`), and non-empty
+/// `object_refs`.
 ///
 /// # Examples
 ///
@@ -71,7 +69,7 @@ impl Grouping {
     pub fn validate(&self) -> Result<(), ModelError> {
         self.common.validate(Self::TYPE_NAME)?;
         validate_non_empty_string(&self.name, "name")?;
-        validate_open_vocab_string(&self.context, "context", &GROUPING_CONTEXT_OV)?;
+        validate_non_empty_string(&self.context, "context")?;
         validate_non_empty_object_refs(&self.object_refs)
     }
 }

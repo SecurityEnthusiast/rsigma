@@ -441,9 +441,9 @@ Full developer guide: [crate README — STIX version vs TLP marking encoding](ht
 
 | Tier | API | Severity | Examples |
 | ---- | --- | -------- | -------- |
-| **T0 — parse** | `Bundle::parse`, `parse_reader`, leaf `Deserialize` | Hard error | Type discriminants, bundle container rules, in-bundle ref existence and ref kinds, DD-DM-001 domain/email/url format, ipv4/ipv6/mac address format, hash-algorithm-ov keys, open-vocabulary checks at parse, granular selector semantics, language-content §7.1.1 mirroring for existing target fields, SCO MUST in `validate()` at deserialize |
+| **T0 — parse** | `Bundle::parse`, `parse_reader`, leaf `Deserialize` | Hard error | Type discriminants, bundle container rules, in-bundle ref existence and ref kinds, DD-DM-001 domain/email/url format, ipv4/ipv6/mac address format, hash-algorithm-ov keys, closed enumerations at parse, granular selector semantics, language-content §7.1.1 mirroring for existing target fields, SCO MUST in `validate()` at deserialize |
 | **T1 — advisory** | `Bundle::validate()` | Warnings only | CAPEC/CVE external refs, TLP v1 (STIX-W0031), location ISO 3166, SCO deterministic id; parse-enforced rules still warn on `Bundle::from_objects()` bundles |
-| **T2 — pipeline** | `Validator` profiles (`validate` feature) | Structured diagnostics | All twelve validation phases; open-vocabulary extensions (`STIX-I0001`) and relationship matrix (`STIX-I0002`) fail under `interop_strict` (Warning severity) |
+| **T2 — pipeline** | `Validator` profiles (`validate` feature) | Structured diagnostics | All twelve validation phases; open-vocabulary extensions (`STIX-I0001`, Info — does not fail `interop_strict` per STIX §2.14); relationship matrix (`STIX-I0002`, Warning — fails `interop_strict`) |
 
 Full detail: [crate README — Validation tiers](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#validation-tiers).
 

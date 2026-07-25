@@ -2,8 +2,7 @@
 
 use crate::model::ModelError;
 use crate::model::common::ExtensionMap;
-use crate::model::validate::{validate_hash_map, validate_open_vocab_string};
-use crate::vocab::WINDOWS_PE_BINARY_TYPE_OV;
+use crate::model::validate::validate_hash_map;
 
 use std::collections::BTreeMap;
 
@@ -290,7 +289,6 @@ impl WindowsPeBinaryExt {
         if self.pe_type.is_empty() {
             return Err(ModelError::WindowsPeBinaryExtPeTypeEmpty);
         }
-        validate_open_vocab_string(&self.pe_type, "pe_type", &WINDOWS_PE_BINARY_TYPE_OV)?;
         let mut other = self.imphash.is_some()
             || self.machine_hex.is_some()
             || self.number_of_sections.is_some()
@@ -359,14 +357,13 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_invalid_pe_type() {
+    fn validate_accepts_custom_pe_type() {
         let json = include_str!(
             "../../../../tests/fixtures/spec/sco/extensions/windows-pebinary-ext-bad-pe-type.json"
         );
         let parsed: WindowsPeBinaryExt = serde_json::from_str(json).expect("parse");
-        assert!(matches!(
-            parsed.validate(),
-            Err(ModelError::OpenVocabValueInvalid { property, .. }) if property == "pe_type"
-        ));
+        parsed
+            .validate()
+            .expect("custom open-vocab pe_type is spec-legal");
     }
 }

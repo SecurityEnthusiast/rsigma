@@ -796,6 +796,8 @@ fn sdo_empty_name_rejects_at_parse() {
 fn sdo_empty_object_refs_rejects_at_parse() {
     assert_fixture_rejects::<Report>("sdo/report-empty-object-refs.json");
     assert_fixture_rejects::<Grouping>("sdo/grouping-empty-object-refs.json");
+    assert_fixture_rejects::<Note>("sdo/note-empty-object-refs.json");
+    assert_fixture_rejects::<Opinion>("sdo/opinion-empty-object-refs.json");
 }
 
 #[test]
@@ -809,9 +811,7 @@ fn malware_analysis_ended_before_started_rejects_at_parse() {
 }
 
 #[test]
-fn sdo_open_vocab_and_object_refs_reject_at_parse() {
-    assert_fixture_rejects::<Grouping>("sdo/grouping-invalid-context.json");
-    assert_fixture_rejects::<MalwareAnalysis>("sdo/malware-analysis-bad-result.json");
-    assert_fixture_rejects::<Note>("sdo/note-empty-object-refs.json");
-    assert_fixture_rejects::<Opinion>("sdo/opinion-empty-object-refs.json");
+fn open_vocab_custom_values_parse() {
+    roundtrip_strict::<Grouping>("sdo/grouping-invalid-context.json");
+    roundtrip_strict::<MalwareAnalysis>("sdo/malware-analysis-bad-result.json");
 }
