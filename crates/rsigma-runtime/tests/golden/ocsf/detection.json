@@ -1,4 +1,6 @@
 {
+  "action": "Unknown",
+  "action_id": 0,
   "activity_id": 1,
   "activity_name": "Create",
   "actor": {
@@ -32,7 +34,7 @@
     },
     "attacks": [
       {
-        "technique": {
+        "sub_technique": {
           "uid": "T1059.001"
         }
       },

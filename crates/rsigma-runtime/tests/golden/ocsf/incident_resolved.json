@@ -1,4 +1,6 @@
 {
+  "action": "Unknown",
+  "action_id": 0,
   "activity_id": 3,
   "activity_name": "Close",
   "category_name": "Findings",

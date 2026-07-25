@@ -42,6 +42,8 @@ One JSON object per line, exactly as with NDJSON. A detection:
 
 ```json
 {
+  "action_id": 0,
+  "action": "Unknown",
   "activity_id": 1,
   "activity_name": "Create",
   "category_uid": 2,
@@ -67,7 +69,7 @@ One JSON object per line, exactly as with NDJSON. A detection:
     "uid": "b1c0a5d2-0d7e-4f66-9b7a-0a2f5e6d8c31",
     "analytic": { "type_id": 1, "type": "Rule", "name": "Suspicious PowerShell", "uid": "rule-1" },
     "attacks": [
-      { "technique": { "uid": "T1059.001" } },
+      { "sub_technique": { "uid": "T1059.001" } },
       { "tactic": { "name": "Execution", "uid": "TA0002" } }
     ]
   },
@@ -88,19 +90,20 @@ All four emitted shapes (detections, correlations, alert-pipeline incidents, and
 
 | OCSF field | Source |
 |------------|--------|
+| `action_id` / `action` | `0` (`Unknown`): rsigma reports the detection but does not itself take a control action. |
 | `class_uid` / `category_uid` / `class_name` / `category_name` | Constants: `2004` / `2` / `Detection Finding` / `Findings`. |
 | `activity_id` / `activity_name` | Detections, correlations, and risk incidents: `1` (`Create`). Alert-pipeline incidents by trigger: `group_wait` is `1` (`Create`), `group_interval` and `repeat` are `2` (`Update`), `resolved` is `3` (`Close`). |
 | `type_uid` / `type_name` | `class_uid * 100 + activity_id`, so `200401` / `200402` / `200403`. |
 | `status_id` / `status` | `1` (`New`), or `4` (`Resolved`) for a resolved incident. |
 | `severity_id` / `severity` | From the rule level: informational `1`, low `2`, medium `3`, high `4`, critical `5`. An absent or unrecognized level is `0` (`Unknown`), never a guess. A risk incident carries no rule level, so its severity is `Unknown` and its weight rides `risk_score`. |
-| `time` | Incidents: `last_seen`. Risk incidents: `window_end`. Detections and correlations: the serialization clock (see the caveat below). Always UTC milliseconds, with `timezone_offset: 0`. |
+| `time` | Detections, correlations, and alert-pipeline incidents: the serialization/emission clock. Risk incidents: `window_end`. Always UTC milliseconds, with `timezone_offset: 0`. |
 | `start_time` / `end_time` | `first_seen` / `last_seen` on incidents, `window_start` / `window_end` on risk incidents. |
 | `message` | The same string as `finding_info.title`, so a consumer that renders only `message` still shows something readable. |
-| `metadata` | `product` names rsigma and its version, `version` is the OCSF schema version (`1.1.0`), and `uid` is a UUIDv4 minted per emitted finding. |
+| `metadata` | `product` names rsigma and its version, `version` is the OCSF schema version (`1.1.0`), and `uid` uniquely identifies the emitted event. Daemon delivery derives it from stable per-dispatch state, so fan-out and retries preserve it. |
 | `finding_info.title` | The rule title for detections and correlations. Incidents carry no rule name, so the title is synthesized: the busiest contributing rule plus the count of the others (`rule-1 and 2 other rules`), falling back to the group key (`incident for match.User=alice`) and then the bare id. A risk incident names what crossed and for whom (`risk threshold crossed for user alice`). |
-| `finding_info.uid` | The incident id for the two incident shapes (re-emissions of one incident share it). For per-result findings, a minted UUIDv4: OCSF requires this to identify the finding, and one rule produces many, so rule identity lives in `analytic.uid` instead. |
+| `finding_info.uid` | The incident id for the two incident shapes (re-emissions of one incident share it). Per-result findings use an identifier minted once per dispatch and preserved across sinks and retries. OCSF requires this to identify the finding, and one rule produces many, so rule identity lives in `analytic.uid` instead. |
 | `finding_info.analytic` | `{type_id: 1, type: "Rule", name: <rule title>, uid: <rule id>}` for detections and correlations. Incidents name the `alert pipeline`, risk incidents the `risk accumulator`, with their contributing rules in `related_analytics`. |
-| `finding_info.attacks[]` | Parsed from the rule's tags: `attack.t1059.001` becomes `technique: {uid: "T1059.001"}` and `attack.credential_access` becomes `tactic: {name: "Credential Access", uid: "TA0006"}`. A risk incident's contributing tactics map the same way. A tag cannot say which tactic a technique was used for, so techniques and tactics are separate entries rather than paired by guesswork. Tags in other taxonomies are skipped here and carried under `unmapped.tags`. |
+| `finding_info.attacks[]` | Parsed from the rule's tags: `attack.t1059.001` becomes `sub_technique: {uid: "T1059.001"}` and `attack.credential_access` becomes `tactic: {name: "Credential Access", uid: "TA0006"}`. A risk incident's contributing tactics map the same way. A tag cannot say which tactic a technique was used for, so techniques and tactics are separate entries rather than paired by guesswork. Tags in other taxonomies are skipped here and carried under `unmapped.tags`. |
 | `evidences[]` | One entry whose `data` holds what the result retained: the event (only when the rule sets `rsigma.include_event`) and the matched field/value pairs; for correlations, the retained `events` or `event_refs`. Absent when nothing was retained: the engine strips events by default and the serializer does not pretend otherwise. |
 | `resources[]` | The [risk](risk-based-alerting.md) layer's `risk.objects` entries as `{type, name}`, and an incident's `group_by` / `entities` values the same way. |
 | `actor.user.name` | The first `risk.objects` entry of type `user`, or a risk incident whose entity type is `user`. |

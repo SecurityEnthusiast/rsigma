@@ -5,6 +5,7 @@
   "description": "A minimal, hand-maintained conformance schema for the OCSF Detection Finding class as rsigma emits it: required attributes, the closed enums rsigma uses, and the class/category/type_uid arithmetic. Profiles are deliberately off and optional attributes are unconstrained, so this validates conformance without pulling the full OCSF package (which would mean a network fetch in CI).",
   "type": "object",
   "required": [
+    "action_id",
     "activity_id",
     "category_uid",
     "class_uid",
@@ -15,6 +16,14 @@
     "type_uid"
   ],
   "properties": {
+    "action_id": {
+      "type": "integer",
+      "enum": [0, 1, 2]
+    },
+    "action": {
+      "type": "string",
+      "enum": ["Unknown", "Allowed", "Denied"]
+    },
     "activity_id": {
       "description": "Create, Update, or Close. rsigma never emits Other (99) or Unknown (0).",
       "type": "integer",
@@ -114,7 +123,15 @@
                 "required": ["uid"],
                 "properties": {
                   "name": { "type": "string" },
-                  "uid": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" }
+                  "uid": { "type": "string", "pattern": "^T[0-9]{4}$" }
+                }
+              },
+              "sub_technique": {
+                "type": "object",
+                "required": ["uid"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "uid": { "type": "string", "pattern": "^T[0-9]{4}\\.[0-9]{3}$" }
                 }
               }
             }

@@ -279,7 +279,10 @@ pub fn incident_finding_with(incident: &IncidentResult, src: &dyn FindingSource)
             Status::New
         },
         severity_from_name(incident.max_level.as_deref()),
-        incident.last_seen * 1000,
+        // `last_seen` is the last contributing result, not the time this
+        // Create/Update/Close finding was emitted. Keep the observed window in
+        // start_time/end_time and timestamp the lifecycle event itself here.
+        src.now_ms(),
         &title,
     );
     finding.insert("finding_info".to_string(), Value::Object(finding_info));
@@ -391,6 +394,11 @@ fn base_finding(
 ) -> Map<String, Value> {
     let activity_id = activity as i64;
     let mut finding = Map::new();
+    // rsigma reports detections but does not itself take a control action.
+    // Detection Finding requires action_id, so report that honestly as
+    // Unknown rather than omitting the required attribute.
+    finding.insert("action_id".to_string(), json!(0));
+    finding.insert("action".to_string(), json!("Unknown"));
     finding.insert("activity_id".to_string(), json!(activity_id));
     finding.insert("activity_name".to_string(), json!(activity.name()));
     finding.insert("category_uid".to_string(), json!(CATEGORY_UID));
@@ -620,6 +628,18 @@ mod tests {
 
     use super::*;
 
+    struct FixedSource;
+
+    impl FindingSource for FixedSource {
+        fn now_ms(&self) -> i64 {
+            99_000
+        }
+
+        fn uid(&self) -> String {
+            "fixed".to_string()
+        }
+    }
+
     fn incident(
         rule_counts: BTreeMap<String, u64>,
         group_by: Map<String, Value>,
@@ -682,12 +702,14 @@ mod tests {
         let mut resolved = incident(BTreeMap::from([("rule-1".to_string(), 1)]), Map::new());
         resolved.state = "resolved";
         resolved.trigger = "resolved";
-        let finding = incident_finding(&resolved);
+        let finding = incident_finding_with(&resolved, &FixedSource);
         assert_eq!(finding["activity_id"], 3);
         assert_eq!(finding["activity_name"], "Close");
         assert_eq!(finding["type_uid"], 200403);
         assert_eq!(finding["status_id"], 4);
         assert_eq!(finding["status"], "Resolved");
+        assert_eq!(finding["time"], 99_000);
+        assert_eq!(finding["end_time"], 20_000);
     }
 
     #[test]

@@ -11,7 +11,7 @@
 //! they still reach the consumer under `unmapped.tags`.
 
 use rsigma_parser::reference::MITRE_TACTICS;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 /// Build the `attacks[]` array from a rule's tags.
 ///
@@ -27,8 +27,10 @@ pub(super) fn attacks_from_tags(tags: &[String]) -> Option<Value> {
         let Some(short) = lower.strip_prefix("attack.") else {
             continue;
         };
-        let entry = if let Some(uid) = technique_uid(short) {
-            json!({ "technique": { "uid": uid } })
+        let entry = if let Some((kind, uid)) = technique_uid(short) {
+            let mut attack = Map::new();
+            attack.insert(kind.to_string(), json!({ "uid": uid }));
+            Value::Object(attack)
         } else if let Some((name, uid)) = tactic(short) {
             json!({ "tactic": { "name": name, "uid": uid } })
         } else {
@@ -56,12 +58,12 @@ pub(super) fn attacks_from_tactics(tactics: &[String]) -> Option<Value> {
     (!out.is_empty()).then(|| Value::Array(out))
 }
 
-/// `t1059` / `t1059.001` to the OCSF technique uid `T1059` / `T1059.001`.
+/// `t1059` / `t1059.001` to the corresponding OCSF member and ATT&CK uid.
 ///
 /// The technique number must be four digits and the optional sub-technique
 /// three, so an ATT&CK group (`g0016`) or a malformed tag is not mistaken for
 /// a technique.
-fn technique_uid(short: &str) -> Option<String> {
+fn technique_uid(short: &str) -> Option<(&'static str, String)> {
     let rest = short.strip_prefix('t')?;
     let (technique, sub) = match rest.split_once('.') {
         Some((technique, sub)) => (technique, Some(sub)),
@@ -72,10 +74,10 @@ fn technique_uid(short: &str) -> Option<String> {
     }
     match sub {
         Some(sub) if sub.len() == 3 && sub.chars().all(|c| c.is_ascii_digit()) => {
-            Some(format!("T{technique}.{sub}"))
+            Some(("sub_technique", format!("T{technique}.{sub}")))
         }
         Some(_) => None,
-        None => Some(format!("T{technique}")),
+        None => Some(("technique", format!("T{technique}"))),
     }
 }
 
@@ -108,7 +110,7 @@ mod tests {
             out,
             json!([
                 { "technique": { "uid": "T1059" } },
-                { "technique": { "uid": "T1059.001" } },
+                    { "sub_technique": { "uid": "T1059.001" } },
             ])
         );
     }
