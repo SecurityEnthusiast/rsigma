@@ -2190,8 +2190,12 @@ fn format_from_params(params: &[(&str, &str)], base: &str, role: SinkRole) -> Si
 
     match value {
         "ndjson" => SinkFormat::Ndjson,
+        "ocsf" => SinkFormat::Ocsf,
         other => {
-            tracing::error!(value = other, "Unknown sink format (supported: ndjson)");
+            tracing::error!(
+                value = other,
+                "Unknown sink format (supported: ndjson, ocsf)"
+            );
             std::process::exit(crate::exit_code::CONFIG_ERROR);
         }
     }

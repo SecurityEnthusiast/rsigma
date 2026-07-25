@@ -1,15 +1,37 @@
 //! Integration tests for the per-sink `?format=` parameter: the channels that
-//! accept it, the specs that reject it at startup, and the byte-for-byte
-//! neutrality of the default NDJSON path.
+//! accept it, the specs that reject it at startup, the byte-for-byte
+//! neutrality of the default NDJSON path, and OCSF detections end to end
+//! through the daemon.
 
 #![cfg(feature = "daemon")]
 
 mod common;
 
-use common::{SIMPLE_RULE, rsigma, temp_file};
+use std::time::Duration;
+
+use common::{DaemonProcess, SIMPLE_RULE, http_post, poll_until, rsigma, temp_file};
 use predicates::str::contains;
+use serde_json::Value;
 
 const MATCHING_EVENT: &str = "{\"CommandLine\":\"run malware.exe\"}\n";
+const EVENT_BODY: &str = r#"{"CommandLine":"run malware.exe"}"#;
+
+/// Every parseable JSON line currently in `path`.
+fn lines(path: &std::path::Path) -> Vec<Value> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect()
+}
+
+/// Wait for a line in `path` matching `predicate`.
+fn wait_for_line(path: &std::path::Path, predicate: impl Fn(&Value) -> bool) -> Option<Value> {
+    poll_until(Duration::from_secs(10), || {
+        lines(path).into_iter().find(|line| predicate(line))
+    })
+}
 
 /// Run a stdin-fed daemon with the given extra args and return the assertion.
 fn daemon_with(args: &[&str], stdin: &str) -> assert_cmd::assert::Assert {
@@ -139,3 +161,50 @@ fn format_on_the_audit_sink_spec_is_a_startup_error() {
     .failure()
     .stderr(contains("only supported on findings sinks"));
 }
+
+#[cfg(feature = "daemon-otlp")]
+#[test]
+fn ocsf_on_an_otlp_sink_is_a_startup_error() {
+    daemon_with(&["--output", "otlphttp://127.0.0.1:1?format=ocsf"], "")
+        .failure()
+        .stderr(contains("not supported on OTLP sinks"));
+}
+
+/// Two sinks on one daemon, one OCSF and one default: each gets its own
+/// serialization of the same detection.
+#[test]
+fn mixed_format_fan_out_serializes_per_sink() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let native = temp_file(".ndjson", "");
+    let ocsf = temp_file(".ndjson", "");
+    let native_spec = format!("file://{}", native.path().display());
+    let ocsf_spec = format!("file://{}?format=ocsf", ocsf.path().display());
+    let daemon = DaemonProcess::spawn_http_with_args(
+        rule.path().to_str().unwrap(),
+        &["--output", &native_spec, "--output", &ocsf_spec],
+    );
+
+    let (status, _) = http_post(&daemon.url("/api/v1/events"), EVENT_BODY);
+    assert_eq!(status, 200);
+
+    let finding = wait_for_line(ocsf.path(), |line| line["class_uid"] == 2004)
+        .expect("the OCSF sink never received a class-2004 finding");
+    assert_eq!(finding["type_uid"], 200401);
+    assert_eq!(finding["finding_info"]["title"], "Test Rule");
+    assert_eq!(finding["finding_info"]["analytic"]["uid"], SIMPLE_RULE_ID);
+    assert_eq!(finding["severity"], "High");
+    assert_eq!(finding["metadata"]["version"], "1.1.0");
+    assert_eq!(
+        finding["unmapped"]["matched_selections"],
+        serde_json::json!(["selection"])
+    );
+
+    let native = wait_for_line(native.path(), |line| line["rule_title"] == "Test Rule")
+        .expect("the default sink never received the native line");
+    assert!(
+        native.get("class_uid").is_none(),
+        "the default sink must be untouched by the OCSF sibling: {native}",
+    );
+}
+
+const SIMPLE_RULE_ID: &str = "00000000-0000-0000-0000-000000000001";

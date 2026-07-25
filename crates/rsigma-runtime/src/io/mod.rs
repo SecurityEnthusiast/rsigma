@@ -47,7 +47,7 @@ use crate::metrics::MetricsHook;
 /// Wire format a line-oriented sink serializes findings into.
 ///
 /// Selected per sink with the `format` query parameter on an output spec
-/// (`file:///findings.ndjson?format=ndjson`). Transport-independent: every
+/// (`file:///findings.ndjson?format=ocsf`). Transport-independent: every
 /// line sink (stdout, file, NATS, unix socket) accepts every format, while
 /// OTLP has its own log-record mapping and webhooks render from templates.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -56,6 +56,8 @@ pub enum SinkFormat {
     /// rsigma-native NDJSON, one result object per line.
     #[default]
     Ndjson,
+    /// OCSF Detection Finding (class 2004) JSON, one finding per line.
+    Ocsf,
 }
 
 impl SinkFormat {
@@ -63,13 +65,14 @@ impl SinkFormat {
     pub fn as_str(self) -> &'static str {
         match self {
             SinkFormat::Ndjson => "ndjson",
+            SinkFormat::Ocsf => "ocsf",
         }
     }
 }
 
 /// Serialize one result in the sink's format.
 ///
-/// `pretty` applies to every format; only stdout sets it today.
+/// `pretty` applies to both formats; only stdout sets it today.
 pub(crate) fn serialize_result(
     result: &EvaluationResult,
     format: SinkFormat,
@@ -81,6 +84,14 @@ pub(crate) fn serialize_result(
         } else {
             serde_json::to_string(result)?
         }),
+        SinkFormat::Ocsf => {
+            let finding = crate::ocsf::detection_finding(result);
+            Ok(if pretty {
+                serde_json::to_string_pretty(&finding)?
+            } else {
+                serde_json::to_string(&finding)?
+            })
+        }
     }
 }
 
@@ -505,21 +516,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn envelope_serves_the_line_for_a_format() {
+    fn envelope_falls_back_to_the_native_line() {
         let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new(
             "{\"incident_id\":\"i-1\"}".to_string(),
-            Some("incidents".to_string()),
+            None,
         ));
         assert_eq!(env.line(SinkFormat::Ndjson), "{\"incident_id\":\"i-1\"}");
+        assert_eq!(
+            env.line(SinkFormat::Ocsf),
+            "{\"incident_id\":\"i-1\"}",
+            "a sink whose format was not serialized still gets the native line",
+        );
+    }
+
+    #[test]
+    fn envelope_serves_each_format_its_own_line() {
+        let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new(
+            "native".to_string(),
+            Some("incidents".to_string()),
+        ))
+        .with_line(SinkFormat::Ocsf, "finding".to_string());
+        assert_eq!(env.line(SinkFormat::Ndjson), "native");
+        assert_eq!(env.line(SinkFormat::Ocsf), "finding");
         assert_eq!(env.native().nats_subject.as_deref(), Some("incidents"));
     }
 
     #[test]
     fn with_line_replaces_an_existing_format() {
-        let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new("first".to_string(), None))
-            .with_line(SinkFormat::Ndjson, "second".to_string());
-        assert_eq!(env.line(SinkFormat::Ndjson), "second");
-        assert_eq!(env.native().json, "second");
+        let env = FormattedIncidentEnvelope::new(IncidentEnvelope::new(
+            "native".to_string(),
+            None,
+        ))
+            .with_line(SinkFormat::Ocsf, "first".to_string())
+            .with_line(SinkFormat::Ocsf, "second".to_string());
+        assert_eq!(env.line(SinkFormat::Ocsf), "second");
+        assert_eq!(env.line(SinkFormat::Ndjson), "native");
     }
 
     #[test]

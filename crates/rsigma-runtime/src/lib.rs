@@ -51,6 +51,7 @@ pub mod error;
 pub mod input;
 pub mod io;
 pub mod metrics;
+pub mod ocsf;
 pub mod parse;
 pub mod processor;
 pub mod risk;
