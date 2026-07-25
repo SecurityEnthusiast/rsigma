@@ -4590,6 +4590,7 @@ dependencies = [
  "jaq-json",
  "jaq-std",
  "jsonpath-rust",
+ "jsonschema",
  "notify",
  "opentelemetry-proto",
  "parking_lot",

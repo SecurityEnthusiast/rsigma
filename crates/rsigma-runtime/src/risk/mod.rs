@@ -45,9 +45,9 @@ use object::ObjectSelector;
 use score::ScoreConfig;
 
 /// Reserved enrichment key carrying the resolved risk score.
-const RISK_SCORE_KEY: &str = "risk.score";
+pub(crate) const RISK_SCORE_KEY: &str = "risk.score";
 /// Reserved enrichment key carrying the extracted risk objects.
-const RISK_OBJECTS_KEY: &str = "risk.objects";
+pub(crate) const RISK_OBJECTS_KEY: &str = "risk.objects";
 
 /// Output of [`RiskLayer::process`]: the annotated pass-through results and the
 /// additive risk events (opt-in).

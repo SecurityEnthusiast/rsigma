@@ -5,7 +5,7 @@ use std::path::Path;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
-use crate::io::{SinkFormat, serialize_result};
+use crate::io::{DeliveryContext, SinkFormat, serialize_result};
 
 /// Appends ProcessResult to a file as one line per result, buffered.
 pub struct FileSink {
@@ -37,12 +37,28 @@ impl FileSink {
 
     /// Serialize and append a ProcessResult to the file.
     pub fn send(&mut self, result: &ProcessResult) -> Result<(), RuntimeError> {
+        self.send_inner(result, None)
+    }
+
+    pub(crate) fn send_with_context(
+        &mut self,
+        result: &ProcessResult,
+        ctx: &DeliveryContext,
+    ) -> Result<(), RuntimeError> {
+        self.send_inner(result, Some(ctx))
+    }
+
+    fn send_inner(
+        &mut self,
+        result: &ProcessResult,
+        ctx: Option<&DeliveryContext>,
+    ) -> Result<(), RuntimeError> {
         if result.is_empty() {
             return Ok(());
         }
 
-        for m in result {
-            let json = serialize_result(m, self.format, false)?;
+        for (index, m) in result.iter().enumerate() {
+            let json = serialize_result(m, self.format, false, ctx.map(|ctx| (ctx, index)))?;
             writeln!(self.writer, "{json}")?;
         }
 

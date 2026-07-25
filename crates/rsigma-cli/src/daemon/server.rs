@@ -15,11 +15,11 @@ use rsigma_eval::{
 };
 use rsigma_runtime::{
     AckToken, AlertPipeline, AlertPipelineState, DeliveryConfig, DeliveryFailure, Dispatcher,
-    EnrichmentPipeline, FieldObserver, FileSink, IncidentEnvelope, IncludeMode, InputFormat,
-    LogProcessor, MetricsHook, OnFull, RawEvent, RiskLayer, RiskState, RoutingSpec, RuntimeEngine,
-    SchemaClassifier, SchemaObserver, Silence, SilenceOrigin, SilenceSpec, Sink, SinkFormat,
-    StdinSource, StdoutSink, build_alert_pipeline, build_risk_layer, load_alert_pipeline_file,
-    load_risk_file, load_schema_signatures, spawn_source,
+    EnrichmentPipeline, FieldObserver, FileSink, FormattedIncidentEnvelope, IncidentEnvelope,
+    IncludeMode, InputFormat, LogProcessor, MetricsHook, OnFull, RawEvent, RiskLayer, RiskState,
+    RoutingSpec, RuntimeEngine, SchemaClassifier, SchemaObserver, Silence, SilenceOrigin,
+    SilenceSpec, Sink, SinkFormat, StdinSource, StdoutSink, build_alert_pipeline, build_risk_layer,
+    load_alert_pipeline_file, load_risk_file, load_schema_signatures, spawn_source,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -1646,6 +1646,11 @@ pub async fn run_daemon(config: DaemonConfig) {
             }
         }
     }
+    // Incidents are serialized centrally, once per format the leaf sinks
+    // actually ask for, so an all-NDJSON daemon never pays for an OCSF line.
+    let ocsf_incidents = leaves
+        .iter()
+        .any(|(sink, _, _)| sink.format() == Some(SinkFormat::Ocsf));
     tracing::info!(output = ?output_specs, sinks = leaves.len(), "Sink started");
 
     // Bridge the delivery layer's terminal failures into the existing DLQ
@@ -1751,12 +1756,24 @@ pub async fn run_daemon(config: DaemonConfig) {
                             for incident in out.incidents {
                                 match serde_json::to_string(&incident) {
                                     Ok(json) => {
-                                        dispatcher
-                                            .dispatch_incident(IncidentEnvelope::new(
-                                                json,
-                                                subject.clone(),
-                                            ))
-                                            .await;
+                                        let mut env = FormattedIncidentEnvelope::new(
+                                            IncidentEnvelope::new(json, subject.clone()),
+                                        );
+                                        if ocsf_incidents {
+                                            let finding =
+                                                rsigma_runtime::ocsf::risk_incident_finding(
+                                                    &incident,
+                                                );
+                                            match serde_json::to_string(&finding) {
+                                                Ok(line) => {
+                                                    env = env.with_line(SinkFormat::Ocsf, line);
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!(error = %e, "Failed to serialize OCSF risk incident");
+                                                }
+                                            }
+                                        }
+                                        dispatcher.dispatch_formatted_incident(env).await;
                                     }
                                     Err(e) => {
                                         tracing::warn!(error = %e, "Failed to serialize risk incident");
@@ -1828,12 +1845,22 @@ pub async fn run_daemon(config: DaemonConfig) {
                         for incident in out.incidents {
                             match serde_json::to_string(&incident) {
                                 Ok(json) => {
-                                    dispatcher
-                                        .dispatch_incident(IncidentEnvelope::new(
-                                            json,
-                                            subject.clone(),
-                                        ))
-                                        .await;
+                                    let mut env = FormattedIncidentEnvelope::new(
+                                        IncidentEnvelope::new(json, subject.clone()),
+                                    );
+                                    if ocsf_incidents {
+                                        let finding =
+                                            rsigma_runtime::ocsf::incident_finding(&incident);
+                                        match serde_json::to_string(&finding) {
+                                            Ok(line) => {
+                                                env = env.with_line(SinkFormat::Ocsf, line);
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(error = %e, "Failed to serialize OCSF incident finding");
+                                            }
+                                        }
+                                    }
+                                    dispatcher.dispatch_formatted_incident(env).await;
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "Failed to serialize incident");
@@ -2190,8 +2217,12 @@ fn format_from_params(params: &[(&str, &str)], base: &str, role: SinkRole) -> Si
 
     match value {
         "ndjson" => SinkFormat::Ndjson,
+        "ocsf" => SinkFormat::Ocsf,
         other => {
-            tracing::error!(value = other, "Unknown sink format (supported: ndjson)");
+            tracing::error!(
+                value = other,
+                "Unknown sink format (supported: ndjson, ocsf)"
+            );
             std::process::exit(crate::exit_code::CONFIG_ERROR);
         }
     }

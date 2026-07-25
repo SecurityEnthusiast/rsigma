@@ -363,7 +363,7 @@ pub(crate) struct OutputPartial {
     /// `otlp(s)://host:port` (gRPC), `otlphttp(s)://host:port` (HTTP); the `s`
     /// variants use TLS. On Unix, `unix:///path/to.sock` writes NDJSON to a
     /// local socket. Optional query suffixes: `?on_full=drop`,
-    /// `?format=ndjson` (line sinks only: stdout, file, NATS, unix),
+    /// `?format=ndjson|ocsf` (line sinks only: stdout, file, NATS, unix),
     /// `?compression=gzip`, and for TLS `?ca=`, `?client_cert=`, `?client_key=`,
     /// `?tls_domain=`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

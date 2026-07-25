@@ -60,7 +60,7 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 ### Detect
 
 * **[Rule evaluation](https://rsigma.io/guide/evaluating-rules/):** Compiles rules into optimized matchers and evaluates them against events in real time, with stateless detection and stateful correlation (sliding/tumbling/session windows, group-by, chaining, suppression)
-* **[Streaming daemon](https://rsigma.io/guide/streaming-detection/):** Runs as a long-lived detection daemon with hot-reload, Prometheus metrics, stdin/HTTP/NATS/OTLP/Unix-socket input, and async sinks (stdout, file, NATS, OTLP, webhook, Unix socket) with per-sink retry and DLQ
+* **[Streaming daemon](https://rsigma.io/guide/streaming-detection/):** Runs as a long-lived detection daemon with hot-reload, Prometheus metrics, stdin/HTTP/NATS/OTLP/Unix-socket input, and async sinks (stdout, file, NATS, OTLP, webhook, Unix socket) with per-sink retry, DLQ, and a per-sink wire format (native NDJSON or [OCSF Detection Finding](https://rsigma.io/guide/ocsf-findings/) JSON)
 * **[Input formats](https://rsigma.io/guide/input-formats/):** Ingests JSON, syslog (RFC 3164/5424), logfmt, CEF, EVTX (Windows Event Log), plain text, and OTLP logs with format auto-detection
 * **[Processing pipelines](https://rsigma.io/guide/processing-pipelines/):** Maps fields and transforms rules with pySigma-compatible pipelines (transformations, conditions, finalizers)
 * **[Dynamic pipelines](https://rsigma.io/reference/dynamic-sources/):** Populates any pipeline value from external sources (HTTP, files, commands, NATS) with template expansion, auto-refresh, and extraction via jq, JSONPath, or CEL

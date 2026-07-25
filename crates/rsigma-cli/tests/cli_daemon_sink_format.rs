@@ -1,6 +1,7 @@
 //! Integration tests for the per-sink `?format=` parameter: the channels that
-//! accept it, the specs that reject it at startup, and the byte-for-byte
-//! neutrality of the default NDJSON path.
+//! accept it, the specs that reject it at startup, the byte-for-byte
+//! neutrality of the default NDJSON path, and OCSF output end to end through
+//! the daemon.
 
 #![cfg(feature = "daemon")]
 
@@ -8,11 +9,30 @@ mod common;
 
 use std::time::Duration;
 
-use common::{SIMPLE_RULE, rsigma, temp_file};
+use common::{DaemonProcess, SIMPLE_RULE, http_post, poll_until, rsigma, temp_file};
 use predicates::str::contains;
+use serde_json::Value;
 
 const MATCHING_EVENT: &str = "{\"CommandLine\":\"run malware.exe\"}\n";
+const EVENT_BODY: &str = r#"{"CommandLine":"run malware.exe"}"#;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Every parseable JSON line currently in `path`.
+fn lines(path: &std::path::Path) -> Vec<Value> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect()
+}
+
+/// Wait for a line in `path` matching `predicate`.
+fn wait_for_line(path: &std::path::Path, predicate: impl Fn(&Value) -> bool) -> Option<Value> {
+    poll_until(Duration::from_secs(10), || {
+        lines(path).into_iter().find(|line| predicate(line))
+    })
+}
 
 /// Run a stdin-fed daemon with the given extra args and return the assertion.
 fn daemon_with(args: &[&str], stdin: &str) -> assert_cmd::assert::Assert {
@@ -107,10 +127,7 @@ fn bare_format_parameter_is_a_startup_error() {
 #[test]
 fn duplicate_format_parameter_is_a_startup_error() {
     let out = temp_file(".ndjson", "");
-    let spec = format!(
-        "file://{}?format=ndjson&format=ndjson",
-        out.path().display()
-    );
+    let spec = format!("file://{}?format=ndjson&format=ocsf", out.path().display());
     daemon_startup_failure(&["--output", &spec])
         .failure()
         .stderr(contains("may be specified only once"));
@@ -155,4 +172,155 @@ fn format_on_the_audit_sink_spec_is_a_startup_error() {
     ])
     .failure()
     .stderr(contains("only supported on findings sinks"));
+}
+
+#[cfg(feature = "daemon-otlp")]
+#[test]
+fn ocsf_on_an_otlp_sink_is_a_startup_error() {
+    daemon_with(&["--output", "otlphttp://127.0.0.1:1?format=ocsf"], "")
+        .failure()
+        .stderr(contains("not supported on OTLP sinks"));
+}
+
+/// Two sinks on one daemon, one OCSF and one default: each gets its own
+/// serialization of the same detection.
+#[test]
+fn mixed_format_fan_out_serializes_per_sink() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let native = temp_file(".ndjson", "");
+    let ocsf = temp_file(".ndjson", "");
+    let native_spec = format!("file://{}", native.path().display());
+    let ocsf_spec = format!("file://{}?format=ocsf", ocsf.path().display());
+    let daemon = DaemonProcess::spawn_http_with_args(
+        rule.path().to_str().unwrap(),
+        &["--output", &native_spec, "--output", &ocsf_spec],
+    );
+
+    let (status, _) = http_post(&daemon.url("/api/v1/events"), EVENT_BODY);
+    assert_eq!(status, 200);
+
+    let finding = wait_for_line(ocsf.path(), |line| line["class_uid"] == 2004)
+        .expect("the OCSF sink never received a class-2004 finding");
+    assert_eq!(finding["action_id"], 0);
+    assert_eq!(finding["type_uid"], 200401);
+    assert_eq!(finding["finding_info"]["title"], "Test Rule");
+    assert_eq!(finding["finding_info"]["analytic"]["uid"], SIMPLE_RULE_ID);
+    assert_eq!(finding["severity"], "High");
+    assert_eq!(finding["metadata"]["version"], "1.1.0");
+    assert_eq!(
+        finding["unmapped"]["matched_selections"],
+        serde_json::json!(["selection"])
+    );
+
+    let native = wait_for_line(native.path(), |line| line["rule_title"] == "Test Rule")
+        .expect("the default sink never received the native line");
+    assert!(
+        native.get("class_uid").is_none(),
+        "the default sink must be untouched by the OCSF sibling: {native}",
+    );
+}
+
+#[test]
+fn ocsf_fan_out_preserves_finding_identity_and_time() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let first = temp_file(".ndjson", "");
+    let second = temp_file(".ndjson", "");
+    let first_spec = format!("file://{}?format=ocsf", first.path().display());
+    let second_spec = format!("file://{}?format=ocsf", second.path().display());
+    let daemon = DaemonProcess::spawn_http_with_args(
+        rule.path().to_str().unwrap(),
+        &["--output", &first_spec, "--output", &second_spec],
+    );
+
+    let (status, _) = http_post(&daemon.url("/api/v1/events"), EVENT_BODY);
+    assert_eq!(status, 200);
+
+    let first = wait_for_line(first.path(), |line| line["class_uid"] == 2004)
+        .expect("the first OCSF sink never received the finding");
+    let second = wait_for_line(second.path(), |line| line["class_uid"] == 2004)
+        .expect("the second OCSF sink never received the finding");
+    assert_eq!(first["finding_info"]["uid"], second["finding_info"]["uid"]);
+    assert_eq!(first["metadata"]["uid"], second["metadata"]["uid"]);
+    assert_eq!(first["time"], second["time"]);
+}
+
+const SIMPLE_RULE_ID: &str = "00000000-0000-0000-0000-000000000001";
+
+const GROUP_AND_DEDUP_PIPELINE: &str = r#"
+dedup:
+  fingerprint:
+    - rule
+  repeat_interval: 1s
+  resolve_timeout: 1h
+group:
+  by:
+    - match.CommandLine
+  group_wait: 0s
+  resolve_timeout: 2s
+"#;
+
+/// Incidents reach an OCSF sink as findings (a `Create` on the first emission,
+/// a `Close` once the incident resolves), while the alert pipeline's dedup
+/// sidecar lines stay native NDJSON on that same sink.
+#[test]
+fn incidents_are_findings_and_dedup_lines_stay_native() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let pipeline = temp_file(".yml", GROUP_AND_DEDUP_PIPELINE);
+    let ocsf = temp_file(".ndjson", "");
+    let ocsf_spec = format!("file://{}?format=ocsf", ocsf.path().display());
+    let daemon = DaemonProcess::spawn_http_with_args(
+        rule.path().to_str().unwrap(),
+        &[
+            "--alert-pipeline",
+            pipeline.path().to_str().unwrap(),
+            "--output",
+            &ocsf_spec,
+        ],
+    );
+
+    // Three identical events: the first opens the incident, the rest fold into
+    // the dedup alert so a `repeat` sidecar record is due on the next tick.
+    for _ in 0..3 {
+        let (status, _) = http_post(&daemon.url("/api/v1/events"), EVENT_BODY);
+        assert_eq!(status, 200);
+    }
+
+    let created = wait_for_line(ocsf.path(), |line| {
+        line["class_uid"] == 2004 && line["unmapped"]["state"] == "open"
+    })
+    .expect("an open incident never reached the OCSF sink as a finding");
+    assert_eq!(created["activity_name"], "Create");
+    assert_eq!(created["status"], "New");
+    assert_eq!(created["count"], 1);
+    assert_eq!(
+        created["finding_info"]["related_analytics"][0]["name"],
+        SIMPLE_RULE_ID
+    );
+
+    // A dedup repeat record is an opaque native payload on the incident
+    // channel, so it stays NDJSON even on an OCSF sink.
+    let dedup = wait_for_line(ocsf.path(), |line| {
+        line.pointer("/enrichments/dedup_state").is_some()
+    })
+    .expect("a dedup sidecar line never reached the sink");
+    assert!(
+        dedup.get("class_uid").is_none(),
+        "dedup sidecar lines are documented as native NDJSON: {dedup}",
+    );
+
+    // Once `resolve_timeout` elapses with no further results, the incident
+    // resolves and closes the finding.
+    let closed = wait_for_line(ocsf.path(), |line| {
+        line["class_uid"] == 2004 && line["unmapped"]["state"] == "resolved"
+    })
+    .expect("the resolved incident never reached the OCSF sink");
+    assert_eq!(closed["activity_name"], "Close");
+    assert_eq!(closed["activity_id"], 3);
+    assert_eq!(closed["type_uid"], 200403);
+    assert_eq!(closed["status"], "Resolved");
+    assert_eq!(closed["status_id"], 4);
+    assert_eq!(
+        closed["finding_info"]["uid"], created["finding_info"]["uid"],
+        "both emissions describe the same incident",
+    );
 }

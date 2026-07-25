@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
-use crate::io::{SinkFormat, serialize_result};
+use crate::io::{DeliveryContext, SinkFormat, serialize_result};
 
 use super::nats_config::NatsConnectConfig;
 use super::nats_source::derive_nats_name;
@@ -74,13 +74,29 @@ impl NatsSink {
     /// Each message is published with publish-ack: the call blocks until the
     /// server confirms persistence, or returns an error on failure.
     pub async fn send(&self, result: &ProcessResult) -> Result<(), RuntimeError> {
+        self.send_inner(result, None).await
+    }
+
+    pub(crate) async fn send_with_context(
+        &self,
+        result: &ProcessResult,
+        ctx: &DeliveryContext,
+    ) -> Result<(), RuntimeError> {
+        self.send_inner(result, Some(ctx)).await
+    }
+
+    async fn send_inner(
+        &self,
+        result: &ProcessResult,
+        ctx: Option<&DeliveryContext>,
+    ) -> Result<(), RuntimeError> {
         if result.is_empty() {
             return Ok(());
         }
 
         let mut published = 0_usize;
-        for m in result {
-            let json = serialize_result(m, self.format, false)?;
+        for (index, m) in result.iter().enumerate() {
+            let json = serialize_result(m, self.format, false, ctx.map(|ctx| (ctx, index)))?;
             self.publish_one(&self.subject, &json).await?;
             published += 1;
         }
