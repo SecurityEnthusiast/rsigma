@@ -2114,7 +2114,9 @@ pub(super) fn split_query(spec: &str) -> (&str, Vec<(&str, &str)>) {
         Some((base, query)) => {
             let params = query
                 .split('&')
-                .filter_map(|kv| kv.split_once('='))
+                // Preserve a bare key with an empty value so validators can
+                // reject `?format` instead of silently defaulting it.
+                .map(|kv| kv.split_once('=').unwrap_or((kv, "")))
                 .collect();
             (base, params)
         }
@@ -2157,9 +2159,17 @@ impl SinkRole {
 /// startup config error, so a daemon never silently emits a format the
 /// operator did not ask for.
 fn format_from_params(params: &[(&str, &str)], base: &str, role: SinkRole) -> SinkFormat {
-    let Some(value) = params.iter().find(|(k, _)| *k == "format").map(|(_, v)| *v) else {
+    let mut formats = params
+        .iter()
+        .filter(|(key, _)| *key == "format")
+        .map(|(_, value)| *value);
+    let Some(value) = formats.next() else {
         return SinkFormat::default();
     };
+    if formats.next().is_some() {
+        tracing::error!(spec = base, "format= may be specified only once");
+        std::process::exit(crate::exit_code::CONFIG_ERROR);
+    }
 
     if role != SinkRole::Findings {
         tracing::error!(

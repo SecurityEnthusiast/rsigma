@@ -74,6 +74,27 @@ fn unknown_format_value_is_a_startup_error() {
         .stderr(contains("Unknown sink format"));
 }
 
+#[test]
+fn bare_format_parameter_is_a_startup_error() {
+    let out = temp_file(".ndjson", "");
+    let spec = format!("file://{}?format", out.path().display());
+    daemon_with(&["--output", &spec], "")
+        .failure()
+        .stderr(contains("Unknown sink format"));
+}
+
+#[test]
+fn duplicate_format_parameter_is_a_startup_error() {
+    let out = temp_file(".ndjson", "");
+    let spec = format!(
+        "file://{}?format=ndjson&format=ndjson",
+        out.path().display()
+    );
+    daemon_with(&["--output", &spec], "")
+        .failure()
+        .stderr(contains("may be specified only once"));
+}
+
 #[cfg(feature = "daemon-otlp")]
 #[test]
 fn format_on_an_otlp_sink_is_a_startup_error() {
