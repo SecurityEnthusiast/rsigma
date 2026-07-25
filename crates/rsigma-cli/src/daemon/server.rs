@@ -1733,10 +1733,10 @@ pub async fn run_daemon(config: DaemonConfig) {
                                 match serde_json::to_string(&event) {
                                     Ok(json) => {
                                         dispatcher
-                                            .dispatch_incident(IncidentEnvelope {
+                                            .dispatch_incident(IncidentEnvelope::new(
                                                 json,
-                                                nats_subject: subject.clone(),
-                                            })
+                                                subject.clone(),
+                                            ))
                                             .await;
                                     }
                                     Err(e) => {
@@ -1752,10 +1752,10 @@ pub async fn run_daemon(config: DaemonConfig) {
                                 match serde_json::to_string(&incident) {
                                     Ok(json) => {
                                         dispatcher
-                                            .dispatch_incident(IncidentEnvelope {
+                                            .dispatch_incident(IncidentEnvelope::new(
                                                 json,
-                                                nats_subject: subject.clone(),
-                                            })
+                                                subject.clone(),
+                                            ))
                                             .await;
                                     }
                                     Err(e) => {
@@ -1820,10 +1820,10 @@ pub async fn run_daemon(config: DaemonConfig) {
                         };
                         for line in out.dedup_lines {
                             dispatcher
-                                .dispatch_incident(IncidentEnvelope {
-                                    json: line.to_string(),
-                                    nats_subject: None,
-                                })
+                                .dispatch_incident(IncidentEnvelope::new(
+                                    line.to_string(),
+                                    None,
+                                ))
                                 .await;
                         }
                         let subject =
@@ -1832,10 +1832,10 @@ pub async fn run_daemon(config: DaemonConfig) {
                             match serde_json::to_string(&incident) {
                                 Ok(json) => {
                                     dispatcher
-                                        .dispatch_incident(IncidentEnvelope {
+                                        .dispatch_incident(IncidentEnvelope::new(
                                             json,
-                                            nats_subject: subject.clone(),
-                                        })
+                                            subject.clone(),
+                                        ))
                                         .await;
                                 }
                                 Err(e) => {

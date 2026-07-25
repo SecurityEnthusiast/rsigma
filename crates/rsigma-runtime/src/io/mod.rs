@@ -126,17 +126,51 @@ impl AckToken {
     }
 }
 
-/// A pre-serialized incident line plus an optional NATS subject override.
+/// Pre-serialized incident lines, one per configured sink format, plus an
+/// optional NATS subject override.
 ///
 /// The alert pipeline produces structured `IncidentResult`s; the sink task
-/// serializes each to NDJSON and pairs it with the configured subject override
-/// (if any) so the delivery layer can route incidents without depending on the
-/// alert-pipeline types. Delivered via [`Sink::send_incident`].
+/// serializes each once per format present in the leaf-sink set and pairs the
+/// lines with the configured subject override (if any) so the delivery layer
+/// can route incidents without depending on the alert-pipeline types. Each
+/// sink then picks the line for its own format in [`Sink::send_incident`].
 pub struct IncidentEnvelope {
-    /// The serialized incident NDJSON line.
-    pub json: String,
+    /// Serialized lines keyed by format. Never empty: the NDJSON line is
+    /// always present, so every sink has a line to fall back to.
+    lines: Vec<(SinkFormat, String)>,
     /// Optional NATS subject override for incident consumers.
     pub nats_subject: Option<String>,
+}
+
+impl IncidentEnvelope {
+    /// Build an envelope from the native NDJSON line.
+    pub fn new(json: String, nats_subject: Option<String>) -> Self {
+        IncidentEnvelope {
+            lines: vec![(SinkFormat::Ndjson, json)],
+            nats_subject,
+        }
+    }
+
+    /// Add the line for another format, replacing any line already held for it.
+    #[must_use]
+    pub fn with_line(mut self, format: SinkFormat, json: String) -> Self {
+        match self.lines.iter_mut().find(|(f, _)| *f == format) {
+            Some((_, existing)) => *existing = json,
+            None => self.lines.push((format, json)),
+        }
+        self
+    }
+
+    /// The line for `format`, falling back to the always-present NDJSON line
+    /// when the sink task did not serialize that format.
+    pub fn line(&self, format: SinkFormat) -> &str {
+        self.lines
+            .iter()
+            .find(|(f, _)| *f == format)
+            .or_else(|| self.lines.first())
+            .map(|(_, json)| json.as_str())
+            .unwrap_or_default()
+    }
 }
 
 /// An event payload bundled with its acknowledgment token.
@@ -289,18 +323,27 @@ impl Sink {
     {
         Box::pin(async move {
             match self {
-                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_raw(&env.json)),
-                Sink::File(s) => tokio::task::block_in_place(|| s.send_raw(&env.json)),
+                Sink::Stdout(s) => {
+                    let line = env.line(s.format());
+                    tokio::task::block_in_place(|| s.send_raw(line))
+                }
+                Sink::File(s) => {
+                    let line = env.line(s.format());
+                    tokio::task::block_in_place(|| s.send_raw(line))
+                }
                 #[cfg(feature = "nats")]
                 Sink::Nats(s) => {
-                    s.send_incident(&env.json, env.nats_subject.as_deref())
+                    s.send_incident(env.line(s.format()), env.nats_subject.as_deref())
                         .await
                 }
                 #[cfg(feature = "otlp")]
                 Sink::Otlp(_) => Ok(()),
                 Sink::Webhook(_) => Ok(()),
                 #[cfg(all(unix, feature = "uds"))]
-                Sink::Unix(s) => s.send_raw(&env.json).await,
+                Sink::Unix(s) => {
+                    let line = env.line(s.format()).to_string();
+                    s.send_raw(&line).await
+                }
                 Sink::FanOut(sinks) => {
                     for (idx, sink) in sinks.iter_mut().enumerate() {
                         if let Err(e) = sink.send_incident(env).await {
@@ -407,4 +450,26 @@ pub fn spawn_source<S: EventSource>(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn envelope_serves_the_line_for_a_format() {
+        let env = IncidentEnvelope::new(
+            "{\"incident_id\":\"i-1\"}".to_string(),
+            Some("incidents".to_string()),
+        );
+        assert_eq!(env.line(SinkFormat::Ndjson), "{\"incident_id\":\"i-1\"}");
+        assert_eq!(env.nats_subject.as_deref(), Some("incidents"));
+    }
+
+    #[test]
+    fn with_line_replaces_an_existing_format() {
+        let env = IncidentEnvelope::new("first".to_string(), None)
+            .with_line(SinkFormat::Ndjson, "second".to_string());
+        assert_eq!(env.line(SinkFormat::Ndjson), "second");
+    }
 }

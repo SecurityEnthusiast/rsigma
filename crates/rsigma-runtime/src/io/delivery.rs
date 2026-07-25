@@ -436,7 +436,11 @@ async fn deliver_one<S: DeliverySink>(
                                 DeliverTarget::Result(r) => {
                                     serde_json::to_string(r).unwrap_or_default()
                                 }
-                                DeliverTarget::Incident(e) => e.json.clone(),
+                                // The native line, so a DLQ replay stays in
+                                // the format the rest of the DLQ speaks.
+                                DeliverTarget::Incident(e) => {
+                                    e.line(crate::io::SinkFormat::Ndjson).to_string()
+                                }
                             };
                             let _ = dlq
                                 .send(DeliveryFailure {
