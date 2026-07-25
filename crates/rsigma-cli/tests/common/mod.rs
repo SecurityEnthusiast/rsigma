@@ -64,6 +64,9 @@ pub fn terminate_child(child: &mut std::process::Child, timeout: Duration) {
             }
         }
     }
+    // Windows has no SIGINT path above; keep the signature stable for callers.
+    #[cfg(not(unix))]
+    let _ = timeout;
     let _ = child.kill();
     let _ = child.wait();
 }
