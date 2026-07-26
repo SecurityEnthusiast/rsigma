@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use regex::Regex;
-use rsigma_parser::{SigmaString, SigmaValue};
+use rsigma_parser::SigmaValue;
 
 use crate::error::{EvalError, Result};
 
@@ -791,31 +791,50 @@ fn parse_string_or_list_mapping(
     Ok(map)
 }
 
-fn parse_value_mapping(value: Option<&yaml_serde::Value>) -> Result<HashMap<String, SigmaValue>> {
+fn parse_value_mapping(
+    value: Option<&yaml_serde::Value>,
+) -> Result<HashMap<String, Vec<SigmaValue>>> {
     let mut map = HashMap::new();
     if let Some(yaml_serde::Value::Mapping(m)) = value {
         for (k, v) in m {
             if let Some(key) = k.as_str() {
-                let sv = match v {
-                    yaml_serde::Value::String(s) => SigmaValue::String(SigmaString::new(s)),
-                    yaml_serde::Value::Number(n) => {
-                        if let Some(i) = n.as_i64() {
-                            SigmaValue::Integer(i)
-                        } else if let Some(f) = n.as_f64() {
-                            SigmaValue::Float(f)
-                        } else {
-                            SigmaValue::Null
-                        }
+                let values = match v {
+                    // An empty sequence would drop the condition and widen the
+                    // rule, so it is rejected rather than skipped.
+                    yaml_serde::Value::Sequence(seq) if seq.is_empty() => {
+                        return Err(EvalError::InvalidModifiers(format!(
+                            "add_condition: empty sequence for field '{key}'"
+                        )));
                     }
-                    yaml_serde::Value::Bool(b) => SigmaValue::Bool(*b),
-                    yaml_serde::Value::Null => SigmaValue::Null,
-                    _ => SigmaValue::Null,
+                    // YAML sequence → Vec<SigmaValue> (OR semantics, like pySigma)
+                    yaml_serde::Value::Sequence(seq) => seq
+                        .iter()
+                        .map(|item| scalar_condition_value(key, item))
+                        .collect::<Result<Vec<_>>>()?,
+                    // Scalar → single-element Vec
+                    other => vec![scalar_condition_value(key, other)?],
                 };
-                map.insert(key.to_string(), sv);
+                map.insert(key.to_string(), values);
             }
         }
     }
     Ok(map)
+}
+
+/// Convert one `add_condition` value, rejecting anything that is not a scalar.
+///
+/// `SigmaValue::from_yaml` renders an unsupported node as its debug
+/// representation, which would load as a literal string that can never match.
+fn scalar_condition_value(field: &str, value: &yaml_serde::Value) -> Result<SigmaValue> {
+    match value {
+        yaml_serde::Value::String(_)
+        | yaml_serde::Value::Number(_)
+        | yaml_serde::Value::Bool(_)
+        | yaml_serde::Value::Null => Ok(SigmaValue::from_yaml(value)),
+        _ => Err(EvalError::InvalidModifiers(format!(
+            "add_condition: non-scalar value for field '{field}'"
+        ))),
+    }
 }
 
 fn build_field_matcher(fields: Vec<String>, is_regex: bool) -> Result<FieldMatcher> {

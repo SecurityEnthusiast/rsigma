@@ -1175,6 +1175,65 @@ level: low
 }
 
 #[test]
+fn test_pipeline_add_condition_list_values_e2e() {
+    use crate::pipeline::parse_pipeline;
+
+    let pipeline_yaml = r#"
+name: Sysmon registry routing
+transformations:
+  - type: add_condition
+    conditions:
+      EventID:
+        - 12
+        - 13
+        - 14
+    rule_conditions:
+      - type: logsource
+        category: registry_event
+        product: windows
+"#;
+    let pipeline = parse_pipeline(pipeline_yaml).unwrap();
+
+    let rule_yaml = r#"
+title: Suspicious Registry Path
+logsource:
+    product: windows
+    category: registry_event
+detection:
+    selection:
+        TargetObject|contains: 'CurrentVersion\Run'
+    condition: selection
+level: medium
+"#;
+    let collection = parse_sigma_yaml(rule_yaml).unwrap();
+
+    let mut engine = Engine::new_with_pipeline(pipeline);
+    engine.add_collection(&collection).unwrap();
+
+    let matching_target = "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Malware";
+
+    // EventID 12 matches (first value in list)
+    let ev1 = json!({"EventID": 12, "TargetObject": matching_target});
+    assert_eq!(engine.evaluate(&JsonEvent::borrow(&ev1)).len(), 1);
+
+    // EventID 13 matches (second value in list)
+    let ev2 = json!({"EventID": 13, "TargetObject": matching_target});
+    assert_eq!(engine.evaluate(&JsonEvent::borrow(&ev2)).len(), 1);
+
+    // EventID 14 matches (third value in list)
+    let ev3 = json!({"EventID": 14, "TargetObject": matching_target});
+    assert_eq!(engine.evaluate(&JsonEvent::borrow(&ev3)).len(), 1);
+
+    // EventID 99 does NOT match (not in list)
+    let ev4 = json!({"EventID": 99, "TargetObject": matching_target});
+    assert!(engine.evaluate(&JsonEvent::borrow(&ev4)).is_empty());
+
+    // EventID 12 but no matching detection field -> no match
+    let ev5 = json!({"EventID": 12, "TargetObject": "something_unrelated"});
+    assert!(engine.evaluate(&JsonEvent::borrow(&ev5)).is_empty());
+}
+
+#[test]
 fn test_pipeline_change_logsource_e2e() {
     use crate::pipeline::parse_pipeline;
 

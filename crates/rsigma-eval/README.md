@@ -369,7 +369,7 @@ Each transformation item in a pipeline can have:
 | `field_name_suffix` | `suffix` | Add a suffix to all field names |
 | `field_name_transform` | `transform_func`, `mapping` | Case transformation (see below) |
 | `drop_detection_item` | — | Remove matching detection items |
-| `add_condition` | `conditions: {k: v}`, `negated` (default: `false`) | Inject additional detection conditions |
+| `add_condition` | `conditions: {k: v \| [v1, v2, ...]}`, `negated` (default: `false`) | Inject additional detection conditions; list values are OR-linked |
 | `change_logsource` | `category`, `product`, `service` | Modify logsource fields |
 | `replace_string` | `regex`, `replacement`, `skip_special` (default: `false`) | Regex-based string replacement (`skip_special` preserves wildcards) |
 | `map_string` | `mapping: {k: v \| [v1, v2]}` | Map string values to replacements (supports one-to-many) |

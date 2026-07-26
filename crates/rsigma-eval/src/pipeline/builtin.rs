@@ -32,6 +32,8 @@ pub fn builtin_names() -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::{RuleCondition, Transformation};
+    use rsigma_parser::SigmaValue;
 
     #[test]
     fn ecs_windows_parses_successfully() {
@@ -68,5 +70,80 @@ mod tests {
         assert!(names.contains(&"ecs_windows"));
         assert!(names.contains(&"fibratus_windows"));
         assert!(names.contains(&"sysmon"));
+    }
+
+    fn event_ids(values: &[SigmaValue]) -> Vec<i64> {
+        values
+            .iter()
+            .filter_map(|v| match v {
+                SigmaValue::Integer(n) => Some(*n),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn sysmon_eventid_route(category: &str) -> Option<Vec<i64>> {
+        let pipeline = resolve_builtin("sysmon").unwrap().unwrap();
+        pipeline.transformations.iter().find_map(|item| {
+            if let Transformation::AddCondition { conditions, .. } = &item.transformation
+                && let Some(evts) = conditions.get("EventID")
+                && let Some(rule_cond) = item.rule_conditions.first()
+                && let RuleCondition::Logsource {
+                    category: Some(cat),
+                    ..
+                } = &rule_cond.condition
+                && cat == category
+            {
+                return Some(event_ids(evts));
+            }
+            None
+        })
+    }
+
+    #[test]
+    fn sysmon_builtin_routes_new_categories() {
+        assert_eq!(sysmon_eventid_route("sysmon_status").unwrap(), vec![4, 16]);
+        assert_eq!(
+            sysmon_eventid_route("registry_event").unwrap(),
+            vec![12, 13, 14]
+        );
+        assert_eq!(sysmon_eventid_route("wmi_event").unwrap(), vec![19, 20, 21]);
+        assert_eq!(
+            sysmon_eventid_route("file_block_shredding").unwrap(),
+            vec![28]
+        );
+        assert_eq!(sysmon_eventid_route("pipe_created").unwrap(), vec![17, 18]);
+        assert_eq!(sysmon_eventid_route("sysmon_error").unwrap(), vec![255]);
+    }
+
+    #[test]
+    fn sysmon_builtin_eventid_order() {
+        let pipeline = resolve_builtin("sysmon").unwrap().unwrap();
+        let routes: Vec<Vec<i64>> = pipeline
+            .transformations
+            .iter()
+            .filter_map(|item| {
+                if let Transformation::AddCondition { conditions, .. } = &item.transformation
+                    && let Some(evts) = conditions.get("EventID")
+                {
+                    let nums = event_ids(evts);
+                    if !nums.is_empty() {
+                        return Some(nums);
+                    }
+                }
+                None
+            })
+            .collect();
+
+        for pair in routes.windows(2) {
+            let prev_min = pair[0].iter().copied().min().unwrap();
+            let next_min = pair[1].iter().copied().min().unwrap();
+            assert!(
+                prev_min <= next_min,
+                "sysmon routing: {:?} (min {prev_min}) is not before {:?} (min {next_min})",
+                pair[0],
+                pair[1]
+            );
+        }
     }
 }

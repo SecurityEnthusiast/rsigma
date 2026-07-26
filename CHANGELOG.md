@@ -4,6 +4,14 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Support list values in `add_condition` pipeline transformation (#399)
+
+- `add_condition` accepts YAML sequences for field values (`conditions: {EventID: [12, 13, 14]}`), and the values of one field are OR-linked, matching pySigma's `AddConditionTransformation`. Pipelines no longer need one transformation per value.
+- An empty sequence (`field: []`) and a non-scalar value (a mapping, or a sequence nested inside a sequence) are load-time errors naming the offending field. Both previously produced a condition that silently matched nothing or disappeared, which widened the rule instead of failing.
+- **Breaking**: `AddCondition.conditions` changed from `HashMap<String, SigmaValue>` to `HashMap<String, Vec<SigmaValue>>`. Downstream code constructing the `Transformation` enum (re-exported as `rsigma_eval::pipeline::Transformation`) must wrap scalar values in a `Vec`.
+- The builtin `sysmon` pipeline gains the [Sigma taxonomy](https://github.com/SigmaHQ/sigma-specification/blob/main/specification/sigma-appendix-taxonomy.md#windows-folder) categories it was missing: `sysmon_status` (EventID 4, 16), `registry_event` (12, 13, 14), `wmi_event` (19, 20, 21), `file_block_shredding` (28), and `sysmon_error` (255). `pipe_created` now also covers EventID 18.
+- **Behavior change**: rules carrying one of those five categories previously got no `EventID` condition at all and matched every Sysmon event; they now match only the relevant EventIDs. Rules with `category: pipe_created` also match EventID 18.
+
 ### OCSF Detection Finding output (#397)
 
 - Any line-oriented sink can emit [OCSF](https://ocsf.io) Detection Finding (class 2004) JSON instead of native NDJSON: `--output 'file:///findings.ocsf.ndjson?format=ocsf'`, or the same suffix on a `daemon.output.sinks` entry. Findings then flow natively into Splunk, Elastic, CrowdStrike NG-SIEM, and anything else that consumes OCSF.

@@ -46,6 +46,17 @@ transformations:
         category: network_connection
         product: windows
 
+  - id: sysmon_sysmon_status
+    type: add_condition
+    conditions:
+      EventID:
+        - 4
+        - 16
+    rule_conditions:
+      - type: logsource
+        category: sysmon_status
+        product: windows
+
   - id: sysmon_process_termination
     type: add_condition
     conditions:
@@ -109,6 +120,18 @@ transformations:
         category: file_event
         product: windows
 
+  - id: sysmon_registry_event
+    type: add_condition
+    conditions:
+      EventID:
+        - 12
+        - 13
+        - 14
+    rule_conditions:
+      - type: logsource
+        category: registry_event
+        product: windows
+
   - id: sysmon_registry_add
     type: add_condition
     conditions:
@@ -157,10 +180,24 @@ transformations:
   - id: sysmon_pipe_created
     type: add_condition
     conditions:
-      EventID: 17
+      EventID:
+        - 17
+        - 18
     rule_conditions:
       - type: logsource
         category: pipe_created
+        product: windows
+
+  - id: sysmon_wmi_event
+    type: add_condition
+    conditions:
+      EventID:
+        - 19
+        - 20
+        - 21
+    rule_conditions:
+      - type: logsource
+        category: wmi_event
         product: windows
 
   - id: sysmon_dns_query
@@ -217,6 +254,15 @@ transformations:
         category: file_block_executable
         product: windows
 
+  - id: sysmon_file_block_shredding
+    type: add_condition
+    conditions:
+      EventID: 28
+    rule_conditions:
+      - type: logsource
+        category: file_block_shredding
+        product: windows
+
   - id: sysmon_file_executable_detected
     type: add_condition
     conditions:
@@ -224,6 +270,15 @@ transformations:
     rule_conditions:
       - type: logsource
         category: file_executable_detected
+        product: windows
+
+  - id: sysmon_sysmon_error
+    type: add_condition
+    conditions:
+      EventID: 255
+    rule_conditions:
+      - type: logsource
+        category: sysmon_error
         product: windows
 
   # Change logsource to sysmon service for all matched categories

@@ -65,6 +65,7 @@ Each transformation is `add_condition` with a matching `rule_conditions: logsour
 | `process_creation` | `EventID: 1` |
 | `file_change` | `EventID: 2` |
 | `network_connection` | `EventID: 3` |
+| `sysmon_status` | `EventID: [4, 16]` |
 | `process_termination` | `EventID: 5` |
 | `driver_load` | `EventID: 6` |
 | `image_load` | `EventID: 7` |
@@ -72,19 +73,23 @@ Each transformation is `add_condition` with a matching `rule_conditions: logsour
 | `raw_access_thread` | `EventID: 9` |
 | `process_access` | `EventID: 10` |
 | `file_event` | `EventID: 11` |
+| `registry_event` | `EventID: [12, 13, 14]` |
 | `registry_add` | `EventID: 12` |
 | `registry_delete` | `EventID: 12` |
 | `registry_set` | `EventID: 13` |
 | `registry_rename` | `EventID: 14` |
 | `create_stream_hash` | `EventID: 15` |
-| `pipe_created` | `EventID: 17` |
+| `pipe_created` | `EventID: [17, 18]` |
+| `wmi_event` | `EventID: [19, 20, 21]` |
 | `dns_query` | `EventID: 22` |
 | `file_delete` | `EventID: 23` |
 | `clipboard_capture` | `EventID: 24` |
 | `process_tampering` | `EventID: 25` |
 | `file_delete_detected` | `EventID: 26` |
 | `file_block_executable` | `EventID: 27` |
+| `file_block_shredding` | `EventID: 28` |
 | `file_executable_detected` | `EventID: 29` |
+| `sysmon_error` | `EventID: 255` |
 
 After the routing conditions, a final `change_logsource` rewrites every Windows rule to `product: windows, service: sysmon` so downstream backends can use the unified logsource.
 

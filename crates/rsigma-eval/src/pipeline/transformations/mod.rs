@@ -55,8 +55,14 @@ pub enum Transformation {
     DropDetectionItem,
 
     /// Add field=value conditions to the rule's detection.
+    ///
+    /// Each value is a `Vec<SigmaValue>` to support list values (OR semantics).
+    /// A single-element vec behaves identically to the old `SigmaValue` scalar.
+    /// A multi-element vec creates a detection item with multiple values, which
+    /// are OR-linked per Sigma semantics — matching pySigma's
+    /// `AddConditionTransformation` behavior.
     AddCondition {
-        conditions: HashMap<String, SigmaValue>,
+        conditions: HashMap<String, Vec<SigmaValue>>,
         /// Field-to-field equality conditions (`field` equals the value of
         /// another field). The value of each entry is a *field name*, not a
         /// literal, lowered through the `fieldref` modifier so backends
@@ -276,6 +282,7 @@ impl Transformation {
                 prepend,
             } => {
                 helpers::add_conditions(rule, conditions, field_refs, *negated, *prepend);
+
                 Ok(true)
             }
 
