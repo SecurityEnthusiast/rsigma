@@ -799,12 +799,11 @@ fn parse_value_mapping(
         for (k, v) in m {
             if let Some(key) = k.as_str() {
                 let values = match v {
-                    // YAML sequence → Vec<SigmaValue> (OR semantics, like pySigma)
+                    // An empty sequence would drop the condition and widen the
+                    // rule, so it is rejected rather than skipped.
                     yaml_serde::Value::Sequence(seq) if seq.is_empty() => {
                         return Err(EvalError::InvalidModifiers(format!(
-                            "add_condition: empty sequence for field '{key}' is not allowed; \
-                             a detection typo that becomes \"match everything\" is the wrong \
-                             failure direction for a detection engine"
+                            "add_condition: empty sequence for field '{key}'"
                         )));
                     }
                     // YAML sequence → Vec<SigmaValue> (OR semantics, like pySigma)
