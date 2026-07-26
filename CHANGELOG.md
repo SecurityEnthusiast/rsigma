@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Dependency bumps (#402)
+
+Rolls up six open Dependabot PRs into a single merge. Rust (workspace `Cargo.lock`): the patch group (#398) updates `globset` 0.4.18 to 0.4.19, `serde` 1.0.228 to 1.0.229, `thiserror` 2.0.18 to 2.0.19, `async-trait` 0.1.89 to 0.1.91, `jsonpath-rust` 1.0.4 to 1.0.5, `futures` 0.3.32 to 0.3.33, `rustls` 0.23.41 to 0.23.42, `anyhow` 1.0.103 to 1.0.104, and `clap` 4.6.1 to 4.6.2; standalone updates move `sha2` 0.10.9 to 0.11.0 (#384), `secrecy` 0.8.0 to 0.10.3 (#385), and `uuid` 1.23.5 to 1.24.0 (#386). CI (all repinned by commit SHA, batched via the `actions-updates` group, #382): `taiki-e/install-action` v2.83.2 to v2.83.3, `EmbarkStudios/cargo-deny-action` v2.0.20 to v2.1.1, `github/codeql-action/upload-sarif` v4.37.0 to v4.37.1, `actions/setup-node` v6.4.0 to v7.0.0, and `zizmorcore/zizmor-action` v0.5.7 to v0.6.0. VS Code extension: `brace-expansion` 5.0.7 to 5.0.8 (#390). Held back: `rusqlite` 0.40.1 (#234) requires Rust 1.89 while the workspace MSRV is Rust 1.88.
+
 ### Reject unknown alert-pipeline fields (#401)
 
 - Alert-pipeline YAML now fails to load when any mapping contains an unknown field, including nested scope, dedup, grouping, caps, inhibition, silence, and matcher blocks. A misspelling such as `group.wait` previously selected the default `group_wait: 30s` without warning, making the daemon run with different timing than the operator configured.
