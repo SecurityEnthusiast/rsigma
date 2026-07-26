@@ -10,7 +10,7 @@
 //! generation timestamp, so a bundle is fully determined by its inputs and the
 //! HTTP layer decides how (and how consistently) those snapshots are taken.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use rsigma_eval::{RuleIdentity, RuleMetadataLookup};
 use rsigma_parser::Level;
@@ -215,14 +215,18 @@ fn build_rule(key: &str, count: u64, lookup: Option<&RuleMetadataLookup>) -> Bun
 /// user `alice` to the host `alice`, so the fallback requires the field's last
 /// path segment to name the entity type as well.
 fn match_risk(incident: &IncidentResult, entities: &[RiskEntityView]) -> Vec<BundleRiskEntity> {
+    // Sets, not vectors: the accumulator can hold `max_open_entities` (100k by
+    // default) and an incident can retain `max_results_per_incident` samples,
+    // so a linear membership test would make this quadratic in two operator
+    // caps at once.
     let exact = risk_objects(incident);
     let from_grouping = group_key_names(incident);
     let mut out = Vec::new();
     for entity in entities {
-        let pair = (entity.entity_type.clone(), entity.entity_value.clone());
+        let pair = (entity.entity_type.as_str(), entity.entity_value.as_str());
         let matched = if exact.contains(&pair) {
             Some(RiskMatch::RiskObject)
-        } else if from_grouping.contains(&pair) {
+        } else if from_grouping.contains(&(entity.entity_type.to_lowercase(), pair.1.to_string())) {
             Some(RiskMatch::GroupKey)
         } else {
             None
@@ -239,8 +243,10 @@ fn match_risk(incident: &IncidentResult, entities: &[RiskEntityView]) -> Vec<Bun
 
 /// The `(type, value)` pairs named by the retained results' `risk.objects`
 /// enrichments.
-fn risk_objects(incident: &IncidentResult) -> Vec<(String, String)> {
-    let mut out = Vec::new();
+///
+/// Borrowed from the incident, which outlives the match.
+fn risk_objects(incident: &IncidentResult) -> HashSet<(&str, &str)> {
+    let mut out = HashSet::new();
     let Some(results) = &incident.results else {
         return out;
     };
@@ -259,10 +265,7 @@ fn risk_objects(incident: &IncidentResult) -> Vec<(String, String)> {
             ) else {
                 continue;
             };
-            let pair = (object_type.to_string(), value.to_string());
-            if !out.contains(&pair) {
-                out.push(pair);
-            }
+            out.insert((object_type, value));
         }
     }
     out
@@ -270,8 +273,12 @@ fn risk_objects(incident: &IncidentResult) -> Vec<(String, String)> {
 
 /// The `(type, value)` pairs the incident's own grouping names, reading each
 /// selector's last path segment as a candidate risk-object type.
-fn group_key_names(incident: &IncidentResult) -> Vec<(String, String)> {
-    let mut out = Vec::new();
+///
+/// The segment is lowercased because it is a field name (`event.User`) being
+/// compared against an operator-declared risk-object type (`user`), and the two
+/// are not written in the same case.
+fn group_key_names(incident: &IncidentResult) -> HashSet<(String, String)> {
+    let mut out = HashSet::new();
     let mut push = |selector: &str, value: &Value| {
         let Some(value) = value.as_str() else {
             return;
@@ -279,10 +286,7 @@ fn group_key_names(incident: &IncidentResult) -> Vec<(String, String)> {
         let Some(segment) = selector.rsplit('.').next() else {
             return;
         };
-        let pair = (segment.to_lowercase(), value.to_string());
-        if !out.contains(&pair) {
-            out.push(pair);
-        }
+        out.insert((segment.to_lowercase(), value.to_string()));
     };
     for (selector, value) in &incident.group_by {
         push(selector, value);
@@ -688,6 +692,26 @@ mod tests {
         let risk = bundle.risk.unwrap();
         assert_eq!(risk.len(), 1);
         assert_eq!(risk[0].entity.entity_type, "user");
+        assert_eq!(risk[0].matched_on, RiskMatch::GroupKey);
+    }
+
+    #[test]
+    fn the_grouping_fallback_ignores_the_case_of_the_entity_type() {
+        // The selector names a field (`match.User`) and the risk layer names a
+        // type the operator declared. Nothing forces the two to agree on case,
+        // so a `User` entity must still join a `match.User` grouping key.
+        let mut incident = incident();
+        incident.results = None;
+        incident.sample_mode = Some(SampleMode::Refs);
+
+        let bundle = build(
+            incident,
+            &metadata(),
+            Some(&[entity("User", "alice", 120)]),
+            GENERATED_AT.to_string(),
+        );
+        let risk = bundle.risk.unwrap();
+        assert_eq!(risk.len(), 1, "a differently-cased type must still join");
         assert_eq!(risk[0].matched_on, RiskMatch::GroupKey);
     }
 
