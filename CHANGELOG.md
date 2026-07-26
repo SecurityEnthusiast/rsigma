@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Reject unknown alert-pipeline fields (#401)
+
+- Alert-pipeline YAML now fails to load when any mapping contains an unknown field, including nested scope, dedup, grouping, caps, inhibition, silence, and matcher blocks. A misspelling such as `group.wait` previously selected the default `group_wait: 30s` without warning, making the daemon run with different timing than the operator configured.
+
 ### Incident bundle export (#400)
 
 - One incident can be exported as a self-contained report joining it to the [ADS](https://rsigma.io/guide/detection-strategy/) documentation of every rule that contributed and the risk entities it overlaps: `rsigma engine incidents export <ID> [--bundle-format json|markdown] [-o PATH]`, backed by `GET /api/v1/incidents/{id}/bundle`. An incident records only rule keys and counts, so previously nothing in it said what the rules looked for or why they mattered.
