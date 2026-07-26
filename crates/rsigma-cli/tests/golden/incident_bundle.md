@@ -3,7 +3,7 @@
 - Generated: 2026-07-26T12:00:00Z
 - State: open
 - Highest severity: high
-- Window: 1767225000 to 1767225600
+- Window: 2025-12-31T23:50:00Z to 2026-01-01T00:00:00Z
 - Contributing results: 3
 - Retained samples: results
 
@@ -69,6 +69,6 @@ High because discovery precedes lateral movement.
 - Score: 120
 - Distinct tactics: 2
 - Contributing sources: 2
-- Window: 1767225000 to 1767225600
+- Window: 2025-12-31T23:50:00Z to 2026-01-01T00:00:00Z
 - Matched on: a contributing result's risk objects
 

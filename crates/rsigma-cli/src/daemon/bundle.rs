@@ -315,7 +315,8 @@ pub(super) fn render_markdown(bundle: &IncidentBundle) -> String {
     }
     out.push_str(&format!(
         "- Window: {} to {}\n",
-        incident.first_seen, incident.last_seen
+        timestamp(incident.first_seen),
+        timestamp(incident.last_seen)
     ));
     out.push_str(&format!(
         "- Contributing results: {}\n",
@@ -385,7 +386,8 @@ pub(super) fn render_markdown(bundle: &IncidentBundle) -> String {
                 ));
                 out.push_str(&format!(
                     "- Window: {} to {}\n",
-                    entity.window_start, entity.window_end
+                    timestamp(entity.window_start),
+                    timestamp(entity.window_end)
                 ));
                 out.push_str(&format!(
                     "- Matched on: {}\n\n",
@@ -473,6 +475,18 @@ fn scalar(value: &Value) -> String {
     match value {
         Value::String(s) => s.clone(),
         other => other.to_string(),
+    }
+}
+
+/// A Unix timestamp rendered for a reader.
+///
+/// The JSON bundle keeps epoch seconds, matching every other timestamp the API
+/// serves, but nobody reads a window off two ten-digit integers. Falls back to
+/// the raw number if the value is not a representable time.
+fn timestamp(seconds: i64) -> String {
+    match chrono::DateTime::from_timestamp(seconds, 0) {
+        Some(dt) => dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        None => seconds.to_string(),
     }
 }
 

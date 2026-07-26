@@ -2659,7 +2659,7 @@ fn grouping_disabled() -> Response {
         StatusCode::SERVICE_UNAVAILABLE,
         Json(serde_json::json!({
             "error": "incident grouping disabled",
-            "hint": "configure an alert pipeline with a `group:` stage to enable /api/v1/incidents/{id}",
+            "hint": "configure an alert pipeline with a `group:` stage to enable the per-incident routes",
         })),
     )
         .into_response()
