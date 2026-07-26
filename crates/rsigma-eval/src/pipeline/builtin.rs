@@ -32,6 +32,8 @@ pub fn builtin_names() -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::{RuleCondition, Transformation};
+    use rsigma_parser::SigmaValue;
 
     #[test]
     fn ecs_windows_parses_successfully() {
@@ -70,36 +72,32 @@ mod tests {
         assert!(names.contains(&"sysmon"));
     }
 
-    fn sysmon_eventid_route(category: &str) -> Option<Vec<i64>> {
-        use crate::pipeline::Transformation;
-        use rsigma_parser::SigmaValue;
+    fn event_ids(values: &[SigmaValue]) -> Vec<i64> {
+        values
+            .iter()
+            .filter_map(|v| match v {
+                SigmaValue::Integer(n) => Some(*n),
+                _ => None,
+            })
+            .collect()
+    }
 
+    fn sysmon_eventid_route(category: &str) -> Option<Vec<i64>> {
         let pipeline = resolve_builtin("sysmon").unwrap().unwrap();
-        for item in &pipeline.transformations {
-            if let Transformation::AddCondition { conditions, .. } = &item.transformation {
-                if let Some(evts) = conditions.get("EventID") {
-                    if let Some(rule_cond) = item.rule_conditions.first() {
-                        if let crate::pipeline::RuleCondition::Logsource {
-                            category: Some(cat),
-                            ..
-                        } = &rule_cond.condition
-                        {
-                            if cat == category {
-                                return Some(
-                                    evts.iter()
-                                        .filter_map(|v| match v {
-                                            SigmaValue::Integer(n) => Some(*n),
-                                            _ => None,
-                                        })
-                                        .collect(),
-                                );
-                            }
-                        }
-                    }
-                }
+        pipeline.transformations.iter().find_map(|item| {
+            if let Transformation::AddCondition { conditions, .. } = &item.transformation
+                && let Some(evts) = conditions.get("EventID")
+                && let Some(rule_cond) = item.rule_conditions.first()
+                && let RuleCondition::Logsource {
+                    category: Some(cat),
+                    ..
+                } = &rule_cond.condition
+                && cat == category
+            {
+                return Some(event_ids(evts));
             }
-        }
-        None
+            None
+        })
     }
 
     #[test]
@@ -120,44 +118,31 @@ mod tests {
 
     #[test]
     fn sysmon_builtin_eventid_order() {
-        use crate::pipeline::Transformation;
-        use rsigma_parser::SigmaValue;
-
         let pipeline = resolve_builtin("sysmon").unwrap().unwrap();
-        let add_conditions: Vec<(&str, Vec<i64>)> = pipeline
+        let routes: Vec<Vec<i64>> = pipeline
             .transformations
             .iter()
             .filter_map(|item| {
-                if let Transformation::AddCondition { conditions, .. } = &item.transformation {
-                    if let Some(evts) = conditions.get("EventID") {
-                        let nums: Vec<i64> = evts
-                            .iter()
-                            .filter_map(|v| match v {
-                                SigmaValue::Integer(n) => Some(*n),
-                                _ => None,
-                            })
-                            .collect();
-                        if !nums.is_empty() {
-                            return Some((item.id.as_deref().unwrap_or(""), nums));
-                        }
+                if let Transformation::AddCondition { conditions, .. } = &item.transformation
+                    && let Some(evts) = conditions.get("EventID")
+                {
+                    let nums = event_ids(evts);
+                    if !nums.is_empty() {
+                        return Some(nums);
                     }
                 }
                 None
             })
             .collect();
 
-        for i in 0..add_conditions.len().saturating_sub(1) {
-            let (_, prev_nums) = &add_conditions[i];
-            let (_, next_nums) = &add_conditions[i + 1];
-            let prev_min = prev_nums.iter().copied().min().unwrap();
-            let next_min = next_nums.iter().copied().min().unwrap();
+        for pair in routes.windows(2) {
+            let prev_min = pair[0].iter().copied().min().unwrap();
+            let next_min = pair[1].iter().copied().min().unwrap();
             assert!(
                 prev_min <= next_min,
-                "sysmon routing: {:?} (min {}) is not before {:?} (min {})",
-                prev_nums,
-                prev_min,
-                next_nums,
-                next_min
+                "sysmon routing: {:?} (min {prev_min}) is not before {:?} (min {next_min})",
+                pair[0],
+                pair[1]
             );
         }
     }
