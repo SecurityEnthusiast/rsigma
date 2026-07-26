@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Incident bundle export
+### Incident bundle export (#400)
 
 - One incident can be exported as a self-contained report joining it to the [ADS](https://rsigma.io/guide/detection-strategy/) documentation of every rule that contributed and the risk entities it overlaps: `rsigma engine incidents export <ID> [--bundle-format json|markdown] [-o PATH]`, backed by `GET /api/v1/incidents/{id}/bundle`. An incident records only rule keys and counts, so previously nothing in it said what the rules looked for or why they mattered.
 - Each rule in a bundle reports how its key resolved against the currently loaded rule set: `unique`, `ambiguous` when several loaded rules carry it with differing documentation (a routed rule set compiles the same rule once per pipeline-set), or `missing` when the rule set changed while the incident was open. Risk entities join on the entity type as well as its value, and report whether the join came from a retained result's `risk.objects` enrichment or from the incident's own grouping key.
