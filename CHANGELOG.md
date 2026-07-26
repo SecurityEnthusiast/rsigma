@@ -4,6 +4,26 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Support list values in `add_condition` pipeline transformation (#399)
+
+- `add_condition` now accepts YAML sequences for field values:
+  `conditions: {EventID: [12, 13, 14]}` instead of only `conditions: {EventID: 12}`.
+  Values within a field are OR-linked, matching pySigma's `AddConditionTransformation`.
+- **Breaking**: `AddCondition.conditions` changed from `HashMap<String, SigmaValue>` to
+  `HashMap<String, Vec<SigmaValue>>`. Downstream constructors using the `Transformation` enum
+  (re-exported as `rsigma_eval::pipeline::Transformation`) must update their field value types.
+- **Sysmon pipeline additions** (aligned with [Sigma taxonomy](https://github.com/SigmaHQ/sigma-specification/blob/main/specification/sigma-appendix-taxonomy.md#windows-folder)):
+  - `sysmon_status` (EventID 4, 16), `registry_event` (12, 13, 14), `wmi_event` (19, 20, 21),
+    `file_block_shredding` (28) — new categories added.
+  - `pipe_created` updated to include EventID 18 (missing).
+  - **Behavior change**: rules with `category: registry_event`, `wmi_event`, or `sysmon_status`
+    previously got no `EventID` condition at all and matched every Sysmon event; they now match
+    only the relevant EventIDs. Rules with `category: pipe_created` now also match EventID 18.
+- `[]` (empty sequence) is now a parse error instead of silently skipping, preventing pipeline
+  typos from widening rule scope.
+- New tests: `parse_add_condition_with_list_values`, `parse_add_condition_with_empty_sequence`,
+  `test_pipeline_add_condition_list_values_e2e`.
+
 ### OCSF Detection Finding output (#397)
 
 - Any line-oriented sink can emit [OCSF](https://ocsf.io) Detection Finding (class 2004) JSON instead of native NDJSON: `--output 'file:///findings.ocsf.ndjson?format=ocsf'`, or the same suffix on a `daemon.output.sinks` entry. Findings then flow natively into Splunk, Elastic, CrowdStrike NG-SIEM, and anything else that consumes OCSF.

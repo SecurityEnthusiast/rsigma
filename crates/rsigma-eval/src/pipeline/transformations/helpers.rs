@@ -351,16 +351,16 @@ fn should_drop_item(
 
 pub(super) fn add_conditions(
     rule: &mut SigmaRule,
-    conditions: &HashMap<String, SigmaValue>,
+    conditions: &HashMap<String, Vec<SigmaValue>>,
     field_refs: &HashMap<String, String>,
     negated: bool,
     prepend: bool,
 ) {
     let mut items: Vec<DetectionItem> = conditions
         .iter()
-        .map(|(field, value)| DetectionItem {
+        .map(|(field, values)| DetectionItem {
             field: FieldSpec::new(Some(field.clone()), Vec::new()),
-            values: vec![value.clone()],
+            values: values.clone(),
         })
         .collect();
 

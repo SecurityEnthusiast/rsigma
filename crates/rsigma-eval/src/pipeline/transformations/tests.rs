@@ -342,7 +342,7 @@ fn test_add_condition() {
     let mut conds = HashMap::new();
     conds.insert(
         "index".to_string(),
-        SigmaValue::String(SigmaString::new("windows-*")),
+        vec![SigmaValue::String(SigmaString::new("windows-*"))],
     );
     let t = Transformation::AddCondition {
         conditions: conds,
@@ -380,7 +380,7 @@ fn test_add_condition_prepend_puts_added_condition_first() {
     let mut conds = HashMap::new();
     conds.insert(
         "evt.name".to_string(),
-        SigmaValue::String(SigmaString::new("CreateProcess")),
+        vec![SigmaValue::String(SigmaString::new("CreateProcess"))],
     );
     let t = Transformation::AddCondition {
         conditions: conds,
@@ -1176,7 +1176,7 @@ fn test_add_condition_negated() {
     let mut conds = HashMap::new();
     conds.insert(
         "User".to_string(),
-        SigmaValue::String(SigmaString::new("SYSTEM")),
+        vec![SigmaValue::String(SigmaString::new("SYSTEM"))],
     );
     let t = Transformation::AddCondition {
         conditions: conds,
@@ -1199,6 +1199,62 @@ fn test_add_condition_negated() {
     } else {
         panic!("Expected And condition");
     }
+}
+
+#[test]
+fn test_add_condition_negated_multi_value() {
+    let mut rule = make_test_rule();
+    let mut state = PipelineState::default();
+    let mut conds = HashMap::new();
+    conds.insert(
+        "EventID".to_string(),
+        vec![
+            SigmaValue::Integer(1),
+            SigmaValue::Integer(2),
+            SigmaValue::Integer(3),
+        ],
+    );
+    let t = Transformation::AddCondition {
+        conditions: conds,
+        field_refs: HashMap::new(),
+        negated: true,
+        prepend: false,
+    };
+    t.apply(&mut rule, &mut state, &[], &[], false).unwrap();
+
+    // The condition should be AND NOT (EventID 1 OR 2 OR 3)
+    assert_eq!(rule.detection.conditions.len(), 1);
+    if let ConditionExpr::And(parts) = &rule.detection.conditions[0] {
+        assert_eq!(parts.len(), 2);
+        // Second part should be Not(...)
+        assert!(
+            matches!(&parts[1], ConditionExpr::Not(_)),
+            "Expected negated condition, got: {:?}",
+            parts[1]
+        );
+    } else {
+        panic!("Expected And condition");
+    }
+
+    // The injected named detection carries a single DetectionItem with 3
+    // integer values (OR-linked per add_condition multi-value semantics)
+    let added = rule
+        .detection
+        .named
+        .iter()
+        .find(|(k, _)| k.starts_with("__pipeline_cond_"))
+        .map(|(_, v)| v)
+        .expect("pipeline condition detection added");
+    let Detection::AllOf(items) = added else {
+        panic!("expected AllOf, got: {added:?}");
+    };
+    assert_eq!(items.len(), 1);
+    let id_item = &items[0];
+    assert_eq!(id_item.field.name.as_deref(), Some("EventID"));
+    assert_eq!(id_item.values.len(), 3);
+    assert_eq!(&id_item.values[0], &SigmaValue::Integer(1));
+    assert_eq!(&id_item.values[1], &SigmaValue::Integer(2));
+    assert_eq!(&id_item.values[2], &SigmaValue::Integer(3));
 }
 
 #[test]
@@ -1931,4 +1987,58 @@ fn test_case_transformation_snake_case_already_lowercase() {
     {
         assert_eq!(s.original, "whoami"); // unchanged
     }
+}
+
+#[test]
+fn parse_add_condition_with_list_values() {
+    use crate::pipeline::parse_pipeline;
+
+    let yaml = r#"
+name: t
+priority: 1
+transformations:
+  - id: add_list
+    type: add_condition
+    conditions:
+      field_a: [val1, val2]
+      field_b: single_val
+"#;
+    let pipeline = parse_pipeline(yaml).unwrap();
+    let Transformation::AddCondition { conditions, .. } =
+        &pipeline.transformations[0].transformation
+    else {
+        panic!("expected AddCondition");
+    };
+    let a = conditions.get("field_a").unwrap();
+    assert_eq!(a.len(), 2);
+    assert!(matches!(&a[0], SigmaValue::String(s) if s.original == "val1"));
+    assert!(matches!(&a[1], SigmaValue::String(s) if s.original == "val2"));
+    let b = conditions.get("field_b").unwrap();
+    assert_eq!(b.len(), 1);
+    assert!(matches!(&b[0], SigmaValue::String(s) if s.original == "single_val"));
+}
+#[test]
+fn parse_add_condition_with_empty_sequence() {
+    use crate::pipeline::parse_pipeline;
+
+    let yaml = r#"
+name: t
+priority: 1
+transformations:
+  - id: add_empty
+    type: add_condition
+    conditions:
+      field_a: []
+      field_b: val
+"#;
+    let err = parse_pipeline(yaml).expect_err("empty sequence should be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("empty sequence"),
+        "error message should mention empty sequence: {err}"
+    );
+    assert!(
+        msg.contains("field_a"),
+        "error message should name the offending field 'field_a': {err}"
+    );
 }

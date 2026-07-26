@@ -69,4 +69,96 @@ mod tests {
         assert!(names.contains(&"fibratus_windows"));
         assert!(names.contains(&"sysmon"));
     }
+
+    fn sysmon_eventid_route(category: &str) -> Option<Vec<i64>> {
+        use crate::pipeline::Transformation;
+        use rsigma_parser::SigmaValue;
+
+        let pipeline = resolve_builtin("sysmon").unwrap().unwrap();
+        for item in &pipeline.transformations {
+            if let Transformation::AddCondition { conditions, .. } = &item.transformation {
+                if let Some(evts) = conditions.get("EventID") {
+                    if let Some(rule_cond) = item.rule_conditions.first() {
+                        if let crate::pipeline::RuleCondition::Logsource {
+                            category: Some(cat),
+                            ..
+                        } = &rule_cond.condition
+                        {
+                            if cat == category {
+                                return Some(
+                                    evts.iter()
+                                        .filter_map(|v| match v {
+                                            SigmaValue::Integer(n) => Some(*n),
+                                            _ => None,
+                                        })
+                                        .collect(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn sysmon_builtin_routes_new_categories() {
+        assert_eq!(sysmon_eventid_route("sysmon_status").unwrap(), vec![4, 16]);
+        assert_eq!(
+            sysmon_eventid_route("registry_event").unwrap(),
+            vec![12, 13, 14]
+        );
+        assert_eq!(sysmon_eventid_route("wmi_event").unwrap(), vec![19, 20, 21]);
+        assert_eq!(
+            sysmon_eventid_route("file_block_shredding").unwrap(),
+            vec![28]
+        );
+        assert_eq!(sysmon_eventid_route("pipe_created").unwrap(), vec![17, 18]);
+        assert_eq!(sysmon_eventid_route("sysmon_error").unwrap(), vec![255]);
+    }
+
+    #[test]
+    fn sysmon_builtin_eventid_order() {
+        use crate::pipeline::Transformation;
+        use rsigma_parser::SigmaValue;
+
+        let pipeline = resolve_builtin("sysmon").unwrap().unwrap();
+        let add_conditions: Vec<(&str, Vec<i64>)> = pipeline
+            .transformations
+            .iter()
+            .filter_map(|item| {
+                if let Transformation::AddCondition { conditions, .. } = &item.transformation {
+                    if let Some(evts) = conditions.get("EventID") {
+                        let nums: Vec<i64> = evts
+                            .iter()
+                            .filter_map(|v| match v {
+                                SigmaValue::Integer(n) => Some(*n),
+                                _ => None,
+                            })
+                            .collect();
+                        if !nums.is_empty() {
+                            return Some((item.id.as_deref().unwrap_or(""), nums));
+                        }
+                    }
+                }
+                None
+            })
+            .collect();
+
+        for i in 0..add_conditions.len().saturating_sub(1) {
+            let (_, prev_nums) = &add_conditions[i];
+            let (_, next_nums) = &add_conditions[i + 1];
+            let prev_min = prev_nums.iter().copied().min().unwrap();
+            let next_min = next_nums.iter().copied().min().unwrap();
+            assert!(
+                prev_min <= next_min,
+                "sysmon routing: {:?} (min {}) is not before {:?} (min {})",
+                prev_nums,
+                prev_min,
+                next_nums,
+                next_min
+            );
+        }
+    }
 }

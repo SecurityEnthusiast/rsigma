@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use regex::Regex;
-use rsigma_parser::{SigmaString, SigmaValue};
+use rsigma_parser::SigmaValue;
 
 use crate::error::{EvalError, Result};
 
@@ -791,27 +791,30 @@ fn parse_string_or_list_mapping(
     Ok(map)
 }
 
-fn parse_value_mapping(value: Option<&yaml_serde::Value>) -> Result<HashMap<String, SigmaValue>> {
+fn parse_value_mapping(
+    value: Option<&yaml_serde::Value>,
+) -> Result<HashMap<String, Vec<SigmaValue>>> {
     let mut map = HashMap::new();
     if let Some(yaml_serde::Value::Mapping(m)) = value {
         for (k, v) in m {
             if let Some(key) = k.as_str() {
-                let sv = match v {
-                    yaml_serde::Value::String(s) => SigmaValue::String(SigmaString::new(s)),
-                    yaml_serde::Value::Number(n) => {
-                        if let Some(i) = n.as_i64() {
-                            SigmaValue::Integer(i)
-                        } else if let Some(f) = n.as_f64() {
-                            SigmaValue::Float(f)
-                        } else {
-                            SigmaValue::Null
-                        }
+                let values = match v {
+                    // YAML sequence → Vec<SigmaValue> (OR semantics, like pySigma)
+                    yaml_serde::Value::Sequence(seq) if seq.is_empty() => {
+                        return Err(EvalError::InvalidModifiers(format!(
+                            "add_condition: empty sequence for field '{key}' is not allowed; \
+                             a detection typo that becomes \"match everything\" is the wrong \
+                             failure direction for a detection engine"
+                        )));
                     }
-                    yaml_serde::Value::Bool(b) => SigmaValue::Bool(*b),
-                    yaml_serde::Value::Null => SigmaValue::Null,
-                    _ => SigmaValue::Null,
+                    // YAML sequence → Vec<SigmaValue> (OR semantics, like pySigma)
+                    yaml_serde::Value::Sequence(seq) => {
+                        seq.iter().map(SigmaValue::from_yaml).collect()
+                    }
+                    // Scalar → single-element Vec
+                    other => vec![SigmaValue::from_yaml(other)],
                 };
-                map.insert(key.to_string(), sv);
+                map.insert(key.to_string(), values);
             }
         }
     }
