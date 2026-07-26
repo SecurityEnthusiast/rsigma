@@ -807,17 +807,34 @@ fn parse_value_mapping(
                         )));
                     }
                     // YAML sequence → Vec<SigmaValue> (OR semantics, like pySigma)
-                    yaml_serde::Value::Sequence(seq) => {
-                        seq.iter().map(SigmaValue::from_yaml).collect()
-                    }
+                    yaml_serde::Value::Sequence(seq) => seq
+                        .iter()
+                        .map(|item| scalar_condition_value(key, item))
+                        .collect::<Result<Vec<_>>>()?,
                     // Scalar → single-element Vec
-                    other => vec![SigmaValue::from_yaml(other)],
+                    other => vec![scalar_condition_value(key, other)?],
                 };
                 map.insert(key.to_string(), values);
             }
         }
     }
     Ok(map)
+}
+
+/// Convert one `add_condition` value, rejecting anything that is not a scalar.
+///
+/// `SigmaValue::from_yaml` renders an unsupported node as its debug
+/// representation, which would load as a literal string that can never match.
+fn scalar_condition_value(field: &str, value: &yaml_serde::Value) -> Result<SigmaValue> {
+    match value {
+        yaml_serde::Value::String(_)
+        | yaml_serde::Value::Number(_)
+        | yaml_serde::Value::Bool(_)
+        | yaml_serde::Value::Null => Ok(SigmaValue::from_yaml(value)),
+        _ => Err(EvalError::InvalidModifiers(format!(
+            "add_condition: non-scalar value for field '{field}'"
+        ))),
+    }
 }
 
 fn build_field_matcher(fields: Vec<String>, is_regex: bool) -> Result<FieldMatcher> {

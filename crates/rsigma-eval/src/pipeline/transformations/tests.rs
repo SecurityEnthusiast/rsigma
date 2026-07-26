@@ -2017,6 +2017,7 @@ transformations:
     assert_eq!(b.len(), 1);
     assert!(matches!(&b[0], SigmaValue::String(s) if s.original == "single_val"));
 }
+
 #[test]
 fn parse_add_condition_with_empty_sequence() {
     use crate::pipeline::parse_pipeline;
@@ -2041,4 +2042,31 @@ transformations:
         msg.contains("field_a"),
         "error message should name the offending field 'field_a': {err}"
     );
+}
+
+#[test]
+fn parse_add_condition_with_non_scalar_value() {
+    use crate::pipeline::parse_pipeline;
+
+    // A mapping and a nested sequence both stringify to a debug
+    // representation that can never match, so both are rejected.
+    for value in ["\n        nested: 1", "\n      - [1, 2]"] {
+        let yaml = format!(
+            r#"
+name: t
+priority: 1
+transformations:
+  - id: add_non_scalar
+    type: add_condition
+    conditions:
+      field_a:{value}
+"#
+        );
+        let err = parse_pipeline(&yaml).expect_err("non-scalar value should be rejected");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("non-scalar") && msg.contains("field_a"),
+            "error should name the offending field: {err}"
+        );
+    }
 }
