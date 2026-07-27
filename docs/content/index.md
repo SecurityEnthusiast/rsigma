@@ -111,6 +111,7 @@ RSigma is the only Sigma toolkit that combines pySigma-style conversion with a r
 | Project | Role |
 |---|---|
 | [detection.studio](https://github.com/northsh/detection.studio) | Browser-based Sigma playground with real-time evaluation via RSigma compiled to WebAssembly |
+| [LocalObserve](https://github.com/JJediny/LocalObserve) | Local-first Linux security observability stack using RSigma for edge Sigma detection and webhook alerting |
 | [Rustinel](https://github.com/Karib0u/rustinel) | Cross-platform endpoint detection engine with RSigma as an opt-in Sigma backend for live telemetry |
 | [Sigmacatch](https://github.com/frack113/sigmacatch) | Captures live Windows Event Log events, matches them with RSigma, and writes SigmaHQ-ready regression data |
 
