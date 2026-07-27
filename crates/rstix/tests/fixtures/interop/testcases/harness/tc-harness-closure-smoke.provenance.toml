@@ -1,0 +1,9 @@
+fixture = "tc-harness-closure-smoke.json"
+source_doc = "rstix-harness"
+source_pages = "n/a"
+source_section = "harness"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "harness-smoke"
+description = "Synthetic reference-closed bundle for interop harness closure-check smoke test."

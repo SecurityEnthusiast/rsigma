@@ -1,0 +1,226 @@
+# OASIS STIX 2.1 Interop traceability matrix.
+# Authority: STIX 2.1 Interoperability v1.0 CSD01 (stix-2.1-interop-v1.0-csd01).
+
+# --- §4.2 framework (report placeholders until Phase 7) ---
+
+[[requirement]]
+req_id = "REQ-4.2-X-01"
+use_case = "framework"
+section = "4.2"
+doc_page = 141
+level = "MUST"
+gating = false
+disposition = "REPORT_ONLY"
+checklist_role = "consumer"
+
+[[requirement]]
+req_id = "REQ-4.2-C-01"
+use_case = "framework"
+section = "4.2"
+doc_page = 141
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "REPORT_ONLY"
+checklist_role = "consumer"
+
+[[requirement]]
+req_id = "REQ-4.2-P-01"
+use_case = "framework"
+section = "4.2"
+doc_page = 142
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "REPORT_ONLY"
+checklist_role = "producer"
+
+[[requirement]]
+req_id = "REQ-4.2-X-03"
+use_case = "framework"
+section = "4.2"
+doc_page = 141
+level = "MUST"
+gating = false
+disposition = "REPORT_ONLY"
+
+# --- §4.2 Table 55/56 checklist rows (46) — REPORT_ONLY until use-case tests land ---
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.1"
+use_case = "attack_pattern"
+section = "3.1.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "REPORT_ONLY"
+checklist_row = "3.1.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.3"
+use_case = "confidence"
+section = "3.3.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "REPORT_ONLY"
+checklist_row = "3.3.6"
+checklist_role = "consumer"
+verification = "Mandatory"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.5"
+use_case = "data_markings"
+section = "3.5.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "REPORT_ONLY"
+checklist_row = "3.5.6"
+checklist_role = "consumer"
+verification = "Mandatory"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.12"
+use_case = "malware"
+section = "3.12.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "BLOCKED"
+blocked_by = 19
+checklist_row = "3.12.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.16"
+use_case = "report"
+section = "3.16.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "BLOCKED"
+blocked_by = 16
+checklist_row = "3.16.3"
+checklist_role = "producer"
+verification = "Optional"
+
+# --- Harness infrastructure (manifest, fixture loader, certification report) ---
+
+[[requirement]]
+req_id = "REQ-HARNESS-MANIFEST-01"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::manifest_parses_and_validates"
+
+[[requirement]]
+req_id = "REQ-HARNESS-MANIFEST-02"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::checklist_rows_are_unique"
+
+[[requirement]]
+req_id = "REQ-HARNESS-FIXTURE-01"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::rejects_missing_provenance_sidecar"
+
+[[requirement]]
+req_id = "REQ-HARNESS-FIXTURE-02"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::loads_fixture_with_provenance"
+fixture = "testcases/harness/tc-harness-closure-smoke.json"
+
+[[requirement]]
+req_id = "REQ-HARNESS-PROFILE-01"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::should_downgrades_i0002"
+
+[[requirement]]
+req_id = "REQ-HARNESS-CONTAIN-01"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::superset_properties_pass_containment"
+
+[[requirement]]
+req_id = "REQ-HARNESS-CLOSURE-01"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::reference_closed_bundle_passes"
+fixture = "testcases/harness/tc-harness-closure-smoke.json"
+
+[[requirement]]
+req_id = "REQ-2.3-X-09"
+use_case = "cross_cutting"
+section = "2.3.7"
+doc_page = 19
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::gating::testcases_and_examples_directories_exist"
+
+[[requirement]]
+req_id = "REQ-2.3-X-04"
+use_case = "cross_cutting"
+section = "2.3.4"
+doc_page = 18
+level = "MAY"
+gating = true
+disposition = "TESTED"
+test_id = "common::bundle_closure::tlp_exemption_whitelist"
+
+[[requirement]]
+req_id = "REQ-2.3-X-05"
+use_case = "cross_cutting"
+section = "2.3.4"
+doc_page = 18
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::identity::identity_shape_fixture_valid"
+fixture = "common/identity-shape.json"
+
+[[requirement]]
+req_id = "REQ-2.3-X-08"
+use_case = "cross_cutting"
+section = "2.3.6"
+doc_page = 19
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::relationships::relationship_shape_ready"
+
+[[requirement]]
+req_id = "REQ-HARNESS-VALIDATOR-01"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::interop_strict_profile_available"

@@ -790,6 +790,7 @@ Two layers, consistent across the Data Model + Serialization phase:
 | **Bundle integration** | `tests/bundle.rs` | Bundle container, ref validation, `x_*` and toplevel-property-extension round-trip via `extra_properties`. |
 | **Semantic validation** | `tests/validation.rs` + `tests/fixtures/validation/` | `Bundle::validate()` advisory codes (granular selectors, language-content, ISO 3166, region-ov, STIX-W0031, …). |
 | **Validation Pipeline** | `tests/validate_conformance.rs`, `tests/validate_diagnostic_coverage.rs`, `tests/validate_pipeline.rs` + `tests/fixtures/conformance/` | Profile-driven pipeline; one case per `DiagnosticCode::ALL` entry. Requires `validate` feature. |
+| **OASIS STIX 2.1 Interop golden suite** | `tests/interop/main.rs` + `tests/fixtures/interop/` | OASIS STIX 2.1 Interoperability (`stix-2.1-interop-v1.0-csd01`) certification harness (SXP + SXC, 21 use cases). Requires `validate`, `marking`, and `graph`. See [OASIS interop golden suite](#oasis-interop-golden-suite). |
 | **Graph / Marking / Store** | `tests/graph.rs`, `tests/marking.rs`, `tests/store.rs`, `tests/store_fs.rs` | Optional features; `store-fs` for durable backend. |
 | **TAXII Client** | `tests/taxii_client.rs` (`--features taxii`) | wiremock HTTP integration; auth, pagination, POST/DELETE, errors, retry. |
 | **Streaming / custom types / ATT&CK** | `tests/integration.rs` | `parse_reader`, `TypeRegistry`, optional local ATT&CK corpus via `RSTIX_ATTCK_BUNDLE`. |
@@ -886,6 +887,66 @@ There is no `strict` parse flag. Callers that need warnings to fail ingestion us
 ### Wire conformance (STIX 2.1)
 
 The tables above describe **implemented** behavior. Negative and rich fixtures for enforced rules live under `tests/fixtures/spec/`, `tests/fixtures/validation/`, and `tests/fixtures/conformance/`. Wire-negative fixtures under `tests/fixtures/spec/` (empty SDO names, empty `object_refs`, invalid address/hash/url formats, and similar) are wired to `assert_fixture_rejects` in `tests/spec.rs` and fail under `Validator::interop_strict()`.
+
+<a id="oasis-interop-golden-suite"></a>
+
+### OASIS interop golden suite
+
+Self-certification target: **STIX 2.1 Producer (SXP) + Consumer (SXC)** across all **21** OASIS interoperability use cases per **STIX 2.1 Interoperability Version 1.0, Committee Specification Draft 01** (`stix-2.1-interop-v1.0-csd01`, 2021-10-23). The suite lives in `tests/interop/` (single Cargo target) with fixtures under `tests/fixtures/interop/`.
+
+| Component | Path | Role |
+| --------- | ---- | ---- |
+| Harness | `tests/interop/harness/` | Manifest, fixture loader + provenance, per-use-case overlay on `interop_strict`, bundle closure, containment, certification report |
+| Cross-cutting | `tests/interop/common/` | §2.3 invariants (identity shape, closure, relationships, gating) |
+| Use-case tests | `tests/interop/use_cases/` (added per §3.x as normative fixtures land) | Producer/Consumer tests against OASIS normative test-case data |
+| Manifest | `tests/fixtures/interop/manifest.toml` | `req_id` → `test_id` → fixture → §4.2 checklist row |
+| Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars |
+| Examples | `tests/fixtures/interop/examples/` | Non-normative; must never fail the build |
+| Report artifacts | `target/interop-report/` | `summary.json`, Tables 55/56 markdown, traceability CSV, risks (never committed) |
+
+**Run locally (required features explicit, single-threaded finalize):**
+
+```bash
+cargo test -p rstix --test interop --features validate,marking,graph -- --test-threads=1
+```
+
+**Silent-skip guard:** `tests/interop_sentinel.rs` is an ungated target that **must fail** when `validate`, `marking`, and `graph` are not enabled — that failure is correct, not a regression. It **passes** only when those three features are on (same as CI’s `cargo test --workspace --all-features`):
+
+```bash
+# Expected FAIL — proves the interop suite cannot be skipped silently
+cargo test -p rstix --test interop_sentinel --locked
+
+# Expected PASS — features match the interop target
+cargo test -p rstix --test interop_sentinel --features validate,marking,graph --locked
+```
+
+**Why `--test-threads=1`:** the finalize test (`zzz_interop_certification_finalize`) collects outcomes from earlier tests. With parallel test execution, it can run before those tests finish and falsely fail. Single-threaded execution keeps order deterministic (`zzz_` runs last alphabetically).
+
+**CI job template (artifact gate):**
+
+```yaml
+- name: Record interop run start
+  run: echo "INTEROP_RUN_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+- name: OASIS STIX 2.1 interop golden suite
+  run: cargo test -p rstix --test interop --features validate,marking,graph --locked -- --test-threads=1
+- name: Gate on interop report
+  run: |
+    test -f target/interop-report/summary.json
+    python3 - <<'PY'
+    import json, os, sys
+    from datetime import datetime, timezone
+    summary = json.load(open("target/interop-report/summary.json"))
+    covered = summary["covered_requirements"]
+    in_scope = summary["in_scope_requirements"]
+    assert covered == in_scope, f"coverage {covered}/{in_scope}"
+    PY
+- uses: actions/upload-artifact@v4
+  with:
+    name: interop-report
+    path: target/interop-report/
+```
+
+`validate_conformance.rs` and `tests/fixtures/conformance/` remain unchanged — they guard the validator; the interop suite consumes `Validator::interop_strict()` as a dependency.
 
 <a id="model-invariant-decisions"></a>
 <a id="model-invariant-decisions-modelcommon"></a>
