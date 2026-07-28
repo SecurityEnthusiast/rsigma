@@ -87,6 +87,15 @@ interop_test!(
     }
 );
 
+interop_test!(
+    "REQ-HARNESS-FIXTURE-03",
+    "harness::blocked_gating_fixtures_load",
+    blocked_gating_fixtures_load,
+    {
+        harness::fixture::assert_blocked_gating_fixtures_load();
+    }
+);
+
 // --- §2.3 cross-cutting (HARNESS_SMOKE — smoke checks only; not §2.3 verification) ---
 
 interop_test!(

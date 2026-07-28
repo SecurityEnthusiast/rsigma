@@ -902,7 +902,7 @@ Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Spe
 | Cross-cutting | `tests/interop/common/` | §2.3 **harness smoke** — 18 executable manifest rows (`HARNESS_SMOKE`); partial checks on OASIS test-case JSON where published; **not** OASIS §2.3 requirement verification |
 | Use-case tests | `tests/interop/use_cases/` (added as normative fixtures land) | Producer/Consumer checks wired to OASIS test-case JSON |
 | Manifest | `tests/fixtures/interop/manifest.toml` | `req_id` → `test_id` → fixture → §4.2 checklist row |
-| Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars (**42/44** OASIS-derived today; synthetic helpers remain for intentional negatives) |
+| Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars (**44/44** inventory: **42** suite-walkable + **2** `BLOCKED` on §9.1 defects 16 and 19; synthetic helpers remain for intentional negatives) |
 | Examples | `tests/fixtures/interop/examples/` | Non-normative; must never fail the build |
 | Report artifacts | `target/interop-report/` | `summary.json`, Tables 55/56 markdown, traceability CSV, risks (never committed) |
 

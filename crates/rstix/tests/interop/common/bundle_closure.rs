@@ -2,14 +2,14 @@
 
 use rstix::model::{Bundle, ParseOptions};
 
-use crate::common::fixture_walk::for_each_testcase_fixture;
+use crate::common::fixture_walk::for_each_suite_walk_fixture;
 use crate::harness::closure::{missing_closure_ids_from_json, tlp_exempt_ids};
 use crate::harness::fixture::load_fixture;
 use crate::harness::interop_gate::{InteropGateOptions, validate_interop_json};
 
 /// REQ-2.3-X-01 — every normative testcase bundle passes closure + interop gate (spec tier).
 pub fn assert_suite_wide_bundle_closure() {
-    for_each_testcase_fixture(|relative| {
+    for_each_suite_walk_fixture(|relative| {
         let fixture = load_fixture(relative);
         validate_interop_json(&fixture.json, &InteropGateOptions::default()).unwrap_or_else(
             |err| panic!("{relative} failed interop gate (closure + parse + validation): {err}"),

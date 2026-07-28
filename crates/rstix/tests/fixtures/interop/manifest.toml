@@ -148,6 +148,15 @@ test_id = "harness::loads_fixture_with_provenance"
 fixture = "testcases/harness/tc-harness-closure-smoke.json"
 
 [[requirement]]
+req_id = "REQ-HARNESS-FIXTURE-03"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::blocked_gating_fixtures_load"
+
+[[requirement]]
 req_id = "REQ-HARNESS-PROFILE-01"
 use_case = "harness"
 section = "0"

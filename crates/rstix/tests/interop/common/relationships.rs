@@ -3,7 +3,7 @@
 use rstix::model::sro::Relationship;
 use serde_json::Value;
 
-use crate::common::fixture_walk::for_each_testcase_fixture;
+use crate::common::fixture_walk::for_each_suite_walk_fixture;
 use crate::harness::fixture::load_fixture;
 use crate::harness::interop_gate::{InteropGateOptions, validate_interop_json};
 
@@ -24,7 +24,7 @@ pub fn assert_relationship_shape(relationship: &Value) {
 /// REQ-2.3-X-08 — parsed Relationship objects comply with §5.1 mandatory fields.
 pub fn assert_relationship_shape_on_parsed() {
     let mut checked = 0usize;
-    for_each_testcase_fixture(|relative| {
+    for_each_suite_walk_fixture(|relative| {
         let fixture = load_fixture(relative);
         let bundle = validate_interop_json(&fixture.json, &InteropGateOptions::default())
             .unwrap_or_else(|err| panic!("{relative}: interop gate failed: {err}"));

@@ -10,7 +10,7 @@ use rstix::model::ParseOptions;
 use rstix::model::sdo::Identity;
 use serde_json::Value;
 
-use crate::common::fixture_walk::for_each_testcase_fixture;
+use crate::common::fixture_walk::for_each_suite_walk_fixture;
 use crate::harness::fixture::{interop_fixtures_root, load_fixture};
 
 /// Load the §2.3.4 property-set schema (not a canonical Identity instance).
@@ -120,14 +120,14 @@ fn assert_identities_in_fixture(relative: &str, check_timestamps: bool) {
 
 /// REQ-2.3-X-05 — each normative testcase resolves `created_by_ref` to an in-bundle Identity.
 pub fn assert_identity_present_in_fixture() {
-    for_each_testcase_fixture(|relative| {
+    for_each_suite_walk_fixture(|relative| {
         assert_identities_in_fixture(relative, false);
     });
 }
 
 /// REQ-2.3-X-06 — parsed Identity objects satisfy §2.3.4 shape and millisecond timestamps.
 pub fn assert_identity_shape_on_parsed() {
-    for_each_testcase_fixture(|relative| {
+    for_each_suite_walk_fixture(|relative| {
         assert_identities_in_fixture(relative, true);
     });
 }

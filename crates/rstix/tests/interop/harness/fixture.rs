@@ -28,6 +28,9 @@ pub struct ProvenanceSidecar {
     pub repair: Vec<ProvenanceRepair>,
     #[serde(default)]
     pub divergence_recorded: Vec<DivergenceRecord>,
+    /// When set, the fixture preserves unrepairable OASIS bytes (§9.1 defect); excluded from suite-wide interop gate walks.
+    #[serde(default)]
+    pub blocked_by: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,6 +125,16 @@ fn validate_provenance_sidecar(json_path: &Path, provenance: &ProvenanceSidecar)
             &repair.spec_basis,
             &repair.corroborated_by,
             repair.invents_data,
+        );
+    }
+
+    if let Some(defect) = provenance.blocked_by {
+        assert!(
+            provenance
+                .divergence_recorded
+                .iter()
+                .any(|record| record.defect == defect),
+            "blocked_by={defect} requires matching divergence_recorded entry"
         );
     }
 }
@@ -251,6 +264,37 @@ fn looks_like_stix_id(value: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && uuid.len() == 36
         && uuid.chars().filter(|c| *c == '-').count() == 4
+}
+
+/// Whether a normative testcase is blocked on an unrepairable OASIS defect (excluded from suite walks).
+pub fn testcase_is_blocked(relative_path: &str) -> bool {
+    try_load_fixture(relative_path)
+        .ok()
+        .and_then(|fixture| fixture.provenance.blocked_by)
+        .is_some()
+}
+
+/// Gating fixtures marked `BLOCKED` in provenance must load with recorded divergences.
+pub fn assert_blocked_gating_fixtures_load() {
+    const BLOCKED: &[&str] = &[
+        "testcases/malware/tc-3.12.3.1-create-malware-object.json",
+        "testcases/report/tc-3.16.3.1-create-report-object.json",
+    ];
+    for relative in BLOCKED {
+        let fixture = load_fixture(relative);
+        let defect = fixture
+            .provenance
+            .blocked_by
+            .expect("blocked fixture must set blocked_by in provenance");
+        assert!(
+            fixture
+                .provenance
+                .divergence_recorded
+                .iter()
+                .any(|record| record.defect == defect),
+            "{relative}: divergence_recorded must cite defect {defect}"
+        );
+    }
 }
 
 /// Helper assertions for `harness = false` runner.
