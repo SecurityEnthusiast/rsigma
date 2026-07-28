@@ -9,6 +9,37 @@ Criterion benchmark results for the rsigma detection engine.
 
 All suites below were rerun in full on the date above. To refresh for a specific release, check out the matching tag, run the commands in [Running](#running), and update the hardware/date/version block.
 
+## Synthetic vs. representative workloads
+
+Every Criterion table below uses synthetic rules and events built by `benches/datagen.rs`. Those rules are dominated by exact field matches, which the inverted rule index prunes to a handful of candidates per event, so the per-event cost in tables like [Single Event Evaluation](#single-event-evaluation) stays nearly flat as the rule count grows. **That flat scaling does not transfer to real rule corpora.** Real SigmaHQ rules are dominated by `contains`/`startswith`/`endswith`/keyword matchers; only ~21% of the corpus is indexable under the exact-only index, so the remaining ~79% is evaluated against every event and the per-event cost grows linearly with the rule count.
+
+Use the representative baseline below, not the synthetic tables, to size deployments that load SigmaHQ-scale corpora.
+
+### SigmaHQ corpus baseline (representative)
+
+**Hardware**: Apple M4 Pro (8 performance + 4 efficiency cores), macOS
+**Date captured**: 2026-07-28
+**Corpus**: SigmaHQ `rules/` at `994da166` (3,132 detection rules, the SHA pinned in CI)
+**Fixtures**: `scripts/perf/fetch-fixtures.sh` (pinned corpus + deterministic event lanes), run via `scripts/perf/baseline-eval.sh` and `scripts/perf/baseline-daemon.sh`
+
+Offline `engine eval` (single-threaded; wall time includes ~0.3-0.5 s rule load over 10k events):
+
+| Lane | Default | `--logsource-routing` | `--cross-rule-ac` | Both |
+|------|--------:|----------------------:|------------------:|-----:|
+| Raw Windows blobs (2.4 KB `message`) | 2.6k events/s | 3.6k | 3.2k | 4.4k |
+| Structured Windows (Sysmon-shaped) | 1.2k events/s | 1.7k | 1.6k | 2.2k |
+
+Daemon HTTP end-to-end (`--input http --batch-size 512`, 4 concurrent NDJSON batch posters, throughput from the daemon's own `rsigma_events_processed_total` delta):
+
+| Lane | Default | `--logsource-routing --cross-rule-ac` |
+|------|--------:|--------------------------------------:|
+| Raw Windows blobs | 21.8k events/s | 40.4k |
+| Structured Windows | 8.9k events/s | 17.3k |
+
+Cost profile at this corpus size: ~5.6M instructions per event on the raw-blob lane (IPC 3.47, so the engine is compute-bound, not memory-stalled), ~113 MB peak RSS for load + eval, and roughly 120-380 ns per always-evaluated rule per event depending on the event shape. Sampling profiles attribute the time to event field lookup and hashing (~25-45%), `std` substring search and searcher setup (~13-30%), the condition/detection tree walk (~15%), case folding, and allocator traffic. The witness audit (`cargo run --release -p rsigma-eval --example witness_audit`) shows 99.6% of the corpus carries a sound required-positive witness, with simulated candidate rates of 2-3% of loaded rules on Windows-shaped traffic.
+
+Match volume depends on flags because logsource routing is also a correctness filter: on the raw-blob lane the default configuration reports ~3 matches per event (mostly cross-product keyword false positives), while `--logsource-routing` drops that to ~0.02 per event.
+
 ## Running
 
 ```bash
@@ -103,7 +134,7 @@ Run with `cargo bench -p rsigma-eval --bench eval -- rule_load`.
 
 ### Single Event Evaluation
 
-Time to evaluate one event against N compiled rules.
+Time to evaluate one event against N compiled rules. The rules are synthetic and exact-match-indexable, so the index prunes almost all of them per event; see [Synthetic vs. representative workloads](#synthetic-vs-representative-workloads) for why real corpora scale linearly instead.
 
 | Rules | Time (median) | Per-rule |
 |------:|---------------|----------|

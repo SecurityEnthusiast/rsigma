@@ -1,8 +1,10 @@
 # Performance Tuning
 
-RSigma's evaluator is fast by default. A 100-rule corpus evaluates one event in roughly 2 microseconds, and a 5000-rule corpus stays under 200 microseconds; the streaming `LogProcessor` sustains hundreds of thousands of events per second on commodity hardware. Most deployments never need to touch a knob.
+How fast RSigma evaluates depends on how much of your corpus the inverted rule index can prune. Rules whose detections carry exact field values are pruned to a handful of candidates per event, and corpora made of them evaluate one event in single-digit microseconds regardless of rule count (the synthetic numbers in [Benchmarks](../benchmarks.md)). Rules dominated by `contains`/`startswith`/`endswith`/keyword matchers cannot use that index, are evaluated against every event, and cost time linear in the rule count.
 
-This page covers the cases where the defaults stop being optimal: very large rule sets, substring-heavy threat-intel feeds, high-throughput daemon ingestion, and memory-constrained deployments. The two opt-in knobs (`--bloom-prefilter`, `--cross-rule-ac`) are off by default for a reason and should be benchmarked before flipping them on.
+Real-world corpora sit at the linear end: on the full SigmaHQ ruleset (~3,100 rules, ~79% unindexable) expect roughly 1-4k events/s per core for offline `engine eval` and roughly 10-40k events/s for the daemon on a modern 12-core machine, with the higher end requiring `--logsource-routing` and `--cross-rule-ac`. The [SigmaHQ corpus baseline](../benchmarks.md#sigmahq-corpus-baseline-representative) in Benchmarks documents the measured matrix. Small or exact-match-heavy rulesets are orders of magnitude faster.
+
+This page covers the cases where the defaults stop being optimal: very large rule sets, substring-heavy threat-intel feeds, high-throughput daemon ingestion, and memory-constrained deployments. For SigmaHQ-scale corpora the two biggest levers are `--logsource-routing` (also a correctness filter: it stops cross-product keyword false positives) and `--cross-rule-ac`; each is worth roughly 1.4-2x on Windows-shaped traffic and they compose. The bloom pre-filter (`--bloom-prefilter`) is off by default for a reason and should be benchmarked before flipping it on.
 
 ## Always-on: the matcher optimizer
 
