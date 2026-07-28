@@ -344,9 +344,10 @@ pub fn gen_regex_rule(rng: &mut StdRng, id: usize) -> String {
 /// against a randomly-chosen field, with one needle per item.
 ///
 /// Differs from `gen_single_rule` in that EVERY rule produced here is
-/// substring-only, so the rule index marks them all unindexable. This is
-/// the worst case for the engine without bloom pre-filtering and the best
-/// case for measuring bloom-rejection benefits.
+/// substring-only, so the candidate index can only gate them behind their
+/// substring needles rather than an exact value. This is the shape that
+/// stresses substring pre-filtering and the best case for measuring
+/// bloom-rejection benefits.
 pub fn gen_substring_only_rule(rng: &mut StdRng, id: usize) -> String {
     let num_items = rng.random_range(1..=3);
     let mut detection = String::new();

@@ -29,7 +29,7 @@ flowchart TD
         ETRAIT["Event trait\nJsonEvent · KvEvent · PlainEvent\nschema classify (content signatures)"]
         ETRAIT --> EPIPE["pipeline/\nPipeline · conditions · transformations\nstate · finalizers\nbuiltin: ecs_windows · sysmon\ndynamic: ${source.*} template expansion"]
         ECOMP["compiler/\ncompile_to_compiled → CompiledRule\nmaterialize matchers from HIR\nmatcher optimizer (AnyOf):\nAho-Corasick batching (|contains)\nRegexSet batching (|re)\nCaseInsensitiveGroup"]
-        ECOMP --> EENG["engine/\nEngine (stateless)\nprefilters:\nRuleIndex (exact-value pruning)\nbloom trigram filter* (substring)\ncross-rule AC index** (daachorse)\nlogsource pruning (conflict-based, product-partitioned)"]
+        ECOMP --> EENG["engine/\nEngine (stateless)\nprefilters:\nCandidateIndex (witness pruning)\nbloom trigram filter* (substring)\ncross-rule AC index** (daachorse)\nlogsource pruning (conflict-based, product-partitioned)"]
         EENG --> ECORR["correlation/\nsliding windows · group-by\nchaining · suppression · introspect snapshot"]
         ECORR --> ECUST["rsigma.* custom attributes"]
     end

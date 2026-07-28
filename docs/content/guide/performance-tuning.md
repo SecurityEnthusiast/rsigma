@@ -1,10 +1,10 @@
 # Performance Tuning
 
-How fast RSigma evaluates depends on how much of your corpus the inverted rule index can prune. Rules whose detections carry exact field values are pruned to a handful of candidates per event, and corpora made of them evaluate one event in single-digit microseconds regardless of rule count (the synthetic numbers in [Benchmarks](../benchmarks.md)). Rules dominated by `contains`/`startswith`/`endswith`/keyword matchers cannot use that index, are evaluated against every event, and cost time linear in the rule count.
+How fast RSigma evaluates depends on how much of your corpus the candidate index can prune. The index works from rule witnesses: necessary conditions, at least one of which must hold on any event the rule can match. Exact field values, substring needles, keywords, mandatory regex literals, and bare field presence all yield witnesses, so most of a real corpus is prunable and an event is only evaluated against the rules it could plausibly match. Rules whose conditions admit no witness, in practice the ones whose only required branch is negated, are evaluated against every event and cost time linear in their count.
 
-Real-world corpora sit at the linear end: on the full SigmaHQ ruleset (~3,100 rules, ~79% unindexable) expect roughly 1-4k events/s per core for offline `engine eval` and roughly 10-40k events/s for the daemon on a modern 12-core machine, with the higher end requiring `--logsource-routing` and `--cross-rule-ac`. The [SigmaHQ corpus baseline](../benchmarks.md#sigmahq-corpus-baseline-representative) in Benchmarks documents the measured matrix. Small or exact-match-heavy rulesets are orders of magnitude faster.
+On the full SigmaHQ ruleset (~3,100 rules) expect roughly 8-21k events/s per core for offline `engine eval`, rising to 15-24k with `--logsource-routing`. The [SigmaHQ corpus baseline](../benchmarks.md#sigmahq-corpus-baseline-representative) in Benchmarks documents the measured matrix per event shape. Small or exact-match-heavy rulesets are considerably faster still.
 
-This page covers the cases where the defaults stop being optimal: very large rule sets, substring-heavy threat-intel feeds, high-throughput daemon ingestion, and memory-constrained deployments. For SigmaHQ-scale corpora the two biggest levers are `--logsource-routing` (also a correctness filter: it stops cross-product keyword false positives) and `--cross-rule-ac`; each is worth roughly 1.4-2x on Windows-shaped traffic and they compose. The composition is not universal, though: when events carry logsource hint fields that route to a small rule subset (a `product: cisco, service: aaa` stream routes to a few dozen rules), the cross-rule AC scan becomes pure overhead and `--logsource-routing` alone is measurably faster, 21k vs 15k events/s per core on the measured Cisco AAA lane. If your traffic is tagged with narrow product/service metadata, benchmark routing without AC before enabling both. The bloom pre-filter (`--bloom-prefilter`) is off by default for a reason and should be benchmarked before flipping it on.
+This page covers the cases where the defaults stop being optimal: very large rule sets, substring-heavy threat-intel feeds, high-throughput daemon ingestion, and memory-constrained deployments. For SigmaHQ-scale corpora the single biggest lever is `--logsource-routing`, which is also a correctness filter because it stops cross-product keyword false positives. `--cross-rule-ac` is no longer worth enabling alongside it: the candidate index already does that substring work over a smaller rule population, and layering the cross-rule automaton on top of routing costs 27-35% on every measured lane. The bloom pre-filter (`--bloom-prefilter`) is off by default for a reason and should be benchmarked before flipping it on.
 
 ## Always-on: the matcher optimizer
 
@@ -22,7 +22,7 @@ Because the optimizer is part of compilation, a rule reload picks up any new pat
 
 ## Rule loading at scale
 
-Loading a large rule corpus is no longer the bottleneck it was in v0.11.x. As of v0.12.0, `Engine::add_rule` and `Engine::add_compiled_rule` are amortized O(1) per call, and the bulk loaders (`Engine::add_rules`, `Engine::extend_compiled_rules`, `Engine::add_collection`) rebuild the inverted index and the per-field bloom filter exactly once per batch instead of once per rule.
+Loading a large rule corpus is no longer the bottleneck it was in v0.11.x. As of v0.12.0, `Engine::add_rule` and `Engine::add_compiled_rule` are amortized O(1) per call, and the bulk loaders (`Engine::add_rules`, `Engine::extend_compiled_rules`, `Engine::add_collection`) rebuild the candidate index and the per-field bloom filter exactly once per batch instead of once per rule.
 
 | Loader | Single-rule cost | Batched cost | When you use it |
 |--------|------------------|--------------|-----------------|
@@ -109,7 +109,7 @@ The published benchmark (`eval_cross_rule_ac` group, 200 non-matching events aga
 | 5,000 | 85.51 ms | 883 µs | ~97× |
 | 10,000 | 173.37 ms | 1.71 ms | ~101× |
 
-This is the textbook case. For mixed workloads (substring + exact + regex rules, events that hit several fields, smaller rule sets), the build-time and lookup overhead can eat the win or cause a slowdown. Off by default for that reason.
+Those numbers predate witness-based candidate indexing, which closed most of the gap the AC pass existed to close. On the measured SigmaHQ lanes, `--cross-rule-ac` now loses to `--logsource-routing` alone on every lane, and adding it on top of routing costs 27-35%. Treat it as a knob to benchmark on pure-substring corpora at 5,000+ rules rather than one to enable by default, and measure it against routing rather than against the bare default.
 
 The pattern-count cap per field is 100,000; rules referencing fields above that cap are kept unfiltered.
 
@@ -185,11 +185,14 @@ cargo bench -p rsigma-runtime --bench dynamic_pipelines
 
 Replace the synthetic Criterion inputs with rules and events that mirror your own corpus. Both the bloom and cross-rule AC wins are workload-shaped: the published numbers above are the upper bound, not what you should expect on mixed data.
 
+For an end-to-end measurement on a real corpus rather than synthetic inputs, `scripts/perf/fetch-fixtures.sh` pins the SigmaHQ ruleset and generates deterministic event lanes, and `scripts/perf/baseline-eval.sh` walks the flag matrix over them. Point them at your own rules and events to get the same table for your workload.
+
 ## Quick decision matrix
 
 | Symptom | First thing to try |
 |---------|--------------------|
-| Eval latency too high at 5k+ pure-substring rules | `--cross-rule-ac` (needs the `daachorse-index` build). |
+| Eval latency too high on a SigmaHQ-scale corpus | `--logsource-routing`, provided your events carry `product`/`category`/`service` hints. |
+| Eval latency still too high at 5k+ pure-substring rules | Benchmark `--cross-rule-ac` (needs the `daachorse-index` build) against routing alone; it usually loses. |
 | Eval latency too high on substring-heavy rules with mostly-non-matching events | `--bloom-prefilter`. |
 | Daemon queue depth (`rsigma_input_queue_depth`) climbing under load | Raise `--batch-size` to 64 or 128, then `--buffer-size` to absorb bursts. |
 | `rsigma_correlation_state_entries` near 100k and growing | Shorter `timespan`, `--max-group-entries`, lower `max_correlation_events`, or `--correlation-event-mode refs`. Raise `--max-state-entries` if the traffic is legitimately high-cardinality. |

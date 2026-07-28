@@ -11,7 +11,7 @@ All suites below were rerun in full on the date above. To refresh for a specific
 
 ## Synthetic vs. representative workloads
 
-Every Criterion table below uses synthetic rules and events built by `benches/datagen.rs`. Those rules are dominated by exact field matches, which the inverted rule index prunes to a handful of candidates per event, so the per-event cost in tables like [Single Event Evaluation](#single-event-evaluation) stays nearly flat as the rule count grows. **That flat scaling does not transfer to real rule corpora.** Real SigmaHQ rules are dominated by `contains`/`startswith`/`endswith`/keyword matchers; only ~21% of the corpus is indexable under the exact-only index, so the remaining ~79% is evaluated against every event and the per-event cost grows linearly with the rule count.
+Every Criterion table below uses synthetic rules and events built by `benches/datagen.rs`. Those rules are dominated by exact field matches, which the candidate index prunes to a handful of candidates per event, so the per-event cost in tables like [Single Event Evaluation](#single-event-evaluation) stays nearly flat as the rule count grows. **That flat scaling still does not transfer to real rule corpora**, though the gap has narrowed considerably: witness-based indexing gates substring, keyword, regex, and numeric rules too, so a SigmaHQ-scale corpus now evaluates a few percent of its rules per event rather than the ~79% the earlier exact-only index left always-evaluated.
 
 Use the representative baseline below, not the synthetic tables, to size deployments that load SigmaHQ-scale corpora.
 
@@ -26,10 +26,10 @@ Offline `engine eval` (single-threaded; wall time includes ~0.3-0.5 s rule load 
 
 | Lane | Default | `--logsource-routing` | `--cross-rule-ac` | Both |
 |------|--------:|----------------------:|------------------:|-----:|
-| Raw Windows blobs (2.4 KB `message`) | 2.6k events/s | 3.6k | 3.2k | 4.4k |
-| Structured Windows (Sysmon-shaped) | 1.2k events/s | 1.7k | 1.6k | 2.2k |
-| Cisco AAA syslog (raw `message` + `product`/`service` hints) | 2.9k events/s | 21.3k | 3.8k | 14.8k |
-| Sysmon file events (EventID 11, `product`/`category` hints) | 2.0k events/s | 8.5k | 2.6k | 8.4k |
+| Raw Windows blobs (2.4 KB `message`) | 7.7k events/s | 23.4k | 11.5k | 15.4k |
+| Structured Windows (Sysmon-shaped) | 11.7k events/s | 14.8k | 8.9k | 10.8k |
+| Cisco AAA syslog (raw `message` + `product`/`service` hints) | 20.9k events/s | 23.6k | 13.6k | 15.4k |
+| Sysmon file events (EventID 11, `product`/`category` hints) | 14.5k events/s | 18.9k | 10.5k | 12.9k |
 
 Daemon HTTP end-to-end (`--input http --batch-size 512`, 4 concurrent NDJSON batch posters, throughput from the daemon's own `rsigma_events_processed_total` delta):
 
@@ -40,9 +40,9 @@ Daemon HTTP end-to-end (`--input http --batch-size 512`, 4 concurrent NDJSON bat
 | Cisco AAA syslog | 23.4k events/s | 219.5k |
 | Sysmon file events | 15.0k events/s | 80.6k |
 
-The two flags do not always compose. Events whose logsource hints route to a small rule subset can be faster with routing alone: the Cisco AAA lane routes to a few dozen rules, and dropping `--cross-rule-ac` raises it from 219.5k to 269.1k events/s end-to-end (21.3k vs 14.8k single-core offline). The Sysmon file-event lane routes to a larger subset and keeps a small benefit from the AC pass (80.6k with, 70.3k without).
+`--cross-rule-ac` no longer belongs in an optimal configuration. It still beats the default on the raw-blob lane, but `--logsource-routing` on its own beats every AC configuration on all four lanes, and adding AC on top of routing costs 27-35%. The candidate index performs the same substring work over a smaller rule population, so the cross-rule automaton is a duplicated hot-path pass. The daemon table above predates witness indexing and is due a re-measurement.
 
-Cost profile at this corpus size: ~5.6M instructions per event on the raw-blob lane (IPC 3.47, so the engine is compute-bound, not memory-stalled), ~113 MB peak RSS for load + eval, and roughly 120-380 ns per always-evaluated rule per event depending on the event shape. Sampling profiles attribute the time to event field lookup and hashing (~25-45%), `std` substring search and searcher setup (~13-30%), the condition/detection tree walk (~15%), case folding, and allocator traffic. The witness audit (`cargo run --release -p rsigma-eval --example witness_audit`) shows 99.6% of the corpus carries a sound required-positive witness, with simulated candidate rates of 2-3% of loaded rules on Windows-shaped traffic and under 1.5% on the Cisco syslog and Sysmon file-event lanes.
+The witness audit (`cargo run --release -p rsigma-eval --example witness_audit`) shows 99.6% of the corpus carries a sound required-positive witness, with simulated candidate rates of 2-3% of loaded rules on Windows-shaped traffic and under 1.5% on the Cisco syslog and Sysmon file-event lanes. Peak RSS for load + eval is ~113 MB. Sampling profiles taken before witness indexing attributed per-event time to event field lookup and hashing (~25-45%), `std` substring search and searcher setup (~13-30%), the condition and detection tree walk (~15%), case folding, and allocator traffic; the structured lane's 10x gain came from removing most of that work rather than making it cheaper, so the remaining profile is due a re-capture.
 
 Match volume depends on flags because logsource routing is also a correctness filter: on the raw-blob lane the default configuration reports ~3 matches per event (mostly cross-product keyword false positives), while `--logsource-routing` drops that to ~0.02 per event.
 

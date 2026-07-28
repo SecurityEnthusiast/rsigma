@@ -4,6 +4,29 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Witness-based candidate indexing
+
+The candidate index could only pre-filter on exact field values, so any rule built from substrings, keywords, regexes, or numeric comparisons was evaluated against every event. On the SigmaHQ corpus that left 79% of rules always-evaluated, which is why per-event cost tracked the total rule count rather than the rules an event could plausibly match.
+
+Rules are now analyzed into witnesses: necessary conditions, at least one of which holds on every event the rule can match. The index inverts that relation across a presence list and an exact-value map per field, one Aho-Corasick automaton per field over that field's substring needles, and one automaton over keyword needles matched against every string value in the event. Rules whose conditions admit no witness, principally anything negated, remain always-evaluated.
+
+Measured on the SigmaHQ corpus at the pinned CI SHA (3,132 rules, Apple M4 Pro, single thread, `scripts/perf/baseline-eval.sh`), with match counts byte-identical to the previous release on every lane and variant:
+
+| Lane | Variant | Before | After |
+|---|---|---:|---:|
+| raw_windows | default | 2,645 | 7,707 |
+| raw_windows | `--logsource-routing` | 3,576 | 23,359 |
+| structured_windows | default | 1,175 | 11,740 |
+| structured_windows | `--logsource-routing` | 1,738 | 14,785 |
+| cisco_syslog | default | 2,876 | 20,921 |
+| sysmon_file_event | default | 1,987 | 14,489 |
+
+Three behavior changes:
+
+- The `rsigma_eval::rule_index` module and its `RuleIndex` type are gone, replaced by an internal `CandidateIndex`. The index was never usable on its own (it indexed `CompiledRule` slices the engine owned), so callers should reach for `Engine` instead.
+- Candidate rules are now returned in ascending rule order, so a match set no longer depends on hash iteration order. Consumers that relied on the previous incidental ordering will see a different, and now stable, order.
+- `Engine::logsource_pruned_total` and the daemon's `rsigma_rules_pruned_by_logsource_total` counter now count both sources of conflict pruning: always-evaluated rules the index's product partitioning skips, and candidate rules the residual logsource check drops during evaluation. Witness indexing shrinks the always-evaluated population the counter previously tracked on its own, so counting only that population would have made the metric report near-zero.
+
 ### Pre-filter soundness fixes and a full-scan differential oracle
 
 Fixes four cases where a pre-filter silently dropped a rule that should have matched, so an affected rule produced no detection at all. Found by a new differential oracle, `Engine::evaluate_full_scan`, which evaluates every loaded rule with no candidate index, no cross-rule Aho-Corasick mask, and no bloom, and is therefore authoritative: a pre-filter may only ever over-approximate the candidate set. The `rsigma-eval` test suite now compares the two paths across a per-witness-class rule battery, a randomized rule and event generator, and an opt-in corpus run over a real rule tree and NDJSON event lanes (`RSIGMA_DIFF_RULES` / `RSIGMA_DIFF_EVENTS`).

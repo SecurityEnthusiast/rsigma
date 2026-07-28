@@ -127,6 +127,7 @@ Turns exemplar events into a complete draft Sigma rule, verified end-to-end thro
 
 ## Detection Engine
 
+- **Witness-based candidate index**: every rule is analyzed into witnesses, necessary conditions of which at least one holds on any event the rule can match, drawn from exact values, substring needles, keywords, mandatory regex literals, and field presence. The index inverts that relation over a per-field presence list and exact-value map, one Aho-Corasick automaton per field for substring needles, and one keyword automaton scanned against every string value. Rules with no sound witness, chiefly those whose only required branch is negated, are evaluated against every event. Candidates come back in ascending rule order.
 - **Compiled matchers**: optimized matching for all 30 modifier combinations — exact, contains, startswith, endswith, regex, CIDR, numeric comparison, base64 offset (3 alignment variants), windash expansion (5 replacement characters), field references, placeholder expansion, timestamp part extraction
 - **Logsource-aware evaluation**: opt-in `LogSourceExtractor` plus conflict-based pruning (`set_logsource_extractor`) skips rules whose `product`/`service`/`category` (and custom dimensions) conflict with the event's logsource, backed by a product-partitioned rule index; off by default and fail-open
 - **Schema classification and routing**: `SchemaClassifier` recognizes an event's schema from declarative field predicates (`explain`/`classify_with_ambiguity` for tuning), and `SchemaRouter` routes each event to its schema's pipeline engine, derives the event's logsource from the recognized schema for pruning, and feeds one shared correlation store
@@ -650,7 +651,7 @@ let result = engine.process_event_at(&event, timestamp_secs);
 ## Benchmarks
 
 Criterion.rs benchmarks with synthetic rules and events (Apple M-series, single-threaded unless noted).
-Rules are pre-filtered at evaluation time using an inverted index on exact-match field-value pairs.
+Rules are pre-filtered at evaluation time by the witness-based candidate index. The tables below were captured against the earlier exact-value-only index, so the `Indexed` column understates current throughput on the wildcard-heavy and regex-heavy scenarios, which the witness index prunes and its predecessor did not. For measured numbers on a real corpus see the [SigmaHQ corpus baseline](../../BENCHMARKS.md#sigmahq-corpus-baseline-representative).
 
 ### Detection Evaluation
 
