@@ -1789,6 +1789,7 @@ dependencies = [
  "log",
  "rayon",
  "regex",
+ "regex-syntax",
  "rsigma-ir",
  "rsigma-parser",
  "serde",
