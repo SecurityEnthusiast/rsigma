@@ -1,0 +1,14 @@
+fixture = "tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "32-33"
+source_section = "3.3.3.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on identity and indicator objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity and indicator in a bundle per REQ-2.3-X-02."

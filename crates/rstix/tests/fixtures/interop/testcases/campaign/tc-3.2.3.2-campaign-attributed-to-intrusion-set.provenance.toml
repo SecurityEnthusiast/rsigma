@@ -1,0 +1,30 @@
+fixture = "tc-3.2.3.2-campaign-attributed-to-intrusion-set.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "28"
+source_section = "3.2.3.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on all objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on created_by_ref, name, resource_level, primary_motivation, source_ref, target_ref, relationship_type."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap four bare objects in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "malformed-id"
+description = "Restore STIX type--uuid form on relationship id (OASIS publishes relationship-7f6bb959-… with single dash)."
+spec_basis = "STIX 2.1 §2.9 ID format"
+
+[[divergence_recorded]]
+site = "§3.2.3.2 relationship id"
+defect = 1
+description = "Published relationship id uses relationship-7f6bb959-… (single dash) instead of type--uuid form (STIX 2.1 §2.9)."
