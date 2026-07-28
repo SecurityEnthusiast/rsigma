@@ -161,7 +161,7 @@ Exposed unconditionally; values stay at zero unless the daemon was started with 
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `rsigma_rules_pruned_by_logsource_total` | counter | — | Always-evaluated rules skipped because their product conflicts with the event's logsource. The scaling signal: it rises with the conflicting fraction of a mixed-product ruleset. |
+| `rsigma_rules_pruned_by_logsource_total` | counter | — | Rules skipped because their product conflicts with the event's logsource, counting both the always-evaluated rules the index's product partitioning omits and the candidate rules the residual check drops during evaluation. The scaling signal: it rises with the conflicting fraction of a mixed-product ruleset. |
 | `rsigma_events_without_logsource_total` | counter | — | Events with no extractable logsource, evaluated against every rule (fail-open). A high rate means events are not carrying a logsource tag and no static override or field map is set. |
 | `rsigma_schema_rules_eligible` | gauge | `schema` | Rules a schema's events evaluate after logsource pruning. Set when both schema routing and logsource routing are active; refreshed on scrape and reload. |
 | `rsigma_schema_rules_pruned` | gauge | `schema` | Rules pruned for a schema by its implied logsource. The higher this is relative to eligible, the less of the ruleset that schema exercises. |

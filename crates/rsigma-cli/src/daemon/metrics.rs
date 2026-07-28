@@ -579,7 +579,7 @@ impl Metrics {
 
         let rules_pruned_by_logsource = IntCounter::with_opts(Opts::new(
             "rsigma_rules_pruned_by_logsource_total",
-            "Always-evaluated rules skipped by conflict-based logsource pruning (--logsource-routing)",
+            "Rules skipped by conflict-based logsource pruning (--logsource-routing), counting both index-partition skips and residual candidate drops",
         ))
         .unwrap();
         let events_without_logsource = IntCounter::with_opts(Opts::new(

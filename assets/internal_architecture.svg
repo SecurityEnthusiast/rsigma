@@ -77,7 +77,7 @@
   <text x="228" y="441" font-size="10.5" fill="#4d4d4d">pipeline/: field mapping &#183; transforms</text>
   <text x="228" y="459" font-size="10.5" fill="#4d4d4d">compiler/: HIR &#8594; CompiledRule + optimizer</text>
   <text x="240" y="475" font-size="10" fill="#808080">Aho-Corasick &#183; RegexSet &#183; CI group</text>
-  <text x="228" y="493" font-size="10.5" fill="#4d4d4d">engine/: Engine (stateless) + RuleIndex</text>
+  <text x="228" y="493" font-size="10.5" fill="#4d4d4d">engine/: Engine (stateless) + CandidateIndex</text>
   <text x="240" y="509" font-size="10" fill="#808080">bloom prefilter* &#183; cross-rule AC** &#183; save_hir</text>
   <text x="228" y="527" font-size="10.5" fill="#4d4d4d">correlation/: windows &#183; group-by &#183; chain</text>
   <text x="240" y="543" font-size="10" fill="#808080">logsource prune &#183; schema classify</text>

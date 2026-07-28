@@ -172,28 +172,49 @@ impl CrossRuleAcIndex {
         debug_assert_eq!(hits.len(), self.rule_count);
 
         for (field, ac) in &self.per_field {
-            // Pull the field value off the event. Only string values feed
-            // the automaton; arrays, numbers, and nested objects answer
-            // `MaybeMatch` (we set no bits for them and let those rules
-            // evaluate normally via the candidate set).
-            let value = match event.get_field(field) {
-                Some(EventValue::Str(s)) => s,
-                _ => continue,
-            };
+            if let Some(value) = event.get_field(field) {
+                mark_value_hits(ac, &value, hits);
+            }
+        }
+    }
+}
 
-            // Sigma matches case-insensitively by default; the index stores
-            // pre-lowered needles, so the haystack must be lowered too.
-            let lowered = crate::matcher::ascii_lowercase_cow(&value);
+/// Feed every string projection of `value` through `ac`.
+///
+/// This mirrors the matcher's own `match_str_value`: numbers and bools are
+/// matched by their string form, and an array matches when any member
+/// matches. The automaton must therefore see exactly the haystacks the
+/// matcher would, or an AC-prunable rule gets dropped on a value the matcher
+/// would have matched. Objects and nulls have no string projection, so they
+/// contribute no hits, which is precise rather than merely conservative: the
+/// matcher cannot fire on them either.
+fn mark_value_hits(ac: &FieldAc, value: &EventValue, hits: &mut [bool]) {
+    match value {
+        EventValue::Str(s) => mark_str_hits(ac, s, hits),
+        EventValue::Int(n) => mark_str_hits(ac, &n.to_string(), hits),
+        EventValue::Float(f) => mark_str_hits(ac, &f.to_string(), hits),
+        EventValue::Bool(b) => mark_str_hits(ac, if *b { "true" } else { "false" }, hits),
+        EventValue::Array(members) => {
+            for member in members {
+                mark_value_hits(ac, member, hits);
+            }
+        }
+        _ => {}
+    }
+}
 
-            for m in ac.automaton.find_overlapping_iter(lowered.as_bytes()) {
-                let pattern_id = m.value() as usize;
-                if let Some(rule_ids) = ac.pattern_to_rules.get(pattern_id) {
-                    for &rid in rule_ids {
-                        let idx = rid as usize;
-                        if let Some(slot) = hits.get_mut(idx) {
-                            *slot = true;
-                        }
-                    }
+fn mark_str_hits(ac: &FieldAc, value: &str, hits: &mut [bool]) {
+    // Sigma matches case-insensitively by default; the index stores
+    // pre-lowered needles, so the haystack must be lowered too.
+    let lowered = crate::matcher::ascii_lowercase_cow(value);
+
+    for m in ac.automaton.find_overlapping_iter(lowered.as_bytes()) {
+        let pattern_id = m.value() as usize;
+        if let Some(rule_ids) = ac.pattern_to_rules.get(pattern_id) {
+            for &rid in rule_ids {
+                let idx = rid as usize;
+                if let Some(slot) = hits.get_mut(idx) {
+                    *slot = true;
                 }
             }
         }
@@ -297,9 +318,16 @@ fn push_needle(
     if needle.is_empty() {
         return;
     }
+    // `mark_hits` scans a lowered haystack. Case-insensitive matchers already
+    // store their value lowered, but `|cased` matchers keep the original, so
+    // lower here or a cased needle could never be found and its rule would be
+    // pruned on every event. Lowering only widens the hit set, and
+    // `matcher_is_pure_positive_substring` restricts cased needles to ASCII so
+    // the lowering stays a faithful per-character mapping.
+    let lowered = crate::matcher::ascii_lowercase_cow(needle);
     out.entry(field.to_string())
         .or_default()
-        .entry(needle.to_string())
+        .entry(lowered.into_owned())
         .or_default()
         .push(rule_idx);
 }
@@ -393,10 +421,35 @@ fn matcher_is_pure_positive_substring(
     found_positive_substring: &mut bool,
 ) -> bool {
     match matcher {
-        CompiledMatcher::Contains { .. }
-        | CompiledMatcher::StartsWith { .. }
-        | CompiledMatcher::EndsWith { .. }
-        | CompiledMatcher::AhoCorasickSet { .. } => {
+        CompiledMatcher::Contains {
+            value,
+            case_insensitive,
+        }
+        | CompiledMatcher::StartsWith {
+            value,
+            case_insensitive,
+        }
+        | CompiledMatcher::EndsWith {
+            value,
+            case_insensitive,
+        } => {
+            if !cased_needle_is_indexable(value, *case_insensitive) {
+                return false;
+            }
+            *found_positive_substring = true;
+            true
+        }
+        CompiledMatcher::AhoCorasickSet {
+            needles,
+            case_insensitive,
+            ..
+        } => {
+            if !needles
+                .iter()
+                .all(|n| cased_needle_is_indexable(n, *case_insensitive))
+            {
+                return false;
+            }
             *found_positive_substring = true;
             true
         }
@@ -417,6 +470,21 @@ fn matcher_is_pure_positive_substring(
         // breaks the AC-prunable invariant.
         _ => false,
     }
+}
+
+/// Whether a needle survives the index's lowering faithfully enough to prune
+/// on.
+///
+/// Case-insensitive needles are stored already lowered by the same
+/// `to_lowercase` the haystack goes through, so they are exact. A `|cased`
+/// needle is lowered by [`push_needle`] instead, which is only a faithful
+/// per-character mapping while the needle is ASCII: Rust lowers a Greek
+/// capital sigma to a different character depending on its position in the
+/// word, which can break a non-ASCII needle's contiguity in the lowered
+/// haystack and lose a match. Non-ASCII cased needles therefore disqualify
+/// their rule from pruning instead of being indexed unsoundly.
+fn cased_needle_is_indexable(needle: &str, case_insensitive: bool) -> bool {
+    case_insensitive || needle.is_ascii()
 }
 
 fn condition_is_negation_free(cond: &ConditionExpr) -> bool {
@@ -452,6 +520,80 @@ mod tests {
         let engine = engine_from(yaml);
         let index = CrossRuleAcIndex::build(engine.rules());
         (engine, index)
+    }
+
+    fn engine_with_ac(yaml: &str) -> Engine {
+        let collection = parse_sigma_yaml(yaml).unwrap();
+        let mut engine = Engine::new();
+        engine.set_cross_rule_ac(true);
+        engine.add_collection(&collection).unwrap();
+        engine
+    }
+
+    /// A `|cased` needle is stored in its original case, but the automaton
+    /// scans a lowered haystack. Indexing it verbatim made the needle
+    /// unfindable and pruned the rule on every event.
+    #[test]
+    fn cased_substring_rule_still_matches_under_ac() {
+        let yaml = r#"
+title: Cased Substring
+detection:
+    selection:
+        CommandLine|contains|cased: 'PowerShell'
+    condition: selection
+"#;
+        let engine = engine_with_ac(yaml);
+        let event_json = json!({"CommandLine": "PowerShell.exe -Command x"});
+        let event = JsonEvent::borrow(&event_json);
+        assert_eq!(engine.evaluate(&event).len(), 1);
+    }
+
+    /// A cased needle outside ASCII cannot be lowered faithfully, so its rule
+    /// must not be prunable at all.
+    #[test]
+    fn non_ascii_cased_needle_is_not_prunable() {
+        let yaml = r#"
+title: Cased Unicode
+detection:
+    selection:
+        User|contains|cased: 'Ärzte'
+    condition: selection
+"#;
+        let engine = engine_from(yaml);
+        assert!(!rule_is_ac_prunable(&engine.rules()[0]));
+    }
+
+    /// Arrays and numbers have string projections the matcher does match, so
+    /// the automaton must see them too. Skipping them left the hit bit clear,
+    /// which the engine reads as "drop this rule".
+    #[test]
+    fn non_string_field_values_still_match_under_ac() {
+        let yaml = r#"
+title: Array Field
+detection:
+    selection:
+        Image|endswith: '\wmic.exe'
+    condition: selection
+---
+title: Numeric Field
+detection:
+    selection:
+        EventID|contains: '468'
+    condition: selection
+"#;
+        let engine = engine_with_ac(yaml);
+
+        let array_event = json!({"Image": [r"C:\a\wmic.exe", r"C:\b\cmd.exe"]});
+        let event = JsonEvent::borrow(&array_event);
+        assert_eq!(engine.evaluate(&event).len(), 1);
+
+        let numeric_event = json!({"EventID": 4688});
+        let event = JsonEvent::borrow(&numeric_event);
+        assert_eq!(engine.evaluate(&event).len(), 1);
+
+        let bool_event = json!({"Image": true});
+        let event = JsonEvent::borrow(&bool_event);
+        assert_eq!(engine.evaluate(&event).len(), 0);
     }
 
     #[test]

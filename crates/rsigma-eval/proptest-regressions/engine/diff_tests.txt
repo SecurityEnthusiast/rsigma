@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8884450db3506ecd609ff93c158a9c8ecd104d0bb3f6398e2f5e956a0d3b1107 # shrinks to rules = ["title: Generated\ndetection:\n    sel_a:\n        Image: 'cmd.exe'\n    sel_b:\n        EventID|contains|cased: 'true'\n    sel_c:\n        EventID|windash|contains: 'σ'\n    condition: 1 of sel_*\n", "title: Generated\ndetection:\n    sel_a:\n        Image: 'cmd.exe'\n    sel_b:\n        Image: 'cmd.exe'\n    sel_c:\n        Image: 'cmd.exe'\n    condition: sel_a\n"], event_json = Object {"EventID": String("ÄRZTE and ΣΊΓΜΑ")}
+cc 5acf884f78d9c3cf12d3fc8312711e45387cb76a8c1edc69166d8b85b14b0d4e # shrinks to yaml = "title: Generated\ndetection:\n    sel_a:\n        Image|cased: 'cmd.exe'\n    sel_b:\n        Image: 'cmd.exe'\n    sel_c:\n        Image|cased: 'cmd.exe'\n    condition: sel_a or not sel_b\n", event_json = Object {}

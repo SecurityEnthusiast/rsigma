@@ -484,6 +484,7 @@ dependencies = [
  "ipnet",
  "log",
  "regex",
+ "regex-syntax",
  "rsigma-ir",
  "rsigma-parser",
  "serde",

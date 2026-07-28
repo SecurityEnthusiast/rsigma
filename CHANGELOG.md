@@ -4,10 +4,42 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Witness-based candidate indexing (#406)
+
+The candidate index could only pre-filter on exact field values, so any rule built from substrings, keywords, regexes, or numeric comparisons was evaluated against every event. On the SigmaHQ corpus that left 79% of rules always-evaluated, which is why per-event cost tracked the total rule count rather than the rules an event could plausibly match.
+
+Rules are now analyzed into witnesses: necessary conditions, at least one of which holds on every event the rule can match. The index inverts that relation across a presence list and an exact-value map per field, one Aho-Corasick automaton per field over that field's substring needles, and one automaton over keyword needles matched against every string value in the event. Rules whose conditions admit no witness, principally anything negated, remain always-evaluated.
+
+Measured on the SigmaHQ corpus at the pinned CI SHA (3,132 rules, Apple M4 Pro, single thread, `scripts/perf/baseline-eval.sh`), with match counts byte-identical to the previous release on every lane and variant:
+
+| Lane | Variant | Before | After |
+|---|---|---:|---:|
+| raw_windows | default | 2,645 | 7,707 |
+| raw_windows | `--logsource-routing` | 3,576 | 23,359 |
+| structured_windows | default | 1,175 | 11,740 |
+| structured_windows | `--logsource-routing` | 1,738 | 14,785 |
+| cisco_syslog | default | 2,876 | 20,921 |
+| sysmon_file_event | default | 1,987 | 14,489 |
+
+Three behavior changes:
+
+- The `rsigma_eval::rule_index` module and its `RuleIndex` type are gone, replaced by an internal `CandidateIndex`. The index was never usable on its own (it indexed `CompiledRule` slices the engine owned), so callers should reach for `Engine` instead.
+- Candidate rules are now returned in ascending rule order, so a match set no longer depends on hash iteration order. Consumers that relied on the previous incidental ordering will see a different, and now stable, order.
+- `Engine::logsource_pruned_total` and the daemon's `rsigma_rules_pruned_by_logsource_total` counter now count both sources of conflict pruning: always-evaluated rules the index's product partitioning skips, and candidate rules the residual logsource check drops during evaluation. Witness indexing shrinks the always-evaluated population the counter previously tracked on its own, so counting only that population would have made the metric report near-zero.
+
+### Pre-filter soundness fixes and a full-scan differential oracle (#406)
+
+Fixes four cases where a pre-filter silently dropped a rule that should have matched, so an affected rule produced no detection at all. Found by a new differential oracle, `Engine::evaluate_full_scan`, which evaluates every loaded rule with no candidate index, no cross-rule Aho-Corasick mask, and no bloom, and is therefore authoritative: a pre-filter may only ever over-approximate the candidate set. The `rsigma-eval` test suite now compares the two paths across a per-witness-class rule battery, a randomized rule and event generator, and an opt-in corpus run over a real rule tree and NDJSON event lanes (`RSIGMA_DIFF_RULES` / `RSIGMA_DIFF_EVENTS`).
+
+- The candidate index decided indexability from the rule's detections alone and never looked at its condition. A rule such as `condition: selection or not filter` whose detections are all exact-valued was indexed, so an event carrying none of those values was never a candidate even though the negated branch made the rule fire. Rules with a negated condition are now always evaluated. This affects the default configuration with no flags set. The interim fix is deliberately conservative and also covers the common `selection and not filter` shape, which stays reachable through its positive conjunct; the witness-based index restores pruning for it.
+- `--cross-rule-ac` indexed `|cased` needles in their original case while scanning a lowered haystack, so the needle could never be found and every rule built only from cased substring matchers was pruned on every event. Needles are now lowered on insertion, and a cased needle outside ASCII disqualifies its rule from pruning because Rust's lowering of a Greek capital sigma is position-dependent and can break the needle's contiguity in the lowered haystack.
+- `--cross-rule-ac` fed only plain string field values through the automaton and skipped arrays, numbers, and bools, leaving the rule's hit bit clear, which the engine reads as "drop". The automaton now sees the same string projections the matcher does, including each array member.
+- `--bloom-prefilter` inserted no bits for needles shorter than the three-byte trigram window, so a probe could answer `DefinitelyNoMatch` for a haystack that did contain the needle. A field carrying such a needle now gets no filter at all, on both the batched build and the incremental append path.
+
 ### Vendor-shape performance lanes and prefilter composition guidance (#405)
 
 - Two new deterministic event lanes in `scripts/perf/gen_events.py`, modeled on real collector output: `cisco_syslog` (raw Cisco AAA command accounting in a single `message` field with `product`/`service` hint fields) and `sysmon_file_event` (Sysmon EventID 11 FileCreate with `product`/`category` hints and a string `EventID`, as some forwarders emit it).
-- The new lanes show that `--logsource-routing` and `--cross-rule-ac` do not always compose: events whose logsource hints route to a small rule subset are faster with routing alone (21.3k vs 14.8k events/s per core on the Cisco lane, 269k vs 219.5k end-to-end in the daemon). `BENCHMARKS.md` and the performance tuning guide carry the measured rows and the guidance to benchmark routing without AC on narrowly tagged traffic.
+- The new lanes show that `--logsource-routing` and `--cross-rule-ac` do not always compose: events whose logsource hints route to a small rule subset are faster with routing alone (21.3k vs 14.8k events/s per core on the Cisco lane, 269k vs 219.5k end-to-end in the daemon). `BENCHMARKS.md` and the performance tuning guide carry the measured rows. Witness-based candidate indexing (below) supersedes the guidance these lanes produced: `--logsource-routing` alone now wins on every lane, so the composition question no longer depends on how narrowly the traffic is tagged.
 - Fixed the executable bit on `scripts/perf/baseline-eval.sh`, which was committed non-executable.
 
 ### OASIS STIX 2.1 Interop golden harness (#403)

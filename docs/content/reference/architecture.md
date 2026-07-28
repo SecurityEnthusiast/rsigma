@@ -45,7 +45,7 @@ flowchart TD
         ETRAIT["Event trait<br/>JsonEvent · KvEvent · PlainEvent<br/>schema classify (content signatures)"]
         ETRAIT --> EPIPE["pipeline/<br/>Pipeline · conditions · transformations<br/>state · finalizers<br/>builtin: ecs_windows · sysmon<br/>dynamic: ${source.*} template expansion"]
         ECOMP["compiler/<br/>compile_to_compiled → CompiledRule<br/>materialize matchers from HIR<br/>matcher optimizer (AnyOf):<br/>Aho-Corasick batching (|contains)<br/>RegexSet batching (|re)<br/>CaseInsensitiveGroup"]
-        ECOMP --> EENG["engine/<br/>Engine (stateless)<br/>prefilters:<br/>RuleIndex (exact-value pruning)<br/>bloom trigram filter* (substring)<br/>cross-rule AC index** (daachorse)<br/>logsource pruning (conflict-based, product-partitioned)"]
+        ECOMP --> EENG["engine/<br/>Engine (stateless)<br/>prefilters:<br/>CandidateIndex (witness pruning)<br/>bloom trigram filter* (substring)<br/>cross-rule AC index** (daachorse)<br/>logsource pruning (conflict-based, product-partitioned)"]
         EENG --> ECORR["correlation/<br/>sliding windows · group-by<br/>chaining · suppression · introspect snapshot"]
         ECORR --> ECUST["rsigma.* custom attributes"]
     end
@@ -222,7 +222,7 @@ See [Performance Tuning: the matcher optimizer](../guide/performance-tuning.md#a
 For each event:
 
 1. Apply opt-in pre-filters in order:
-   - `RuleIndex` exact-value pruning (always on).
+   - `CandidateIndex` witness pruning (always on): exact values, substring needles, keywords, mandatory regex literals, and field presence.
    - Conflict-based logsource pruning (`set_logsource_extractor`), backed by a product-partitioned rule index, when logsource routing is enabled.
    - Bloom trigram filter (`set_bloom_prefilter(true)`).
    - Cross-rule Aho-Corasick (`set_cross_rule_ac(true)`, requires `daachorse-index` build feature).
