@@ -4,6 +4,15 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Pre-filter soundness fixes and a full-scan differential oracle
+
+Fixes four cases where a pre-filter silently dropped a rule that should have matched, so an affected rule produced no detection at all. Found by a new differential oracle, `Engine::evaluate_full_scan`, which evaluates every loaded rule with no candidate index, no cross-rule Aho-Corasick mask, and no bloom, and is therefore authoritative: a pre-filter may only ever over-approximate the candidate set. The `rsigma-eval` test suite now compares the two paths across a per-witness-class rule battery, a randomized rule and event generator, and an opt-in corpus run over a real rule tree and NDJSON event lanes (`RSIGMA_DIFF_RULES` / `RSIGMA_DIFF_EVENTS`).
+
+- The candidate index decided indexability from the rule's detections alone and never looked at its condition. A rule such as `condition: selection or not filter` whose detections are all exact-valued was indexed, so an event carrying none of those values was never a candidate even though the negated branch made the rule fire. Rules with a negated condition are now always evaluated. This affects the default configuration with no flags set. The interim fix is deliberately conservative and also covers the common `selection and not filter` shape, which stays reachable through its positive conjunct; the witness-based index restores pruning for it.
+- `--cross-rule-ac` indexed `|cased` needles in their original case while scanning a lowered haystack, so the needle could never be found and every rule built only from cased substring matchers was pruned on every event. Needles are now lowered on insertion, and a cased needle outside ASCII disqualifies its rule from pruning because Rust's lowering of a Greek capital sigma is position-dependent and can break the needle's contiguity in the lowered haystack.
+- `--cross-rule-ac` fed only plain string field values through the automaton and skipped arrays, numbers, and bools, leaving the rule's hit bit clear, which the engine reads as "drop". The automaton now sees the same string projections the matcher does, including each array member.
+- `--bloom-prefilter` inserted no bits for needles shorter than the three-byte trigram window, so a probe could answer `DefinitelyNoMatch` for a haystack that did contain the needle. A field carrying such a needle now gets no filter at all, on both the batched build and the incremental append path.
+
 ### Vendor-shape performance lanes and prefilter composition guidance (#405)
 
 - Two new deterministic event lanes in `scripts/perf/gen_events.py`, modeled on real collector output: `cisco_syslog` (raw Cisco AAA command accounting in a single `message` field with `product`/`service` hint fields) and `sysmon_file_event` (Sysmon EventID 11 FileCreate with `product`/`category` hints and a string `EventID`, as some forwarders emit it).

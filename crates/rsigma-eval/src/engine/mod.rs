@@ -7,6 +7,8 @@
 pub(crate) mod bloom_index;
 #[cfg(feature = "daachorse-index")]
 pub(crate) mod cross_rule_ac;
+#[cfg(test)]
+mod diff_tests;
 mod filters;
 #[cfg(test)]
 mod tests;
@@ -907,6 +909,84 @@ impl Engine {
             if logsource_matches(&rule.logsource, event_logsource)
                 && let Some(mut m) =
                     evaluate_rule_with_bloom(rule, event, &bloom, self.match_detail)
+            {
+                if self.include_event
+                    && let Some(d) = m.as_detection_mut()
+                    && d.event.is_none()
+                {
+                    d.event = Some(event.to_json());
+                }
+                results.push(m);
+            }
+        }
+        results
+    }
+
+    /// Reference evaluator: evaluate every loaded rule, bypassing the
+    /// candidate index, the cross-rule AC keep-mask, and the bloom
+    /// pre-filter.
+    ///
+    /// This is the differential oracle for every pre-filter layer. It is
+    /// authoritative by construction, because it applies nothing but
+    /// [`evaluate_rule_with_bloom`] and the same logsource-conflict rule the
+    /// production path applies to a surviving candidate. Any disagreement
+    /// with [`Engine::evaluate`] is therefore a pre-filter bug: a pre-filter
+    /// may only ever over-approximate the candidate set.
+    ///
+    /// Results come back in ascending rule order. Callers comparing against
+    /// [`Engine::evaluate`] must compare order-insensitively, since candidate
+    /// iteration order is not part of the engine's contract.
+    #[cfg(test)]
+    pub(crate) fn evaluate_full_scan<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
+        let event_logsource = self
+            .logsource_extractor
+            .as_ref()
+            .map(|ex| ex.extract(event));
+        self.full_scan_filtered(event, |rule| match event_logsource.as_ref() {
+            Some(event_ls) => logsource_compatible(&rule.logsource, event_ls),
+            None => true,
+        })
+    }
+
+    /// [`Engine::evaluate_full_scan`] for the caller-resolved-logsource path,
+    /// mirroring [`Engine::evaluate_pruned`]'s conflict-based filtering.
+    #[cfg(test)]
+    pub(crate) fn evaluate_pruned_full_scan<E: Event>(
+        &self,
+        event: &E,
+        event_logsource: &LogSource,
+    ) -> Vec<EvaluationResult> {
+        self.full_scan_filtered(event, |rule| {
+            logsource_compatible(&rule.logsource, event_logsource)
+        })
+    }
+
+    /// [`Engine::evaluate_full_scan`] for the strict-routing path, mirroring
+    /// [`Engine::evaluate_with_logsource`]'s use of `logsource_matches`.
+    #[cfg(test)]
+    pub(crate) fn evaluate_with_logsource_full_scan<E: Event>(
+        &self,
+        event: &E,
+        event_logsource: &LogSource,
+    ) -> Vec<EvaluationResult> {
+        self.full_scan_filtered(event, |rule| {
+            logsource_matches(&rule.logsource, event_logsource)
+        })
+    }
+
+    #[cfg(test)]
+    fn full_scan_filtered<E: Event>(
+        &self,
+        event: &E,
+        keep: impl Fn(&CompiledRule) -> bool,
+    ) -> Vec<EvaluationResult> {
+        let mut results = Vec::new();
+        for rule in &self.rules {
+            if !keep(rule) {
+                continue;
+            }
+            if let Some(mut m) =
+                evaluate_rule_with_bloom(rule, event, &bloom_index::NoBloom, self.match_detail)
             {
                 if self.include_event
                     && let Some(d) = m.as_detection_mut()
