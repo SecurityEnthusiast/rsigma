@@ -87,12 +87,13 @@ interop_test!(
     }
 );
 
-// --- §2.3 cross-cutting smoke checks ---
+// --- §2.3 cross-cutting harness smoke (pending normative OASIS fixtures) ---
 
 interop_test!(
     "REQ-2.3-X-09",
     "common::gating::testcases_and_examples_directories_exist",
     testcases_and_examples_directories_exist,
+    smoke,
     {
         common::gating::assert_testcases_directory_exists();
         common::gating::assert_examples_directory_exists();
@@ -104,6 +105,7 @@ interop_test!(
     "REQ-2.3-X-04",
     "common::bundle_closure::tlp_exemption_whitelist",
     tlp_exemption_whitelist,
+    smoke,
     {
         common::bundle_closure::assert_tlp_exemption_whitelist();
     }
@@ -113,6 +115,7 @@ interop_test!(
     "REQ-2.3-X-05",
     "common::identity::identity_shape_fixture_valid",
     identity_shape_fixture_valid,
+    smoke,
     {
         common::identity::assert_identity_shape_fixture_valid();
     }
@@ -122,16 +125,14 @@ interop_test!(
     "REQ-2.3-X-08",
     "common::relationships::relationship_shape_ready",
     relationship_shape_ready,
+    smoke,
     {
         common::relationships::assert_relationship_module_ready();
     }
 );
 
-/// Coverage gate + certification report generation (§6 guard 1).
-///
-/// Named with `zzz_` prefix so `--test-threads=1` runs it after requirement tests.
-#[test]
-fn zzz_interop_certification_finalize() {
+fn main() {
+    harness::run_all();
     let manifest = load_manifest();
     harness::certification::finalize(&manifest);
 }

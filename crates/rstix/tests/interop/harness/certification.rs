@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use super::manifest::{Disposition, Manifest, RequirementRow};
-use super::registry::INTEROP_TEST_DESCRIPTORS;
+use super::registry::INTEROP_TESTS;
 
 static OUTCOMES: OnceLock<Mutex<HashMap<&'static str, Outcome>>> = OnceLock::new();
 
@@ -22,6 +22,8 @@ pub enum Outcome {
     Fail,
     /// Covered requirement with no passing path from unrepaired OASIS data (§5.2).
     Blocked,
+    /// Harness-only smoke check; does not count as OASIS verification.
+    HarnessSmoke,
 }
 
 impl Outcome {
@@ -30,6 +32,7 @@ impl Outcome {
             Self::Pass => "Pass",
             Self::Fail => "Fail",
             Self::Blocked => "BLOCKED",
+            Self::HarnessSmoke => "HARNESS_SMOKE",
         }
     }
 }
@@ -54,9 +57,12 @@ pub fn finalize(manifest: &Manifest) {
 }
 
 fn verify_registry_drift(manifest: &Manifest) {
-    let registered: HashSet<&str> = INTEROP_TEST_DESCRIPTORS.iter().map(|d| d.test_id).collect();
+    let registered: HashSet<&str> = INTEROP_TESTS
+        .iter()
+        .map(|entry| entry.descriptor.test_id)
+        .collect();
     let manifest_test_ids: HashSet<&str> = manifest
-        .testable_requirements()
+        .registered_test_ids()
         .filter_map(|row| row.test_id.as_deref())
         .collect();
 
@@ -74,35 +80,50 @@ fn verify_registry_drift(manifest: &Manifest) {
 }
 
 fn verify_coverage(manifest: &Manifest) {
-    let recorded = outcomes().lock().expect("interop outcomes lock");
-    let mut missing_outcomes = Vec::new();
-
-    for row in manifest.testable_requirements() {
-        if !recorded.contains_key(row.req_id.as_str()) {
-            missing_outcomes.push(row.req_id.clone());
-        }
-    }
+    let (missing_tested, missing_smoke, failed_tested) = {
+        let recorded = outcomes().lock().expect("interop outcomes lock");
+        let missing_tested = manifest
+            .testable_requirements()
+            .filter(|row| !recorded.contains_key(row.req_id.as_str()))
+            .map(|row| row.req_id.clone())
+            .collect::<Vec<_>>();
+        let missing_smoke = manifest
+            .requirements
+            .iter()
+            .filter(|row| row.disposition == Disposition::HarnessSmoke)
+            .filter(|row| recorded.get(row.req_id.as_str()) != Some(&Outcome::HarnessSmoke))
+            .map(|row| row.req_id.clone())
+            .collect::<Vec<_>>();
+        let failed_tested = manifest
+            .testable_requirements()
+            .filter(|row| {
+                recorded
+                    .get(row.req_id.as_str())
+                    .is_some_and(|o| *o != Outcome::Pass)
+            })
+            .map(|row| row.req_id.clone())
+            .collect::<Vec<_>>();
+        (missing_tested, missing_smoke, failed_tested)
+    };
 
     assert!(
-        missing_outcomes.is_empty(),
-        "testable manifest requirements without recorded outcomes: {missing_outcomes:?}"
+        missing_tested.is_empty(),
+        "TESTED manifest rows without recorded outcomes: {missing_tested:?}"
     );
-
-    let in_scope = manifest.in_scope_rows().count();
-    let covered = manifest
-        .in_scope_rows()
-        .filter(|row| row_is_covered(row, &recorded))
-        .count();
-
-    assert_eq!(
-        covered, in_scope,
-        "coverage gate: {covered}/{in_scope} in-scope manifest rows covered"
+    assert!(
+        missing_smoke.is_empty(),
+        "HARNESS_SMOKE manifest rows without harness-smoke outcomes: {missing_smoke:?}"
+    );
+    assert!(
+        failed_tested.is_empty(),
+        "TESTED manifest rows without Pass outcome: {failed_tested:?}"
     );
 }
 
 fn row_is_covered(row: &RequirementRow, recorded: &HashMap<&'static str, Outcome>) -> bool {
     match row.disposition {
         Disposition::Tested => recorded.contains_key(row.req_id.as_str()),
+        Disposition::HarnessSmoke => recorded.contains_key(row.req_id.as_str()),
         Disposition::ReportOnly | Disposition::ApiSurface => true,
         Disposition::Blocked => row.blocked_by.is_some(),
     }
@@ -155,13 +176,30 @@ fn write_report_artifacts(manifest: &Manifest) {
 struct SummaryJson {
     document: &'static str,
     document_stage: &'static str,
-    personas_claimed: Vec<&'static str>,
-    use_cases_claimed: u32,
-    in_scope_requirements: usize,
-    covered_requirements: usize,
-    passed_requirements: usize,
-    blocked_requirements: usize,
+    /// Personas this harness is built to support (not a certification claim).
+    personas_target: Vec<&'static str>,
+    /// OASIS interoperability spec defines 21 use cases; normative tests not all present yet.
+    oasis_use_cases_in_spec: u32,
+    manifest_rows_total: usize,
+    manifest_rows_by_disposition: ManifestDispositionCounts,
+    /// Rows with disposition `TESTED` that recorded `Pass` (rstix exercised).
+    requirements_verified: usize,
+    /// Rows with disposition `HARNESS_SMOKE` that ran (layout/shape only; not OASIS verification).
+    harness_smoke_executed: usize,
+    /// Checklist/framework placeholders — no automated test in this PR.
+    report_only_rows: usize,
+    /// Known OASIS test-case defects — recorded, not verified.
+    blocked_rows: usize,
     features_enabled: FeaturesEnabled,
+}
+
+#[derive(Clone, Copy, serde::Serialize)]
+struct ManifestDispositionCounts {
+    tested: usize,
+    harness_smoke: usize,
+    report_only: usize,
+    blocked: usize,
+    api_surface: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -172,32 +210,55 @@ struct FeaturesEnabled {
 }
 
 fn build_summary(manifest: &Manifest, recorded: &HashMap<&'static str, Outcome>) -> SummaryJson {
-    let in_scope: Vec<_> = manifest.in_scope_rows().collect();
-    let covered = in_scope
-        .iter()
-        .filter(|row| row_is_covered(row, recorded))
+    let disposition_counts = count_by_disposition(manifest);
+    let verified = manifest
+        .testable_requirements()
+        .filter(|row| recorded.get(row.req_id.as_str()) == Some(&Outcome::Pass))
         .count();
-    let passed = recorded.values().filter(|o| **o == Outcome::Pass).count();
-    let blocked = manifest
-        .in_scope_rows()
-        .filter(|row| row.disposition == Disposition::Blocked)
+    let harness_smoke = manifest
+        .requirements
+        .iter()
+        .filter(|row| row.disposition == Disposition::HarnessSmoke)
+        .filter(|row| recorded.get(row.req_id.as_str()) == Some(&Outcome::HarnessSmoke))
         .count();
 
     SummaryJson {
         document: "STIX 2.1 Interoperability v1.0 CSD01 (stix-2.1-interop-v1.0-csd01)",
         document_stage: "Committee Specification Draft 01 (2021-10-23)",
-        personas_claimed: vec!["SXP", "SXC"],
-        use_cases_claimed: 21,
-        in_scope_requirements: in_scope.len(),
-        covered_requirements: covered,
-        passed_requirements: passed,
-        blocked_requirements: blocked,
+        personas_target: vec!["SXP", "SXC"],
+        oasis_use_cases_in_spec: 21,
+        manifest_rows_total: manifest.requirements.len(),
+        manifest_rows_by_disposition: disposition_counts,
+        requirements_verified: verified,
+        harness_smoke_executed: harness_smoke,
+        report_only_rows: disposition_counts.report_only,
+        blocked_rows: disposition_counts.blocked,
         features_enabled: FeaturesEnabled {
             validate: cfg!(feature = "validate"),
             marking: cfg!(feature = "marking"),
             graph: cfg!(feature = "graph"),
         },
     }
+}
+
+fn count_by_disposition(manifest: &Manifest) -> ManifestDispositionCounts {
+    let mut counts = ManifestDispositionCounts {
+        tested: 0,
+        harness_smoke: 0,
+        report_only: 0,
+        blocked: 0,
+        api_surface: 0,
+    };
+    for row in &manifest.requirements {
+        match row.disposition {
+            Disposition::Tested => counts.tested += 1,
+            Disposition::HarnessSmoke => counts.harness_smoke += 1,
+            Disposition::ReportOnly => counts.report_only += 1,
+            Disposition::Blocked => counts.blocked += 1,
+            Disposition::ApiSurface => counts.api_surface += 1,
+        }
+    }
+    counts
 }
 
 fn render_traceability_csv(
@@ -209,6 +270,10 @@ fn render_traceability_csv(
     for row in manifest.requirements.iter() {
         let outcome = match row.disposition {
             Disposition::Tested => recorded
+                .get(row.req_id.as_str())
+                .map(|o| o.as_str())
+                .unwrap_or("MISSING"),
+            Disposition::HarnessSmoke => recorded
                 .get(row.req_id.as_str())
                 .map(|o| o.as_str())
                 .unwrap_or("MISSING"),
@@ -261,10 +326,19 @@ fn checklist_result(row: &RequirementRow, recorded: &HashMap<&'static str, Outco
     if row.disposition == Disposition::ReportOnly {
         return "Pending (Phase 7)".to_owned();
     }
+    if row.disposition == Disposition::HarnessSmoke {
+        return match recorded.get(row.req_id.as_str()) {
+            Some(Outcome::HarnessSmoke) => "Harness smoke (pending OASIS fixtures)".to_owned(),
+            Some(Outcome::Fail) => "Fail".to_owned(),
+            None => "Pending".to_owned(),
+            Some(Outcome::Pass) | Some(Outcome::Blocked) => "Invalid outcome".to_owned(),
+        };
+    }
     match recorded.get(row.req_id.as_str()) {
         Some(Outcome::Pass) => "Pass".to_owned(),
         Some(Outcome::Fail) => "Fail".to_owned(),
         Some(Outcome::Blocked) => format!("BLOCKED (defect {})", row.blocked_by.unwrap_or(0)),
+        Some(Outcome::HarnessSmoke) => "Harness smoke (misconfigured disposition)".to_owned(),
         None => "Pending".to_owned(),
     }
 }
@@ -297,31 +371,24 @@ fn render_risks(manifest: &Manifest, recorded: &HashMap<&'static str, Outcome>) 
     out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn blocked_counts_as_covered_not_passed() {
-        let row = RequirementRow {
-            req_id: "REQ-TEST-BLOCKED".to_owned(),
-            use_case: None,
-            section: None,
-            doc_page: None,
-            role: None,
-            level: "MUST".to_owned(),
-            gating: true,
-            test_id: None,
-            fixture: None,
-            checklist_row: None,
-            checklist_role: None,
-            verification: None,
-            disposition: Disposition::Blocked,
-            blocked_by: Some(19),
-        };
-        let mut recorded = HashMap::new();
-        assert!(row_is_covered(&row, &recorded));
-        recorded.insert("REQ-TEST-BLOCKED", Outcome::Blocked);
-        assert_ne!(recorded.get("REQ-TEST-BLOCKED"), Some(&Outcome::Pass));
-    }
+/// Helper assertions for `harness = false` runner.
+pub fn run_helper_self_tests() {
+    let row = RequirementRow {
+        req_id: "REQ-TEST-BLOCKED".to_owned(),
+        use_case: None,
+        section: None,
+        doc_page: None,
+        role: None,
+        level: "MUST".to_owned(),
+        gating: true,
+        test_id: None,
+        fixture: None,
+        checklist_row: None,
+        checklist_role: None,
+        verification: None,
+        disposition: Disposition::Blocked,
+        blocked_by: Some(19),
+    };
+    let recorded = HashMap::new();
+    assert!(row_is_covered(&row, &recorded));
 }

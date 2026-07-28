@@ -6,7 +6,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ### OASIS STIX 2.1 Interop golden harness (#403)
 
-- Adds the golden test harness for OASIS STIX 2.1 Interoperability (`stix-2.1-interop-v1.0-csd01`) self-certification: `tests/interop/` target (`validate` + `marking` + `graph`), `tests/interop_sentinel.rs` silent-skip guard, `tests/fixtures/interop/manifest.toml`, provenance-aware fixture loader, per-use-case overlay on `Validator::interop_strict()` (SHOULD-level `STIX-I0002` downgrade), bundle-closure checker with TLP exemption, containment helpers, `linkme` self-registration inventory, and certification report generation to `target/interop-report/`. Twenty-one use-case modules are stubbed; normative OASIS test-case fixtures and full §2.3 cross-cutting coverage follow in subsequent interop work.
+- Adds the golden test harness for OASIS STIX 2.1 Interoperability (`stix-2.1-interop-v1.0-csd01`): `tests/interop/` target with a custom runner (`harness = false`; `validate` + `marking` + `graph`), `tests/interop_sentinel.rs` silent-skip guard, `tests/fixtures/interop/manifest.toml`, provenance-aware fixture loader, overlay on `Validator::interop_strict()` (SHOULD-level `STIX-I0002` downgrade), bundle-closure checker with TLP exemption, containment helpers, `linkme` self-registration inventory, and certification report generation to `target/interop-report/`. Harness smoke checks for §2.3 cross-cutting layout are recorded separately from OASIS-verified requirements; full normative test-case fixtures follow in subsequent interop work.
 
 ### Dependency bumps (#402)
 

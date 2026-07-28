@@ -182,7 +182,7 @@ section = "2.3.7"
 doc_page = 19
 level = "MUST"
 gating = true
-disposition = "TESTED"
+disposition = "HARNESS_SMOKE"
 test_id = "common::gating::testcases_and_examples_directories_exist"
 
 [[requirement]]
@@ -192,7 +192,7 @@ section = "2.3.4"
 doc_page = 18
 level = "MAY"
 gating = true
-disposition = "TESTED"
+disposition = "HARNESS_SMOKE"
 test_id = "common::bundle_closure::tlp_exemption_whitelist"
 
 [[requirement]]
@@ -202,7 +202,7 @@ section = "2.3.4"
 doc_page = 18
 level = "MUST"
 gating = true
-disposition = "TESTED"
+disposition = "HARNESS_SMOKE"
 test_id = "common::identity::identity_shape_fixture_valid"
 fixture = "common/identity-shape.json"
 
@@ -213,7 +213,7 @@ section = "2.3.6"
 doc_page = 19
 level = "MUST"
 gating = true
-disposition = "TESTED"
+disposition = "HARNESS_SMOKE"
 test_id = "common::relationships::relationship_shape_ready"
 
 [[requirement]]

@@ -11,6 +11,8 @@ use super::fixture::interop_fixtures_root;
 pub enum Disposition {
     #[default]
     Tested,
+    /// Harness-only smoke check; runs in the suite but does not count as OASIS verification.
+    HarnessSmoke,
     ReportOnly,
     ApiSurface,
     Blocked,
@@ -21,6 +23,7 @@ impl Disposition {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Tested => "TESTED",
+            Self::HarnessSmoke => "HARNESS_SMOKE",
             Self::ReportOnly => "REPORT_ONLY",
             Self::ApiSurface => "API_SURFACE",
             Self::Blocked => "BLOCKED",
@@ -95,11 +98,15 @@ impl Manifest {
                 "duplicate req_id: {}",
                 row.req_id
             );
-            if row.disposition == Disposition::Tested {
+            if matches!(
+                row.disposition,
+                Disposition::Tested | Disposition::HarnessSmoke
+            ) {
                 assert!(
                     row.test_id.is_some(),
-                    "{}: TESTED disposition requires test_id",
-                    row.req_id
+                    "{}: {} disposition requires test_id",
+                    row.req_id,
+                    row.disposition.as_str()
                 );
             }
             if row.disposition == Disposition::Blocked {
@@ -111,7 +118,10 @@ impl Manifest {
             }
             if let Some(fixture) = &row.fixture {
                 let path = interop_fixtures_root().join(fixture);
-                if row.disposition == Disposition::Tested {
+                if matches!(
+                    row.disposition,
+                    Disposition::Tested | Disposition::HarnessSmoke
+                ) {
                     assert!(
                         path.exists(),
                         "{}: fixture missing: {}",
@@ -150,6 +160,15 @@ impl Manifest {
         self.requirements
             .iter()
             .filter(|row| row.disposition == Disposition::Tested)
+    }
+
+    pub fn registered_test_ids(&self) -> impl Iterator<Item = &RequirementRow> {
+        self.requirements.iter().filter(|row| {
+            matches!(
+                row.disposition,
+                Disposition::Tested | Disposition::HarnessSmoke
+            )
+        })
     }
 
     pub fn checklist_rows_consumer(&self) -> Vec<&RequirementRow> {
@@ -196,15 +215,5 @@ pub fn assert_checklist_rows_unique() {
                 );
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn manifest_file_exists() {
-        assert!(interop_fixtures_root().join("manifest.toml").exists());
     }
 }

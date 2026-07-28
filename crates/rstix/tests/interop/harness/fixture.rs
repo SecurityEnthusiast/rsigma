@@ -250,19 +250,10 @@ fn looks_like_stix_id(value: &str) -> bool {
         && uuid.chars().filter(|c| *c == '-').count() == 4
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rfc3339_helper_accepts_millis() {
-        assert!(is_rfc3339_millis("2020-01-20T12:34:56.000Z"));
-    }
-
-    #[test]
-    fn stix_id_helper_accepts_canonical_form() {
-        assert!(looks_like_stix_id(
-            "identity--f431f809-377b-45e0-aa1c-6a4751cae5ff"
-        ));
-    }
+/// Helper assertions for `harness = false` runner.
+pub fn run_helper_self_tests() {
+    assert!(is_rfc3339_millis("2020-01-20T12:34:56.000Z"));
+    assert!(looks_like_stix_id(
+        "identity--f431f809-377b-45e0-aa1c-6a4751cae5ff"
+    ));
 }

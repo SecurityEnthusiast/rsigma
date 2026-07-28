@@ -892,23 +892,41 @@ The tables above describe **implemented** behavior. Negative and rich fixtures f
 
 ### OASIS interop golden suite
 
-Self-certification target: **STIX 2.1 Producer (SXP) + Consumer (SXC)** across all **21** OASIS interoperability use cases per **STIX 2.1 Interoperability Version 1.0, Committee Specification Draft 01** (`stix-2.1-interop-v1.0-csd01`, 2021-10-23). The suite lives in `tests/interop/` (single Cargo target) with fixtures under `tests/fixtures/interop/`.
+Golden test harness for **STIX 2.1 Producer (SXP) + Consumer (SXC)** self-certification against **STIX 2.1 Interoperability Version 1.0, Committee Specification Draft 01** (`stix-2.1-interop-v1.0-csd01`, 2021-10-23). The harness tracks all **21** use cases in `manifest.toml`; normative OASIS test-case fixtures and full §3.x verification are added incrementally. The suite lives in `tests/interop/` (single Cargo target) with fixtures under `tests/fixtures/interop/`.
+
+**What this PR is not:** a completed OASIS interoperability certification. The certification report is a traceability artifact — not evidence that every in-scope requirement passed.
 
 | Component | Path | Role |
 | --------- | ---- | ---- |
 | Harness | `tests/interop/harness/` | Manifest, fixture loader + provenance, per-use-case overlay on `interop_strict`, bundle closure, containment, certification report |
-| Cross-cutting | `tests/interop/common/` | §2.3 invariants (identity shape, closure, relationships, gating) |
+| Cross-cutting | `tests/interop/common/` | §2.3 harness smoke (directory layout, TLP whitelist, identity/relationship JSON shape) until normative fixtures land |
 | Use-case tests | `tests/interop/use_cases/` (added per §3.x as normative fixtures land) | Producer/Consumer tests against OASIS normative test-case data |
 | Manifest | `tests/fixtures/interop/manifest.toml` | `req_id` → `test_id` → fixture → §4.2 checklist row |
 | Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars |
 | Examples | `tests/fixtures/interop/examples/` | Non-normative; must never fail the build |
 | Report artifacts | `target/interop-report/` | `summary.json`, Tables 55/56 markdown, traceability CSV, risks (never committed) |
 
-**Run locally (required features explicit, single-threaded finalize):**
+**Certification report semantics (`summary.json`):**
+
+| Field | Meaning |
+| ----- | ------- |
+| `oasis_use_cases_in_spec` | The OASIS interoperability document defines 21 use cases — **not** how many are tested here. |
+| `manifest_rows_total` | Rows in `manifest.toml` (harness + placeholders + smoke). |
+| `manifest_rows_by_disposition` | Breakdown by `TESTED`, `HARNESS_SMOKE`, `REPORT_ONLY`, `BLOCKED`. |
+| `requirements_verified` | Rows with disposition `TESTED` that recorded `Pass` — rstix actually exercised (8 today). |
+| `harness_smoke_executed` | §2.3 layout/shape checks run; **not** OASIS normative verification (4 today). |
+| `report_only_rows` | §4.2 checklist/framework placeholders with no automated test in this PR (7 today). |
+| `blocked_rows` | Known OASIS test-case defects recorded in the manifest (2 today). |
+
+There is **no** “100% covered” field. Do not infer OASIS conformance from manifest row counts.
+
+**Run locally (required features explicit):**
 
 ```bash
-cargo test -p rstix --test interop --features validate,marking,graph -- --test-threads=1
+cargo test -p rstix --test interop --features validate,marking,graph --locked
 ```
+
+The interop target uses a custom runner (`harness = false`): registered tests run in stable order, then the certification report is written. No `--test-threads=1` flag is required — parallel `cargo test --workspace --all-features` is safe because finalize no longer races other tests.
 
 **Silent-skip guard:** `tests/interop_sentinel.rs` is an ungated target that **must fail** when `validate`, `marking`, and `graph` are not enabled — that failure is correct, not a regression. It **passes** only when those three features are on (same as CI’s `cargo test --workspace --all-features`):
 
@@ -920,25 +938,25 @@ cargo test -p rstix --test interop_sentinel --locked
 cargo test -p rstix --test interop_sentinel --features validate,marking,graph --locked
 ```
 
-**Why `--test-threads=1`:** the finalize test (`zzz_interop_certification_finalize`) collects outcomes from earlier tests. With parallel test execution, it can run before those tests finish and falsely fail. Single-threaded execution keeps order deterministic (`zzz_` runs last alphabetically).
-
 **CI job template (artifact gate):**
 
 ```yaml
 - name: Record interop run start
   run: echo "INTEROP_RUN_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 - name: OASIS STIX 2.1 interop golden suite
-  run: cargo test -p rstix --test interop --features validate,marking,graph --locked -- --test-threads=1
+  run: cargo test -p rstix --test interop --features validate,marking,graph --locked
 - name: Gate on interop report
   run: |
     test -f target/interop-report/summary.json
     python3 - <<'PY'
-    import json, os, sys
-    from datetime import datetime, timezone
+    import json
     summary = json.load(open("target/interop-report/summary.json"))
-    covered = summary["covered_requirements"]
-    in_scope = summary["in_scope_requirements"]
-    assert covered == in_scope, f"coverage {covered}/{in_scope}"
+    by = summary["manifest_rows_by_disposition"]
+    verified = summary["requirements_verified"]
+    smoke = summary["harness_smoke_executed"]
+    assert verified == by["tested"], f"TESTED rows not verified: {verified}/{by['tested']}"
+    assert smoke == by["harness_smoke"], f"HARNESS_SMOKE not run: {smoke}/{by['harness_smoke']}"
+    print(f"verified={verified}, harness_smoke={smoke}, report_only={summary['report_only_rows']}, blocked={summary['blocked_rows']}")
     PY
 - uses: actions/upload-artifact@v4
   with:

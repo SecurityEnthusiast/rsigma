@@ -81,7 +81,7 @@ p12-keystore = { version = "0.3", optional = true }
 
 [dev-dependencies]
 linkme = "0.3"
-paste = "1"
+pastey = "0.2"
 toml = "0.8"
 wiremock = "0.6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
@@ -159,6 +159,7 @@ required-features = ["taxii-store"]
 [[test]]
 name = "interop"
 path = "tests/interop/main.rs"
+harness = false
 required-features = ["validate", "marking", "graph"]
 
 [[test]]
