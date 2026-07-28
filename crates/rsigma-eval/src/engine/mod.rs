@@ -21,6 +21,7 @@ use rsigma_parser::{
 
 use rsigma_ir::{IrRule, LowerOptions, lower_rule};
 
+use crate::candidate_index::CandidateIndex;
 use crate::compiler::{
     CompiledRule, compile_detection, compile_to_compiled, evaluate_rule_with_bloom,
 };
@@ -29,7 +30,6 @@ use crate::event::Event;
 use crate::logsource::LogSourceExtractor;
 use crate::pipeline::{Pipeline, apply_pipelines};
 use crate::result::{EvaluationResult, MatchDetailLevel};
-use crate::rule_index::RuleIndex;
 use crate::rule_metadata::{RuleBundleMetadata, RuleMetadataLookup};
 
 use bloom_index::{BloomCache, FieldBloomIndex};
@@ -92,9 +92,9 @@ pub struct Engine {
     /// Monotonic counter used to namespace injected filter detections,
     /// preventing key collisions when multiple filters share detection names.
     filter_counter: usize,
-    /// Inverted index mapping `(field, exact_value)` to candidate rule indices.
-    /// Rebuilt after every rule mutation (add, filter).
-    rule_index: RuleIndex,
+    /// Witness-based inverted index from event shape to candidate rule
+    /// indices. Rebuilt after every rule mutation (add, filter).
+    rule_index: CandidateIndex,
     /// Per-field bloom filter over positive substring needles. Rebuilt
     /// alongside `rule_index`. Consulted only when `bloom_prefilter` is
     /// enabled.
@@ -115,9 +115,10 @@ pub struct Engine {
     /// engine extracts each event's logsource once and skips rules whose
     /// logsource conflicts (see [`Engine::set_logsource_extractor`]).
     logsource_extractor: Option<LogSourceExtractor>,
-    /// Monotonic count of always-evaluated rules skipped because their
-    /// product conflicts with the event's. Incremented only when an extractor
-    /// is set; surfaced via [`Engine::logsource_pruned_total`].
+    /// Monotonic count of rules skipped because their logsource conflicts
+    /// with the event's, whether pruned by the index's product partitioning
+    /// or by the residual check in the evaluation loop. Incremented only when
+    /// an extractor is set; surfaced via [`Engine::logsource_pruned_total`].
     logsource_pruned: AtomicU64,
     /// Monotonic count of `evaluate` calls where the extractor produced no
     /// logsource at all (fail-open: every rule was evaluated). Surfaced via
@@ -156,7 +157,7 @@ impl Engine {
             include_event: false,
             match_detail: MatchDetailLevel::Off,
             filter_counter: 0,
-            rule_index: RuleIndex::empty(),
+            rule_index: CandidateIndex::empty(),
             bloom_index: FieldBloomIndex::empty(),
             bloom_prefilter: false,
             bloom_max_bytes: None,
@@ -181,7 +182,7 @@ impl Engine {
             include_event: false,
             match_detail: MatchDetailLevel::Off,
             filter_counter: 0,
-            rule_index: RuleIndex::empty(),
+            rule_index: CandidateIndex::empty(),
             bloom_index: FieldBloomIndex::empty(),
             bloom_prefilter: false,
             bloom_max_bytes: None,
@@ -264,8 +265,13 @@ impl Engine {
         self.logsource_extractor.as_ref()
     }
 
-    /// Total always-evaluated rules skipped by logsource product pruning since
-    /// engine creation. Zero unless an extractor is set.
+    /// Total rules skipped because their logsource conflicted with an event's,
+    /// since engine creation. Zero unless an extractor is set.
+    ///
+    /// Counts both sources of conflict pruning: always-evaluated rules the
+    /// candidate index never returns because their `product` bucket conflicts,
+    /// and candidate rules the residual `logsource_compatible` check drops in
+    /// the evaluation loop.
     pub fn logsource_pruned_total(&self) -> u64 {
         self.logsource_pruned.load(Ordering::Relaxed)
     }
@@ -610,7 +616,7 @@ impl Engine {
     /// cheaper than maintaining incremental state across mutations. The
     /// single-rule paths use [`Engine::index_append_last_rule`] instead.
     fn rebuild_index(&mut self) {
-        self.rule_index = RuleIndex::build(&self.rules);
+        self.rule_index = CandidateIndex::build(&self.rules);
         self.bloom_index = match self.bloom_max_bytes {
             Some(budget) => FieldBloomIndex::build_with_budget(&self.rules, budget),
             None => FieldBloomIndex::build(&self.rules),
@@ -654,6 +660,12 @@ impl Engine {
         self.rule_index.append_rule(new_idx, rule);
         self.bloom_index.append_rule(rule);
 
+        // Both indexes carry an automaton that cannot absorb a single rule in
+        // place, so each parks the affected rules in a conservative fallback
+        // and clears it at its own doubling watermark.
+        if self.rule_index.should_rebuild(self.rules.len()) {
+            self.rule_index = CandidateIndex::build(&self.rules);
+        }
         if self.bloom_index.should_rebuild(self.rules.len()) {
             self.bloom_index = match self.bloom_max_bytes {
                 Some(budget) => FieldBloomIndex::build_with_budget(&self.rules, budget),
@@ -781,6 +793,7 @@ impl Engine {
         // leaving the loop's behaviour unchanged.
         let candidates = self.logsource_candidates(event, event_logsource);
         let mut results = Vec::new();
+        let mut pruned = 0u64;
         for idx in candidates {
             if let Some(ref mask) = keep
                 && !mask[idx]
@@ -791,6 +804,7 @@ impl Engine {
             if let Some(event_ls) = event_logsource
                 && !logsource_compatible(&rule.logsource, event_ls)
             {
+                pruned += 1;
                 continue;
             }
             if let Some(mut m) =
@@ -805,6 +819,7 @@ impl Engine {
                 results.push(m);
             }
         }
+        self.record_logsource_pruned(pruned);
         results
     }
 
@@ -819,6 +834,7 @@ impl Engine {
         // leaving the loop's behaviour unchanged.
         let candidates = self.logsource_candidates(event, event_logsource);
         let mut results = Vec::new();
+        let mut pruned = 0u64;
         for idx in candidates {
             if let Some(ref mask) = keep
                 && !mask[idx]
@@ -829,6 +845,7 @@ impl Engine {
             if let Some(event_ls) = event_logsource
                 && !logsource_compatible(&rule.logsource, event_ls)
             {
+                pruned += 1;
                 continue;
             }
             if let Some(mut m) = evaluate_rule_with_bloom(rule, event, &bloom, self.match_detail) {
@@ -841,7 +858,18 @@ impl Engine {
                 results.push(m);
             }
         }
+        self.record_logsource_pruned(pruned);
         results
+    }
+
+    /// Fold one event's residual logsource-conflict tally into the counter.
+    ///
+    /// Kept out of the loop so a conflicting rule costs an increment on a
+    /// local rather than an atomic.
+    fn record_logsource_pruned(&self, pruned: u64) {
+        if pruned > 0 {
+            self.logsource_pruned.fetch_add(pruned, Ordering::Relaxed);
+        }
     }
 
     /// Evaluate an event against candidate rules matching the given logsource.
