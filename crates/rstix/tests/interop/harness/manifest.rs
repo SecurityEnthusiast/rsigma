@@ -11,7 +11,7 @@ use super::fixture::interop_fixtures_root;
 pub enum Disposition {
     #[default]
     Tested,
-    /// Harness-only smoke check; runs in the suite but does not count as OASIS verification.
+    /// Harness-only smoke check; runs in the suite but is not normative requirement proof.
     HarnessSmoke,
     ReportOnly,
     ApiSurface,

@@ -1,0 +1,22 @@
+{
+  "type": "bundle",
+  "id": "bundle--88888888-8888-4888-8888-888888888888",
+  "objects": [
+    {
+      "type": "identity",
+      "spec_version": "2.1",
+      "id": "identity--f431f809-377b-45e0-aa1c-6a4751cae5ff",
+      "created": "2020-01-20T12:34:56.000Z",
+      "modified": "2020-01-20T12:34:56.000Z",
+      "name": "ACME Corp, Inc.",
+      "identity_class": "organization",
+      "created_by_ref": "identity--f431f809-377b-45e0-aa1c-6a4751cae5ff"
+    },
+    {
+      "type": "ipv4-addr",
+      "spec_version": "2.1",
+      "id": "ipv4-addr--28bb3599-77cd-5a82-a950-b5bc3caf07c4",
+      "value": "198.51.100.3"
+    }
+  ]
+}

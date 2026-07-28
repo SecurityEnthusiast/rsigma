@@ -59,7 +59,9 @@ impl OverlayReport {
 impl Default for InteropOverlay {
     fn default() -> Self {
         Self {
-            downgraded_codes: HashSet::from([DiagnosticCode::I0002]),
+            // I0002: relationship matrix SHOULD checks.
+            // W0031: TLP 1.x encoding warnings — interop fixtures may reference predefined TLP ids.
+            downgraded_codes: HashSet::from([DiagnosticCode::I0002, DiagnosticCode::W0031]),
         }
     }
 }

@@ -2,9 +2,11 @@ pub mod certification;
 pub mod closure;
 pub mod containment;
 pub mod fixture;
+pub mod interop_gate;
 pub mod manifest;
 pub mod profile;
 pub mod registry;
+pub mod use_case;
 
 /// Register a test at compile time and expose a deterministic runner (no `#[test]`).
 ///

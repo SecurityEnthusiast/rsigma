@@ -2,11 +2,11 @@
 
 use std::collections::HashSet;
 
+use rstix::model::Bundle;
 use rstix::model::meta::{
     TLP1_AMBER_ID, TLP1_GREEN_ID, TLP1_RED_ID, TLP1_WHITE_ID, TLP2_AMBER_ID, TLP2_AMBER_STRICT_ID,
     TLP2_CLEAR_ID, TLP2_GREEN_ID, TLP2_RED_ID,
 };
-use rstix::model::{Bundle, ParseOptions};
 
 /// Reference property names walked for bundle closure (§2.3.3).
 const REF_KEYS: &[&str] = &[
@@ -67,6 +67,7 @@ pub fn tlp_exempt_ids() -> HashSet<&'static str> {
 }
 
 /// Collect every STIX id referenced by objects in a parsed bundle.
+#[expect(dead_code, reason = "retained for parsed-bundle closure helpers")]
 pub fn collect_referenced_ids(bundle: &Bundle) -> HashSet<String> {
     let mut refs = HashSet::new();
     for object in bundle.objects().iter() {
@@ -113,6 +114,7 @@ fn push_ref_value(value: &serde_json::Value, out: &mut HashSet<String>) {
 }
 
 /// Return referenced ids missing from the bundle (excluding TLP exemptions).
+#[expect(dead_code, reason = "retained for parsed-bundle closure helpers")]
 pub fn missing_closure_ids(bundle: &Bundle) -> Vec<String> {
     let present: HashSet<String> = bundle
         .objects()
@@ -128,11 +130,36 @@ pub fn missing_closure_ids(bundle: &Bundle) -> Vec<String> {
         .collect()
 }
 
-/// Parse wire JSON and assert reference closure.
+/// Return referenced ids missing from wire JSON (excluding TLP exemptions).
+pub fn missing_closure_ids_from_json(json: &str) -> Vec<String> {
+    let value: serde_json::Value =
+        serde_json::from_str(json).expect("parse bundle JSON for closure check");
+    let objects = value
+        .get("objects")
+        .and_then(serde_json::Value::as_array)
+        .expect("bundle must contain objects array");
+
+    let present: HashSet<String> = objects
+        .iter()
+        .filter_map(|obj| obj.get("id").and_then(serde_json::Value::as_str))
+        .map(str::to_owned)
+        .collect();
+
+    let mut referenced = HashSet::new();
+    for object in objects {
+        collect_refs_from_value(object, &mut referenced);
+    }
+
+    let exempt = tlp_exempt_ids();
+    referenced
+        .into_iter()
+        .filter(|id| !present.contains(id) && !exempt.contains(id.as_str()))
+        .collect()
+}
+
+/// Assert interop reference closure on wire JSON (TLP predefined markings exempt per §2.3.4).
 pub fn assert_bundle_reference_closed(json: &str) {
-    let bundle = Bundle::parse_with_options(json, &ParseOptions::default())
-        .expect("parse bundle for closure check");
-    let missing = missing_closure_ids(&bundle);
+    let missing = missing_closure_ids_from_json(json);
     assert!(
         missing.is_empty(),
         "bundle not reference-closed; missing ids: {missing:?}"

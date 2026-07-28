@@ -22,7 +22,7 @@ pub enum Outcome {
     Fail,
     /// Covered requirement with no passing path from unrepaired OASIS data (§5.2).
     Blocked,
-    /// Harness-only smoke check; does not count as OASIS verification.
+    /// Harness-only smoke check; does not count as normative requirement proof.
     HarnessSmoke,
 }
 
@@ -182,13 +182,14 @@ struct SummaryJson {
     oasis_use_cases_in_spec: u32,
     manifest_rows_total: usize,
     manifest_rows_by_disposition: ManifestDispositionCounts,
-    /// Rows with disposition `TESTED` that recorded `Pass` (rstix exercised).
-    requirements_verified: usize,
-    /// Rows with disposition `HARNESS_SMOKE` that ran (layout/shape only; not OASIS verification).
+    /// Harness infrastructure rows with disposition `TESTED` that recorded `Pass` (§2.3 excluded).
+    tested_rows_passed: usize,
+    /// §2.3 / scaffold rows with disposition `HARNESS_SMOKE` that executed.
+    /// Synthetic fixtures and partial checks — **not** OASIS normative verification.
     harness_smoke_executed: usize,
     /// Checklist/framework placeholders — no automated test in this PR.
     report_only_rows: usize,
-    /// Known OASIS test-case defects — recorded, not verified.
+    /// Rows blocked because published OASIS test-case bytes cannot be repaired without inventing data.
     blocked_rows: usize,
     features_enabled: FeaturesEnabled,
 }
@@ -211,8 +212,9 @@ struct FeaturesEnabled {
 
 fn build_summary(manifest: &Manifest, recorded: &HashMap<&'static str, Outcome>) -> SummaryJson {
     let disposition_counts = count_by_disposition(manifest);
-    let verified = manifest
+    let tested_rows_passed = manifest
         .testable_requirements()
+        .filter(|row| row.disposition == Disposition::Tested)
         .filter(|row| recorded.get(row.req_id.as_str()) == Some(&Outcome::Pass))
         .count();
     let harness_smoke = manifest
@@ -229,7 +231,7 @@ fn build_summary(manifest: &Manifest, recorded: &HashMap<&'static str, Outcome>)
         oasis_use_cases_in_spec: 21,
         manifest_rows_total: manifest.requirements.len(),
         manifest_rows_by_disposition: disposition_counts,
-        requirements_verified: verified,
+        tested_rows_passed,
         harness_smoke_executed: harness_smoke,
         report_only_rows: disposition_counts.report_only,
         blocked_rows: disposition_counts.blocked,
@@ -321,10 +323,10 @@ fn render_checklist_table(
 
 fn checklist_result(row: &RequirementRow, recorded: &HashMap<&'static str, Outcome>) -> String {
     if row.disposition == Disposition::Blocked {
-        return format!("BLOCKED (defect {})", row.blocked_by.unwrap_or(0));
+        return "BLOCKED (unrepairable published test data)".to_owned();
     }
     if row.disposition == Disposition::ReportOnly {
-        return "Pending (Phase 7)".to_owned();
+        return "Pending (checklist report only)".to_owned();
     }
     if row.disposition == Disposition::HarnessSmoke {
         return match recorded.get(row.req_id.as_str()) {
@@ -337,7 +339,7 @@ fn checklist_result(row: &RequirementRow, recorded: &HashMap<&'static str, Outco
     match recorded.get(row.req_id.as_str()) {
         Some(Outcome::Pass) => "Pass".to_owned(),
         Some(Outcome::Fail) => "Fail".to_owned(),
-        Some(Outcome::Blocked) => format!("BLOCKED (defect {})", row.blocked_by.unwrap_or(0)),
+        Some(Outcome::Blocked) => "BLOCKED (unrepairable published test data)".to_owned(),
         Some(Outcome::HarnessSmoke) => "Harness smoke (misconfigured disposition)".to_owned(),
         None => "Pending".to_owned(),
     }
@@ -355,9 +357,10 @@ fn render_risks(manifest: &Manifest, recorded: &HashMap<&'static str, Outcome>) 
         .filter(|r| r.disposition == Disposition::Blocked)
     {
         out.push_str(&format!(
-            "- `{}` blocked by defect {}\n",
+            "- `{}` blocked ({}/§{}): unrepairable published test data\n",
             row.req_id,
-            row.blocked_by.unwrap_or(0)
+            row.checklist_role.as_deref().unwrap_or(""),
+            row.checklist_row.as_deref().unwrap_or(""),
         ));
     }
     if recorded.values().any(|o| *o == Outcome::Blocked) {

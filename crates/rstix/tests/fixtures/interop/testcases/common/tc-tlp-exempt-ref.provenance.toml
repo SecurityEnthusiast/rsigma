@@ -1,0 +1,14 @@
+fixture = "tc-tlp-exempt-ref.json"
+source_doc = "rstix-interop-common"
+source_pages = "18"
+source_section = "2.3.4"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Bundle references predefined TLP1 WHITE marking without including marking-definition object."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "synthetic"
+description = "Synthetic bundle exercising REQ-2.3-X-04 TLP closure exemption."

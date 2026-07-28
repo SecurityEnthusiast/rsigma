@@ -1,8 +1,8 @@
-//! Guard against silently skipping the OASIS interop certification suite.
+//! Guard against silently skipping the OASIS interop test suite.
 //!
 //! This target is intentionally **ungated** (no `required-features`). When the interop
 //! suite's three features are disabled, Cargo does not build `tests/interop/main.rs` at all
-//! and `cargo test` would otherwise report green. See `plan/Golden-Test-layout.md` §6.
+//! and `cargo test` would otherwise report green.
 
 #[test]
 #[allow(

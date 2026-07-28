@@ -1,4 +1,9 @@
 pub mod bundle_closure;
+pub mod consumer;
+pub mod fixture_walk;
 pub mod gating;
 pub mod identity;
+pub mod producer;
 pub mod relationships;
+pub mod sco;
+pub mod validation;
