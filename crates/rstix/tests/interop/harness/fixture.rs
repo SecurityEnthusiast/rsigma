@@ -52,22 +52,28 @@ pub struct DivergenceRecord {
 
 /// Load a fixture relative to `tests/fixtures/interop/`.
 pub fn load_fixture(relative_path: &str) -> InteropFixture {
+    try_load_fixture(relative_path).unwrap_or_else(|err| panic!("{err}"))
+}
+
+/// Same as [`load_fixture`] but returns an error when the sidecar is absent or invalid.
+pub fn try_load_fixture(relative_path: &str) -> Result<InteropFixture, String> {
     let json_path = interop_fixtures_root().join(relative_path);
     let sidecar_path = sidecar_path_for(&json_path);
 
-    assert!(
-        sidecar_path.exists(),
-        "missing provenance sidecar for {} (expected {})",
-        json_path.display(),
-        sidecar_path.display()
-    );
+    if !sidecar_path.exists() {
+        return Err(format!(
+            "missing provenance sidecar for {} (expected {})",
+            json_path.display(),
+            sidecar_path.display()
+        ));
+    }
 
     let json = fs::read_to_string(&json_path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", json_path.display()));
+        .map_err(|e| format!("read {}: {e}", json_path.display()))?;
     let sidecar_text = fs::read_to_string(&sidecar_path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", sidecar_path.display()));
+        .map_err(|e| format!("read {}: {e}", sidecar_path.display()))?;
     let provenance: ProvenanceSidecar = toml::from_str(&sidecar_text)
-        .unwrap_or_else(|e| panic!("parse {}: {e}", sidecar_path.display()));
+        .map_err(|e| format!("parse {}: {e}", sidecar_path.display()))?;
     validate_provenance_sidecar(&json_path, &provenance);
 
     let fixture = InteropFixture {
@@ -76,7 +82,7 @@ pub fn load_fixture(relative_path: &str) -> InteropFixture {
         provenance,
     };
     run_load_time_scans(&fixture);
-    fixture
+    Ok(fixture)
 }
 
 /// Refuse fixtures without provenance sidecars.
@@ -85,12 +91,9 @@ pub fn assert_rejects_missing_provenance() {
     let sidecar_path = sidecar_path_for(&json_path);
     assert!(json_path.exists());
     assert!(!sidecar_path.exists());
-    let result = std::panic::catch_unwind(|| {
-        load_fixture("testcases/harness/missing-sidecar.json");
-    });
     assert!(
-        result.is_err(),
-        "expected panic for missing provenance sidecar"
+        try_load_fixture("testcases/harness/missing-sidecar.json").is_err(),
+        "expected missing provenance sidecar to be rejected"
     );
 }
 

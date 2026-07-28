@@ -1,0 +1,24 @@
+fixture = "tc-3.18.3.2-campaign-attributed-to-threat-actor.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "116-117"
+source_section = "3.18.3.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on all objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on created_by_ref, target_ref, and relationship_type keys."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "missing-comma"
+description = "Insert comma between relationship target_ref and relationship_type (structurally invalid JSON as published)."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap objects in a bundle per REQ-2.3-X-02."
