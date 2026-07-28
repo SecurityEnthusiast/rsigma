@@ -54,6 +54,22 @@ pub const TLP2_AMBER_STRICT_ID: &str = "marking-definition--939a9414-1955-4a77-9
 /// TLP 2.0 red marking id.
 pub const TLP2_RED_ID: &str = "marking-definition--e828b379-4398-4577-93c8-9d3c7c13d7b5";
 
+/// Whether `id` is one of the nine predefined TLP marking-definition UUIDs (STIX §7.2.1.4).
+pub fn is_predefined_tlp_marking_id(id: &str) -> bool {
+    matches!(
+        id,
+        TLP1_WHITE_ID
+            | TLP1_GREEN_ID
+            | TLP1_AMBER_ID
+            | TLP1_RED_ID
+            | TLP2_CLEAR_ID
+            | TLP2_GREEN_ID
+            | TLP2_AMBER_ID
+            | TLP2_AMBER_STRICT_ID
+            | TLP2_RED_ID
+    )
+}
+
 /// A STIX marking definition.
 ///
 /// Marking definitions are **non-versionable**: they carry `created` but intentionally

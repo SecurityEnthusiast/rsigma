@@ -39,6 +39,8 @@ pub struct Bundle {
     extra_properties: HashMap<String, BTreeMap<String, serde_json::Value>>,
     /// When true, refs to [`StixObject::Custom`] targets in this bundle pass SDO/SCO kind checks.
     allow_custom: bool,
+    /// When true, predefined TLP marking ids may be referenced without bundle membership.
+    exempt_predefined_tlp_marking_refs: bool,
 }
 
 impl QueryableContainer for Bundle {
@@ -196,6 +198,7 @@ impl Bundle {
             id_index,
             extra_properties,
             allow_custom: opts.allow_custom,
+            exempt_predefined_tlp_marking_refs: opts.exempt_predefined_tlp_marking_refs,
         };
         bundle.validate_refs()?;
         Ok(bundle)
@@ -213,6 +216,7 @@ impl Bundle {
             id_index,
             extra_properties: HashMap::new(),
             allow_custom: false,
+            exempt_predefined_tlp_marking_refs: false,
         }
     }
 
@@ -279,6 +283,11 @@ impl Bundle {
         id: &StixId,
         embedded_ids: &HashSet<String>,
     ) -> Result<(), ModelError> {
+        if self.exempt_predefined_tlp_marking_refs
+            && crate::model::meta::is_predefined_tlp_marking_id(id.as_str())
+        {
+            return Ok(());
+        }
         if self.ref_resolves_in_bundle(id, embedded_ids) {
             Ok(())
         } else {
@@ -372,11 +381,7 @@ impl Bundle {
         }
 
         for reference in refs {
-            if !self.ref_resolves_in_bundle(&reference, &embedded_ids) {
-                return Err(ModelError::BundleReferenceMissing {
-                    ref_id: reference.as_str().to_owned(),
-                });
-            }
+            self.validate_ref_resolves_in_bundle(&reference, &embedded_ids)?;
         }
 
         for object in &self.objects {
@@ -785,5 +790,22 @@ mod tests {
         let from_str = Bundle::parse(raw).expect("string parse");
         let from_reader = Bundle::parse_reader(Cursor::new(raw.as_bytes())).expect("reader parse");
         assert_eq!(from_str, from_reader);
+    }
+
+    #[test]
+    fn interop_parse_exempts_predefined_tlp_marking_refs() {
+        let raw =
+            include_str!("../../tests/fixtures/interop/testcases/common/tc-tlp-exempt-ref.json");
+        let default = Bundle::parse(raw);
+        assert!(
+            default.is_err(),
+            "default parse rejects external TLP marking ref"
+        );
+        let interop = Bundle::parse_with_options(raw, &ParseOptions::new().interop_bundle());
+        assert!(
+            interop.is_ok(),
+            "interop parse accepts predefined TLP marking ref: {:?}",
+            interop.as_ref().err()
+        );
     }
 }

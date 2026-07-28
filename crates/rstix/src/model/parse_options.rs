@@ -77,6 +77,9 @@ pub struct ParseOptions {
     pub max_bundle_bytes: usize,
     /// Registered custom type deserializers.
     pub type_registry: TypeRegistry,
+    /// When true, predefined TLP `marking-definition` ids may be referenced without
+    /// being present in the bundle (STIX 2.1 Interoperability §2.3.4).
+    pub exempt_predefined_tlp_marking_refs: bool,
 }
 
 impl Default for ParseOptions {
@@ -88,6 +91,7 @@ impl Default for ParseOptions {
             max_string_length: 1_048_576,
             max_bundle_bytes: 256 * 1_048_576,
             type_registry: TypeRegistry::new(),
+            exempt_predefined_tlp_marking_refs: false,
         }
     }
 }
@@ -112,6 +116,17 @@ impl ParseOptions {
     {
         self.type_registry.register_custom_type::<T>(type_name);
         self
+    }
+
+    /// Enable interop bundle reference rules (predefined TLP marking exemption).
+    pub fn exempt_predefined_tlp_marking_refs(mut self, value: bool) -> Self {
+        self.exempt_predefined_tlp_marking_refs = value;
+        self
+    }
+
+    /// Parse options aligned with STIX 2.1 Interoperability bundle closure (§2.3.4).
+    pub fn interop_bundle(self) -> Self {
+        self.exempt_predefined_tlp_marking_refs(true)
     }
 
     /// Register a custom type on the embedded registry (mutable convenience).

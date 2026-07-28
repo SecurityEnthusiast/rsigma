@@ -1,6 +1,7 @@
 //! Reference resolution and versioning.
 
 use crate::core::StixId;
+use crate::model::meta::is_predefined_tlp_marking_id;
 use crate::model::sro::{Relationship, Sighting, SroObject};
 use crate::model::validate::{
     validate_identity_ref, validate_marking_definition_ref, validate_sco_or_sro_ref,
@@ -16,12 +17,22 @@ use super::super::wire::{
 };
 use super::{ValidationContext, ValidationReport};
 
+fn is_marking_ref_property(path: &str) -> bool {
+    path.contains("object_marking_refs") || path.contains("marking_ref")
+}
+
 pub fn run(ctx: &ValidationContext<'_>, report: &mut ValidationReport) {
     if let Some(value) = ctx.value {
         let ids = collect_object_ids(value);
         for (path, target) in collect_reference_targets(value) {
             check_reference_kind_on_wire(&path, &target, report);
             if !ids.contains(&target) {
+                if ctx.parse_options.exempt_predefined_tlp_marking_refs
+                    && is_predefined_tlp_marking_id(&target)
+                    && is_marking_ref_property(&path)
+                {
+                    continue;
+                }
                 report.push(
                     Diagnostic::new(
                         DiagnosticCode::W0010,
