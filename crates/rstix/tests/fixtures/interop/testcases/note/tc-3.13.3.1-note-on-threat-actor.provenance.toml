@@ -1,0 +1,29 @@
+fixture = "tc-3.13.3.1-note-on-threat-actor.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "90-91"
+source_section = "3.13.3.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on identity, note, and threat-actor objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on created_by_ref key."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "missing-comma"
+description = "Insert comma between note content and object_refs (structurally invalid JSON as published)."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "identifier-prefix"
+description = "Restore identity-- prefix on note created_by_ref (bare UUID in published test case)."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap objects in a bundle per REQ-2.3-X-02."

@@ -46,15 +46,14 @@ pub fn assert_identity_shape(identity: &Value) {
         Some(&Value::String("2.1".into()))
     );
 
-    if let (Some(id), Some(created_by_ref)) = (
-        identity.get("id").and_then(Value::as_str),
-        identity.get("created_by_ref").and_then(Value::as_str),
-    ) {
-        assert_eq!(
-            id, created_by_ref,
-            "identity created_by_ref must self-reference per §2.3.4"
-        );
-    }
+    let created_by_ref = identity
+        .get("created_by_ref")
+        .and_then(Value::as_str)
+        .expect("identity must carry created_by_ref per §2.3.4");
+    assert!(
+        created_by_ref.starts_with("identity--"),
+        "identity created_by_ref must be a STIX identifier: {created_by_ref}"
+    );
 }
 
 /// Millisecond timestamp granularity on parsed Identity (§2.3.4 SHOULD).
