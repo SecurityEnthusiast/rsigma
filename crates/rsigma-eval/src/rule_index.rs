@@ -10,6 +10,8 @@
 
 use std::collections::HashMap;
 
+use rsigma_parser::ConditionExpr;
+
 use crate::compiler::{CompiledDetection, CompiledDetectionItem, CompiledRule};
 use crate::event::{Event, EventValue};
 use crate::matcher::CompiledMatcher;
@@ -86,7 +88,13 @@ impl RuleIndex {
             all_pairs.extend(pairs);
         }
 
-        if all_pairs.is_empty() || !every_detection_has_pairs {
+        // A negated selector inverts match polarity: `condition: sel_a or not
+        // sel_b` fires on an event carrying none of the rule's exact values,
+        // which no value-index lookup can ever select. Such a rule has to be
+        // always-evaluated regardless of how well its detections index.
+        let negation_free = rule.conditions.iter().all(condition_is_negation_free);
+
+        if all_pairs.is_empty() || !every_detection_has_pairs || !negation_free {
             self.unindexable.push(rule_idx);
             // Mirror into the product-partitioned view for logsource pruning.
             // Strictly increasing `rule_idx` keeps each bucket ascending.
@@ -258,6 +266,21 @@ impl RuleIndex {
     }
 }
 
+/// Whether a condition tree is free of negation.
+///
+/// Sigma's `not 1 of selection_*` parses as `Not(Selector { .. })`, so any
+/// `Not` node anywhere in the tree means the rule can fire without any of its
+/// indexed values being present.
+fn condition_is_negation_free(cond: &ConditionExpr) -> bool {
+    match cond {
+        ConditionExpr::Not(_) => false,
+        ConditionExpr::Identifier(_) | ConditionExpr::Selector { .. } => true,
+        ConditionExpr::And(parts) | ConditionExpr::Or(parts) => {
+            parts.iter().all(condition_is_negation_free)
+        }
+    }
+}
+
 /// Extract all `(lowercase_field, lowercase_value)` pairs from a compiled detection.
 fn extract_exact_pairs(detection: &CompiledDetection) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
@@ -355,6 +378,48 @@ mod tests {
         engine.add_collection(&collection).unwrap();
         let index = RuleIndex::build(engine.rules());
         (engine, index)
+    }
+
+    /// `not sel_b` fires on an event carrying none of the rule's exact values,
+    /// so no value-index lookup can select it. Indexing the rule anyway made
+    /// it unmatchable on exactly the events it was written to catch.
+    #[test]
+    fn negated_condition_is_unindexable_even_when_fully_exact() {
+        let yaml = r#"
+title: Negated Condition
+detection:
+    selection:
+        Image: 'C:\Windows\System32\cmd.exe'
+    filter:
+        User: 'SYSTEM'
+    condition: selection or not filter
+"#;
+        let (engine, index) = build_index(yaml);
+        assert_eq!(index.unindexable_count(), 1);
+
+        // An event with neither field must still reach the rule.
+        let event_json = json!({"Other": "value"});
+        let event = JsonEvent::borrow(&event_json);
+        assert_eq!(index.candidates(&event), vec![0]);
+        assert_eq!(engine.evaluate(&event).len(), 1);
+    }
+
+    /// `and not` is the common shape and stays matchable through the
+    /// positive branch, but it is negated all the same, so it must not be
+    /// indexed on the strength of its detections alone.
+    #[test]
+    fn and_not_condition_is_unindexable() {
+        let yaml = r#"
+title: And Not
+detection:
+    selection:
+        Image: 'C:\Windows\System32\cmd.exe'
+    filter:
+        User: 'SYSTEM'
+    condition: selection and not filter
+"#;
+        let (_, index) = build_index(yaml);
+        assert_eq!(index.unindexable_count(), 1);
     }
 
     #[test]
