@@ -828,14 +828,13 @@ fn main() {
                     "substring"
                 };
                 *class_counts.entry(class).or_default() += 1;
-                if class != "presence" {
-                    if let Some(len) = ws
+                if class != "presence"
+                    && let Some(len) = ws
                         .iter()
                         .filter_map(|w| w.literal.as_deref().map(str::len))
                         .min()
-                    {
-                        min_lit_lens.push(len);
-                    }
+                {
+                    min_lit_lens.push(len);
                 }
             }
         }
@@ -868,7 +867,7 @@ fn main() {
     println!();
     if !open_reasons.is_empty() {
         let mut reasons: Vec<_> = open_reasons.into_iter().collect();
-        reasons.sort_by(|a, b| b.1.cmp(&a.1));
+        reasons.sort_by_key(|&(_, n)| std::cmp::Reverse(n));
         println!("fail-open reasons:");
         for (reason, n) in &reasons {
             println!("  {reason:<20} {n:>6}");
