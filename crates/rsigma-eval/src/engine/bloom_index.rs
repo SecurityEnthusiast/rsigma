@@ -274,6 +274,10 @@ impl FieldBloomIndex {
                 needles.sort();
                 needles.dedup();
 
+                if !needles_are_representable(&needles) {
+                    return None;
+                }
+
                 // Size the bloom against the distinct trigram count, not
                 // the pattern count, or the filter saturates as soon as
                 // any needle longer than NGRAM_SIZE+1 bytes is inserted.
@@ -346,6 +350,14 @@ impl FieldBloomIndex {
             needles.sort();
             needles.dedup();
             if needles.is_empty() {
+                continue;
+            }
+            if !needles_are_representable(&needles) {
+                // This rule made the field unrepresentable, so any existing
+                // filter for it must go: keeping it would let the probe
+                // answer `DefinitelyNoMatch` for a haystack that contains
+                // the sub-trigram needle.
+                self.filters.remove(&field);
                 continue;
             }
             if let Some(bloom) = self.filters.get_mut(&field) {
@@ -566,6 +578,18 @@ fn extract_from_matcher(
     }
 }
 
+/// Whether every needle in a field's set can be represented as trigrams.
+///
+/// A needle shorter than [`NGRAM_SIZE`] contributes no trigrams, so a filter
+/// built over it cannot witness the needle's presence: `probe` would answer
+/// `DefinitelyNoMatch` for a haystack that genuinely contains the needle and
+/// the engine would skip a matcher that should have fired. Fields carrying
+/// such a needle therefore get no filter at all, leaving every probe on them
+/// at `MaybeMatch`.
+fn needles_are_representable(needles: &[String]) -> bool {
+    needles.iter().all(|n| n.len() >= NGRAM_SIZE)
+}
+
 fn insert_needle_trigrams(bloom: &mut FieldBloom, needle: &str) {
     let bytes = needle.as_bytes();
     if bytes.len() < NGRAM_SIZE {
@@ -612,6 +636,64 @@ mod tests {
     fn bloom_from(yaml: &str) -> FieldBloomIndex {
         let engine = engine_from(yaml);
         FieldBloomIndex::build(engine.rules())
+    }
+
+    /// A needle shorter than a trigram contributes no bits, so a filter built
+    /// over it answered `DefinitelyNoMatch` for haystacks that did contain the
+    /// needle. Such a field must carry no filter at all.
+    #[test]
+    fn field_with_sub_trigram_needle_gets_no_filter() {
+        let yaml = r#"
+title: Short Needle
+logsource:
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: '&&'
+    condition: selection
+"#;
+        let bloom = bloom_from(yaml);
+        assert_eq!(bloom.field_count(), 0);
+        assert_eq!(
+            bloom.probe("CommandLine", "a long haystack with && inside it"),
+            BloomVerdict::MaybeMatch
+        );
+    }
+
+    /// The suppression must survive a longer needle on the same field, and
+    /// must apply on the incremental append path too.
+    #[test]
+    fn sub_trigram_needle_suppresses_whole_field() {
+        let yaml = r#"
+title: Long Needle
+logsource:
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: 'mimikatz'
+    condition: selection
+---
+title: Short Needle
+logsource:
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: '&&'
+    condition: selection
+"#;
+        assert_eq!(bloom_from(yaml).field_count(), 0);
+
+        // Incremental path: appending the short-needle rule must drop the
+        // filter the long-needle rule established.
+        let collection = parse_sigma_yaml(yaml).unwrap();
+        let mut engine = Engine::new();
+        engine.set_bloom_prefilter(true);
+        for rule in &collection.rules {
+            engine.add_rule(rule).unwrap();
+        }
+        let event_json = serde_json::json!({"CommandLine": "cmd /c dir && whoami"});
+        let event = crate::event::JsonEvent::borrow(&event_json);
+        assert_eq!(engine.evaluate(&event).len(), 1);
     }
 
     #[test]
