@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### OASIS STIX 2.1 Interop golden harness (#403)
+
+- Adds the golden test harness for OASIS STIX 2.1 Interoperability (`stix-2.1-interop-v1.0-csd01`): `tests/interop/` target with a custom runner (`harness = false`; `validate` + `marking` + `graph`), `tests/interop_sentinel.rs` silent-skip guard, `tests/fixtures/interop/manifest.toml`, provenance-aware fixture loader, overlay on `Validator::interop_strict()` (SHOULD-level `STIX-I0002` downgrade), bundle-closure checker with TLP exemption, containment helpers, `linkme` self-registration inventory, and certification report generation to `target/interop-report/`. Harness smoke checks for §2.3 cross-cutting layout are recorded separately from OASIS-verified requirements; full normative test-case fixtures follow in subsequent interop work.
+
 ### Representative performance baseline and corpus witness audit (#404)
 
 - New reproducible performance fixtures: `scripts/perf/fetch-fixtures.sh` pins the SigmaHQ corpus to the CI SHA and `scripts/perf/gen_events.py` deterministically generates six event lanes (raw Windows blobs, structured Windows, mixed schema, no-match, low-match, match-heavy). `scripts/perf/baseline-eval.sh` runs the offline eval flag/thread matrix and `scripts/perf/baseline-daemon.sh` measures daemon HTTP end-to-end throughput from the daemon's own processed-events counter.

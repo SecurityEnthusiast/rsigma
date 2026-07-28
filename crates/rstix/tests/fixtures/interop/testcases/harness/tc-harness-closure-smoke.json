@@ -1,0 +1,16 @@
+{
+  "type": "bundle",
+  "id": "bundle--11111111-1111-4111-8111-111111111111",
+  "objects": [
+    {
+      "type": "identity",
+      "spec_version": "2.1",
+      "id": "identity--f431f809-377b-45e0-aa1c-6a4751cae5ff",
+      "created": "2020-01-20T12:34:56.000Z",
+      "modified": "2020-01-20T12:34:56.000Z",
+      "name": "ACME Corp, Inc.",
+      "identity_class": "organization",
+      "created_by_ref": "identity--f431f809-377b-45e0-aa1c-6a4751cae5ff"
+    }
+  ]
+}

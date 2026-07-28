@@ -1,0 +1,16 @@
+{
+  "description": "§2.3.4 Identity property set — schema only, not literal values.",
+  "required_properties": [
+    "type",
+    "name",
+    "identity_class",
+    "id",
+    "spec_version",
+    "created",
+    "modified",
+    "created_by_ref"
+  ],
+  "type_value": "identity",
+  "identity_class_value": "organization",
+  "spec_version_value": "2.1"
+}
