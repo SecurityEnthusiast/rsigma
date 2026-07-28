@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Representative performance baseline and corpus witness audit
+### Representative performance baseline and corpus witness audit (#404)
 
 - New reproducible performance fixtures: `scripts/perf/fetch-fixtures.sh` pins the SigmaHQ corpus to the CI SHA and `scripts/perf/gen_events.py` deterministically generates six event lanes (raw Windows blobs, structured Windows, mixed schema, no-match, low-match, match-heavy). `scripts/perf/baseline-eval.sh` runs the offline eval flag/thread matrix and `scripts/perf/baseline-daemon.sh` measures daemon HTTP end-to-end throughput from the daemon's own processed-events counter.
 - New `witness_audit` example in `rsigma-eval` (`cargo run --release -p rsigma-eval --example witness_audit`): analyzes a rule corpus at the HIR level and reports what fraction carries a sound required-positive witness (exact value, substring, keyword, regex or encoded literal, field presence), the fail-open remainder, and simulated per-lane candidate rates. On SigmaHQ at the pinned SHA: 20.8% of rules are indexable under the current exact-only index, 99.6% carry a sound witness, and simulated candidate rates are 2-3% of loaded rules on Windows-shaped traffic.
