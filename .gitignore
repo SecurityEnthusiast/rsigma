@@ -8,6 +8,9 @@ editors/vscode/node_modules/
 editors/vscode/out/
 editors/vscode/*.vsix
 
+# Editor-local settings
+.vscode/
+
 # docmd build output and Node toolchain (docs project lives under docs/)
 /docs/site/
 /docs/assets/images/
