@@ -45,6 +45,7 @@ chrono = { version = "0.4", features = ["serde"] }
 criterion = "0.8"
 proptest = "1.10.0"
 rand = "0.10"
+regex-syntax = "0.8"
 tempfile = "3.27.0"
 
 [[bench]]
