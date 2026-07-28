@@ -1,0 +1,14 @@
+fixture = "tc-3.4.3.1-create-course-of-action.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "37"
+source_section = "3.4.3.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on identity and course-of-action objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity and course-of-action in a bundle per REQ-2.3-X-02."
