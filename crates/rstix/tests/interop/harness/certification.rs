@@ -330,7 +330,7 @@ fn checklist_result(row: &RequirementRow, recorded: &HashMap<&'static str, Outco
     }
     if row.disposition == Disposition::HarnessSmoke {
         return match recorded.get(row.req_id.as_str()) {
-            Some(Outcome::HarnessSmoke) => "Harness smoke (pending OASIS fixtures)".to_owned(),
+            Some(Outcome::HarnessSmoke) => "Harness smoke (not normative verification)".to_owned(),
             Some(Outcome::Fail) => "Fail".to_owned(),
             None => "Pending".to_owned(),
             Some(Outcome::Pass) | Some(Outcome::Blocked) => "Invalid outcome".to_owned(),
@@ -350,6 +350,9 @@ fn render_risks(manifest: &Manifest, recorded: &HashMap<&'static str, Outcome>) 
     out.push_str("## SHOULD-level downgrades\n\n");
     out.push_str(
         "- `STIX-I0002` (relationship matrix) downgraded to non-gating in interop overlay per §2.3.6 SHOULD.\n",
+    );
+    out.push_str(
+        "- `STIX-W0002` (SCO deterministic id) downgraded — OASIS interop test-case JSON uses publisher-assigned SCO ids.\n",
     );
     out.push_str("\n## BLOCKED rows\n\n");
     for row in manifest

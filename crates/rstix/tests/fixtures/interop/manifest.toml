@@ -389,7 +389,7 @@ level = "MUST"
 gating = true
 disposition = "HARNESS_SMOKE"
 test_id = "common::sco::sco_spec_conformance"
-fixture = "testcases/common/tc-sco-ipv4.json"
+fixture = "testcases/observed-data/tc-3.14.3.2-observed-data-domain-name-and-ip-address.json"
 
 [[requirement]]
 req_id = "REQ-HARNESS-VALIDATOR-01"

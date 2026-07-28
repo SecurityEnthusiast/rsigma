@@ -920,7 +920,7 @@ Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Spe
 
 There is **no** “100% covered” field. Do not infer OASIS conformance from manifest row counts.
 
-**§2.3 cross-cutting (`HARNESS_SMOKE` only):** The interop runner executes 18 §2.3 manifest rows today. Passing those tests means the harness smoke checks ran without error — **not** that OASIS §2.3 Producer/Consumer requirements are verified. Several rows still use intentional negatives or synthetic helpers (`REQ-2.3-P-02` spec-minimal; `REQ-2.3-X-10` ipv4-addr until §3.14 test-case data). Rows stay `HARNESS_SMOKE`; they are never promoted to `TESTED`.
+**§2.3 cross-cutting (`HARNESS_SMOKE` only):** The interop runner executes 18 §2.3 manifest rows today. Passing those tests means the harness smoke checks ran without error — **not** that OASIS §2.3 Producer/Consumer requirements are verified. Several rows still use intentional negatives or synthetic helpers (`REQ-2.3-P-02` spec-minimal). Rows stay `HARNESS_SMOKE`; they are never promoted to `TESTED`.
 
 **Run locally (required features explicit):**
 
