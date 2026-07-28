@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Witness-based candidate indexing
+### Witness-based candidate indexing (#406)
 
 The candidate index could only pre-filter on exact field values, so any rule built from substrings, keywords, regexes, or numeric comparisons was evaluated against every event. On the SigmaHQ corpus that left 79% of rules always-evaluated, which is why per-event cost tracked the total rule count rather than the rules an event could plausibly match.
 
@@ -27,7 +27,7 @@ Three behavior changes:
 - Candidate rules are now returned in ascending rule order, so a match set no longer depends on hash iteration order. Consumers that relied on the previous incidental ordering will see a different, and now stable, order.
 - `Engine::logsource_pruned_total` and the daemon's `rsigma_rules_pruned_by_logsource_total` counter now count both sources of conflict pruning: always-evaluated rules the index's product partitioning skips, and candidate rules the residual logsource check drops during evaluation. Witness indexing shrinks the always-evaluated population the counter previously tracked on its own, so counting only that population would have made the metric report near-zero.
 
-### Pre-filter soundness fixes and a full-scan differential oracle
+### Pre-filter soundness fixes and a full-scan differential oracle (#406)
 
 Fixes four cases where a pre-filter silently dropped a rule that should have matched, so an affected rule produced no detection at all. Found by a new differential oracle, `Engine::evaluate_full_scan`, which evaluates every loaded rule with no candidate index, no cross-rule Aho-Corasick mask, and no bloom, and is therefore authoritative: a pre-filter may only ever over-approximate the candidate set. The `rsigma-eval` test suite now compares the two paths across a per-witness-class rule battery, a randomized rule and event generator, and an opt-in corpus run over a real rule tree and NDJSON event lanes (`RSIGMA_DIFF_RULES` / `RSIGMA_DIFF_EVENTS`).
 
@@ -39,7 +39,7 @@ Fixes four cases where a pre-filter silently dropped a rule that should have mat
 ### Vendor-shape performance lanes and prefilter composition guidance (#405)
 
 - Two new deterministic event lanes in `scripts/perf/gen_events.py`, modeled on real collector output: `cisco_syslog` (raw Cisco AAA command accounting in a single `message` field with `product`/`service` hint fields) and `sysmon_file_event` (Sysmon EventID 11 FileCreate with `product`/`category` hints and a string `EventID`, as some forwarders emit it).
-- The new lanes show that `--logsource-routing` and `--cross-rule-ac` do not always compose: events whose logsource hints route to a small rule subset are faster with routing alone (21.3k vs 14.8k events/s per core on the Cisco lane, 269k vs 219.5k end-to-end in the daemon). `BENCHMARKS.md` and the performance tuning guide carry the measured rows and the guidance to benchmark routing without AC on narrowly tagged traffic.
+- The new lanes show that `--logsource-routing` and `--cross-rule-ac` do not always compose: events whose logsource hints route to a small rule subset are faster with routing alone (21.3k vs 14.8k events/s per core on the Cisco lane, 269k vs 219.5k end-to-end in the daemon). `BENCHMARKS.md` and the performance tuning guide carry the measured rows. Witness-based candidate indexing (below) supersedes the guidance these lanes produced: `--logsource-routing` alone now wins on every lane, so the composition question no longer depends on how narrowly the traffic is tagged.
 - Fixed the executable bit on `scripts/perf/baseline-eval.sh`, which was committed non-executable.
 
 ### OASIS STIX 2.1 Interop golden harness (#403)
