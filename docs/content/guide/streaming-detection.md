@@ -139,7 +139,7 @@ A handful of flags control how aggressively the daemon batches and how much it b
 | Flag | Default | What it controls |
 |------|---------|------------------|
 | `--buffer-size` | 10000 | Bounded mpsc capacity for source-to-engine and engine-to-sink channels. |
-| `--batch-size` | 1 | Max events the engine pulls per mutex acquisition. Higher values amortise lock contention under load. |
+| `--batch-size` | 128 | Max events the engine pulls per mutex acquisition, capped at `--buffer-size`. Batches enable parallel detection and amortise lock contention under load. |
 | `--drain-timeout` | 5 | Seconds the daemon waits for in-flight events on shutdown. |
 
 For a 50 K/s ingest target, `--buffer-size 50000 --batch-size 64 --drain-timeout 10` is a reasonable starting point. The `rsigma_input_queue_depth`, `rsigma_output_queue_depth`, and `rsigma_back_pressure_events_total` metrics tell you when you are sized too small. See the [observability guide](observability.md) for details.

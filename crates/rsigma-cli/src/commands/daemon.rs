@@ -140,7 +140,8 @@ pub(crate) struct DaemonArgs {
     pub buffer_size: usize,
 
     /// Maximum events to process per engine lock acquisition.
-    /// Reduces mutex overhead under load. 1 = process one at a time (default).
+    /// Enables parallel detection and amortizes mutex overhead under load.
+    /// Capped at `--buffer-size`.
     #[arg(long = "batch-size", default_value_t = config::defaults::BATCH_SIZE)]
     pub batch_size: usize,
 
@@ -811,6 +812,9 @@ pub(crate) fn cmd_daemon(
         min_version: tls_min_version,
         allow_plaintext,
     };
+
+    // A batch cannot contain more events than the source queue can hold.
+    let batch_size = effective_batch_size(batch_size, buffer_size);
 
     // queue_depth follows buffer_size; the rest come from the sink-* flags.
     let delivery_config = rsigma_runtime::DeliveryConfig {
@@ -1835,6 +1839,10 @@ fn build_tls_state(
     }
 }
 
+fn effective_batch_size(batch_size: usize, buffer_size: usize) -> usize {
+    batch_size.min(buffer_size)
+}
+
 /// Parse a timezone offset string like "+05:00" or "-08:00" into seconds east of UTC.
 fn parse_tz_offset(s: &str) -> i32 {
     let s = s.trim();
@@ -1907,6 +1915,18 @@ mod tests {
         let base = partial("daemon:\n  rules: /file/rules\n");
         apply_daemon_config(&mut args, &matches, base);
         assert_eq!(args.rules.as_deref(), Some(Path::new("/file/rules")));
+    }
+
+    #[test]
+    fn batch_size_defaults_to_parallel_batch() {
+        let (args, _) = parse(&["daemon"]);
+        assert_eq!(args.batch_size, 128);
+    }
+
+    #[test]
+    fn batch_size_is_capped_at_buffer_size() {
+        assert_eq!(effective_batch_size(128, 10_000), 128);
+        assert_eq!(effective_batch_size(512, 64), 64);
     }
 
     #[test]

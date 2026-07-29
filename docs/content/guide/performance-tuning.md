@@ -4,7 +4,7 @@ How fast RSigma evaluates depends on how much of your corpus the candidate index
 
 On the full SigmaHQ ruleset (~3,100 rules) expect roughly 19-66k events/s per core for offline `engine eval`, rising to 30-106k with `--logsource-routing`, and 88-287k end-to-end through the daemon (342-401k with routing) on a 12-core machine. Where a workload lands in those ranges depends on event shape: wide structured events are the slow end, narrowly tagged syslog the fast end. The [SigmaHQ corpus baseline](../benchmarks.md#sigmahq-corpus-baseline-representative) in Benchmarks documents the full matrix with before-and-after numbers. Small or exact-match-heavy rulesets are considerably faster still.
 
-This page covers the cases where the defaults stop being optimal: very large rule sets, substring-heavy threat-intel feeds, high-throughput daemon ingestion, and memory-constrained deployments. For SigmaHQ-scale corpora the single biggest lever is `--logsource-routing`, which is also a correctness filter because it stops cross-product keyword false positives. `--cross-rule-ac` is no longer worth enabling alongside it: the candidate index already does that substring work over a smaller rule population, and layering the cross-rule automaton on top of routing costs 20-35% on every measured lane, offline and end-to-end. The second lever is `--batch-size`: the default of 1 leaves detection on a single core, because a batch is what `Engine::evaluate_batch` fans across rayon. The bloom pre-filter (`--bloom-prefilter`) is off by default for a reason and should be benchmarked before flipping it on.
+This page covers the cases where the defaults stop being optimal: very large rule sets, substring-heavy threat-intel feeds, high-throughput daemon ingestion, and memory-constrained deployments. For SigmaHQ-scale corpora the single biggest lever is `--logsource-routing`, which is also a correctness filter because it stops cross-product keyword false positives. `--cross-rule-ac` is no longer worth enabling alongside it: the candidate index already does that substring work over a smaller rule population, and layering the cross-rule automaton on top of routing costs 20-35% on every measured lane, offline and end-to-end. The daemon now batches up to 128 events by default, which gives `Engine::evaluate_batch` enough work to fan detection across rayon without requiring manual tuning. The bloom pre-filter (`--bloom-prefilter`) is off by default for a reason and should be benchmarked before flipping it on.
 
 ## Always-on: the matcher optimizer
 
@@ -120,7 +120,7 @@ These two only matter for the streaming daemon, not for `engine eval`.
 | Flag | Default | Effect |
 |------|---------|--------|
 | `--buffer-size N` | `10000` | Bounded mpsc capacity for both source→engine and engine→sink queues. Higher values absorb burstier input; lower values apply back-pressure sooner. Watch `rsigma_back_pressure_events_total` to see whether the queues are filling. |
-| `--batch-size N` | `1` | Maximum events to process per engine lock acquisition. The default processes one at a time, which also means detection runs on a single core: the batch is the unit `Engine::evaluate_batch` fans across rayon. Raise to 64 or 128 under load, or higher on SigmaHQ-scale corpora (the published baseline uses 512). |
+| `--batch-size N` | `128` | Maximum events to process per engine lock acquisition, capped at `--buffer-size`. The batch is the unit `Engine::evaluate_batch` fans across rayon. The published SigmaHQ baseline uses 512. |
 
 A typical high-throughput configuration:
 
@@ -130,7 +130,7 @@ rsigma engine daemon -r rules/ \
     --batch-size 128
 ```
 
-The trade-off: a higher `--batch-size` increases tail latency (an event waits for the rest of its batch to be collected) in exchange for amortizing the per-batch mutex acquisition and, more importantly, for parallelism across cores. Below ~10k events/s the default `1` is fine; above 50k/s you want 64-128, and on a large corpus where per-event evaluation is the dominant cost, 512 measured best.
+The daemon does not wait for a batch to fill: it blocks for the first event, then drains up to `--batch-size` events already waiting in the queue. A larger value therefore increases the maximum processing quantum rather than adding a batch-fill timer. Lower it when short bursts need the smallest tail latency, or raise it when sustained load and a large corpus justify more parallel work per lock acquisition. The effective value never exceeds `--buffer-size`; the published SigmaHQ baseline found 512 best on sustained load.
 
 ## Memory pressure and correlation state
 

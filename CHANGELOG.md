@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Multicore daemon batching by default (#408)
+
+The daemon now processes up to 128 queued events per batch by default instead of one. A batch is the unit that detection fans across rayon, so the old default left detection single-core unless operators set `--batch-size` explicitly. The daemon does not wait to fill a batch: it blocks for the first event and then drains only the events already queued, up to the configured limit.
+
+Explicit `--batch-size` and `daemon.input.batch_size` settings continue to override the default. The effective batch size is capped at `--buffer-size`, preventing configurations where a batch can never be filled by the bounded input queue. Lower batch sizes reduce the maximum processing quantum for latency-sensitive bursts; higher values can improve sustained throughput on large rule corpora. The published SigmaHQ throughput measurements continue to use 512.
+
 ### Witness-based candidate indexing (#406)
 
 The candidate index could only pre-filter on exact field values, so any rule built from substrings, keywords, regexes, or numeric comparisons was evaluated against every event. On the SigmaHQ corpus that left 79% of rules always-evaluated, which is why per-event cost tracked the total rule count rather than the rules an event could plausibly match.

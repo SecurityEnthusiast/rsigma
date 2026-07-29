@@ -275,7 +275,7 @@ Refresh policies and on-error behaviour are documented in [Dynamic Pipeline Sour
 
 ## Performance posture
 
-Three transparent passes (matcher optimizer) always run. Three opt-in passes (`--bloom-prefilter`, `--cross-rule-ac`, and the `parallel` rayon path enabled by default in the CLI) require explicit knobs. The streaming daemon's `--buffer-size` (default 10000) and `--batch-size` (default 1) tune throughput vs tail latency.
+Three transparent passes (matcher optimizer) always run. Three opt-in passes (`--bloom-prefilter`, `--cross-rule-ac`, and the `parallel` rayon path enabled by default in the CLI) require explicit knobs. The streaming daemon's `--buffer-size` (default 10000) and `--batch-size` (default 128, capped at the buffer size) tune throughput vs tail latency.
 
 Verified Criterion numbers ship in the [Benchmarks](../benchmarks.md) page. Headline figures: 2 µs per event for 100 rules, 30 µs per event for 1k rules, 162 µs per event for 5k rules. Cross-rule AC delivers up to ~100× speed-up on pure-substring rule sets dominated by non-matching events.
 
