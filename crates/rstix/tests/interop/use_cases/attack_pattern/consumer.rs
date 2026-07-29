@@ -153,3 +153,65 @@ pub fn assert_processes_related() {
     );
 }
 
+/// REQ-CHK-SXC-3.1 / §4.2 Table 55 — Consumer handles §3.1.3 Producer test case data.
+pub fn assert_handles_producer_testcases() {
+    for relative in PRODUCER_FIXTURES {
+        validate_interop_fixture(relative, &load_fixture(relative).json).unwrap_or_else(|err| {
+            panic!("{relative}: §3.1 consumer must handle producer test case: {err}")
+        });
+    }
+}
+
+interop_test!(
+    "REQ-3.1-C-01",
+    "use_cases::attack_pattern::consumer::supports_producer_props",
+    supports_producer_props,
+    {
+        assert_supports_producer_props();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-C-02",
+    "use_cases::attack_pattern::consumer::receives_triad",
+    receives_triad,
+    {
+        assert_receives_triad();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-C-03",
+    "use_cases::attack_pattern::consumer::resolves_created_by_ref",
+    resolves_created_by_ref,
+    {
+        assert_resolves_created_by_ref();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-C-04",
+    "use_cases::attack_pattern::consumer::processes_fields",
+    processes_fields,
+    {
+        assert_processes_fields();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-C-05",
+    "use_cases::attack_pattern::consumer::processes_related",
+    processes_related,
+    {
+        assert_processes_related();
+    }
+);
+
+interop_test!(
+    "REQ-CHK-SXC-3.1",
+    "use_cases::attack_pattern::consumer::handles_producer_testcases",
+    handles_producer_testcases,
+    {
+        assert_handles_producer_testcases();
+    }
+);

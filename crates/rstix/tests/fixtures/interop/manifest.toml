@@ -289,6 +289,19 @@ checklist_role = "producer"
 verification = "Optional"
 
 [[requirement]]
+req_id = "REQ-CHK-SXC-3.1"
+use_case = "attack_pattern"
+section = "3.1.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::consumer::handles_producer_testcases"
+checklist_row = "3.1.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+[[requirement]]
 req_id = "REQ-3.1-EX-4.1"
 use_case = "attack_pattern"
 section = "3.1.4.1"
