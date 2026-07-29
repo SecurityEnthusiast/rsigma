@@ -4,6 +4,14 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix: OASIS §3.1 Attack Pattern interop use-case tests
+
+- Adds `tests/interop/use_cases/attack_pattern/` covering §3.1.1–§3.1.7 against normative §3.1.3 fixtures and non-gating `examples/attack-pattern/` data.
+- §3.1.1 description scope is **TESTED** (not `REPORT_ONLY`): normative fixtures must expose typed Attack Pattern TTPs including the doc’s “Spear Phishing” example.
+- Producer `REQ-3.1-P-01`..`P-13`, Consumer `REQ-3.1-C-01`..`C-05`, checklist `REQ-CHK-SXC-3.1` / `REQ-CHK-SXP-3.1`, examples `REQ-3.1-EX-4.1` / `EX-4.2` / `EX-7.1`.
+- `ex-3.1.4.2` retains published truncated UUID ids (defect 21) and asserts parse rejection — no invented digits.
+- Not OASIS SXP/SXC certification (**1/21** use cases).
+
 ### rstix: OASIS STIX 2.1 Interop normative fixtures and §2.3 suite checks (#410)
 
 - Adds normative OASIS interop test-case JSON under `tests/fixtures/interop/testcases/` with provenance sidecars for the §2.3 cross-cutting and §3.x use-case inventory (44 gating fixtures; 42 exercised in the suite-wide walk; 2 recorded as `BLOCKED` on unrepairable OASIS §9.1 publisher defects).

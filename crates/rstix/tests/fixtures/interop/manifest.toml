@@ -44,7 +44,7 @@ level = "MUST"
 gating = false
 disposition = "REPORT_ONLY"
 
-# --- §3.1 Attack Pattern Sharing ---
+# --- §3.1 Attack Pattern Sharing (normative §3.1.3 fixtures) ---
 
 [[requirement]]
 req_id = "REQ-3.1-1"
@@ -276,32 +276,6 @@ fixture = "testcases/attack-pattern/tc-3.1.3.2-attack-pattern-targets-vulnerabil
 # --- §3.1.4 Producer Example Data (non-gating; examples/ only) ---
 
 [[requirement]]
-req_id = "REQ-CHK-SXP-3.1"
-use_case = "attack_pattern"
-section = "3.1.3"
-role = "producer"
-level = "MUST"
-gating = false
-disposition = "TESTED"
-test_id = "use_cases::attack_pattern::producer::producer_testcase_data"
-checklist_row = "3.1.3"
-checklist_role = "producer"
-verification = "Optional"
-
-[[requirement]]
-req_id = "REQ-CHK-SXC-3.1"
-use_case = "attack_pattern"
-section = "3.1.6"
-role = "consumer"
-level = "MUST"
-gating = false
-disposition = "TESTED"
-test_id = "use_cases::attack_pattern::consumer::handles_producer_testcases"
-checklist_row = "3.1.6"
-checklist_role = "consumer"
-verification = "Optional"
-
-[[requirement]]
 req_id = "REQ-3.1-EX-4.1"
 use_case = "attack_pattern"
 section = "3.1.4.1"
@@ -325,6 +299,18 @@ disposition = "TESTED"
 test_id = "use_cases::attack_pattern::examples::framework_example_rejects_truncated_ids"
 fixture = "examples/attack-pattern/ex-3.1.4.2-leverage-externally-defined-frameworks.json"
 
+[[requirement]]
+req_id = "REQ-3.1-EX-7.1"
+use_case = "attack_pattern"
+section = "3.1.7.1"
+doc_page = 25
+role = "consumer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::consumer_examples::ingest_external_framework"
+fixture = "examples/attack-pattern/ex-3.1.7.1-ingest-external-framework.json"
+
 # --- §4.2 Table 55/56 checklist rows (46) — REPORT_ONLY until use-case tests land ---
 
 [[requirement]]
@@ -334,9 +320,23 @@ section = "3.1.6"
 role = "consumer"
 level = "MUST"
 gating = false
-disposition = "REPORT_ONLY"
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::consumer::handles_producer_testcases"
 checklist_row = "3.1.6"
 checklist_role = "consumer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.1"
+use_case = "attack_pattern"
+section = "3.1.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::producer_testcase_data"
+checklist_row = "3.1.3"
+checklist_role = "producer"
 verification = "Optional"
 
 [[requirement]]

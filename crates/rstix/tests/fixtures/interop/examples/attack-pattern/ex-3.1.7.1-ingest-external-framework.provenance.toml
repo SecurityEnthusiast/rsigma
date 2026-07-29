@@ -1,0 +1,14 @@
+fixture = "ex-3.1.7.1-ingest-external-framework.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "25-26"
+source_section = "3.1.7.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on identity created_by_ref."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity and attack-pattern objects in a bundle per REQ-2.3-X-02."

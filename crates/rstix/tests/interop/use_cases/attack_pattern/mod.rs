@@ -1,6 +1,7 @@
 //! §3.1 Attack Pattern Sharing — Producer and Consumer tests against normative fixtures.
 
 pub mod consumer;
+pub mod consumer_examples;
 pub mod description;
 pub mod examples;
 pub mod producer;
