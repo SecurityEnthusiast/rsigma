@@ -899,7 +899,7 @@ Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Spe
 | Component | Path | Role |
 | --------- | ---- | ---- |
 | Harness | `tests/interop/harness/` | Manifest, fixture loader + provenance, per-use-case overlay on `interop_strict`, bundle closure, containment, certification report |
-| Cross-cutting | `tests/interop/common/` | §2.3 **harness smoke** — 18 executable manifest rows (`HARNESS_SMOKE`); partial checks on OASIS test-case JSON where published; **not** OASIS §2.3 requirement verification |
+| Cross-cutting | `tests/interop/common/` | Automated checks for 18 §2.3 manifest rows, run suite-wide over **42** walkable normative fixtures |
 | Use-case tests | `tests/interop/use_cases/` (added as normative fixtures land) | Producer/Consumer checks wired to OASIS test-case JSON |
 | Manifest | `tests/fixtures/interop/manifest.toml` | `req_id` → `test_id` → fixture → §4.2 checklist row |
 | Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars (**44/44** inventory: **42** suite-walkable + **2** `BLOCKED` on §9.1 defects 16 and 19; synthetic helpers remain for intentional negatives) |
@@ -913,14 +913,14 @@ Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Spe
 | `oasis_use_cases_in_spec` | The OASIS interoperability document defines 21 use cases — **not** how many are tested here. |
 | `manifest_rows_total` | Rows in `manifest.toml` (harness + placeholders + smoke). |
 | `manifest_rows_by_disposition` | Breakdown by `TESTED`, `HARNESS_SMOKE`, `REPORT_ONLY`, `BLOCKED`. |
-| `tested_rows_passed` | Harness infrastructure rows only (`disposition = TESTED`, 8 today). §2.3 rows are **not** included. |
-| `harness_smoke_executed` | §2.3 rows run as harness smoke (`HARNESS_SMOKE`, 18 today) — partial checks only |
+| `tested_rows_passed` | Executable manifest rows with `disposition = TESTED` that recorded `Pass` (27 today: 9 harness + 18 §2.3 cross-cutting). |
+| `harness_smoke_executed` | Rows with `disposition = HARNESS_SMOKE` (0 today; reserved for partial checks if reintroduced) |
 | `report_only_rows` | §4.2 checklist/framework placeholders with no automated test (8 today) |
 | `blocked_rows` | Checklist rows blocked on unrepairable published test-case data (2 today) |
 
 There is **no** “100% covered” field. Do not infer OASIS conformance from manifest row counts.
 
-**§2.3 cross-cutting (`HARNESS_SMOKE` only):** The interop runner executes 18 §2.3 manifest rows today. Passing those tests means the harness smoke checks ran without error — **not** that OASIS §2.3 Producer/Consumer requirements are verified. Several rows still use intentional negatives or synthetic helpers (`REQ-2.3-P-02` spec-minimal). Rows stay `HARNESS_SMOKE`; they are never promoted to `TESTED`.
+**§2.3 manifest rows:** 18 rows use `disposition = TESTED` and run suite-wide over walkable normative fixtures. **`TESTED` here means our harness recorded `Pass` — not OASIS §2.3 requirement verification, not per-use-case Producer/Consumer modules (those land under `tests/interop/use_cases/`), and not the full interop manifest row inventory from the engineering plan.
 
 **Run locally (required features explicit):**
 
@@ -956,9 +956,9 @@ cargo test -p rstix --test interop_sentinel --features validate,marking,graph --
     by = summary["manifest_rows_by_disposition"]
     infra = summary["tested_rows_passed"]
     smoke = summary["harness_smoke_executed"]
-    assert infra == by["tested"], f"TESTED harness rows not passed: {infra}/{by['tested']}"
-    assert smoke == by["harness_smoke"], f"HARNESS_SMOKE not run: {smoke}/{by['harness_smoke']}"
-    print(f"harness_infra={infra}, harness_smoke={smoke}, report_only={summary['report_only_rows']}, blocked={summary['blocked_rows']}")
+    assert infra == by["tested"], f"TESTED rows not passed: {infra}/{by['tested']}"
+    assert smoke == by.get("harness_smoke", 0), f"HARNESS_SMOKE mismatch: {smoke}/{by.get('harness_smoke', 0)}"
+    print(f"tested_passed={infra}, harness_smoke={smoke}, report_only={summary['report_only_rows']}, blocked={summary['blocked_rows']}")
     PY
 - uses: actions/upload-artifact@v4
   with:

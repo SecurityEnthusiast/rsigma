@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::common::fixture_walk::for_each_suite_walk_fixture;
 use crate::harness::fixture::load_fixture;
-use crate::harness::interop_gate::{InteropGateOptions, validate_interop_json};
+use crate::harness::interop_gate::validate_interop_fixture;
 
 /// Assert a Relationship object carries the §5.1 fields required by §2.3.6.
 pub fn assert_relationship_shape(relationship: &Value) {
@@ -26,7 +26,7 @@ pub fn assert_relationship_shape_on_parsed() {
     let mut checked = 0usize;
     for_each_suite_walk_fixture(|relative| {
         let fixture = load_fixture(relative);
-        let bundle = validate_interop_json(&fixture.json, &InteropGateOptions::default())
+        let bundle = validate_interop_fixture(relative, &fixture.json)
             .unwrap_or_else(|err| panic!("{relative}: interop gate failed: {err}"));
         for relationship in bundle.objects_of_type::<Relationship>() {
             assert!(!relationship.relationship_type.is_empty());

@@ -26,5 +26,5 @@ spec_basis = "STIX 2.1 §2.9 ID format"
 
 [[divergence_recorded]]
 site = "§3.2.3.2 relationship id"
-defect = 1
+defect = 18
 description = "Published relationship id uses relationship-7f6bb959-… (single dash) instead of type--uuid form (STIX 2.1 §2.9)."

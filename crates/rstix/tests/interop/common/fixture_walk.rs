@@ -13,24 +13,33 @@ pub fn for_each_testcase_fixture(mut f: impl FnMut(&str)) {
     );
 }
 
-/// Like [`for_each_testcase_fixture`], but skips fixtures blocked on unrepairable OASIS defects.
+/// Like [`for_each_testcase_fixture`], but skips blocked fixtures and harness/common synthetics.
 pub fn for_each_suite_walk_fixture(mut f: impl FnMut(&str)) {
     walk_dir(
         interop_fixtures_root().join("testcases").as_path(),
         &mut f,
-        WalkFilter::ExcludeBlocked,
+        WalkFilter::SuiteWalk,
     );
+}
+
+fn is_non_normative_testcase(relative_path: &str) -> bool {
+    relative_path.starts_with("testcases/harness/")
+        || relative_path.starts_with("testcases/common/")
 }
 
 #[derive(Clone, Copy)]
 enum WalkFilter {
     All,
-    ExcludeBlocked,
+    SuiteWalk,
 }
 
 impl WalkFilter {
     const fn excludes_blocked(self) -> bool {
-        matches!(self, WalkFilter::ExcludeBlocked)
+        matches!(self, WalkFilter::SuiteWalk)
+    }
+
+    const fn excludes_non_normative(self) -> bool {
+        matches!(self, WalkFilter::SuiteWalk)
     }
 }
 
@@ -54,6 +63,9 @@ fn walk_dir(dir: &Path, f: &mut dyn FnMut(&str), filter: WalkFilter) {
                 .to_string_lossy()
                 .into_owned();
             if filter.excludes_blocked() && testcase_is_blocked(&relative) {
+                continue;
+            }
+            if filter.excludes_non_normative() && is_non_normative_testcase(&relative) {
                 continue;
             }
             f(&relative);

@@ -9,6 +9,8 @@ use super::closure::missing_closure_ids_from_json;
 use super::profile::InteropOverlay;
 use super::use_case::validate_use_case_objects;
 
+use crate::common::fixture_catalog::parse_fixture_objects;
+
 /// Options for the interop bundle gate (two-tier validation).
 #[derive(Clone, Debug, Default)]
 pub struct InteropGateOptions {
@@ -35,14 +37,28 @@ pub fn validate_interop_json(json: &str, opts: &InteropGateOptions) -> InteropGa
     let bundle = Bundle::parse_with_options(json, &interop_parse_options())
         .map_err(|err| format!("interop bundle parse failed: {err}"))?;
 
+    let wire_objects = parse_fixture_objects(json)?;
+
     let report = Validator::interop_bundle_strict().validate_bundle(&bundle);
     let overlay = InteropOverlay::default().apply_overlay(report);
     if !overlay.is_valid() {
         return Err("interop_strict validation failed (after overlay)".into());
     }
 
-    validate_use_case_objects(&bundle, &opts.use_case_object_ids)?;
+    validate_use_case_objects(&bundle, &opts.use_case_object_ids, &wire_objects)?;
     Ok(bundle)
+}
+
+/// Parse + validate a normative fixture with use-case ids inferred from its path.
+pub fn validate_interop_fixture(relative: &str, json: &str) -> InteropGateResult {
+    let use_case_object_ids =
+        crate::common::fixture_catalog::use_case_object_ids_for_fixture(relative, json)?;
+    validate_interop_json(
+        json,
+        &InteropGateOptions {
+            use_case_object_ids,
+        },
+    )
 }
 
 fn conformance_valid_dir() -> PathBuf {

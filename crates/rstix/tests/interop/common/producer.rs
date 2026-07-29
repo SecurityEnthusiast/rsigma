@@ -1,50 +1,67 @@
 //! §2.3 Producer cross-cutting checks (REQ-2.3-P-01..P-03).
 
-use crate::harness::containment::assert_json_contains;
+use crate::common::fixture_catalog::{
+    object_ids_of_type, parse_fixture_objects, use_case_object_ids,
+};
+use crate::common::fixture_walk::for_each_suite_walk_fixture;
+use crate::common::wire_preservation::assert_wire_object_preserved;
 use crate::harness::fixture::load_fixture;
-use crate::harness::interop_gate::{InteropGateOptions, validate_interop_json};
-use rstix::core::StixId;
+use crate::harness::interop_gate::{
+    InteropGateOptions, validate_interop_fixture, validate_interop_json,
+};
 
-const ATTACK_PATTERN_ID: &str = "attack-pattern--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061";
-const OASIS_ATTACK_PATTERN_FIXTURE: &str =
-    "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json";
-
-fn attack_pattern_gate_opts() -> InteropGateOptions {
-    InteropGateOptions {
-        use_case_object_ids: vec![ATTACK_PATTERN_ID.into()],
-    }
-}
-
-/// Cross-check `tests/fixtures/conformance/valid/` under the interop gate (§12.1 delegate).
+/// REQ-2.3-P-01 — conformance valid corpus and every walkable testcase pass the interop gate.
 pub fn assert_producer_conformance_12_1() {
     crate::harness::interop_gate::assert_conformance_valid_corpus_passes_interop_gate()
         .expect("conformance valid corpus must pass interop gate");
+
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        validate_interop_fixture(relative, &fixture.json)
+            .unwrap_or_else(|err| panic!("{relative} failed interop producer gate: {err}"));
+    });
 }
 
-/// Interop gate rejects spec-minimal attack-pattern when use-case rules apply; accepts interop-ok.
+/// REQ-2.3-P-02 — interop use-case rules are stricter than STIX §4.x where §3.x requires it.
 pub fn assert_interop_stricter_than_spec() {
     let spec_fixture = load_fixture("testcases/common/tc-attack-pattern-spec-minimal.json");
+    let objects = parse_fixture_objects(&spec_fixture.json).expect("parse spec-minimal");
+    let ids = object_ids_of_type(&objects, "attack-pattern");
     assert!(
-        validate_interop_json(&spec_fixture.json, &attack_pattern_gate_opts()).is_err(),
+        validate_interop_json(
+            &spec_fixture.json,
+            &InteropGateOptions {
+                use_case_object_ids: ids,
+            },
+        )
+        .is_err(),
         "spec-minimal attack-pattern must fail interop use-case rules"
     );
 
-    let ok_fixture = load_fixture(OASIS_ATTACK_PATTERN_FIXTURE);
-    validate_interop_json(&ok_fixture.json, &attack_pattern_gate_opts())
-        .expect("OASIS §3.1.3.1 attack-pattern must pass interop gate");
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        validate_interop_fixture(relative, &fixture.json).unwrap_or_else(|err| {
+            panic!("{relative}: use-case object must satisfy interop rules: {err}")
+        });
+    });
 }
 
-/// Subset/containment on a parsed object (§2.3.3 MAY — additional properties permitted).
+/// REQ-2.3-P-03 — additional wire properties are permitted (subset/containment on re-serialize).
 pub fn assert_additional_properties_permitted() {
-    let fixture = load_fixture(OASIS_ATTACK_PATTERN_FIXTURE);
-    let bundle = validate_interop_json(&fixture.json, &attack_pattern_gate_opts())
-        .expect("interop gate must parse attack-pattern bundle");
-    let ap_id = StixId::parse(ATTACK_PATTERN_ID).expect("attack-pattern id");
-    let ap = bundle.get(&ap_id).expect("attack-pattern object");
-    let actual = serde_json::to_value(ap).expect("serialize parsed object");
-    let expected = serde_json::json!({
-        "type": "attack-pattern",
-        "name": "Spear Phishing"
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        let objects = parse_fixture_objects(&fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: parse fixture: {err}"));
+        let use_case_ids = use_case_object_ids(relative, &objects);
+        let bundle = validate_interop_fixture(relative, &fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
+
+        for object_id in use_case_ids {
+            let wire = objects
+                .iter()
+                .find(|obj| obj.get("id").and_then(|v| v.as_str()) == Some(object_id.as_str()))
+                .unwrap_or_else(|| panic!("{relative}: wire object {object_id}"));
+            assert_wire_object_preserved(relative, wire, &bundle, &object_id);
+        }
     });
-    assert_json_contains(&actual, &expected, "attack-pattern");
 }

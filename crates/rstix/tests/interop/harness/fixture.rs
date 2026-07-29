@@ -71,8 +71,8 @@ pub fn try_load_fixture(relative_path: &str) -> Result<InteropFixture, String> {
         ));
     }
 
-    let json = fs::read_to_string(&json_path)
-        .map_err(|e| format!("read {}: {e}", json_path.display()))?;
+    let json =
+        fs::read_to_string(&json_path).map_err(|e| format!("read {}: {e}", json_path.display()))?;
     let sidecar_text = fs::read_to_string(&sidecar_path)
         .map_err(|e| format!("read {}: {e}", sidecar_path.display()))?;
     let provenance: ProvenanceSidecar = toml::from_str(&sidecar_text)
@@ -150,12 +150,17 @@ fn run_load_time_scans(fixture: &InteropFixture) {
         )
     });
 
-    scan_rfc3339_timestamps(&value, fixture);
-    scan_stix_identifiers(&value, fixture);
-    reconcile_divergence_records(fixture);
+    let mut surfaced = Vec::new();
+    scan_rfc3339_timestamps(&value, fixture, &mut surfaced);
+    scan_stix_identifiers(&value, fixture, &mut surfaced);
+    reconcile_divergence_records(fixture, &surfaced);
 }
 
-fn scan_rfc3339_timestamps(value: &serde_json::Value, fixture: &InteropFixture) {
+fn scan_rfc3339_timestamps(
+    value: &serde_json::Value,
+    fixture: &InteropFixture,
+    surfaced: &mut Vec<String>,
+) {
     scan_value_for_keys(
         value,
         &[
@@ -168,43 +173,68 @@ fn scan_rfc3339_timestamps(value: &serde_json::Value, fixture: &InteropFixture) 
         |path, raw| {
             if let Some(s) = raw.as_str()
                 && !is_rfc3339_millis(s)
-                && !is_recorded_divergence(fixture, path)
             {
-                panic!(
-                    "{}: RFC 3339 scan failed at {path}: {s:?}",
-                    fixture.relative_path
-                );
+                if is_recorded_divergence(fixture, path) {
+                    surfaced.push(path.to_owned());
+                } else {
+                    panic!(
+                        "{}: RFC 3339 scan failed at {path}: {s:?}",
+                        fixture.relative_path
+                    );
+                }
             }
         },
     );
 }
 
-fn scan_stix_identifiers(value: &serde_json::Value, fixture: &InteropFixture) {
+fn scan_stix_identifiers(
+    value: &serde_json::Value,
+    fixture: &InteropFixture,
+    surfaced: &mut Vec<String>,
+) {
     scan_value_for_keys(
         value,
         &["id", "created_by_ref", "source_ref", "target_ref"],
         |path, raw| {
             if let Some(s) = raw.as_str()
                 && !looks_like_stix_id(s)
-                && !is_recorded_divergence(fixture, path)
             {
-                panic!(
-                    "{}: identifier-shape scan failed at {path}: {s:?}",
-                    fixture.relative_path
-                );
+                if is_recorded_divergence(fixture, path) {
+                    surfaced.push(path.to_owned());
+                } else {
+                    panic!(
+                        "{}: identifier-shape scan failed at {path}: {s:?}",
+                        fixture.relative_path
+                    );
+                }
             }
         },
     );
 }
 
-fn reconcile_divergence_records(fixture: &InteropFixture) {
+fn reconcile_divergence_records(fixture: &InteropFixture, surfaced: &[String]) {
     for record in &fixture.provenance.divergence_recorded {
         assert!(
             !record.site.is_empty() && record.defect > 0 && !record.description.is_empty(),
             "{}: invalid divergence_recorded entry",
             fixture.relative_path
         );
+        if record.site.starts_with('§') {
+            continue;
+        }
+        if divergence_site_requires_scan_surface(&record.site) {
+            assert!(
+                surfaced.iter().any(|site| site == &record.site),
+                "{}: divergence_recorded site `{}` was not surfaced by load-time scans",
+                fixture.relative_path,
+                record.site
+            );
+        }
     }
+}
+
+fn divergence_site_requires_scan_surface(site: &str) -> bool {
+    site.starts_with("objects") || site.contains('[')
 }
 
 fn is_recorded_divergence(fixture: &InteropFixture, site: &str) -> bool {

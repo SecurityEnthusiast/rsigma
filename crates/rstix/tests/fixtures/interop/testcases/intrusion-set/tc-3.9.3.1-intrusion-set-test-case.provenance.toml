@@ -26,5 +26,5 @@ description = "Wrap identity and intrusion-set in a bundle per REQ-2.3-X-02."
 
 [[divergence_recorded]]
 site = "§3.9.3.1 primary_motivation key"
-defect = 1
+defect = 9
 description = "Published test case misspells the property name as prinary_motivation."

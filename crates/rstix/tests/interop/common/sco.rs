@@ -1,23 +1,53 @@
 //! §2.3 SCO cross-cutting invariant (REQ-2.3-X-10).
 
 use rstix::core::StixId;
-use rstix::model::sco::Ipv4Addr;
+use rstix::model::sco::{DomainName, File, Ipv4Addr};
 
+use crate::common::fixture_catalog::summarize_fixture_wire;
+use crate::common::fixture_walk::for_each_suite_walk_fixture;
 use crate::harness::fixture::load_fixture;
-use crate::harness::interop_gate::{InteropGateOptions, validate_interop_json};
+use crate::harness::interop_gate::validate_interop_fixture;
 
-/// REQ-2.3-X-10 — SCO objects comply with STIX §6 via the interop gate.
-/// Uses OASIS §3.14.3.2 observed-data bundle (ipv4-addr SCO member).
+/// REQ-2.3-X-10 — SCO objects in normative fixtures comply with STIX §6 via typed access.
 pub fn assert_sco_spec_conformance() {
-    let fixture = load_fixture(
-        "testcases/observed-data/tc-3.14.3.2-observed-data-domain-name-and-ip-address.json",
+    let mut checked = 0usize;
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        let summary = summarize_fixture_wire(&fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: summarize fixture: {err}"));
+        if summary.sco_objects.is_empty() {
+            return;
+        }
+
+        let bundle = validate_interop_fixture(relative, &fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
+
+        for sco in &summary.sco_objects {
+            let id = StixId::parse(&sco.id)
+                .unwrap_or_else(|err| panic!("{relative}: invalid SCO id {}: {err}", sco.id));
+            match sco.object_type.as_str() {
+                "ipv4-addr" => {
+                    bundle
+                        .get_typed::<Ipv4Addr>(&id)
+                        .unwrap_or_else(|| panic!("{relative}: typed ipv4-addr {}", sco.id));
+                }
+                "domain-name" => {
+                    bundle
+                        .get_typed::<DomainName>(&id)
+                        .unwrap_or_else(|| panic!("{relative}: typed domain-name {}", sco.id));
+                }
+                "file" => {
+                    bundle
+                        .get_typed::<File>(&id)
+                        .unwrap_or_else(|| panic!("{relative}: typed file {}", sco.id));
+                }
+                other => panic!("{relative}: unsupported SCO type {other}"),
+            }
+            checked += 1;
+        }
+    });
+    assert!(
+        checked > 0,
+        "expected at least one SCO object across normative testcase fixtures"
     );
-    let bundle = validate_interop_json(&fixture.json, &InteropGateOptions::default())
-        .expect("SCO bundle must pass interop gate");
-    let sco_id =
-        StixId::parse("ipv4-addr--efcd5e80-570d-4131-b213-62cb18eaa6a8").expect("sco id");
-    let sco = bundle
-        .get_typed::<Ipv4Addr>(&sco_id)
-        .expect("typed ipv4-addr");
-    assert_eq!(sco.value, "198.51.100.3");
 }

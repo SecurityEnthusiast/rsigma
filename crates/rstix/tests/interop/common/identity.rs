@@ -10,6 +10,7 @@ use rstix::model::ParseOptions;
 use rstix::model::sdo::Identity;
 use serde_json::Value;
 
+use crate::common::fixture_catalog::identity_self_ref_required;
 use crate::common::fixture_walk::for_each_suite_walk_fixture;
 use crate::harness::fixture::{interop_fixtures_root, load_fixture};
 
@@ -21,7 +22,7 @@ pub fn load_identity_shape() -> Value {
 }
 
 /// Assert an Identity object carries the §2.3.4 property set.
-pub fn assert_identity_shape(identity: &Value) {
+pub fn assert_identity_shape(relative: &str, identity: &Value) {
     let shape = load_identity_shape();
     let required = shape["required_properties"]
         .as_array()
@@ -54,6 +55,16 @@ pub fn assert_identity_shape(identity: &Value) {
         created_by_ref.starts_with("identity--"),
         "identity created_by_ref must be a STIX identifier: {created_by_ref}"
     );
+    if identity_self_ref_required(relative) {
+        let identity_id = identity
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(
+            created_by_ref, identity_id,
+            "{relative}: identity `{identity_id}` must self-reference created_by_ref per §2.3.4"
+        );
+    }
 }
 
 /// Millisecond timestamp granularity on parsed Identity (§2.3.4 SHOULD).
@@ -70,12 +81,6 @@ pub fn assert_identity_millisecond_timestamps(identity: &Identity) {
     );
 }
 
-fn wire_identity_by_id<'a>(objects: &'a [Value], id: &str) -> Option<&'a Value> {
-    objects
-        .iter()
-        .find(|obj| obj.get("id").and_then(Value::as_str) == Some(id))
-}
-
 fn assert_identities_in_fixture(relative: &str, check_timestamps: bool) {
     let fixture = load_fixture(relative);
     let parse_opts = ParseOptions::new().interop_bundle();
@@ -89,24 +94,16 @@ fn assert_identities_in_fixture(relative: &str, check_timestamps: bool) {
 
     let mut checked = 0usize;
     for object in objects {
-        let Some(created_by_ref) = object.get("created_by_ref").and_then(Value::as_str) else {
+        if object.get("type").and_then(Value::as_str) != Some("identity") {
             continue;
-        };
-        let identity_id = StixId::parse(created_by_ref)
-            .unwrap_or_else(|err| panic!("{relative}: invalid created_by_ref: {err}"));
+        }
+        let wire = object;
+        assert_identity_shape(relative, wire);
+        let identity_id = wire.get("id").and_then(Value::as_str).expect("identity id");
+        let id = StixId::parse(identity_id).expect("identity id");
         let identity = bundle
-            .get_typed::<Identity>(&identity_id)
-            .unwrap_or_else(|| {
-                panic!(
-                    "{relative}: created_by_ref `{created_by_ref}` must resolve to an Identity in the bundle"
-                )
-            });
-        let wire = wire_identity_by_id(objects, created_by_ref).unwrap_or_else(|| {
-            panic!(
-                "{relative}: created_by_ref `{created_by_ref}` must resolve to a wire Identity object"
-            )
-        });
-        assert_identity_shape(wire);
+            .get_typed::<Identity>(&id)
+            .unwrap_or_else(|| panic!("{relative}: identity `{identity_id}` must parse"));
         if check_timestamps {
             assert_identity_millisecond_timestamps(identity);
         }
@@ -114,7 +111,7 @@ fn assert_identities_in_fixture(relative: &str, check_timestamps: bool) {
     }
     assert!(
         checked > 0,
-        "{relative}: expected at least one object with created_by_ref"
+        "{relative}: expected at least one Identity object"
     );
 }
 

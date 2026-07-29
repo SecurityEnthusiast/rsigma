@@ -1,104 +1,191 @@
 //! §2.3 Consumer cross-cutting checks (REQ-2.3-C-01..C-06).
-//!
-//! Uses OASIS §3.1.3.2 normative test-case data where the interoperability document
-//! publishes Identity + SDO + SRO content. Not §12.1 Consumer certification.
 
 use rstix::core::StixId;
-use rstix::model::sdo::{AttackPattern, Identity, Vulnerability};
-use rstix::model::sro::Relationship;
+use rstix::model::sdo::{AttackPattern, Identity};
+use rstix::model::sro::{Relationship, Sighting};
+use serde_json::Value;
 
+use crate::common::fixture_catalog::{
+    fixture_expects_sro, parse_fixture_objects, summarize_fixture_wire, use_case_object_ids,
+};
+use crate::common::fixture_walk::for_each_suite_walk_fixture;
+use crate::common::wire_preservation::{
+    assert_identity_fields_preserved, assert_wire_object_preserved,
+};
 use crate::harness::fixture::load_fixture;
-use crate::harness::interop_gate::{InteropGateOptions, validate_interop_json};
+use crate::harness::interop_gate::validate_interop_fixture;
 
-const CANONICAL_IDENTITY_ID: &str = "identity--f431f809-377b-45e0-aa1c-6a4751cae5ff";
-const OASIS_CONSUMER_FIXTURE: &str =
-    "testcases/attack-pattern/tc-3.1.3.2-attack-pattern-targets-vulnerability.json";
-
-fn load_oasis_consumer_bundle() -> rstix::model::Bundle {
-    let fixture = load_fixture(OASIS_CONSUMER_FIXTURE);
-    validate_interop_json(&fixture.json, &InteropGateOptions::default())
-        .expect("OASIS §3.1.3.2 bundle must pass interop gate")
-}
-
-/// REQ-2.3-C-01 — Consumer parses normative Producer test-case data through the interop gate.
+/// REQ-2.3-C-01 — every walkable normative testcase passes the interop consumer gate.
 pub fn assert_consumer_conformance_12_1() {
-    load_oasis_consumer_bundle();
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        validate_interop_fixture(relative, &fixture.json)
+            .unwrap_or_else(|err| panic!("{relative} failed interop consumer gate: {err}"));
+    });
 }
 
-/// REQ-2.3-C-02 — Consumer typed accessors expose Producer-required properties.
+/// REQ-2.3-C-02 — typed accessors expose §3.x Required Producer Persona Support properties.
 pub fn assert_consumer_supports_producer_props() {
-    let fixture = load_fixture("testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json");
-    let bundle =
-        validate_interop_json(&fixture.json, &InteropGateOptions::default()).expect("interop gate");
-    let ap_id = StixId::parse("attack-pattern--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061")
-        .expect("attack-pattern id");
-    let ap = bundle
-        .get_typed::<AttackPattern>(&ap_id)
-        .expect("typed attack-pattern");
-    assert!(!ap.common.external_references.is_empty());
-    assert!(!ap.kill_chain_phases.is_empty());
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        let objects = parse_fixture_objects(&fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: parse fixture: {err}"));
+        let use_case_ids = use_case_object_ids(relative, &objects);
+        let bundle = validate_interop_fixture(relative, &fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
+
+        for object_id in &use_case_ids {
+            let wire = objects
+                .iter()
+                .find(|obj| obj.get("id").and_then(|v| v.as_str()) == Some(object_id.as_str()))
+                .unwrap_or_else(|| panic!("{relative}: wire object {object_id}"));
+            let object_type = wire.get("type").and_then(Value::as_str).unwrap_or("object");
+            let stix_id = StixId::parse(object_id).expect("object id");
+            assert!(
+                bundle.get(&stix_id).is_some(),
+                "{relative}: typed access for {object_type} {object_id}"
+            );
+            if object_type == "attack-pattern" {
+                let ap = bundle
+                    .get_typed::<AttackPattern>(&stix_id)
+                    .expect("typed attack-pattern");
+                assert!(!ap.common.external_references.is_empty());
+                assert!(!ap.kill_chain_phases.is_empty());
+            }
+            assert_wire_object_preserved(relative, wire, &bundle, object_id);
+        }
+    });
 }
 
-/// REQ-2.3-C-03 — Consumer receives Identity, use-case SDO(s), and SRO(s).
+/// REQ-2.3-C-03 — Consumer receives Identity, use-case SDO(s), and SRO(s) when expected.
 pub fn assert_consumer_receives_triad() {
-    let bundle = load_oasis_consumer_bundle();
-    let identity_id = StixId::parse(CANONICAL_IDENTITY_ID).expect("identity id");
-    assert!(bundle.get_typed::<Identity>(&identity_id).is_some());
-    assert_eq!(bundle.objects_of_type::<AttackPattern>().count(), 1);
-    assert_eq!(bundle.objects_of_type::<Vulnerability>().count(), 1);
-    assert_eq!(bundle.objects_of_type::<Relationship>().count(), 1);
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        let summary = summarize_fixture_wire(&fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: summarize fixture: {err}"));
+        assert!(
+            !summary.identity_ids.is_empty(),
+            "{relative}: expected at least one Identity"
+        );
+        assert!(
+            summary.primary_sdo_count > 0,
+            "{relative}: expected at least one use-case SDO"
+        );
+
+        let bundle = validate_interop_fixture(relative, &fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
+        for identity_id in &summary.identity_ids {
+            let id = StixId::parse(identity_id).expect("identity id");
+            assert!(
+                bundle.get_typed::<Identity>(&id).is_some(),
+                "{relative}: Identity {identity_id} must parse"
+            );
+        }
+        if fixture_expects_sro(relative, &summary) {
+            assert!(
+                summary.relationship_count > 0 || summary.sighting_count > 0,
+                "{relative}: expected relationship or sighting SRO content"
+            );
+            if summary.relationship_count > 0 {
+                assert_eq!(
+                    bundle.objects_of_type::<Relationship>().count(),
+                    summary.relationship_count,
+                    "{relative}: relationship count mismatch"
+                );
+            }
+            if summary.sighting_count > 0 {
+                assert_eq!(
+                    bundle.objects_of_type::<Sighting>().count(),
+                    summary.sighting_count,
+                    "{relative}: sighting count mismatch"
+                );
+            }
+        }
+    });
 }
 
-/// REQ-2.3-C-04 — Consumer resolves `created_by_ref` Identity fields (§2.3.4).
+/// REQ-2.3-C-04 — Consumer resolves `created_by_ref` and §2.3.4 Identity fields.
 pub fn assert_consumer_resolves_created_by_ref() {
-    let bundle = load_oasis_consumer_bundle();
-    let identity_id = StixId::parse(CANONICAL_IDENTITY_ID).expect("identity id");
-    let ap_id = StixId::parse("attack-pattern--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061")
-        .expect("attack-pattern id");
-    let ap = bundle
-        .get_typed::<AttackPattern>(&ap_id)
-        .expect("attack-pattern");
-    let created_by = ap.common.created_by_ref.as_ref().expect("created_by_ref");
-    assert_eq!(created_by.as_stix_id().as_str(), CANONICAL_IDENTITY_ID);
-    let identity = bundle
-        .get_typed::<Identity>(&identity_id)
-        .expect("resolve identity");
-    assert_eq!(identity.name, "ACME Corp, Inc.");
-    assert_eq!(identity.identity_class.as_deref(), Some("organization"));
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        let bundle = validate_interop_fixture(relative, &fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
+        let objects = parse_fixture_objects(&fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: parse fixture: {err}"));
+
+        let mut checked = 0usize;
+        for object in &objects {
+            let Some(created_by_ref) = object.get("created_by_ref").and_then(Value::as_str) else {
+                continue;
+            };
+            let identity_id = StixId::parse(created_by_ref)
+                .unwrap_or_else(|err| panic!("{relative}: invalid created_by_ref: {err}"));
+            let wire_identity = objects
+                .iter()
+                .find(|obj| obj.get("id").and_then(Value::as_str) == Some(created_by_ref))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{relative}: created_by_ref `{created_by_ref}` must resolve to wire Identity"
+                    )
+                });
+            assert!(
+                bundle.get_typed::<Identity>(&identity_id).is_some(),
+                "{relative}: created_by_ref `{created_by_ref}` must resolve to Identity"
+            );
+            assert_identity_fields_preserved(relative, wire_identity, &bundle, created_by_ref);
+            checked += 1;
+        }
+        assert!(
+            checked > 0,
+            "{relative}: expected at least one object with created_by_ref"
+        );
+    });
 }
 
-/// REQ-2.3-C-05 — Consumer can process use-case object fields without loss.
+/// REQ-2.3-C-05 — Consumer preserves use-case object wire fields without loss.
 pub fn assert_consumer_processes_fields() {
-    let bundle = load_oasis_consumer_bundle();
-    let ap = bundle
-        .objects_of_type::<AttackPattern>()
-        .next()
-        .expect("attack-pattern");
-    assert_eq!(ap.name, "Spear Phishing");
-    let vuln = bundle
-        .objects_of_type::<Vulnerability>()
-        .next()
-        .expect("vulnerability");
-    assert_eq!(vuln.name, "CVE-2017-0199");
-    assert!(!vuln.common.external_references.is_empty());
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        let objects = parse_fixture_objects(&fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: parse fixture: {err}"));
+        let use_case_ids = use_case_object_ids(relative, &objects);
+        let bundle = validate_interop_fixture(relative, &fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
+
+        for object_id in use_case_ids {
+            let wire = objects
+                .iter()
+                .find(|obj| obj.get("id").and_then(|v| v.as_str()) == Some(object_id.as_str()))
+                .unwrap_or_else(|| panic!("{relative}: wire object {object_id}"));
+            assert_wire_object_preserved(relative, wire, &bundle, &object_id);
+        }
+    });
 }
 
-/// REQ-2.3-C-06 — Consumer can process related SDOs/SROs and associated fields.
+/// REQ-2.3-C-06 — Consumer resolves relationship endpoints and related bundle members.
 pub fn assert_consumer_processes_related() {
-    let bundle = load_oasis_consumer_bundle();
-    let relationship = bundle
-        .objects_of_type::<Relationship>()
-        .next()
-        .expect("relationship");
-    assert_eq!(relationship.relationship_type, "targets");
-    let ap_id = StixId::parse("attack-pattern--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061")
-        .expect("attack-pattern id");
-    let vuln_id = StixId::parse("vulnerability--99f01020-864f-4713-84d2-d1eff88a843f")
-        .expect("vulnerability id");
-    assert_eq!(relationship.source_ref.as_str(), ap_id.as_str());
-    assert_eq!(relationship.target_ref.as_str(), vuln_id.as_str());
-    let ap = bundle
-        .get_typed::<AttackPattern>(&ap_id)
-        .expect("related attack-pattern");
-    assert_eq!(ap.name, "Spear Phishing");
+    let mut checked = 0usize;
+    for_each_suite_walk_fixture(|relative| {
+        let fixture = load_fixture(relative);
+        let bundle = validate_interop_fixture(relative, &fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
+        for relationship in bundle.objects_of_type::<Relationship>() {
+            assert!(
+                bundle.get(&relationship.source_ref).is_some(),
+                "{relative}: source_ref {} must resolve",
+                relationship.source_ref.as_str()
+            );
+            assert!(
+                bundle.get(&relationship.target_ref).is_some(),
+                "{relative}: target_ref {} must resolve",
+                relationship.target_ref.as_str()
+            );
+            assert!(!relationship.relationship_type.is_empty());
+            checked += 1;
+        }
+    });
+    assert!(
+        checked > 0,
+        "expected at least one relationship across normative testcase fixtures"
+    );
 }

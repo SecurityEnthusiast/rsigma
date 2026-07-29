@@ -182,10 +182,9 @@ struct SummaryJson {
     oasis_use_cases_in_spec: u32,
     manifest_rows_total: usize,
     manifest_rows_by_disposition: ManifestDispositionCounts,
-    /// Harness infrastructure rows with disposition `TESTED` that recorded `Pass` (§2.3 excluded).
+    /// Executable manifest rows with disposition `TESTED` that recorded `Pass`.
     tested_rows_passed: usize,
-    /// §2.3 / scaffold rows with disposition `HARNESS_SMOKE` that executed.
-    /// Synthetic fixtures and partial checks — **not** OASIS normative verification.
+    /// Rows with disposition `HARNESS_SMOKE` that executed (partial checks only).
     harness_smoke_executed: usize,
     /// Checklist/framework placeholders — no automated test in this PR.
     report_only_rows: usize,
