@@ -41,6 +41,11 @@ fi
 events_dir="${dest}/events"
 python3 "${script_dir}/gen_events.py" --out-dir "${events_dir}" --count "${count}"
 
+correlation_rules="${dest}/correlation-rules"
+rm -rf "${correlation_rules}"
+mkdir -p "${correlation_rules}"
+cp "${script_dir}/fixtures/correlation.yml" "${correlation_rules}/correlation.yml"
+
 if [ -n "${RSIGMA_PERF_RAW_OVERRIDE:-}" ]; then
     cp "${RSIGMA_PERF_RAW_OVERRIDE}" "${events_dir}/raw_windows.ndjson"
     echo "raw_windows lane overridden from ${RSIGMA_PERF_RAW_OVERRIDE}" >&2

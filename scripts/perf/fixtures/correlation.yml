@@ -1,0 +1,74 @@
+title: Authentication Failure
+id: perf-auth-failure
+name: perf_auth_failure
+logsource:
+    category: authentication
+detection:
+    selection:
+        EventType: authentication_failure
+    condition: selection
+---
+title: Authentication Success
+id: perf-auth-success
+name: perf_auth_success
+logsource:
+    category: authentication
+detection:
+    selection:
+        EventType: authentication_success
+    condition: selection
+---
+title: Authentication Failure Burst by User
+id: perf-auth-failure-user-burst
+correlation:
+    type: event_count
+    rules:
+        - perf-auth-failure
+    group-by:
+        - User
+    timespan: 5m
+    condition:
+        gte: 4
+level: medium
+---
+title: Authentication Source Fanout by Host
+id: perf-auth-source-fanout
+correlation:
+    type: value_count
+    rules:
+        - perf-auth-failure
+    group-by:
+        - Computer
+    timespan: 5m
+    condition:
+        field: SourceIP
+        gte: 10
+level: high
+---
+title: Authentication Egress Volume by Host
+id: perf-auth-egress-volume
+correlation:
+    type: value_sum
+    rules:
+        - perf-auth-failure
+    group-by:
+        - Computer
+    timespan: 5m
+    condition:
+        field: BytesOut
+        gt: 50000
+level: medium
+---
+title: Authentication Failure Then Success
+id: perf-auth-failure-then-success
+correlation:
+    type: temporal_ordered
+    rules:
+        - perf-auth-failure
+        - perf-auth-success
+    group-by:
+        - User
+    timespan: 5m
+    condition:
+        gte: 2
+level: high

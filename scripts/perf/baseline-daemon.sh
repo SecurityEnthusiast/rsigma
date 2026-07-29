@@ -8,7 +8,9 @@
 # Usage:
 #   scripts/perf/baseline-daemon.sh [FIXTURES_DIR] [LANE] [EXTRA_DAEMON_FLAGS...]
 # Environment: BATCH (500), VUS (4), DURATION (30s), BATCH_SIZE (512),
-#              RSIGMA (binary under test, default target/release/rsigma)
+#              RSIGMA (binary under test, default target/release/rsigma),
+#              RULES (rule tree, default pinned SigmaHQ rules),
+#              LOAD_DRIVER (auto, python, or k6; default auto)
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +20,7 @@ lane="${2:-raw_windows}"
 shift 2 2>/dev/null || shift $# || true
 
 bin="${RSIGMA:-${repo_root}/target/release/rsigma}"
-rules="${fixtures}/sigma/rules"
+rules="${RULES:-${fixtures}/sigma/rules}"
 lane_file="${fixtures}/events/${lane}.ndjson"
 addr="127.0.0.1:19090"
 metrics="http://${addr}/metrics"
@@ -45,8 +47,28 @@ count_processed() {
 before="$(count_processed)"
 start="$(python3 -c 'import time; print(time.time())')"
 
-LANE="${lane_file}" URL="http://${addr}/api/v1/events" \
-    k6 run --quiet "${script_dir}/daemon-load.js" >/tmp/rsigma-baseline-k6.log 2>&1
+load_driver="${LOAD_DRIVER:-auto}"
+if [ "${load_driver}" = "auto" ]; then
+    if command -v k6 >/dev/null 2>&1; then
+        load_driver=k6
+    else
+        load_driver=python
+    fi
+fi
+case "${load_driver}" in
+    k6)
+        LANE="${lane_file}" URL="http://${addr}/api/v1/events" \
+            k6 run --quiet "${script_dir}/daemon-load.js" >/tmp/rsigma-baseline-load.log 2>&1
+        ;;
+    python)
+        LANE="${lane_file}" URL="http://${addr}/api/v1/events" \
+            python3 "${script_dir}/daemon-load.py" >/tmp/rsigma-baseline-load.log 2>&1
+        ;;
+    *)
+        echo "unknown LOAD_DRIVER=${load_driver}; expected auto, python, or k6" >&2
+        exit 1
+        ;;
+esac
 
 # Let the daemon drain its queue before reading the final counter.
 prev=-1

@@ -14,8 +14,11 @@
 #   REPEAT    times to concatenate each lane (default 10). Loading the pinned
 #             SigmaHQ corpus costs ~0.3 s, which swamps a single 10k-event pass,
 #             so the lane is repeated to push the eval share of wall time up.
+#   RUNS      measured evaluation runs per lane and variant (default 3); the
+#             reported evaluation time is their median.
 #   RSIGMA    override the binary under test (default target/release/rsigma),
 #             so a pre-change build can be measured with the same harness.
+#   SAMPLES_FILE  optional TSV path for every raw measured run.
 #
 # Reported events/sec is net of rule load: the harness times a load-only run
 # (empty stdin) and subtracts it, because load is a fixed startup cost and
@@ -36,6 +39,7 @@ fi
 bin="${RSIGMA:-${repo_root}/target/release/rsigma}"
 rules="${fixtures}/sigma/rules"
 repeat="${REPEAT:-10}"
+runs="${RUNS:-3}"
 [ -x "${bin}" ] || { echo "build first: cargo build --release --all-features --bin rsigma" >&2; exit 1; }
 [ -d "${rules}" ] || { echo "fixtures missing: run scripts/perf/fetch-fixtures.sh" >&2; exit 1; }
 
@@ -48,6 +52,10 @@ variants=(
 
 now() { python3 -c 'import time; print(time.time())'; }
 
+if [ -n "${SAMPLES_FILE:-}" ]; then
+    printf 'lane\tvariant\trun\tevents\tmatches\tload_s\teval_s\teps\n' >"${SAMPLES_FILE}"
+fi
+
 # Median of three load-only runs, one warm-up discarded.
 "${bin}" engine eval -r "${rules}" --quiet --output-format ndjson </dev/null >/dev/null
 load_samples=()
@@ -59,7 +67,7 @@ for _ in 1 2 3; do
 done
 load="$(printf '%s\n' "${load_samples[@]}" | sort -g | sed -n 2p)"
 
-echo -e "lane\tvariant\tevents\tmatches\tload_s\teval_s\teps"
+echo -e "lane\tvariant\tevents\tmatches\tload_s\teval_s\teps\teps_ci_low\teps_ci_high"
 for lane in "${lanes[@]}"; do
     events_file="${fixtures}/events/${lane}.ndjson"
     [ -f "${events_file}" ] || { echo "missing lane ${events_file}" >&2; continue; }
@@ -70,18 +78,43 @@ for lane in "${lanes[@]}"; do
     for spec in "${variants[@]}"; do
         name="${spec%%|*}"
         flags="${spec#*|}"
-        start="$(now)"
-        # shellcheck disable=SC2086
-        matches="$("${bin}" engine eval \
-            -r "${rules}" ${flags} --quiet --output-format ndjson \
-            <"${stream}" | wc -l | tr -d ' ')"
-        end="$(now)"
-        python3 - "${lane}" "${name}" "${n_events}" "${matches}" "${load}" "${start}" "${end}" <<'PY'
+        samples=()
+        for run in $(seq 1 "${runs}"); do
+            start="$(now)"
+            # shellcheck disable=SC2086
+            matches="$("${bin}" engine eval \
+                -r "${rules}" ${flags} --quiet --output-format ndjson \
+                <"${stream}" | wc -l | tr -d ' ')"
+            end="$(now)"
+            elapsed="$(python3 -c "print(max(${end}-${start}-${load}, 1e-9))")"
+            samples+=("${matches}:${elapsed}")
+            if [ -n "${SAMPLES_FILE:-}" ]; then
+                python3 - "${lane}" "${name}" "${run}" "${n_events}" "${matches}" "${load}" "${elapsed}" >>"${SAMPLES_FILE}" <<'PY'
 import sys
-lane, name, n_events, matches = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
-load, start, end = float(sys.argv[5]), float(sys.argv[6]), float(sys.argv[7])
-evaluated = max(end - start - load, 1e-9)
-print(f"{lane}\t{name}\t{n_events}\t{matches}\t{load:.2f}\t{evaluated:.2f}\t{n_events / evaluated:.0f}")
+lane, name, run, events, matches, load, elapsed = sys.argv[1:]
+print(f"{lane}\t{name}\t{run}\t{events}\t{matches}\t{float(load):.6f}\t{float(elapsed):.6f}\t{int(events) / float(elapsed):.0f}")
+PY
+            fi
+        done
+        python3 - "${lane}" "${name}" "${n_events}" "${load}" "${samples[@]}" <<'PY'
+import random
+import statistics
+import sys
+lane, name, n_events, load = sys.argv[1], sys.argv[2], int(sys.argv[3]), float(sys.argv[4])
+samples = [(int(sample.split(":", 1)[0]), float(sample.split(":", 1)[1])) for sample in sys.argv[5:]]
+matches = {sample[0] for sample in samples}
+if len(matches) != 1:
+    raise SystemExit(f"match count changed across runs: {sorted(matches)}")
+times = [sample[1] for sample in samples]
+evaluated = statistics.median(times)
+rng = random.Random(0)
+bootstrap = sorted(statistics.median(rng.choices(times, k=len(times))) for _ in range(10000))
+low_time = bootstrap[int(len(bootstrap) * 0.025)]
+high_time = bootstrap[int(len(bootstrap) * 0.975)]
+print(
+    f"{lane}\t{name}\t{n_events}\t{matches.pop()}\t{load:.2f}\t{evaluated:.2f}\t"
+    f"{n_events / evaluated:.0f}\t{n_events / high_time:.0f}\t{n_events / low_time:.0f}"
+)
 PY
     done
     rm -f "${stream}"
