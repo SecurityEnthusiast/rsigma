@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix: OASIS §3.1 Attack Pattern interop use-case tests
+### rstix: OASIS §3.1 Attack Pattern interop use-case tests (#413)
 
 - Adds `tests/interop/use_cases/attack_pattern/` covering §3.1.1–§3.1.7 against normative §3.1.3 fixtures and non-gating `examples/attack-pattern/` data.
 - §3.1.1 description scope is **TESTED** (not `REPORT_ONLY`): normative fixtures must expose typed Attack Pattern TTPs including the doc’s “Spear Phishing” example.
