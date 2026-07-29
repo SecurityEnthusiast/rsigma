@@ -1,0 +1,14 @@
+fixture = "tc-consumer-triad.json"
+source_doc = "rstix-interop-common"
+source_pages = "17"
+source_section = "2.3.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrapped identity, indicator, attack-pattern, and relationship in bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "synthetic"
+description = "Synthetic consumer triad bundle for REQ-2.3-C-03 through C-06."

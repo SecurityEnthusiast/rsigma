@@ -120,6 +120,15 @@ impl Validator {
         }
     }
 
+    /// Like [`Self::interop_strict`], with interop bundle parse rules (predefined TLP marking exemption).
+    pub fn interop_bundle_strict() -> Self {
+        Self {
+            phases: interop_strict_phases(),
+            leniency: Leniency::Zero,
+            parse_options: ParseOptions::default().interop_bundle(),
+        }
+    }
+
     /// Start a custom check set.
     pub fn builder() -> ValidatorBuilder {
         ValidatorBuilder::new()
@@ -258,6 +267,7 @@ fn json_parse_hint() -> Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::ParseOptions;
     use crate::parse_bundle;
 
     #[test]
@@ -343,5 +353,30 @@ mod tests {
         let from_bundle = Validator::consumer_permissive().validate_bundle(&bundle);
         let from_json = Validator::consumer_permissive().validate_json_str(json);
         assert_eq!(from_bundle.is_valid(), from_json.is_valid());
+    }
+
+    #[test]
+    fn interop_bundle_strict_exempts_predefined_tlp_marking_refs() {
+        let json =
+            include_str!("../../tests/fixtures/interop/testcases/common/tc-tlp-exempt-ref.json");
+        let default = Validator::interop_strict().validate_json_str(json);
+        assert!(
+            !default.is_valid(),
+            "default interop_strict rejects external TLP marking ref"
+        );
+        let bundle = crate::model::Bundle::parse_with_options(
+            json,
+            &ParseOptions::default().interop_bundle(),
+        )
+        .expect("parse");
+        let interop = Validator::interop_bundle_strict().validate_bundle(&bundle);
+        assert!(
+            !interop
+                .diagnostics()
+                .any(|d| d.code == DiagnosticCode::W0010
+                    && d.message.contains("marking-definition--613f2e26")),
+            "interop bundle strict must not report unresolved TLP marking ref: {:?}",
+            interop.diagnostics().collect::<Vec<_>>()
+        );
     }
 }

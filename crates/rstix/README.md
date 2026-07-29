@@ -790,7 +790,7 @@ Two layers, consistent across the Data Model + Serialization phase:
 | **Bundle integration** | `tests/bundle.rs` | Bundle container, ref validation, `x_*` and toplevel-property-extension round-trip via `extra_properties`. |
 | **Semantic validation** | `tests/validation.rs` + `tests/fixtures/validation/` | `Bundle::validate()` advisory codes (granular selectors, language-content, ISO 3166, region-ov, STIX-W0031, …). |
 | **Validation Pipeline** | `tests/validate_conformance.rs`, `tests/validate_diagnostic_coverage.rs`, `tests/validate_pipeline.rs` + `tests/fixtures/conformance/` | Profile-driven pipeline; one case per `DiagnosticCode::ALL` entry. Requires `validate` feature. |
-| **OASIS STIX 2.1 Interop golden suite** | `tests/interop/main.rs` + `tests/fixtures/interop/` | OASIS STIX 2.1 Interoperability (`stix-2.1-interop-v1.0-csd01`) certification harness (SXP + SXC, 21 use cases). Requires `validate`, `marking`, and `graph`. See [OASIS interop golden suite](#oasis-interop-golden-suite). |
+| **OASIS STIX 2.1 Interop test suite** | `tests/interop/main.rs` + `tests/fixtures/interop/` | Traceability harness for OASIS STIX 2.1 Interoperability (`stix-2.1-interop-v1.0-csd01`; SXP + SXC, 21 use cases). Requires `validate`, `marking`, and `graph`. See [OASIS interop test suite](#oasis-interop-test-suite). |
 | **Graph / Marking / Store** | `tests/graph.rs`, `tests/marking.rs`, `tests/store.rs`, `tests/store_fs.rs` | Optional features; `store-fs` for durable backend. |
 | **TAXII Client** | `tests/taxii_client.rs` (`--features taxii`) | wiremock HTTP integration; auth, pagination, POST/DELETE, errors, retry. |
 | **Streaming / custom types / ATT&CK** | `tests/integration.rs` | `parse_reader`, `TypeRegistry`, optional local ATT&CK corpus via `RSTIX_ATTCK_BUNDLE`. |
@@ -888,21 +888,21 @@ There is no `strict` parse flag. Callers that need warnings to fail ingestion us
 
 The tables above describe **implemented** behavior. Negative and rich fixtures for enforced rules live under `tests/fixtures/spec/`, `tests/fixtures/validation/`, and `tests/fixtures/conformance/`. Wire-negative fixtures under `tests/fixtures/spec/` (empty SDO names, empty `object_refs`, invalid address/hash/url formats, and similar) are wired to `assert_fixture_rejects` in `tests/spec.rs` and fail under `Validator::interop_strict()`.
 
-<a id="oasis-interop-golden-suite"></a>
+<a id="oasis-interop-test-suite"></a>
 
-### OASIS interop golden suite
+### OASIS interop test suite
 
-Golden test harness for **STIX 2.1 Producer (SXP) + Consumer (SXC)** self-certification against **STIX 2.1 Interoperability Version 1.0, Committee Specification Draft 01** (`stix-2.1-interop-v1.0-csd01`, 2021-10-23). The harness tracks all **21** use cases in `manifest.toml`; normative OASIS test-case fixtures and full §3.x verification are added incrementally. The suite lives in `tests/interop/` (single Cargo target) with fixtures under `tests/fixtures/interop/`.
+Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Specification Draft 01** (`stix-2.1-interop-v1.0-csd01`, 2021-10-23). It tracks manifest rows for all **21** use cases in that document; normative OASIS test-case JSON and per-requirement tests are added incrementally. The suite lives in `tests/interop/` (single Cargo target) with fixtures under `tests/fixtures/interop/`.
 
-**What this PR is not:** a completed OASIS interoperability certification. The certification report is a traceability artifact — not evidence that every in-scope requirement passed.
+**What this suite is not:** a completed OASIS interoperability certification. The generated report is a traceability artifact — not proof that every in-scope requirement passed.
 
 | Component | Path | Role |
 | --------- | ---- | ---- |
 | Harness | `tests/interop/harness/` | Manifest, fixture loader + provenance, per-use-case overlay on `interop_strict`, bundle closure, containment, certification report |
-| Cross-cutting | `tests/interop/common/` | §2.3 harness smoke (directory layout, TLP whitelist, identity/relationship JSON shape) until normative fixtures land |
-| Use-case tests | `tests/interop/use_cases/` (added per §3.x as normative fixtures land) | Producer/Consumer tests against OASIS normative test-case data |
+| Cross-cutting | `tests/interop/common/` | Automated checks for 18 §2.3 manifest rows, run suite-wide over **42** walkable normative fixtures |
+| Use-case tests | `tests/interop/use_cases/` (added as normative fixtures land) | Producer/Consumer checks wired to OASIS test-case JSON |
 | Manifest | `tests/fixtures/interop/manifest.toml` | `req_id` → `test_id` → fixture → §4.2 checklist row |
-| Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars |
+| Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars (**44/44** inventory: **42** suite-walkable + **2** `BLOCKED` on §9.1 defects 16 and 19; synthetic helpers remain for intentional negatives) |
 | Examples | `tests/fixtures/interop/examples/` | Non-normative; must never fail the build |
 | Report artifacts | `target/interop-report/` | `summary.json`, Tables 55/56 markdown, traceability CSV, risks (never committed) |
 
@@ -913,12 +913,14 @@ Golden test harness for **STIX 2.1 Producer (SXP) + Consumer (SXC)** self-certif
 | `oasis_use_cases_in_spec` | The OASIS interoperability document defines 21 use cases — **not** how many are tested here. |
 | `manifest_rows_total` | Rows in `manifest.toml` (harness + placeholders + smoke). |
 | `manifest_rows_by_disposition` | Breakdown by `TESTED`, `HARNESS_SMOKE`, `REPORT_ONLY`, `BLOCKED`. |
-| `requirements_verified` | Rows with disposition `TESTED` that recorded `Pass` — rstix actually exercised (8 today). |
-| `harness_smoke_executed` | §2.3 layout/shape checks run; **not** OASIS normative verification (4 today). |
-| `report_only_rows` | §4.2 checklist/framework placeholders with no automated test in this PR (7 today). |
-| `blocked_rows` | Known OASIS test-case defects recorded in the manifest (2 today). |
+| `tested_rows_passed` | Executable manifest rows with `disposition = TESTED` that recorded `Pass` (27 today: 9 harness + 18 §2.3 cross-cutting). |
+| `harness_smoke_executed` | Rows with `disposition = HARNESS_SMOKE` (0 today; reserved for partial checks if reintroduced) |
+| `report_only_rows` | §4.2 checklist/framework placeholders with no automated test (8 today) |
+| `blocked_rows` | Checklist rows blocked on unrepairable published test-case data (2 today) |
 
 There is **no** “100% covered” field. Do not infer OASIS conformance from manifest row counts.
+
+**§2.3 manifest rows:** 18 rows use `disposition = TESTED` and run suite-wide over walkable normative fixtures. **`TESTED` here means our harness recorded `Pass` — not OASIS §2.3 requirement verification, not per-use-case Producer/Consumer modules (those land under `tests/interop/use_cases/`), and not the full interop manifest row inventory from the engineering plan.
 
 **Run locally (required features explicit):**
 
@@ -943,7 +945,7 @@ cargo test -p rstix --test interop_sentinel --features validate,marking,graph --
 ```yaml
 - name: Record interop run start
   run: echo "INTEROP_RUN_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
-- name: OASIS STIX 2.1 interop golden suite
+- name: OASIS STIX 2.1 interop test suite
   run: cargo test -p rstix --test interop --features validate,marking,graph --locked
 - name: Gate on interop report
   run: |
@@ -952,11 +954,11 @@ cargo test -p rstix --test interop_sentinel --features validate,marking,graph --
     import json
     summary = json.load(open("target/interop-report/summary.json"))
     by = summary["manifest_rows_by_disposition"]
-    verified = summary["requirements_verified"]
+    infra = summary["tested_rows_passed"]
     smoke = summary["harness_smoke_executed"]
-    assert verified == by["tested"], f"TESTED rows not verified: {verified}/{by['tested']}"
-    assert smoke == by["harness_smoke"], f"HARNESS_SMOKE not run: {smoke}/{by['harness_smoke']}"
-    print(f"verified={verified}, harness_smoke={smoke}, report_only={summary['report_only_rows']}, blocked={summary['blocked_rows']}")
+    assert infra == by["tested"], f"TESTED rows not passed: {infra}/{by['tested']}"
+    assert smoke == by.get("harness_smoke", 0), f"HARNESS_SMOKE mismatch: {smoke}/{by.get('harness_smoke', 0)}"
+    print(f"tested_passed={infra}, harness_smoke={smoke}, report_only={summary['report_only_rows']}, blocked={summary['blocked_rows']}")
     PY
 - uses: actions/upload-artifact@v4
   with:

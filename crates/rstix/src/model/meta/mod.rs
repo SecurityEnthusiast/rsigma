@@ -8,7 +8,7 @@ pub use extension_def::ExtensionDefinition;
 pub use language_content::LanguageContent;
 pub use marking_def::{
     MarkingDefinition, TLP1_AMBER_ID, TLP1_GREEN_ID, TLP1_RED_ID, TLP1_WHITE_ID, TLP2_AMBER_ID,
-    TLP2_AMBER_STRICT_ID, TLP2_CLEAR_ID, TLP2_GREEN_ID, TLP2_RED_ID,
+    TLP2_AMBER_STRICT_ID, TLP2_CLEAR_ID, TLP2_GREEN_ID, TLP2_RED_ID, is_predefined_tlp_marking_id,
 };
 
 use crate::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};

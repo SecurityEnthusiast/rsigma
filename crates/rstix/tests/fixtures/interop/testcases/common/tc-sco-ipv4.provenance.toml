@@ -1,0 +1,14 @@
+fixture = "tc-sco-ipv4.json"
+source_doc = "rstix-interop-common"
+source_pages = "19"
+source_section = "2.3.7"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrapped ipv4-addr SCO in bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "synthetic"
+description = "Synthetic SCO bundle for REQ-2.3-X-10 spec conformance via rstix parse and validate."

@@ -1,0 +1,14 @@
+fixture = "tc-attack-pattern-interop-ok.json"
+source_doc = "rstix-interop-common"
+source_pages = "n/a"
+source_section = "2.3"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrapped attack-pattern with interop-mandatory external_references and kill_chain_phases in bundle."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "synthetic"
+description = "Synthetic bundle demonstrating §3.1 interop stricter-than-spec fields on attack-pattern."

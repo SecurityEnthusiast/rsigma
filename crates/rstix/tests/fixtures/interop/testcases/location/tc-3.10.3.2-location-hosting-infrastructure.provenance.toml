@@ -1,0 +1,19 @@
+fixture = "tc-3.10.3.2-location-hosting-infrastructure.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "75"
+source_section = "3.10.3.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on all objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on infrastructure and relationship keys and values."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap four bare objects in a bundle per REQ-2.3-X-02."

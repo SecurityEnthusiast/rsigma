@@ -28,6 +28,9 @@ pub struct ProvenanceSidecar {
     pub repair: Vec<ProvenanceRepair>,
     #[serde(default)]
     pub divergence_recorded: Vec<DivergenceRecord>,
+    /// When set, the fixture preserves unrepairable OASIS bytes (§9.1 defect); excluded from suite-wide interop gate walks.
+    #[serde(default)]
+    pub blocked_by: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,22 +55,28 @@ pub struct DivergenceRecord {
 
 /// Load a fixture relative to `tests/fixtures/interop/`.
 pub fn load_fixture(relative_path: &str) -> InteropFixture {
+    try_load_fixture(relative_path).unwrap_or_else(|err| panic!("{err}"))
+}
+
+/// Same as [`load_fixture`] but returns an error when the sidecar is absent or invalid.
+pub fn try_load_fixture(relative_path: &str) -> Result<InteropFixture, String> {
     let json_path = interop_fixtures_root().join(relative_path);
     let sidecar_path = sidecar_path_for(&json_path);
 
-    assert!(
-        sidecar_path.exists(),
-        "missing provenance sidecar for {} (expected {})",
-        json_path.display(),
-        sidecar_path.display()
-    );
+    if !sidecar_path.exists() {
+        return Err(format!(
+            "missing provenance sidecar for {} (expected {})",
+            json_path.display(),
+            sidecar_path.display()
+        ));
+    }
 
-    let json = fs::read_to_string(&json_path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", json_path.display()));
+    let json =
+        fs::read_to_string(&json_path).map_err(|e| format!("read {}: {e}", json_path.display()))?;
     let sidecar_text = fs::read_to_string(&sidecar_path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", sidecar_path.display()));
+        .map_err(|e| format!("read {}: {e}", sidecar_path.display()))?;
     let provenance: ProvenanceSidecar = toml::from_str(&sidecar_text)
-        .unwrap_or_else(|e| panic!("parse {}: {e}", sidecar_path.display()));
+        .map_err(|e| format!("parse {}: {e}", sidecar_path.display()))?;
     validate_provenance_sidecar(&json_path, &provenance);
 
     let fixture = InteropFixture {
@@ -76,7 +85,7 @@ pub fn load_fixture(relative_path: &str) -> InteropFixture {
         provenance,
     };
     run_load_time_scans(&fixture);
-    fixture
+    Ok(fixture)
 }
 
 /// Refuse fixtures without provenance sidecars.
@@ -85,12 +94,9 @@ pub fn assert_rejects_missing_provenance() {
     let sidecar_path = sidecar_path_for(&json_path);
     assert!(json_path.exists());
     assert!(!sidecar_path.exists());
-    let result = std::panic::catch_unwind(|| {
-        load_fixture("testcases/harness/missing-sidecar.json");
-    });
     assert!(
-        result.is_err(),
-        "expected panic for missing provenance sidecar"
+        try_load_fixture("testcases/harness/missing-sidecar.json").is_err(),
+        "expected missing provenance sidecar to be rejected"
     );
 }
 
@@ -121,6 +127,16 @@ fn validate_provenance_sidecar(json_path: &Path, provenance: &ProvenanceSidecar)
             repair.invents_data,
         );
     }
+
+    if let Some(defect) = provenance.blocked_by {
+        assert!(
+            provenance
+                .divergence_recorded
+                .iter()
+                .any(|record| record.defect == defect),
+            "blocked_by={defect} requires matching divergence_recorded entry"
+        );
+    }
 }
 
 /// Three load-time scans: well-formedness, RFC 3339 timestamps, STIX id shape.
@@ -134,12 +150,17 @@ fn run_load_time_scans(fixture: &InteropFixture) {
         )
     });
 
-    scan_rfc3339_timestamps(&value, fixture);
-    scan_stix_identifiers(&value, fixture);
-    reconcile_divergence_records(fixture);
+    let mut surfaced = Vec::new();
+    scan_rfc3339_timestamps(&value, fixture, &mut surfaced);
+    scan_stix_identifiers(&value, fixture, &mut surfaced);
+    reconcile_divergence_records(fixture, &surfaced);
 }
 
-fn scan_rfc3339_timestamps(value: &serde_json::Value, fixture: &InteropFixture) {
+fn scan_rfc3339_timestamps(
+    value: &serde_json::Value,
+    fixture: &InteropFixture,
+    surfaced: &mut Vec<String>,
+) {
     scan_value_for_keys(
         value,
         &[
@@ -152,43 +173,68 @@ fn scan_rfc3339_timestamps(value: &serde_json::Value, fixture: &InteropFixture) 
         |path, raw| {
             if let Some(s) = raw.as_str()
                 && !is_rfc3339_millis(s)
-                && !is_recorded_divergence(fixture, path)
             {
-                panic!(
-                    "{}: RFC 3339 scan failed at {path}: {s:?}",
-                    fixture.relative_path
-                );
+                if is_recorded_divergence(fixture, path) {
+                    surfaced.push(path.to_owned());
+                } else {
+                    panic!(
+                        "{}: RFC 3339 scan failed at {path}: {s:?}",
+                        fixture.relative_path
+                    );
+                }
             }
         },
     );
 }
 
-fn scan_stix_identifiers(value: &serde_json::Value, fixture: &InteropFixture) {
+fn scan_stix_identifiers(
+    value: &serde_json::Value,
+    fixture: &InteropFixture,
+    surfaced: &mut Vec<String>,
+) {
     scan_value_for_keys(
         value,
         &["id", "created_by_ref", "source_ref", "target_ref"],
         |path, raw| {
             if let Some(s) = raw.as_str()
                 && !looks_like_stix_id(s)
-                && !is_recorded_divergence(fixture, path)
             {
-                panic!(
-                    "{}: identifier-shape scan failed at {path}: {s:?}",
-                    fixture.relative_path
-                );
+                if is_recorded_divergence(fixture, path) {
+                    surfaced.push(path.to_owned());
+                } else {
+                    panic!(
+                        "{}: identifier-shape scan failed at {path}: {s:?}",
+                        fixture.relative_path
+                    );
+                }
             }
         },
     );
 }
 
-fn reconcile_divergence_records(fixture: &InteropFixture) {
+fn reconcile_divergence_records(fixture: &InteropFixture, surfaced: &[String]) {
     for record in &fixture.provenance.divergence_recorded {
         assert!(
             !record.site.is_empty() && record.defect > 0 && !record.description.is_empty(),
             "{}: invalid divergence_recorded entry",
             fixture.relative_path
         );
+        if record.site.starts_with('§') {
+            continue;
+        }
+        if divergence_site_requires_scan_surface(&record.site) {
+            assert!(
+                surfaced.iter().any(|site| site == &record.site),
+                "{}: divergence_recorded site `{}` was not surfaced by load-time scans",
+                fixture.relative_path,
+                record.site
+            );
+        }
     }
+}
+
+fn divergence_site_requires_scan_surface(site: &str) -> bool {
+    site.starts_with("objects") || site.contains('[')
 }
 
 fn is_recorded_divergence(fixture: &InteropFixture, site: &str) -> bool {
@@ -248,6 +294,37 @@ fn looks_like_stix_id(value: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && uuid.len() == 36
         && uuid.chars().filter(|c| *c == '-').count() == 4
+}
+
+/// Whether a normative testcase is blocked on an unrepairable OASIS defect (excluded from suite walks).
+pub fn testcase_is_blocked(relative_path: &str) -> bool {
+    try_load_fixture(relative_path)
+        .ok()
+        .and_then(|fixture| fixture.provenance.blocked_by)
+        .is_some()
+}
+
+/// Gating fixtures marked `BLOCKED` in provenance must load with recorded divergences.
+pub fn assert_blocked_gating_fixtures_load() {
+    const BLOCKED: &[&str] = &[
+        "testcases/malware/tc-3.12.3.1-create-malware-object.json",
+        "testcases/report/tc-3.16.3.1-create-report-object.json",
+    ];
+    for relative in BLOCKED {
+        let fixture = load_fixture(relative);
+        let defect = fixture
+            .provenance
+            .blocked_by
+            .expect("blocked fixture must set blocked_by in provenance");
+        assert!(
+            fixture
+                .provenance
+                .divergence_recorded
+                .iter()
+                .any(|record| record.defect == defect),
+            "{relative}: divergence_recorded must cite defect {defect}"
+        );
+    }
 }
 
 /// Helper assertions for `harness = false` runner.

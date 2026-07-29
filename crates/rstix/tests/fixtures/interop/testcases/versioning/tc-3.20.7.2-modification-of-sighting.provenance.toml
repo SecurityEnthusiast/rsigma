@@ -1,0 +1,19 @@
+fixture = "tc-3.20.7.2-modification-of-sighting.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "128"
+source_section = "3.20.7.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on identity, indicator, and sighting objects."
+
+[[repair]]
+authority = "JUDGMENT"
+class = "bundle-closure"
+description = "Insert §2.3.4 identity--f431f809 block so created_by_ref targets are bundle-closed."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap objects in a bundle per REQ-2.3-X-02."

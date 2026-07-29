@@ -7,9 +7,9 @@ use crate::model::validate::{validate_non_empty_object_refs, validate_non_empty_
 
 /// A STIX grouping asserting shared context among referenced objects (STIX §4.4).
 ///
-/// Required properties per STIX §4.4.1: common SDO fields, non-empty `name`, non-empty
+/// Required properties per STIX §4.4.1: common SDO fields, non-empty
 /// `context` (open vocabulary — suggested values in `grouping-context-ov`), and non-empty
-/// `object_refs`.
+/// `object_refs`. `name` is optional on the wire (STIX §4.4).
 ///
 /// # Examples
 ///
@@ -47,8 +47,12 @@ pub struct Grouping {
     /// SDO/SRO common properties.
     #[cfg_attr(feature = "serde", serde(flatten))]
     pub common: SdoSroCommonProps,
-    /// Name identifying the grouping.
-    pub name: String,
+    /// Name identifying the grouping (optional per STIX §4.4).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub name: Option<String>,
     /// Human-readable description.
     #[cfg_attr(
         feature = "serde",
@@ -68,7 +72,9 @@ impl Grouping {
     /// Check grouping invariants (STIX §4.4.1).
     pub fn validate(&self) -> Result<(), ModelError> {
         self.common.validate(Self::TYPE_NAME)?;
-        validate_non_empty_string(&self.name, "name")?;
+        if let Some(name) = &self.name {
+            validate_non_empty_string(name, "name")?;
+        }
         validate_non_empty_string(&self.context, "context")?;
         validate_non_empty_object_refs(&self.object_refs)
     }
@@ -94,7 +100,7 @@ impl<'de> serde::Deserialize<'de> for Grouping {
             object_type: String,
             #[serde(flatten)]
             common: SdoSroCommonProps,
-            name: String,
+            name: Option<String>,
             #[serde(default)]
             description: Option<String>,
             context: String,
@@ -140,7 +146,7 @@ impl QueryableStixObject for Grouping {
 
     fn get_field(&self, path: &[&str]) -> Option<QueryValue<'_>> {
         match path {
-            ["name"] => Some(QueryValue::Str(&self.name)),
+            ["name"] => self.name.as_deref().map(QueryValue::Str),
             ["description"] => self.description.as_deref().map(QueryValue::Str),
             ["context"] => Some(QueryValue::Str(&self.context)),
             ["created_by_ref"] => self

@@ -1,0 +1,30 @@
+fixture = "tc-3.9.3.1-intrusion-set-test-case.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "70"
+source_section = "3.9.3.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on identity and intrusion-set objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on created_by_ref, resource_level, and primary_motivation keys and values."
+
+[[repair]]
+authority = "JUDGMENT"
+class = "misspelled-field"
+description = "Rename prinary_motivation to primary_motivation (STIX 2.1 §4.9)."
+spec_basis = "STIX 2.1 §4.9 Intrusion Set"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity and intrusion-set in a bundle per REQ-2.3-X-02."
+
+[[divergence_recorded]]
+site = "§3.9.3.1 primary_motivation key"
+defect = 9
+description = "Published test case misspells the property name as prinary_motivation."

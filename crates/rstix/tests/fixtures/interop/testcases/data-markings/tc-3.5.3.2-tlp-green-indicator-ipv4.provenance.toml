@@ -1,0 +1,25 @@
+fixture = "tc-3.5.3.2-tlp-green-indicator-ipv4.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "41"
+source_section = "3.5.3.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on identity and indicator objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity and indicator in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "JUDGMENT"
+class = "missing-identity"
+description = "Insert referenced identity--f431f809 so the bundle is reference-closed (STIX 2.1 Interoperability §2.3.4)."
+spec_basis = "STIX 2.1 Interoperability §2.3.4"
+
+[[divergence_recorded]]
+site = "§3.5.3.2 created_by_ref target"
+defect = 1
+description = "Published test case sets created_by_ref to identity--f431f809 but includes only identity--f6e43aa5."

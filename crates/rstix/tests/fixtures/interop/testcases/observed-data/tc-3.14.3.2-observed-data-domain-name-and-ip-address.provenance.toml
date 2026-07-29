@@ -1,0 +1,24 @@
+fixture = "tc-3.14.3.2-observed-data-domain-name-and-ip-address.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "95-96"
+source_section = "3.14.3.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on all objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on relationship and object_refs entries."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "sco-type-prefix"
+description = "Correct observed-data object_refs ipv4-address-- token to ipv4-addr-- per STIX 2.1 section 6.9."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap objects in a bundle per REQ-2.3-X-02."

@@ -1,0 +1,30 @@
+fixture = "tc-3.16.3.1-create-report-object.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "104"
+source_section = "3.16.3.1"
+blocked_by = 16
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on identity, report, and indicator objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "malformed-json"
+description = "Close the report created_by_ref string delimiter omitted in the published OASIS test case."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap objects in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "timestamp-normalization"
+description = "Normalize indicator valid_from to millisecond RFC 3339 for load-time scan parity."
+
+[[divergence_recorded]]
+site = "objects[1].published"
+defect = 16
+description = "Published test case carries published timestamp 2020-01-201T17:00:00Z (not valid RFC 3339); intended date is unrecoverable."

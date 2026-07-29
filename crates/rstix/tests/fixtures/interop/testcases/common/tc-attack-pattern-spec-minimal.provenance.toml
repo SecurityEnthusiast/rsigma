@@ -1,0 +1,14 @@
+fixture = "tc-attack-pattern-spec-minimal.json"
+source_doc = "rstix-interop-common"
+source_pages = "n/a"
+source_section = "2.3"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrapped spec-minimal attack-pattern in bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "synthetic"
+description = "Synthetic bundle for REQ-2.3-P-02: STIX-spec-valid attack-pattern without interop-mandatory fields."

@@ -1,7 +1,7 @@
 # OASIS STIX 2.1 Interop traceability matrix.
 # Authority: STIX 2.1 Interoperability v1.0 CSD01 (stix-2.1-interop-v1.0-csd01).
 
-# --- §4.2 framework (report placeholders until Phase 7) ---
+# --- §4.2 framework (checklist report placeholders; no automated test yet) ---
 
 [[requirement]]
 req_id = "REQ-4.2-X-01"
@@ -148,6 +148,15 @@ test_id = "harness::loads_fixture_with_provenance"
 fixture = "testcases/harness/tc-harness-closure-smoke.json"
 
 [[requirement]]
+req_id = "REQ-HARNESS-FIXTURE-03"
+use_case = "harness"
+section = "0"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "harness::blocked_gating_fixtures_load"
+
+[[requirement]]
 req_id = "REQ-HARNESS-PROFILE-01"
 use_case = "harness"
 section = "0"
@@ -175,15 +184,148 @@ disposition = "TESTED"
 test_id = "harness::reference_closed_bundle_passes"
 fixture = "testcases/harness/tc-harness-closure-smoke.json"
 
+# --- §2.3 cross-cutting (18 executable rows over walkable normative fixtures) ---
+# Not OASIS SXP/SXC certification — use-case role modules and full manifest remain open.
+# X-07 is REPORT_ONLY (scoping).
+
 [[requirement]]
-req_id = "REQ-2.3-X-09"
+req_id = "REQ-2.3-P-01"
 use_case = "cross_cutting"
-section = "2.3.7"
-doc_page = 19
+section = "2.3.1"
+doc_page = 17
+role = "producer"
 level = "MUST"
 gating = true
-disposition = "HARNESS_SMOKE"
-test_id = "common::gating::testcases_and_examples_directories_exist"
+disposition = "TESTED"
+test_id = "common::producer::producer_conformance_12_1"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-2.3-P-02"
+use_case = "cross_cutting"
+section = "2.3.1"
+doc_page = 17
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::producer::interop_stricter_than_spec"
+fixture = "testcases/common/tc-attack-pattern-spec-minimal.json"
+
+[[requirement]]
+req_id = "REQ-2.3-P-03"
+use_case = "cross_cutting"
+section = "2.3.1"
+doc_page = 17
+role = "producer"
+level = "MAY"
+gating = true
+disposition = "TESTED"
+test_id = "common::producer::additional_properties_permitted"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-2.3-C-01"
+use_case = "cross_cutting"
+section = "2.3.2"
+doc_page = 17
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::consumer::consumer_conformance_12_1"
+fixture = "testcases/attack-pattern/tc-3.1.3.2-attack-pattern-targets-vulnerability.json"
+
+[[requirement]]
+req_id = "REQ-2.3-C-02"
+use_case = "cross_cutting"
+section = "2.3.2"
+doc_page = 17
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::consumer::consumer_supports_producer_props"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-2.3-C-03"
+use_case = "cross_cutting"
+section = "2.3.2"
+doc_page = 17
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::consumer::consumer_receives_triad"
+fixture = "testcases/attack-pattern/tc-3.1.3.2-attack-pattern-targets-vulnerability.json"
+
+[[requirement]]
+req_id = "REQ-2.3-C-04"
+use_case = "cross_cutting"
+section = "2.3.2"
+doc_page = 17
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::consumer::consumer_resolves_created_by_ref"
+fixture = "testcases/attack-pattern/tc-3.1.3.2-attack-pattern-targets-vulnerability.json"
+
+[[requirement]]
+req_id = "REQ-2.3-C-05"
+use_case = "cross_cutting"
+section = "2.3.2"
+doc_page = 18
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "common::consumer::consumer_processes_fields"
+fixture = "testcases/attack-pattern/tc-3.1.3.2-attack-pattern-targets-vulnerability.json"
+
+[[requirement]]
+req_id = "REQ-2.3-C-06"
+use_case = "cross_cutting"
+section = "2.3.2"
+doc_page = 18
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "common::consumer::consumer_processes_related"
+fixture = "testcases/attack-pattern/tc-3.1.3.2-attack-pattern-targets-vulnerability.json"
+
+[[requirement]]
+req_id = "REQ-2.3-X-01"
+use_case = "cross_cutting"
+section = "2.3.3"
+doc_page = 18
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::bundle_closure::suite_wide_closure"
+
+[[requirement]]
+req_id = "REQ-2.3-X-02"
+use_case = "cross_cutting"
+section = "2.3.3"
+doc_page = 18
+level = "NOTE"
+gating = true
+disposition = "TESTED"
+test_id = "common::gating::testcases_use_bundle_wrapper"
+
+[[requirement]]
+req_id = "REQ-2.3-X-03"
+use_case = "cross_cutting"
+section = "2.3.3"
+doc_page = 18
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::validation::referenced_obj_spec_only"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
 
 [[requirement]]
 req_id = "REQ-2.3-X-04"
@@ -192,8 +334,9 @@ section = "2.3.4"
 doc_page = 18
 level = "MAY"
 gating = true
-disposition = "HARNESS_SMOKE"
-test_id = "common::bundle_closure::tlp_exemption_whitelist"
+disposition = "TESTED"
+test_id = "common::bundle_closure::tlp_exemption_with_fixture"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
 
 [[requirement]]
 req_id = "REQ-2.3-X-05"
@@ -202,9 +345,28 @@ section = "2.3.4"
 doc_page = 18
 level = "MUST"
 gating = true
-disposition = "HARNESS_SMOKE"
-test_id = "common::identity::identity_shape_fixture_valid"
-fixture = "common/identity-shape.json"
+disposition = "TESTED"
+test_id = "common::identity::identity_present_in_fixture"
+
+[[requirement]]
+req_id = "REQ-2.3-X-06"
+use_case = "cross_cutting"
+section = "2.3.4"
+doc_page = 18
+level = "SHOULD"
+gating = true
+disposition = "TESTED"
+test_id = "common::identity::identity_shape_on_parsed"
+fixture = "testcases/attack-pattern/tc-3.1.3.2-attack-pattern-targets-vulnerability.json"
+
+[[requirement]]
+req_id = "REQ-2.3-X-07"
+use_case = "cross_cutting"
+section = "2.3.5"
+doc_page = 19
+level = "SCOPING"
+gating = false
+disposition = "REPORT_ONLY"
 
 [[requirement]]
 req_id = "REQ-2.3-X-08"
@@ -213,8 +375,30 @@ section = "2.3.6"
 doc_page = 19
 level = "MUST"
 gating = true
-disposition = "HARNESS_SMOKE"
-test_id = "common::relationships::relationship_shape_ready"
+disposition = "TESTED"
+test_id = "common::relationships::relationship_shape_on_parsed"
+fixture = "testcases/attack-pattern/tc-3.1.3.2-attack-pattern-targets-vulnerability.json"
+
+[[requirement]]
+req_id = "REQ-2.3-X-09"
+use_case = "cross_cutting"
+section = "2.3.7"
+doc_page = 19
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::gating::gating_directory_layout"
+
+[[requirement]]
+req_id = "REQ-2.3-X-10"
+use_case = "cross_cutting"
+section = "2.3.7"
+doc_page = 19
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "common::sco::sco_spec_conformance"
+fixture = "testcases/observed-data/tc-3.14.3.2-observed-data-domain-name-and-ip-address.json"
 
 [[requirement]]
 req_id = "REQ-HARNESS-VALIDATOR-01"
