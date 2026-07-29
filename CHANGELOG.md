@@ -11,6 +11,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 - **`ParseOptions::interop_bundle()`** and **`exempt_predefined_tlp_marking_refs`** extend bundle parse and reference validation for interop TLP marking fixtures; **`Validator::interop_bundle_strict()`** adds a bundle-scoped strict profile for the harness.
 - **Breaking:** **`Grouping.name`** is now `Option<String>` at parse, matching STIX §4.4 (only `context` and `object_refs` are required on grouping). Callers that constructed or read `Grouping.name` as `String` must handle `Option` / provide `Some(...)` when building test fixtures.
 
+### Cased substring bloom soundness (#411)
+
+The bloom prefilter now normalizes ASCII `|cased` substring needles into the same comparison space used for event probes, preventing uppercase patterns such as `CMD.EXE` from being rejected before evaluation. Non-ASCII cased needles conservatively disable the field's bloom filter because context-sensitive Unicode lowercasing cannot preserve every substring relation.
+
 ### Representative performance regression gates (#409)
 
 Representative SigmaHQ performance now has a checked-in CI contract. Pull requests that touch the evaluator or performance harness build the PR and its base revision on the same runner, run the same load-corrected median-of-three offline matrix, verify match counts, and reject a head/base throughput ratio below 0.5. The deliberately coarse floor catches roughly 2x regressions without treating shared-runner variance as a precise benchmark. Weekly and manually dispatched runs report bootstrap 95% confidence intervals over five samples and retain the full offline/daemon matrices and raw environment data for 90 days.
