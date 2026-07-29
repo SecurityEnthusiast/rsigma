@@ -1,0 +1,29 @@
+fixture = "ex-3.1.4.2-leverage-externally-defined-frameworks.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "24"
+source_section = "3.1.4.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on created_by_ref and description."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity, malware, relationship, and attack-pattern objects in a bundle per REQ-2.3-X-02."
+
+[[divergence_recorded]]
+site = "objects[1].id"
+defect = 21
+description = "Published malware id malware--1121ffbc-364f-857a-9987-92fbcff24ab has an 11-hex final UUID group (need 12). Not repaired — would invent a digit. Expected to fail STIX id parse."
+
+[[divergence_recorded]]
+site = "objects[2].id"
+defect = 21
+description = "Published relationship id relationship--11220001-3940-0405-20ff-1029b0bc922 has an 11-hex final UUID group (need 12). Not repaired — would invent a digit. Expected to fail STIX id parse."
+
+[[divergence_recorded]]
+site = "objects[2].source_ref"
+defect = 21
+description = "source_ref repeats the truncated malware id (same defect 21)."

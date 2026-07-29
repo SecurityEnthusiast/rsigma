@@ -1,6 +1,7 @@
 //! §3.1 Attack Pattern Sharing — Producer and Consumer tests against normative fixtures.
 
 pub mod description;
+pub mod examples;
 pub mod producer;
 
 /// OASIS §3.1.3.1 Producer test case.
