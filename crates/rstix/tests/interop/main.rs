@@ -2,6 +2,7 @@
 
 mod common;
 mod harness;
+mod use_cases;
 
 use harness::manifest::load_manifest;
 
