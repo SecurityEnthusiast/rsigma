@@ -33,7 +33,7 @@ pub fn for_each_suite_walk_fixture(mut f: impl FnMut(&str)) {
 }
 
 /// Collect testcase fixture paths for the given walk filter.
-pub fn collect_testcase_fixtures(filter: WalkFilter) -> Vec<String> {
+fn collect_testcase_fixtures(filter: WalkFilter) -> Vec<String> {
     let mut paths = Vec::new();
     walk_dir(
         interop_fixtures_root().join("testcases").as_path(),
@@ -78,8 +78,7 @@ pub fn assert_fixture_inventory_counts() {
 
 fn is_non_normative_testcase(relative_path: &str) -> bool {
     let relative = normalize_fixture_path(relative_path);
-    relative.starts_with("testcases/harness/")
-        || relative.starts_with("testcases/common/")
+    relative.starts_with("testcases/harness/") || relative.starts_with("testcases/common/")
 }
 
 #[derive(Clone, Copy)]
