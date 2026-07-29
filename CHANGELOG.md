@@ -4,6 +4,13 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix: OASIS STIX 2.1 Interop normative fixtures and §2.3 suite checks (#410)
+
+- Adds normative OASIS interop test-case JSON under `tests/fixtures/interop/testcases/` with provenance sidecars for the §2.3 cross-cutting and §3.x use-case inventory (44 gating fixtures; 42 exercised in the suite-wide walk; 2 recorded as `BLOCKED` on unrepairable OASIS §9.1 publisher defects).
+- Runs §2.3 cross-cutting manifest rows suite-wide over walkable fixtures through the interop bundle gate, per-type producer use-case rules, wire preservation on re-serialize, and expanded consumer, identity, relationship, and SCO checks.
+- **`ParseOptions::interop_bundle()`** and **`exempt_predefined_tlp_marking_refs`** extend bundle parse and reference validation for interop TLP marking fixtures; **`Validator::interop_bundle_strict()`** adds a bundle-scoped strict profile for the harness.
+- **`Grouping.name`** is optional at parse, matching STIX §4.4.
+
 ### Representative performance regression gates (#409)
 
 Representative SigmaHQ performance now has a checked-in CI contract. Pull requests that touch the evaluator or performance harness build the PR and its base revision on the same runner, run the same load-corrected median-of-three offline matrix, verify match counts, and reject a head/base throughput ratio below 0.5. The deliberately coarse floor catches roughly 2x regressions without treating shared-runner variance as a precise benchmark. Weekly and manually dispatched runs report bootstrap 95% confidence intervals over five samples and retain the full offline/daemon matrices and raw environment data for 90 days.
@@ -57,13 +64,6 @@ Fixes four cases where a pre-filter silently dropped a rule that should have mat
 - Two new deterministic event lanes in `scripts/perf/gen_events.py`, modeled on real collector output: `cisco_syslog` (raw Cisco AAA command accounting in a single `message` field with `product`/`service` hint fields) and `sysmon_file_event` (Sysmon EventID 11 FileCreate with `product`/`category` hints and a string `EventID`, as some forwarders emit it).
 - The new lanes show that `--logsource-routing` and `--cross-rule-ac` do not always compose: events whose logsource hints route to a small rule subset are faster with routing alone (21.3k vs 14.8k events/s per core on the Cisco lane, 269k vs 219.5k end-to-end in the daemon). `BENCHMARKS.md` and the performance tuning guide carry the measured rows. Witness-based candidate indexing (below) supersedes the guidance these lanes produced: `--logsource-routing` alone now wins on every lane, so the composition question no longer depends on how narrowly the traffic is tagged.
 - Fixed the executable bit on `scripts/perf/baseline-eval.sh`, which was committed non-executable.
-
-### rstix: OASIS STIX 2.1 Interop normative fixtures and §2.3 suite checks
-
-- Adds normative OASIS interop test-case JSON under `tests/fixtures/interop/testcases/` with provenance sidecars for the §2.3 cross-cutting and §3.x use-case inventory (44 gating fixtures; 42 exercised in the suite-wide walk; 2 recorded as `BLOCKED` on unrepairable OASIS §9.1 publisher defects).
-- Runs §2.3 cross-cutting manifest rows suite-wide over walkable fixtures through the interop bundle gate, per-type producer use-case rules, wire preservation on re-serialize, and expanded consumer, identity, relationship, and SCO checks.
-- **`ParseOptions::interop_bundle()`** and **`exempt_predefined_tlp_marking_refs`** extend bundle parse and reference validation for interop TLP marking fixtures; **`Validator::interop_bundle_strict()`** adds a bundle-scoped strict profile for the harness.
-- **`Grouping.name`** is optional at parse, matching STIX §4.4.
 
 ### OASIS STIX 2.1 Interop golden harness (#403)
 
