@@ -1,6 +1,7 @@
 //! §3.1 Attack Pattern Sharing — Producer and Consumer tests against normative fixtures.
 
 pub mod description;
+pub mod producer;
 
 /// OASIS §3.1.3.1 Producer test case.
 pub const FIXTURE_CREATE: &str = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json";

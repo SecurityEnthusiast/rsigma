@@ -57,6 +57,162 @@ disposition = "TESTED"
 test_id = "use_cases::attack_pattern::description::description_scope"
 fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
 
+[[requirement]]
+req_id = "REQ-3.1-P-01"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::create_attack_pattern"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-02"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::select_content"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-03"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::identity_compliance"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-04"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::spec_conformance"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-05"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::prop_type"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-06"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::prop_spec_version"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-07"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::prop_id"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-08"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::prop_created_by_ref"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-09"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::prop_external_references"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-10"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::prop_kill_chain_phases"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-11"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::prop_created"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-12"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::prop_modified"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
+[[requirement]]
+req_id = "REQ-3.1-P-13"
+use_case = "attack_pattern"
+section = "3.1.2"
+doc_page = 20
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::attack_pattern::producer::prop_name"
+fixture = "testcases/attack-pattern/tc-3.1.3.1-create-attack-pattern.json"
+
 # --- §4.2 Table 55/56 checklist rows (46) — REPORT_ONLY until use-case tests land ---
 
 [[requirement]]
