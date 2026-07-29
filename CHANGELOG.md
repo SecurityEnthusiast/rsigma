@@ -58,6 +58,13 @@ Fixes four cases where a pre-filter silently dropped a rule that should have mat
 - The new lanes show that `--logsource-routing` and `--cross-rule-ac` do not always compose: events whose logsource hints route to a small rule subset are faster with routing alone (21.3k vs 14.8k events/s per core on the Cisco lane, 269k vs 219.5k end-to-end in the daemon). `BENCHMARKS.md` and the performance tuning guide carry the measured rows. Witness-based candidate indexing (below) supersedes the guidance these lanes produced: `--logsource-routing` alone now wins on every lane, so the composition question no longer depends on how narrowly the traffic is tagged.
 - Fixed the executable bit on `scripts/perf/baseline-eval.sh`, which was committed non-executable.
 
+### rstix: OASIS STIX 2.1 Interop normative fixtures and §2.3 suite checks
+
+- Adds normative OASIS interop test-case JSON under `tests/fixtures/interop/testcases/` with provenance sidecars for the §2.3 cross-cutting and §3.x use-case inventory (44 gating fixtures; 42 exercised in the suite-wide walk; 2 recorded as `BLOCKED` on unrepairable OASIS §9.1 publisher defects).
+- Runs §2.3 cross-cutting manifest rows suite-wide over walkable fixtures through the interop bundle gate, per-type producer use-case rules, wire preservation on re-serialize, and expanded consumer, identity, relationship, and SCO checks.
+- **`ParseOptions::interop_bundle()`** and **`exempt_predefined_tlp_marking_refs`** extend bundle parse and reference validation for interop TLP marking fixtures; **`Validator::interop_bundle_strict()`** adds a bundle-scoped strict profile for the harness.
+- **`Grouping.name`** is optional at parse, matching STIX §4.4.
+
 ### OASIS STIX 2.1 Interop golden harness (#403)
 
 - Adds the golden test harness for OASIS STIX 2.1 Interoperability (`stix-2.1-interop-v1.0-csd01`): `tests/interop/` target with a custom runner (`harness = false`; `validate` + `marking` + `graph`), `tests/interop_sentinel.rs` silent-skip guard, `tests/fixtures/interop/manifest.toml`, provenance-aware fixture loader, overlay on `Validator::interop_strict()` (SHOULD-level `STIX-I0002` downgrade), bundle-closure checker with TLP exemption, containment helpers, `linkme` self-registration inventory, and certification report generation to `target/interop-report/`. Harness smoke checks for §2.3 cross-cutting layout are recorded separately from OASIS-verified requirements; full normative test-case fixtures follow in subsequent interop work.
