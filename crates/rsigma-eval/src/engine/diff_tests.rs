@@ -14,8 +14,9 @@
 //!    on each rule's match boundary.
 //! 2. A randomized differential over generated rule/event pairs, which is
 //!    where unforeseen modifier and condition interactions surface.
-//! 3. An `#[ignore]`d corpus differential over a real rule tree and NDJSON
-//!    event lanes, driven by `RSIGMA_DIFF_RULES` / `RSIGMA_DIFF_EVENTS`.
+//! 3. `#[ignore]`d corpus differential and candidate-rate checks over a real
+//!    rule tree and NDJSON event lanes, driven by
+//!    `RSIGMA_DIFF_RULES` / `RSIGMA_DIFF_EVENTS`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -805,6 +806,38 @@ fn collect_rule_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+fn load_corpus(rules_dir: &str) -> (Engine, usize) {
+    let mut files = Vec::new();
+    collect_rule_files(Path::new(rules_dir), &mut files);
+    files.sort();
+    assert!(!files.is_empty(), "no rule files under {rules_dir}");
+
+    let mut rules = Vec::new();
+    let mut loaded = 0usize;
+    for path in &files {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        if let Ok(collection) = parse_sigma_yaml(&text) {
+            loaded += 1;
+            rules.extend(collection.rules);
+        }
+    }
+    assert!(loaded > 0, "no rules compiled from {rules_dir}");
+    let mut engine = Engine::new();
+    let errors = engine.add_rules(&rules);
+    assert!(
+        !engine.rules.is_empty(),
+        "no rules compiled from {rules_dir}"
+    );
+    eprintln!(
+        "corpus load: {} rules compiled, {} compile errors",
+        engine.rules.len(),
+        errors.len()
+    );
+    (engine, loaded)
+}
+
 /// Full-corpus differential over a real rule tree and NDJSON event lanes.
 ///
 /// Ignored by default because it needs a materialized corpus. Run it with:
@@ -828,24 +861,7 @@ fn corpus_differential_agrees_with_full_scan() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(2000);
 
-    let mut files = Vec::new();
-    collect_rule_files(Path::new(&rules_dir), &mut files);
-    files.sort();
-    assert!(!files.is_empty(), "no rule files under {rules_dir}");
-
-    let mut engine = Engine::new();
-    let mut loaded = 0usize;
-    for path in &files {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        if let Ok(collection) = parse_sigma_yaml(&text)
-            && engine.add_collection(&collection).is_ok()
-        {
-            loaded += 1;
-        }
-    }
-    assert!(loaded > 0, "no rules compiled from {rules_dir}");
+    let (engine, loaded) = load_corpus(&rules_dir);
     eprintln!("corpus differential: {loaded} rule files loaded");
 
     let mut lanes: Vec<PathBuf> = std::fs::read_dir(&events_dir)
@@ -879,4 +895,75 @@ fn corpus_differential_agrees_with_full_scan() {
         eprintln!("corpus differential: {} ok", lane.display());
     }
     eprintln!("corpus differential: {checked} events agreed across {loaded} rule files");
+}
+
+/// Measure the real candidate index over materialized corpus lanes.
+///
+/// This is separate from [`corpus_differential_agrees_with_full_scan`] so the
+/// rate check does not pay for a full scan of every event. The p95 threshold is
+/// the performance criterion the witness audit estimated before the production
+/// index existed.
+#[test]
+#[ignore = "requires RSIGMA_DIFF_RULES and RSIGMA_DIFF_EVENTS"]
+fn corpus_candidate_rate_stays_below_ten_percent() {
+    let rules_dir = std::env::var("RSIGMA_DIFF_RULES")
+        .expect("set RSIGMA_DIFF_RULES to a directory of Sigma rules");
+    let events_dir = std::env::var("RSIGMA_DIFF_EVENTS")
+        .expect("set RSIGMA_DIFF_EVENTS to a directory of .ndjson lanes");
+    let limit: usize = std::env::var("RSIGMA_DIFF_EVENT_LIMIT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2000);
+    let (engine, loaded) = load_corpus(&rules_dir);
+    let rule_count = engine.rules.len();
+    assert!(rule_count > 0, "no compiled rules from {rules_dir}");
+
+    let mut lanes: Vec<PathBuf> = std::fs::read_dir(&events_dir)
+        .expect("readable events dir")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "ndjson")
+        })
+        .collect();
+    lanes.sort();
+    assert!(!lanes.is_empty(), "no .ndjson lanes under {events_dir}");
+
+    for lane in &lanes {
+        let text = std::fs::read_to_string(lane).expect("readable lane");
+        let mut candidate_counts = Vec::new();
+        for line in text.lines().take(limit) {
+            let Ok(event_json) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            let event = JsonEvent::borrow(&event_json);
+            candidate_counts.push(engine.rule_index.candidates(&event).len());
+        }
+        assert!(
+            !candidate_counts.is_empty(),
+            "no valid events in {}",
+            lane.display()
+        );
+        candidate_counts.sort_unstable();
+        let p95_index = (candidate_counts.len() * 95).div_ceil(100) - 1;
+        let p95_count = candidate_counts[p95_index];
+        let p95_rate = p95_count as f64 * 100.0 / rule_count as f64;
+        eprintln!(
+            "candidate_rate lane={} events={} rules={} p95_count={} p95_percent={:.2}",
+            lane.file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("?"),
+            candidate_counts.len(),
+            rule_count,
+            p95_count,
+            p95_rate
+        );
+        assert!(
+            p95_rate < 10.0,
+            "candidate p95 for {} is {p95_rate:.2}% ({p95_count}/{rule_count})",
+            lane.display()
+        );
+    }
+    eprintln!("candidate rate: {loaded} rule files loaded");
 }
