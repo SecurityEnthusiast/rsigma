@@ -281,7 +281,7 @@ groups:
 |--------|-------------|-------------|-------|
 | `rsigma_event_processing_seconds` | 1-30 µs | < 1 ms | Per-event evaluation against the loaded rule set. Spikes correlate with reload events. |
 | `rsigma_pipeline_latency_seconds` | 1-100 µs | < 5 ms | End-to-end from event dequeue to sink send. Dominated by sink latency (file vs NATS). |
-| `rsigma_batch_size` | 1 | 1 | Default `--batch-size 1`. With `--batch-size 64` and load, p50 trends toward 64. |
+| `rsigma_batch_size` | 128 | 128 | Default `--batch-size 128`. Under light load, batches contain only the events already queued and can be smaller. |
 
 `event_processing_seconds` p99 above 5 ms is usually a sign of misuse (regex-heavy rules without `--cross-rule-ac`, or many `|all` modifiers).
 

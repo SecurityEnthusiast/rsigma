@@ -161,7 +161,7 @@ See [TLS deployment](../../reference/security.md#tls-termination-for-the-api-lis
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--buffer-size <N>` | `10000` | Bounded mpsc capacity for source→engine and engine→sink queues. |
-| `--batch-size <N>` | `1` | Maximum events per engine lock acquisition. Raise to 64 or 128 under load to amortize mutex overhead. |
+| `--batch-size <N>` | `128` | Maximum events per engine lock acquisition, capped at `--buffer-size`. Batches enable parallel detection and amortize mutex overhead. |
 | `--drain-timeout <SECONDS>` | `5` | Seconds to wait for in-flight events to drain on shutdown. |
 
 ### NATS (requires the `daemon-nats` build feature)

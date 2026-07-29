@@ -199,7 +199,7 @@ The `rsigma_dlq_events_total` Prometheus counter tracks DLQ volume. Alert on rat
 | Consumer `ack_wait` | Short enough to redeliver quickly on a panic, long enough that legitimate slow processing does not trigger redelivery. 30 to 60 s is a good starting point. |
 | Consumer `max_deliver` | Cap at 5 to 10. Beyond that, DLQ is more honest than infinite redelivery. |
 | `--buffer-size` | Bounded mpsc capacity. Default 10000. Increase to 50000+ for bursty 50k/s ingest. |
-| `--batch-size` | Events per engine mutex acquisition. Default 1. Set to 64 or 128 under load to amortise lock cost. |
+| `--batch-size` | Events per engine mutex acquisition. Default 128, capped at `--buffer-size`; lower it when burst tail latency matters more than sustained throughput. |
 | `--drain-timeout` | Seconds to wait for in-flight events on shutdown. Default 5. Raise to 30 in production so SIGTERM does not lose work. |
 | `--state-save-interval` | Periodic SQLite snapshot interval. Default 30 s. Lower means less work to redo after a crash; higher means less disk I/O. |
 | `--dlq` | Set in production. Never set means parse errors are silently dropped. |

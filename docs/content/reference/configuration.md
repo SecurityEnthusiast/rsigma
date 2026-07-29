@@ -52,6 +52,7 @@ daemon:
     source: stdin          # stdin | http | nats://... | unix:///run/rsigma/ingest.sock (Unix)
     format: auto
     buffer_size: 10000
+    batch_size: 128        # capped at buffer_size
   output:
     sinks: [stdout]        # stdout | file://... | nats://... | otlp://... | unix:///run/rsigma/out.sock (Unix)
                            # query params: ?on_full=drop, ?format=ndjson|ocsf (line sinks), ?compression=gzip (OTLP), TLS ?ca=/?client_cert=/?client_key=/?tls_domain=

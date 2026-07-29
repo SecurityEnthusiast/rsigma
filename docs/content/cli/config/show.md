@@ -34,7 +34,7 @@ One line per leaf: `<dotted.path> = <value>  (<source>)`. The source is one of `
 
 ```text
 daemon.api.addr = 127.0.0.1:7777  (env)
-daemon.input.batch_size = 1  (default)
+daemon.input.batch_size = 128  (default)
 daemon.input.buffer_size = 50000  (file)
 ```
 
