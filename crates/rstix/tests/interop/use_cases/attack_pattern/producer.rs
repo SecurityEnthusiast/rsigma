@@ -11,7 +11,7 @@ use crate::harness::fixture::load_fixture;
 use crate::harness::interop_gate::{
     InteropGateOptions, validate_interop_fixture, validate_interop_json,
 };
-use crate::use_cases::attack_pattern::FIXTURE_CREATE;
+use crate::use_cases::attack_pattern::{FIXTURE_CREATE, PRODUCER_FIXTURES};
 
 fn load_attack_pattern(relative: &str) -> (AttackPattern, String) {
     let fixture = load_fixture(relative);
@@ -184,3 +184,137 @@ pub fn assert_prop_name() {
     assert!(!ap.name.is_empty(), "interop-mandatory name");
 }
 
+/// REQ-CHK-SXP-3.1 / §4.2 Table 56 — Producer test case data (§3.1.3.1 and §3.1.3.2).
+pub fn assert_producer_testcase_data() {
+    for relative in PRODUCER_FIXTURES {
+        validate_interop_fixture(relative, &load_fixture(relative).json).unwrap_or_else(|err| {
+            panic!("{relative}: §3.1.3 producer test case must pass interop gate: {err}")
+        });
+    }
+}
+
+interop_test!(
+    "REQ-3.1-P-01",
+    "use_cases::attack_pattern::producer::create_attack_pattern",
+    create_attack_pattern,
+    {
+        assert_create_attack_pattern();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-02",
+    "use_cases::attack_pattern::producer::select_content",
+    select_content,
+    {
+        assert_select_content();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-03",
+    "use_cases::attack_pattern::producer::identity_compliance",
+    identity_compliance,
+    {
+        assert_identity_compliance();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-04",
+    "use_cases::attack_pattern::producer::spec_conformance",
+    spec_conformance,
+    {
+        assert_spec_conformance();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-05",
+    "use_cases::attack_pattern::producer::prop_type",
+    prop_type,
+    {
+        assert_prop_type();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-06",
+    "use_cases::attack_pattern::producer::prop_spec_version",
+    prop_spec_version,
+    {
+        assert_prop_spec_version();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-07",
+    "use_cases::attack_pattern::producer::prop_id",
+    prop_id,
+    {
+        assert_prop_id();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-08",
+    "use_cases::attack_pattern::producer::prop_created_by_ref",
+    prop_created_by_ref,
+    {
+        assert_prop_created_by_ref();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-09",
+    "use_cases::attack_pattern::producer::prop_external_references",
+    prop_external_references,
+    {
+        assert_prop_external_references();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-10",
+    "use_cases::attack_pattern::producer::prop_kill_chain_phases",
+    prop_kill_chain_phases,
+    {
+        assert_prop_kill_chain_phases();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-11",
+    "use_cases::attack_pattern::producer::prop_created",
+    prop_created,
+    {
+        assert_prop_created();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-12",
+    "use_cases::attack_pattern::producer::prop_modified",
+    prop_modified,
+    {
+        assert_prop_modified();
+    }
+);
+
+interop_test!(
+    "REQ-3.1-P-13",
+    "use_cases::attack_pattern::producer::prop_name",
+    prop_name,
+    {
+        assert_prop_name();
+    }
+);
+
+interop_test!(
+    "REQ-CHK-SXP-3.1",
+    "use_cases::attack_pattern::producer::producer_testcase_data",
+    producer_testcase_data,
+    {
+        assert_producer_testcase_data();
+    }
+);
