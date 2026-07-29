@@ -91,8 +91,8 @@ daemon:
     syslog_strip_bom: true
     # Channel capacity for source->engine and engine->sink queues.
     buffer_size: 10000
-    # Max events processed per engine lock acquisition.
-    batch_size: 1
+    # Max events processed per engine lock acquisition, capped at buffer_size.
+    batch_size: 128
     # jq filter / JSONPath query to extract the event payload (mutually exclusive).
     # jq: ".event"
     # jsonpath: "$.event"
