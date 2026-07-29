@@ -1,0 +1,158 @@
+name: Performance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/performance.yml"
+      - ".cargo/**"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/**"
+      - "rust-toolchain.toml"
+      - "scripts/perf/**"
+  schedule:
+    - cron: "0 4 * * 1" # Weekly on Monday at 04:00 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  regression:
+    name: Coarse regression gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout the PR and its base revision
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup override set stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: false
+      - name: Prepare artifact directory
+        run: mkdir -p "${RUNNER_TEMP}/performance"
+      - name: Materialize pinned fixtures
+        run: scripts/perf/fetch-fixtures.sh "${RUNNER_TEMP}/fixtures" 2000
+      - name: Build PR and base binaries
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          cargo build --release --all-features --locked -p rsigma
+          git worktree add "${RUNNER_TEMP}/base" "${BASE_SHA}"
+          CARGO_TARGET_DIR="${RUNNER_TEMP}/base-target" \
+            cargo build --manifest-path "${RUNNER_TEMP}/base/Cargo.toml" \
+              --release --all-features --locked -p rsigma
+      - name: Measure base and PR
+        run: |
+          RSIGMA="${RUNNER_TEMP}/base-target/release/rsigma" REPEAT=5 RUNS=3 \
+          SAMPLES_FILE="${RUNNER_TEMP}/performance/base-samples.tsv" \
+            scripts/perf/baseline-eval.sh "${RUNNER_TEMP}/fixtures" \
+              raw_windows structured_windows cisco_syslog sysmon_file_event \
+              > "${RUNNER_TEMP}/performance/base.tsv"
+          RSIGMA="${GITHUB_WORKSPACE}/target/release/rsigma" REPEAT=5 RUNS=3 \
+          SAMPLES_FILE="${RUNNER_TEMP}/performance/head-samples.tsv" \
+            scripts/perf/baseline-eval.sh "${RUNNER_TEMP}/fixtures" \
+              raw_windows structured_windows cisco_syslog sysmon_file_event \
+              > "${RUNNER_TEMP}/performance/head.tsv"
+          scripts/perf/check-regression.py \
+            "${RUNNER_TEMP}/performance/base.tsv" \
+            "${RUNNER_TEMP}/performance/head.tsv" \
+            --minimum-ratio 0.5
+      - name: Measure candidate-index rate
+        env:
+          RSIGMA_DIFF_EVENT_LIMIT: "2000"
+        run: |
+          RSIGMA_DIFF_RULES="${RUNNER_TEMP}/fixtures/sigma/rules" \
+          RSIGMA_DIFF_EVENTS="${RUNNER_TEMP}/fixtures/events" \
+            cargo test -p rsigma-eval --all-features --locked \
+              corpus_candidate_rate -- --ignored --nocapture \
+              2>&1 | tee "${RUNNER_TEMP}/performance/candidate-rate.txt"
+      - name: Upload raw measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: performance-regression-${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/performance/
+          if-no-files-found: error
+          retention-days: 14
+
+  measurements:
+    name: Scheduled measurements
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout the measured revision
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup override set stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Prepare artifact directory
+        run: mkdir -p "${RUNNER_TEMP}/performance"
+      - name: Materialize pinned fixtures
+        run: scripts/perf/fetch-fixtures.sh "${RUNNER_TEMP}/fixtures" 10000
+      - name: Build release binary
+        run: cargo build --release --all-features --locked -p rsigma
+      - name: Run offline matrix
+        run: |
+          REPEAT=10 RUNS=5 \
+          SAMPLES_FILE="${RUNNER_TEMP}/performance/offline-samples.tsv" \
+            scripts/perf/baseline-eval.sh \
+            "${RUNNER_TEMP}/fixtures" \
+            raw_windows structured_windows cisco_syslog sysmon_file_event \
+            > "${RUNNER_TEMP}/performance/offline.tsv"
+      - name: Run daemon matrix
+        env:
+          BATCH_SIZE: "128"
+          DURATION: 10s
+          LOAD_DRIVER: python
+        run: |
+          scripts/perf/daemon-matrix.sh "${RUNNER_TEMP}/fixtures" \
+            | tee "${RUNNER_TEMP}/performance/daemon.txt"
+      - name: Measure candidate-index rate
+        env:
+          RSIGMA_DIFF_EVENT_LIMIT: "10000"
+        run: |
+          RSIGMA_DIFF_RULES="${RUNNER_TEMP}/fixtures/sigma/rules" \
+          RSIGMA_DIFF_EVENTS="${RUNNER_TEMP}/fixtures/events" \
+            cargo test -p rsigma-eval --all-features --locked \
+              corpus_candidate_rate -- --ignored --nocapture \
+              2>&1 | tee "${RUNNER_TEMP}/performance/candidate-rate.txt"
+      - name: Record revision and runner
+        if: always()
+        run: |
+          mkdir -p "${RUNNER_TEMP}/performance"
+          {
+            echo "sha=${GITHUB_SHA}"
+            uname -a
+            rustc --version --verbose
+          } > "${RUNNER_TEMP}/performance/environment.txt"
+      - name: Upload raw measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: performance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/performance/
+          if-no-files-found: error
+          retention-days: 90
