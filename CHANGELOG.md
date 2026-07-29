@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Multicore daemon batching by default
+### Multicore daemon batching by default (#408)
 
 The daemon now processes up to 128 queued events per batch by default instead of one. A batch is the unit that detection fans across rayon, so the old default left detection single-core unless operators set `--batch-size` explicitly. The daemon does not wait to fill a batch: it blocks for the first event and then drains only the events already queued, up to the configured limit.
 
