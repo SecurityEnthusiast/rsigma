@@ -1,3 +1,10 @@
+// musl's mallocng serializes the concurrent allocation `Engine::evaluate_batch`
+// fans across rayon, costing the static binary its multicore scaling. glibc and
+// macOS do not exhibit it, hence the target cfg. Figures in BENCHMARKS.md.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 mod commands;
 mod config;
 #[cfg(feature = "daemon")]
