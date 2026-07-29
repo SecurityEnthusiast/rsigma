@@ -9,7 +9,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 - Adds normative OASIS interop test-case JSON under `tests/fixtures/interop/testcases/` with provenance sidecars for the §2.3 cross-cutting and §3.x use-case inventory (44 gating fixtures; 42 exercised in the suite-wide walk; 2 recorded as `BLOCKED` on unrepairable OASIS §9.1 publisher defects).
 - Runs §2.3 cross-cutting manifest rows suite-wide over walkable fixtures through the interop bundle gate, per-type producer use-case rules, wire preservation on re-serialize, and expanded consumer, identity, relationship, and SCO checks.
 - **`ParseOptions::interop_bundle()`** and **`exempt_predefined_tlp_marking_refs`** extend bundle parse and reference validation for interop TLP marking fixtures; **`Validator::interop_bundle_strict()`** adds a bundle-scoped strict profile for the harness.
-- **`Grouping.name`** is optional at parse, matching STIX §4.4.
+- **Breaking:** **`Grouping.name`** is now `Option<String>` at parse, matching STIX §4.4 (only `context` and `object_refs` are required on grouping). Callers that constructed or read `Grouping.name` as `String` must handle `Option` / provide `Some(...)` when building test fixtures.
 
 ### Representative performance regression gates (#409)
 

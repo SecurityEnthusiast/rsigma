@@ -6,6 +6,8 @@ use serde_json::Value;
 
 use crate::harness::containment::assert_json_contains;
 
+// `spec_version` is injected/normalized on parse when absent on the wire; comparing it
+// literally would false-fail even though no other wire field was dropped.
 const SKIP_WIRE_COMPARE: &[&str] = &["spec_version"];
 
 fn wire_value_meaningful(value: &Value) -> bool {

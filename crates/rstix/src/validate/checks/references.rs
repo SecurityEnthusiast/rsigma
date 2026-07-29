@@ -17,8 +17,16 @@ use super::super::wire::{
 };
 use super::{ValidationContext, ValidationReport};
 
+fn path_leaf_property(path: &str) -> &str {
+    let leaf = path.rsplit('.').next().unwrap_or(path);
+    leaf.split('[').next().unwrap_or(leaf)
+}
+
 fn is_marking_ref_property(path: &str) -> bool {
-    path.contains("object_marking_refs") || path.contains("marking_ref")
+    matches!(
+        path_leaf_property(path),
+        "object_marking_refs" | "marking_ref"
+    )
 }
 
 pub fn run(ctx: &ValidationContext<'_>, report: &mut ValidationReport) {

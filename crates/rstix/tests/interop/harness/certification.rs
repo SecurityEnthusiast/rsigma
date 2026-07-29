@@ -52,6 +52,7 @@ fn report_dir() -> PathBuf {
 /// Finalize the certification run: drift checks, coverage gate, artifact generation.
 pub fn finalize(manifest: &Manifest) {
     verify_registry_drift(manifest);
+    crate::common::fixture_walk::assert_fixture_inventory_counts();
     verify_coverage(manifest);
     write_report_artifacts(manifest);
 }

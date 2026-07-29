@@ -2,7 +2,7 @@
 
 use rstix::model::{Bundle, ParseOptions};
 
-use crate::common::fixture_walk::for_each_suite_walk_fixture;
+use crate::common::fixture_walk::{for_each_suite_walk_fixture, normalize_fixture_path};
 use crate::harness::closure::{missing_closure_ids_from_json, tlp_exempt_ids};
 use crate::harness::fixture::load_fixture;
 use crate::harness::interop_gate::validate_interop_fixture;
@@ -24,7 +24,7 @@ pub fn assert_tlp_exemption_with_fixture() {
 
     let mut checked = 0usize;
     for_each_suite_walk_fixture(|relative| {
-        if !relative.starts_with("testcases/data-markings/") {
+        if !normalize_fixture_path(relative).starts_with("testcases/data-markings/") {
             return;
         }
         let fixture = load_fixture(relative);
