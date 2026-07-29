@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Representative performance regression gates
+
+Representative SigmaHQ performance now has a checked-in CI contract. Pull requests that touch the evaluator or performance harness build the PR and its base revision on the same runner, run the same load-corrected median-of-three offline matrix, verify match counts, and reject a head/base throughput ratio below 0.5. The deliberately coarse floor catches roughly 2x regressions without treating shared-runner variance as a precise benchmark. Weekly and manually dispatched runs report bootstrap 95% confidence intervals over five samples and retain the full offline/daemon matrices and raw environment data for 90 days.
+
+The daemon matrix now measures `--include-event` with and without logsource routing, including a match-heavy lane, uses a standard-library Python load driver when k6 is unavailable, and includes checked-in event-count/value-count/value-sum/temporal-ordered correlation rules/events because the pinned SigmaHQ corpus contains no correlation rules. A corpus test measures the production `CandidateIndex` directly and enforces p95 candidate sets below 10% of loaded rules. The measured p95 is 0.29-3.86% across the deterministic lanes, confirming the criterion that was previously supported only by the witness-audit simulation.
+
 ### Multicore daemon batching by default (#408)
 
 The daemon now processes up to 128 queued events per batch by default instead of one. A batch is the unit that detection fans across rayon, so the old default left detection single-core unless operators set `--batch-size` explicitly. The daemon does not wait to fill a batch: it blocks for the first event and then drains only the events already queued, up to the configured limit.

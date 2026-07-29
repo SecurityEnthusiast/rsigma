@@ -12,6 +12,7 @@ The workspace runs six tiers of tests, all gated in CI. PRs are expected to pass
 | Snapshot / golden | `crates/rsigma-{parser,eval,convert}/tests/snapshots/`, `tests/fixtures/dynamic-pipelines/golden/` | `cargo test` plus the SigmaHQ-corpus job for the dynamic-pipelines goldens. | `test` and `sigma-corpus` jobs. |
 | SigmaHQ corpus | `.github/workflows/ci.yml` -> `sigma-corpus` | `cargo build --release --all-features --locked -p rsigma` then `target/release/rsigma rule validate /tmp/sigma/rules/ --verbose` | `sigma-corpus` job, on every PR. |
 | Coverage | `cargo-llvm-cov` (Linux) | `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info` | `coverage` job (advisory, not gating). |
+| Representative performance | `.github/workflows/performance.yml`, `scripts/perf/` | `scripts/perf/fetch-fixtures.sh` then the offline and daemon harnesses | Coarse same-runner base/PR gate; weekly full matrix with retained artifacts. |
 
 ## Unit tests
 
@@ -172,7 +173,7 @@ git clone --depth 1 https://github.com/SigmaHQ/sigma /tmp/sigma
 ./target/release/rsigma rule validate /tmp/sigma/rules/ --verbose
 ```
 
-This is the only place we run "the real corpus". Keep it green.
+The Performance workflow also uses this pinned corpus for representative throughput and candidate-rate checks. Keep both corpus consumers pinned to the same SHA.
 
 ## Coverage
 
@@ -194,9 +195,22 @@ One bench target is not a Criterion suite: `correlation_memory` installs a count
 cargo bench -p rsigma-eval --bench correlation_memory
 ```
 
-Benchmarks are not gated in CI. The numbers in [Benchmarks](../benchmarks.md) come from a manual run on the development workstation; if a PR makes a hot-path change, attach a before/after Criterion summary in the PR description.
+Criterion microbenchmarks are not gated in CI. The numbers in [Benchmarks](../benchmarks.md) come from a manual run on the development workstation; if a PR makes a hot-path change, attach a before/after Criterion summary in the PR description.
 
-The Criterion suites use synthetic, mostly exact-match-indexable rules, so they measure hot paths, not representative corpus throughput. For a representative before/after, materialize the pinned SigmaHQ workload with `scripts/perf/fetch-fixtures.sh` and run `scripts/perf/baseline-eval.sh` (offline eval matrix, single core, net of rule load) and `scripts/perf/daemon-matrix.sh` (daemon HTTP end to end across lanes and flag variants, wrapping `scripts/perf/baseline-daemon.sh`). Both take an `RSIGMA` override, so a pre-change build can be measured through the same harness for an honest before-and-after; the corpus witness audit behind the candidate-index numbers is `cargo run --release -p rsigma-eval --example witness_audit`. See the [SigmaHQ corpus baseline](../benchmarks.md#sigmahq-corpus-baseline-representative) for the recorded matrix.
+The Criterion suites use synthetic, mostly exact-match-indexable rules, so they measure hot paths, not representative corpus throughput. For a representative before/after, materialize the pinned SigmaHQ workload with `scripts/perf/fetch-fixtures.sh` and run `scripts/perf/baseline-eval.sh` (offline eval matrix, single core, net of rule load) and `scripts/perf/daemon-matrix.sh` (daemon HTTP end to end across lanes and flag variants, wrapping `scripts/perf/baseline-daemon.sh`). Both take an `RSIGMA` override, so a pre-change build can be measured through the same harness for an honest before-and-after. The daemon matrix includes `--include-event` variants, including the match-heavy lane where event cloning matters most, and a handcrafted event-count/value-count/value-sum/temporal-ordered correlation lane because the pinned SigmaHQ tree contains no correlation rules.
+
+The Performance workflow builds the PR and its base revision on the same GitHub-hosted runner, runs the load-corrected median-of-three offline matrix through one checked-in harness, verifies match counts, and rejects only a head/base EPS ratio below 0.5. That intentionally coarse floor catches order-of-magnitude regressions without pretending shared-runner noise can support fine-grained gating. A weekly/manual job runs five samples of the full offline matrix, reports a deterministic bootstrap 95% confidence interval, runs the daemon matrix, and retains the raw artifacts for 90 days.
+
+The production candidate index is measured directly, rather than inferred from the witness-audit simulation:
+
+```bash
+RSIGMA_DIFF_RULES="$PWD/target/perf-fixtures/sigma/rules" \
+RSIGMA_DIFF_EVENTS="$PWD/target/perf-fixtures/events" \
+    cargo test -p rsigma-eval --all-features \
+      corpus_candidate_rate -- --ignored --nocapture
+```
+
+That ignored corpus test reports each lane's p95 candidate count/rate and fails at 10% of loaded rules. See the [SigmaHQ corpus baseline](../benchmarks.md#sigmahq-corpus-baseline-representative) for the recorded matrix.
 
 ## Tips
 
