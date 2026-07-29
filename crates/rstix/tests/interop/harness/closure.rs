@@ -67,7 +67,6 @@ pub fn tlp_exempt_ids() -> HashSet<&'static str> {
 }
 
 /// Collect every STIX id referenced by objects in a parsed bundle.
-#[expect(dead_code, reason = "retained for parsed-bundle closure helpers")]
 pub fn collect_referenced_ids(bundle: &Bundle) -> HashSet<String> {
     let mut refs = HashSet::new();
     for object in bundle.objects().iter() {
