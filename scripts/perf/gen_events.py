@@ -26,6 +26,9 @@ Lanes:
   sysmon_file_event  Sysmon EventID 11 (FileCreate) JSON with `Channel`,
                      `Provider_Name`, and `TargetFilename`; `EventID` is a
                      string, as some forwarders emit it.
+  correlation        Authentication failures spread across bounded user,
+                     source, and host groups for deterministic correlation
+                     state updates and firings.
 
 Only the Python standard library is used.
 """
@@ -210,6 +213,19 @@ def no_match_event(rng):
     return {f"f{i}": hexes(rng, 24) for i in range(8)} | {"product": "synthetic"}
 
 
+def correlation_event(rng, i):
+    sequence = i // 5
+    return {
+        "EventType": "authentication_success" if i % 5 == 4 else "authentication_failure",
+        "User": f"user-{sequence % 100:03d}",
+        "SourceIP": f"198.51.100.{rng.randrange(1, 51)}",
+        "Computer": f"auth-{sequence % 10 + 1:02d}",
+        "BytesOut": rng.randrange(500, 5001),
+        "product": "windows",
+        "category": "authentication",
+    }
+
+
 # Cisco command accounting, modeled on a vendor-supplied sample:
 #   <189>Jan 15 10:23:41 router-a %AAA-5-USER_LOGGED: User netadmin executed:
 #   set span source interface GigabitEthernet0/1 destination interface
@@ -355,6 +371,13 @@ def main():
     with path.open("w", encoding="utf-8") as f:
         for i in range(args.count):
             f.write(json.dumps(mixed_schema_event(rng, i), separators=(",", ":")) + "\n")
+    print(f"wrote {path} ({args.count} events)", file=sys.stderr)
+
+    rng = random.Random(107)
+    path = out / "correlation.ndjson"
+    with path.open("w", encoding="utf-8") as f:
+        for i in range(args.count):
+            f.write(json.dumps(correlation_event(rng, i), separators=(",", ":")) + "\n")
     print(f"wrote {path} ({args.count} events)", file=sys.stderr)
 
 
