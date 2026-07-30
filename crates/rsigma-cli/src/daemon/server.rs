@@ -14,13 +14,13 @@ use rsigma_eval::{
     load_schema_config,
 };
 use rsigma_runtime::{
-    AckToken, AlertPipeline, AlertPipelineState, DeliveryConfig, DeliveryFailure, Dispatcher,
-    EnrichmentPipeline, FieldObserver, FileSink, FormattedIncidentEnvelope, IncidentEnvelope,
-    IncidentResult, IncludeMode, InputFormat, LogProcessor, MetricsHook, OnFull, RawEvent,
-    RiskLayer, RiskState, RoutingSpec, RuntimeEngine, SchemaClassifier, SchemaObserver, Silence,
-    SilenceOrigin, SilenceSpec, Sink, SinkFormat, StdinSource, StdoutSink, build_alert_pipeline,
-    build_risk_layer, load_alert_pipeline_file, load_risk_file, load_schema_signatures,
-    spawn_source,
+    AckToken, AlertPipeline, AlertPipelineState, BatchProcessOutcome, DeliveryConfig,
+    DeliveryFailure, Dispatcher, EnrichmentPipeline, FieldObserver, FileSink,
+    FormattedIncidentEnvelope, IncidentEnvelope, IncidentResult, IncludeMode, InputFormat,
+    LogProcessor, MetricsHook, OnFull, RawEvent, RiskLayer, RiskState, RoutingSpec, RuntimeEngine,
+    SchemaClassifier, SchemaObserver, Silence, SilenceOrigin, SilenceSpec, Sink, SinkFormat,
+    StdinSource, StdoutSink, build_alert_pipeline, build_risk_layer, load_alert_pipeline_file,
+    load_risk_file, load_schema_signatures, spawn_source,
 };
 
 use super::bundle::BundleFormat;
@@ -36,6 +36,14 @@ struct DlqEntry {
     original_event: String,
     error: String,
     timestamp: String,
+}
+
+/// One evaluated batch waiting for ordered sink/ack dispatch.
+struct EvaluatedBatch {
+    outcome: BatchProcessOutcome,
+    payloads: Vec<String>,
+    tokens: Vec<AckToken>,
+    pipeline_start: Instant,
 }
 
 use super::health::HealthState;
@@ -1459,18 +1467,83 @@ pub async fn run_daemon(config: DaemonConfig) {
         });
     }
 
-    // Engine task: reads RawEvents, evaluates rules, sends results + ack tokens
-    // to the sink channel. Events with no detections are acked immediately.
-    // Parse errors are routed to the DLQ.
+    // Engine task evaluates batches in order; a separate dispatch task drains
+    // results so batch N+1 can parse/evaluate while batch N's sink/ack work
+    // runs. Correlation and output order stay sequential because evaluate is
+    // still one batch at a time and dispatch consumes the handoff channel in
+    // order. Capacity 1 bounds how far evaluate can run ahead of dispatch.
+    let (eval_tx, mut eval_rx) = mpsc::channel::<EvaluatedBatch>(1);
+
+    let dispatch_metrics = metrics.clone();
+    let dispatch_ack_tx = ack_tx.clone();
+    let dispatch_dlq_tx = dlq_tx.clone();
+    let dispatch_dlq_enabled = config.dlq.is_some();
+    let dispatch_handle = tokio::spawn(async move {
+        while let Some(batch) = eval_rx.recv().await {
+            let dispatch_start = Instant::now();
+            let mut parse_errors = batch.outcome.parse_error_indices.into_iter().peekable();
+            let mut shutdown = false;
+            for (index, ((result, ack_token), payload)) in batch
+                .outcome
+                .results
+                .into_iter()
+                .zip(batch.tokens)
+                .zip(batch.payloads)
+                .enumerate()
+            {
+                if parse_errors.peek().copied() == Some(index) {
+                    parse_errors.next();
+                    if dispatch_dlq_enabled {
+                        tracing::debug!("Event routed to DLQ: parse error");
+                        if dispatch_dlq_tx
+                            .send(DlqEntry {
+                                original_event: payload,
+                                error: "parse error".to_string(),
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                            })
+                            .await
+                            .is_err()
+                        {
+                            tracing::warn!("DLQ channel closed, parse-error event dropped");
+                        }
+                    }
+                    if dispatch_ack_tx.send(ack_token).is_err() {
+                        shutdown = true;
+                        break;
+                    }
+                    continue;
+                }
+                if result.is_empty() {
+                    if dispatch_ack_tx.send(ack_token).is_err() {
+                        tracing::debug!("Ack channel closed, engine shutting down");
+                        shutdown = true;
+                        break;
+                    }
+                    continue;
+                }
+                dispatch_metrics.on_output_queue_depth_change(1);
+                if sink_tx.send((result, vec![ack_token])).await.is_err() {
+                    tracing::debug!("Sink channel closed, engine shutting down");
+                    shutdown = true;
+                    break;
+                }
+            }
+            dispatch_metrics
+                .observe_batch_phase_duration("dispatch", dispatch_start.elapsed().as_secs_f64());
+            dispatch_metrics.observe_pipeline_latency(batch.pipeline_start.elapsed().as_secs_f64());
+            if shutdown {
+                break;
+            }
+        }
+    });
+
+    // Engine task: reads RawEvents, evaluates rules, hands outcomes to dispatch.
     let engine_processor = processor.clone();
     let engine_metrics = metrics.clone();
     let event_filter = config.event_filter.clone();
     let event_filter_enabled = !matches!(event_filter.as_ref(), EventFilter::None);
     let batch_size = config.batch_size;
     let input_format = config.input_format.clone();
-    let engine_ack_tx = ack_tx.clone();
-    let engine_dlq_tx = dlq_tx.clone();
-    let dlq_enabled = config.dlq.is_some();
     #[cfg(feature = "daemon-otlp")]
     let engine_source_done = source_done_notify.clone();
     let engine_handle = tokio::spawn(async move {
@@ -1480,7 +1553,7 @@ pub async fn run_daemon(config: DaemonConfig) {
         #[cfg(feature = "daemon-otlp")]
         let mut source_finished = false;
         loop {
-            let pipeline_start = std::time::Instant::now();
+            let pipeline_start = Instant::now();
 
             let first = {
                 #[cfg(feature = "daemon-otlp")]
@@ -1528,106 +1601,45 @@ pub async fn run_daemon(config: DaemonConfig) {
             }
             let initial_batch_size = batch.len();
             engine_metrics.observe_batch_size(initial_batch_size as u64);
-            let batch_span = tracing::debug_span!(
-                "process_batch",
-                batch_size = initial_batch_size,
-                input_format = ?input_format,
+
+            let mut payloads = Vec::with_capacity(batch.len());
+            let mut tokens = Vec::with_capacity(batch.len());
+            for raw_event in batch {
+                payloads.push(raw_event.payload);
+                tokens.push(raw_event.ack_token);
+            }
+
+            if payloads.is_empty() {
+                continue;
+            }
+
+            let process_start = Instant::now();
+            let filter = event_filter_enabled.then_some(&filter_fn as &rsigma_runtime::EventFilter);
+            let outcome = engine_processor.process_batch_with_format_detailed(
+                &payloads,
+                &input_format,
+                filter,
+            );
+            let process_elapsed_ms = process_start.elapsed().as_millis() as u64;
+            let match_count = outcome.results.iter().filter(|r| !r.is_empty()).count();
+            tracing::debug!(
+                batch_size = payloads.len(),
+                matches = match_count,
+                elapsed_ms = process_elapsed_ms,
+                "Batch processed",
             );
 
-            // Use Instrument rather than .enter() because the batch processing
-            // awaits on multiple channels; .enter() across .await produces
-            // confused span nesting on the multi-threaded runtime.
-            let shutdown = tracing::Instrument::instrument(
-                async {
-                    let mut payloads = Vec::with_capacity(batch.len());
-                    let mut tokens = Vec::with_capacity(batch.len());
-                    for raw_event in batch {
-                        payloads.push(raw_event.payload);
-                        tokens.push(raw_event.ack_token);
-                    }
-
-                    if payloads.is_empty() {
-                        return false;
-                    }
-
-                    let process_start = std::time::Instant::now();
-                    let filter =
-                        event_filter_enabled.then_some(&filter_fn as &rsigma_runtime::EventFilter);
-                    let outcome = engine_processor.process_batch_with_format_detailed(
-                        &payloads,
-                        &input_format,
-                        filter,
-                    );
-                    let process_elapsed_ms = process_start.elapsed().as_millis() as u64;
-                    let match_count = outcome.results.iter().filter(|r| !r.is_empty()).count();
-                    tracing::debug!(
-                        batch_size = payloads.len(),
-                        matches = match_count,
-                        elapsed_ms = process_elapsed_ms,
-                        "Batch processed",
-                    );
-
-                    let dispatch_start = std::time::Instant::now();
-                    let mut parse_errors = outcome.parse_error_indices.into_iter().peekable();
-                    let mut shutdown = false;
-                    for (index, ((result, ack_token), payload)) in outcome
-                        .results
-                        .into_iter()
-                        .zip(tokens)
-                        .zip(payloads)
-                        .enumerate()
-                    {
-                        if parse_errors.peek().copied() == Some(index) {
-                            parse_errors.next();
-                            if dlq_enabled {
-                                tracing::debug!("Event routed to DLQ: parse error");
-                                if engine_dlq_tx
-                                    .send(DlqEntry {
-                                        original_event: payload,
-                                        error: "parse error".to_string(),
-                                        timestamp: chrono::Utc::now().to_rfc3339(),
-                                    })
-                                    .await
-                                    .is_err()
-                                {
-                                    tracing::warn!("DLQ channel closed, parse-error event dropped");
-                                }
-                            }
-                            if engine_ack_tx.send(ack_token).is_err() {
-                                shutdown = true;
-                                break;
-                            }
-                            continue;
-                        }
-                        if result.is_empty() {
-                            if engine_ack_tx.send(ack_token).is_err() {
-                                tracing::debug!("Ack channel closed, engine shutting down");
-                                shutdown = true;
-                                break;
-                            }
-                            continue;
-                        }
-                        engine_metrics.on_output_queue_depth_change(1);
-                        if sink_tx.send((result, vec![ack_token])).await.is_err() {
-                            tracing::debug!("Sink channel closed, engine shutting down");
-                            shutdown = true;
-                            break;
-                        }
-                    }
-                    engine_metrics.observe_batch_phase_duration(
-                        "dispatch",
-                        dispatch_start.elapsed().as_secs_f64(),
-                    );
-
-                    shutdown
-                },
-                batch_span,
-            )
-            .await;
-
-            engine_metrics.observe_pipeline_latency(pipeline_start.elapsed().as_secs_f64());
-
-            if shutdown {
+            if eval_tx
+                .send(EvaluatedBatch {
+                    outcome,
+                    payloads,
+                    tokens,
+                    pipeline_start,
+                })
+                .await
+                .is_err()
+            {
+                tracing::debug!("Dispatch channel closed, engine shutting down");
                 break;
             }
         }
@@ -2018,7 +2030,10 @@ pub async fn run_daemon(config: DaemonConfig) {
 
     let shutdown_triggered = tokio::select! {
         _ = &mut serve_handle => true,
-        _ = engine_handle => {
+        _ = async {
+            let _ = engine_handle.await;
+            let _ = dispatch_handle.await;
+        } => {
             tracing::info!("Streaming pipeline complete");
             serve_handle.abort();
             false
@@ -2035,10 +2050,11 @@ pub async fn run_daemon(config: DaemonConfig) {
 
         // Tell the engine to stop pulling new events and drain what is already
         // buffered. The stdin reader cannot be cancelled mid-read, so without
-        // this the engine would block on `event_rx.recv()` (holding `sink_tx`
-        // open) until the drain timeout elapses, falsely warning that events
-        // were lost. The engine closes its receiver on this signal, drains the
-        // buffered events, then exits, which lets the sink/ack tasks finish.
+        // this the engine would block on `event_rx.recv()` (keeping the
+        // evaluate→dispatch handoff open) until the drain timeout elapses,
+        // falsely warning that events were lost. The engine closes its
+        // receiver on this signal, drains the buffered events, then exits,
+        // which lets the dispatch/sink/ack tasks finish.
         #[cfg(feature = "daemon-otlp")]
         source_done_notify.notify_one();
 
