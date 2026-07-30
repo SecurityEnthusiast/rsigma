@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Batch phase timing for post-parse serial regions
+### Batch phase timing for post-parse serial regions (#416)
 
 `rsigma_batch_phase_duration_seconds` now records `decode_merge`, `observe`, `result_merge`, and `dispatch` alongside `parse` and `evaluate`, so operators can rank the remaining ordered-batch costs after parallel parsing. `scripts/perf/baseline-daemon.sh` prints every phase delta and its share of measured batch time.
 
