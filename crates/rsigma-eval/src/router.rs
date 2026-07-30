@@ -417,12 +417,52 @@ impl SchemaRouter {
         }
     }
 
+    /// Stateless classify + detection for a batch. Safe to call under a shared
+    /// borrow when there is no correlation store; see [`process_batch`].
+    pub fn detect_batch<E: Event + Sync>(&self, events: &[&E]) -> Vec<ProcessResult> {
+        let classifier = &self.classifier;
+        let plan = &self.plan;
+        let engines = &self.engines;
+        let extractor = self.logsource_extractor.as_ref();
+        let phase1: Vec<Routed1> = {
+            #[cfg(feature = "parallel")]
+            {
+                use rayon::prelude::*;
+                events
+                    .par_iter()
+                    .map(|e| detect_one(classifier, plan, engines, extractor, *e))
+                    .collect()
+            }
+            #[cfg(not(feature = "parallel"))]
+            {
+                events
+                    .iter()
+                    .map(|e| detect_one(classifier, plan, engines, extractor, *e))
+                    .collect()
+            }
+        };
+        phase1
+            .into_iter()
+            .map(|routed| match routed {
+                Routed1::Skip => Vec::new(),
+                Routed1::Eval { detections, .. } => detections,
+            })
+            .collect()
+    }
+
     /// Route a batch of events: parallel classify + detection, then sequential
     /// correlation into the shared store. Mirrors
     /// `CorrelationEngine::process_batch`: the stateless phase runs concurrently
     /// (under the `parallel` feature) and the stateful correlation phase runs
     /// in order. Drop/error outcomes yield empty results for that event.
+    ///
+    /// When there is no correlation store this is equivalent to [`detect_batch`]
+    /// and only needs a shared borrow of the router.
     pub fn process_batch<E: Event + Sync>(&mut self, events: &[&E]) -> Vec<ProcessResult> {
+        if self.correlation.is_none() {
+            return self.detect_batch(events);
+        }
+
         // Stateless phase: classify + route + detect. Borrows only `&self`
         // fields, so it parallelizes; correlation state is untouched here.
         let classifier = &self.classifier;
@@ -451,19 +491,16 @@ impl SchemaRouter {
         // event order. Disjoint field borrows let the field maps and the
         // correlation store be held at once.
         let field_maps = &self.field_maps;
-        let correlation = &mut self.correlation;
+        let correlation = self.correlation.as_mut().expect("checked above");
         phase1
             .into_iter()
             .zip(events)
             .map(|(routed, event)| match routed {
                 Routed1::Skip => Vec::new(),
-                Routed1::Eval { set, detections } => match correlation {
-                    Some(ce) => {
-                        let mapped = MappedEvent::new(*event, &field_maps[set]);
-                        ce.correlate_detections(&mapped, detections)
-                    }
-                    None => detections,
-                },
+                Routed1::Eval { set, detections } => {
+                    let mapped = MappedEvent::new(*event, &field_maps[set]);
+                    correlation.correlate_detections(&mapped, detections)
+                }
             })
             .collect()
     }

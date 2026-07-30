@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::time::Instant;
 
 use arc_swap::ArcSwap;
@@ -28,16 +28,18 @@ pub struct BatchProcessOutcome {
 
 /// Thread-safe handle to the engine, swappable atomically for hot-reload.
 ///
-/// Uses `ArcSwap<Mutex<RuntimeEngine>>` so that:
-/// - Detection + correlation processing can acquire `&mut RuntimeEngine` via
-///   the inner `Mutex`.
+/// Uses `ArcSwap<RwLock<RuntimeEngine>>` so that:
+/// - Stateless detection (no correlation rules) can share the engine under a
+///   read lock, allowing multiple batches in flight.
+/// - Correlation processing still takes the write lock for exclusive ordered
+///   access to window state.
 /// - Hot-reload swaps the entire engine atomically without blocking in-flight
 ///   batches (they hold an `Arc` to the old engine until their batch completes).
 pub struct LogProcessor {
-    engine: Arc<ArcSwap<Mutex<RuntimeEngine>>>,
-    /// Preserves batch and correlation order while parsing runs outside the
-    /// engine mutex. Public callers were serialized by that mutex before the
-    /// split, so this also retains their existing ordering semantics.
+    engine: Arc<ArcSwap<RwLock<RuntimeEngine>>>,
+    /// Preserves batch and correlation order for engines that need it.
+    /// Skipped when [`allows_concurrent_detection`](Self::allows_concurrent_detection)
+    /// is true so multiple detection-only batches can overlap.
     processing_order: Mutex<()>,
     metrics: Arc<dyn MetricsHook>,
     /// Optional opt-in field observer. When `Some`, every parsed event
@@ -62,7 +64,7 @@ impl LogProcessor {
     /// Create a new processor wrapping the given engine and metrics hook.
     pub fn new(engine: RuntimeEngine, metrics: Arc<dyn MetricsHook>) -> Self {
         LogProcessor {
-            engine: Arc::new(ArcSwap::from_pointee(Mutex::new(engine))),
+            engine: Arc::new(ArcSwap::from_pointee(RwLock::new(engine))),
             processing_order: Mutex::new(()),
             metrics,
             field_observer: ArcSwap::new(Arc::new(None)),
@@ -126,15 +128,22 @@ impl LogProcessor {
     /// snapshot). New batches see the replacement on their next call to
     /// `process_batch_lines`.
     pub fn swap_engine(&self, new_engine: RuntimeEngine) {
-        self.engine.store(Arc::new(Mutex::new(new_engine)));
+        self.engine.store(Arc::new(RwLock::new(new_engine)));
     }
 
     /// Load a snapshot of the current engine for use during reload.
     ///
     /// The caller can lock the returned guard to export state, build a new
     /// engine, import state, and then call `swap_engine`.
-    pub fn engine_snapshot(&self) -> arc_swap::Guard<Arc<Mutex<RuntimeEngine>>> {
+    pub fn engine_snapshot(&self) -> arc_swap::Guard<Arc<RwLock<RuntimeEngine>>> {
         self.engine.load()
+    }
+
+    /// Whether this processor's current engine can evaluate batches concurrently.
+    ///
+    /// True for detection-only and routed engines with no correlation rules.
+    pub fn allows_concurrent_detection(&self) -> bool {
+        self.engine.load().read().allows_concurrent_detection()
     }
 
     /// Process a batch of raw input lines through the engine.
@@ -153,7 +162,7 @@ impl LogProcessor {
     ) -> Vec<ProcessResult> {
         let _order_guard = self.processing_order.lock();
         let engine_guard = self.engine.load();
-        let mut engine = engine_guard.lock();
+        let mut engine = engine_guard.write();
 
         // Phase 1: Parse JSON and apply event filters, tracking line origin.
         let mut parsed: Vec<(usize, Vec<serde_json::Value>)> = Vec::with_capacity(batch.len());
@@ -260,8 +269,16 @@ impl LogProcessor {
         format: &InputFormat,
         event_filter: Option<&EventFilter>,
     ) -> BatchProcessOutcome {
-        let _order_guard = self.processing_order.lock();
         let engine_guard = self.engine.load();
+        let concurrent = engine_guard.read().allows_concurrent_detection();
+        // Correlation (and tap-visible global order) still serialize batches.
+        // Detection-only engines skip the order lock so the daemon can keep
+        // multiple batches in flight under shared reads.
+        let _order_guard = if concurrent {
+            None
+        } else {
+            Some(self.processing_order.lock())
+        };
 
         // Live event tap: load the active-session snapshot once for the whole
         // batch. Cheap when disabled (one `ArcSwap` load plus an `Option`
@@ -379,21 +396,30 @@ impl LogProcessor {
         self.metrics
             .observe_batch_phase_duration("observe", observe_start.elapsed().as_secs_f64());
 
-        // Batch evaluation: parallel detection + sequential correlation.
+        // Batch evaluation: shared read for detection-only; exclusive write
+        // when correlation state must advance in batch order.
         let event_refs: Vec<&EventInputDecoded> = decoded_events.iter().map(|(_, e)| e).collect();
 
-        let mut engine = engine_guard.lock();
         let start = Instant::now();
-        let batch_results = engine.process_batch(&event_refs);
+        let (batch_results, state_entries) = if concurrent {
+            let engine = engine_guard.read();
+            let results = engine
+                .process_batch_shared(&event_refs)
+                .expect("concurrent path requires shared detection");
+            let state_entries = engine.stats().state_entries as u64;
+            (results, state_entries)
+        } else {
+            let mut engine = engine_guard.write();
+            let results = engine.process_batch(&event_refs);
+            let state_entries = engine.stats().state_entries as u64;
+            (results, state_entries)
+        };
         let elapsed = start.elapsed().as_secs_f64();
         self.metrics
             .observe_batch_phase_duration("evaluate", elapsed);
         let per_event_latency = elapsed / event_refs.len() as f64;
 
-        let stats = engine.stats();
-        self.metrics
-            .set_correlation_state_entries(stats.state_entries as u64);
-        drop(engine);
+        self.metrics.set_correlation_state_entries(state_entries);
 
         // Merge results per input line and update metrics.
         let merge_results_start = Instant::now();
@@ -458,7 +484,7 @@ impl LogProcessor {
         // first load; carrying those across the swap keeps hot-reload from
         // silently undoing them.
         let snapshot = self.engine.load();
-        let old = snapshot.lock();
+        let old = snapshot.read();
         let old_state = old.export_state();
         let rules_path = old.rules_path().to_path_buf();
         let pipelines = old.pipelines().to_vec();
@@ -515,7 +541,7 @@ impl LogProcessor {
     /// Return the rules path from the current engine.
     pub fn rules_path(&self) -> std::path::PathBuf {
         let snapshot = self.engine.load();
-        let engine = snapshot.lock();
+        let engine = snapshot.read();
         engine.rules_path().to_path_buf()
     }
 
@@ -528,7 +554,7 @@ impl LogProcessor {
     pub fn export_state(&self) -> Option<rsigma_eval::CorrelationSnapshot> {
         let _order_guard = self.processing_order.lock();
         let snapshot = self.engine.load();
-        let engine = snapshot.lock();
+        let engine = snapshot.read();
         engine.export_state()
     }
 
@@ -536,14 +562,14 @@ impl LogProcessor {
     pub fn import_state(&self, snapshot: &rsigma_eval::CorrelationSnapshot) -> bool {
         let _order_guard = self.processing_order.lock();
         let guard = self.engine.load();
-        let mut engine = guard.lock();
+        let mut engine = guard.write();
         engine.import_state(snapshot)
     }
 
     /// Return summary statistics about the current engine.
     pub fn stats(&self) -> crate::engine::EngineStats {
         let snapshot = self.engine.load();
-        let engine = snapshot.lock();
+        let engine = snapshot.read();
         engine.stats()
     }
 
@@ -556,7 +582,7 @@ impl LogProcessor {
         group: Option<&str>,
     ) -> Option<rsigma_eval::CorrelationStateSnapshot> {
         let snapshot = self.engine.load();
-        let engine = snapshot.lock();
+        let engine = snapshot.read();
         engine.introspect_correlations(id, group)
     }
 
@@ -571,7 +597,7 @@ impl LogProcessor {
         keys: impl IntoIterator<Item = &'a str>,
     ) -> std::collections::BTreeMap<String, rsigma_eval::RuleMetadataLookup> {
         let snapshot = self.engine.load();
-        let engine = snapshot.lock();
+        let engine = snapshot.read();
         keys.into_iter()
             .map(|key| (key.to_string(), engine.rule_metadata(key)))
             .collect()
@@ -580,14 +606,14 @@ impl LogProcessor {
     /// Total rule candidates pruned by logsource on the current engine.
     pub fn logsource_pruned_total(&self) -> u64 {
         let snapshot = self.engine.load();
-        let engine = snapshot.lock();
+        let engine = snapshot.read();
         engine.logsource_pruned_total()
     }
 
     /// Total evaluate calls with no extractable event logsource (fail-open).
     pub fn logsource_absent_total(&self) -> u64 {
         let snapshot = self.engine.load();
-        let engine = snapshot.lock();
+        let engine = snapshot.read();
         engine.logsource_absent_total()
     }
 
@@ -595,7 +621,7 @@ impl LogProcessor {
     /// Empty unless schema routing and logsource routing are both enabled.
     pub fn schema_pruning_summary(&self) -> Vec<rsigma_eval::SchemaPruning> {
         let snapshot = self.engine.load();
-        let engine = snapshot.lock();
+        let engine = snapshot.read();
         engine.schema_pruning_summary()
     }
 
@@ -604,7 +630,7 @@ impl LogProcessor {
     /// `Arc`; the returned value remains valid across reloads.
     pub fn rule_field_set(&self) -> Arc<RuleFieldSet> {
         let snapshot = self.engine.load();
-        let engine = snapshot.lock();
+        let engine = snapshot.read();
         engine.rule_field_set()
     }
 }
@@ -662,6 +688,53 @@ detection:
             results[1].detection_count() == 0,
             "EventID=2 should not match"
         );
+    }
+
+    #[test]
+    fn detection_only_allows_concurrent_batches() {
+        let proc = make_processor(
+            r#"
+title: Test Rule
+status: test
+logsource:
+    category: test
+detection:
+    selection:
+        EventID: 1
+    condition: selection
+"#,
+        );
+        assert!(proc.allows_concurrent_detection());
+    }
+
+    #[test]
+    fn correlation_engine_disallows_concurrent_batches() {
+        let proc = make_processor(
+            r#"
+title: Base
+id: base-rule
+status: test
+logsource:
+    category: test
+detection:
+    selection:
+        EventID: 1
+    condition: selection
+---
+title: Corr
+status: test
+correlation:
+    type: event_count
+    rules:
+        - base-rule
+    group-by:
+        - User
+    timespan: 5m
+    condition:
+        gte: 2
+"#,
+        );
+        assert!(!proc.allows_concurrent_detection());
     }
 
     #[test]
@@ -790,7 +863,7 @@ detection:
         proc.reload_rules().unwrap();
 
         let snapshot = proc.engine_snapshot();
-        let reloaded = snapshot.lock();
+        let reloaded = snapshot.read();
         assert!(
             reloaded.bloom_prefilter(),
             "bloom_prefilter must survive reload_rules"
