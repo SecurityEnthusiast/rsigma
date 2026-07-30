@@ -27,7 +27,7 @@ These always show up. They cover ingest, matches, queue depth, back-pressure, re
 | `rsigma_output_queue_depth` | gauge | — | Results currently buffered in the engine→sink channel. |
 | `rsigma_back_pressure_events_total` | counter | — | Times a source was blocked on a full event channel. |
 | `rsigma_event_processing_seconds` | histogram | — | Per-event processing latency. |
-| `rsigma_batch_phase_duration_seconds` | histogram | `phase` (`parse`, `evaluate`) | Wall-clock duration of input parsing and engine evaluation for each batch. Compare the `_sum` deltas to locate the serial parse share without inferring it from throughput. |
+| `rsigma_batch_phase_duration_seconds` | histogram | `phase` (`parse`, `decode_merge`, `observe`, `evaluate`, `result_merge`, `dispatch`) | Wall-clock duration of each batch-processing phase. `parse` is the parallel format parse; `decode_merge` is the ordered post-parse merge and optional event filter; `observe` covers field/schema observers and decoded taps; `evaluate` is engine detection/correlation; `result_merge` is per-line result assembly and counters; `dispatch` is the daemon's post-batch ack/sink enqueue loop. Compare `_sum` deltas over the same interval to rank serial share without inferring it from throughput. |
 | `rsigma_pipeline_latency_seconds` | histogram | — | End-to-end latency from event dequeue to sink send. |
 | `rsigma_batch_size` | histogram | — | Number of events processed per batch. |
 | `rsigma_dlq_events_total` | counter | — | Events routed to the dead-letter queue. |

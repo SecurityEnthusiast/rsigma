@@ -1567,7 +1567,9 @@ pub async fn run_daemon(config: DaemonConfig) {
                         "Batch processed",
                     );
 
+                    let dispatch_start = std::time::Instant::now();
                     let mut parse_errors = outcome.parse_error_indices.into_iter().peekable();
+                    let mut shutdown = false;
                     for (index, ((result, ack_token), payload)) in outcome
                         .results
                         .into_iter()
@@ -1592,25 +1594,32 @@ pub async fn run_daemon(config: DaemonConfig) {
                                 }
                             }
                             if engine_ack_tx.send(ack_token).is_err() {
-                                return true;
+                                shutdown = true;
+                                break;
                             }
                             continue;
                         }
                         if result.is_empty() {
                             if engine_ack_tx.send(ack_token).is_err() {
                                 tracing::debug!("Ack channel closed, engine shutting down");
-                                return true;
+                                shutdown = true;
+                                break;
                             }
                             continue;
                         }
                         engine_metrics.on_output_queue_depth_change(1);
                         if sink_tx.send((result, vec![ack_token])).await.is_err() {
                             tracing::debug!("Sink channel closed, engine shutting down");
-                            return true;
+                            shutdown = true;
+                            break;
                         }
                     }
+                    engine_metrics.observe_batch_phase_duration(
+                        "dispatch",
+                        dispatch_start.elapsed().as_secs_f64(),
+                    );
 
-                    false
+                    shutdown
                 },
                 batch_span,
             )

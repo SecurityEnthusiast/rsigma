@@ -24,6 +24,7 @@ rules="${RULES:-${fixtures}/sigma/rules}"
 lane_file="${fixtures}/events/${lane}.ndjson"
 addr="127.0.0.1:19090"
 metrics="http://${addr}/metrics"
+phases=(parse decode_merge observe evaluate result_merge dispatch)
 
 [ -x "${bin}" ] || { echo "build first: cargo build --release --all-features --bin rsigma" >&2; exit 1; }
 [ -f "${lane_file}" ] || { echo "missing lane ${lane_file}" >&2; exit 1; }
@@ -55,8 +56,10 @@ phase_seconds() {
 }
 
 before="$(count_processed)"
-parse_before="$(phase_seconds parse)"
-evaluate_before="$(phase_seconds evaluate)"
+phase_before=()
+for phase in "${phases[@]}"; do
+    phase_before+=("$(phase_seconds "${phase}")")
+done
 start="$(python3 -c 'import time; print(time.time())')"
 
 load_driver="${LOAD_DRIVER:-auto}"
@@ -92,24 +95,42 @@ for _ in $(seq 1 60); do
 done
 end="$(python3 -c 'import time; print(time.time())')"
 after="$(count_processed)"
-parse_after="$(phase_seconds parse)"
-evaluate_after="$(phase_seconds evaluate)"
+phase_after=()
+for phase in "${phases[@]}"; do
+    phase_after+=("$(phase_seconds "${phase}")")
+done
 
-python3 - "$before" "$after" "$start" "$end" "$lane" \
-    "$parse_before" "$parse_after" "$evaluate_before" "$evaluate_after" <<'PY'
+python3 - "$before" "$after" "$start" "$end" "$lane" "${phases[@]}" -- \
+    "${phase_before[@]}" -- "${phase_after[@]}" <<'PY'
 import sys
-before, after, start, end = int(sys.argv[1]), int(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4])
-lane = sys.argv[5]
-parse_before, parse_after = float(sys.argv[6]), float(sys.argv[7])
-evaluate_before, evaluate_after = float(sys.argv[8]), float(sys.argv[9])
+
+args = sys.argv[1:]
+before = int(args.pop(0))
+after = int(args.pop(0))
+start = float(args.pop(0))
+end = float(args.pop(0))
+lane = args.pop(0)
+
+sep = args.index("--")
+phases = args[:sep]
+args = args[sep + 1 :]
+sep = args.index("--")
+before_vals = [float(v) for v in args[:sep]]
+after_vals = [float(v) for v in args[sep + 1 :]]
+
 n = after - before
 secs = end - start
-parse_secs = parse_after - parse_before
-evaluate_secs = evaluate_after - evaluate_before
-measured_secs = parse_secs + evaluate_secs
-parse_share = parse_secs / measured_secs if measured_secs > 0 else 0
+deltas = [after_vals[i] - before_vals[i] for i in range(len(phases))]
+measured = sum(deltas)
+shares = [
+    (delta / measured if measured > 0 else 0.0) for delta in deltas
+]
+phase_parts = " ".join(
+    f"{phase}={delta:.3f}s({share:.1%})"
+    for phase, delta, share in zip(phases, deltas, shares)
+)
 print(
     f"lane={lane} processed={n} wall={secs:.1f}s eps={n / max(secs, 1e-9):.0f} "
-    f"parse={parse_secs:.3f}s evaluate={evaluate_secs:.3f}s parse-share={parse_share:.1%}"
+    f"{phase_parts}"
 )
 PY

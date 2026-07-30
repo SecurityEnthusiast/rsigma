@@ -278,10 +278,6 @@ impl LogProcessor {
             .as_ref()
             .is_some_and(|s| s.iter().any(|x| x.stage == TapStage::Decoded));
 
-        // Phase 1: Parse each line into decoded events, tracking line origin.
-        // For JSON with an event_filter, one line can produce multiple events.
-        let parse_start = Instant::now();
-
         // Raw capture remains ordered and runs before any parsing, including
         // for malformed lines. Parsing itself is independent per line and the
         // indexed parallel collect retains input order.
@@ -293,10 +289,18 @@ impl LogProcessor {
             }
         }
 
+        let parse_start = Instant::now();
         let parsed_lines: Vec<Option<EventInputDecoded>> = batch
             .par_iter()
             .map(|line| parse_line(line, format))
             .collect();
+        self.metrics
+            .observe_batch_phase_duration("parse", parse_start.elapsed().as_secs_f64());
+
+        // Serial merge of parse outcomes, optional event-filter expansion, and
+        // parse-error accounting. Kept separate from `parse` so Amdahl share
+        // for the parallel region is not inflated by this bookkeeping.
+        let merge_start = Instant::now();
         let mut decoded_events = Vec::with_capacity(batch.len());
         let mut parse_error_indices = Vec::new();
 
@@ -327,7 +331,7 @@ impl LogProcessor {
             decoded_events.push((line_idx, decoded));
         }
         self.metrics
-            .observe_batch_parse_duration(parse_start.elapsed().as_secs_f64());
+            .observe_batch_phase_duration("decode_merge", merge_start.elapsed().as_secs_f64());
 
         if decoded_events.is_empty() {
             return BatchProcessOutcome {
@@ -342,6 +346,7 @@ impl LogProcessor {
         // evaluation. The Guard's lifetime extends through the loop so
         // the observer cannot be dropped mid-batch even if the daemon
         // detaches it concurrently.
+        let observe_start = Instant::now();
         let observer_guard = self.field_observer.load();
         if let Some(observer) = observer_guard.as_ref() {
             for (_, decoded) in &decoded_events {
@@ -371,22 +376,27 @@ impl LogProcessor {
                 }
             }
         }
+        self.metrics
+            .observe_batch_phase_duration("observe", observe_start.elapsed().as_secs_f64());
 
-        // Phase 2: Batch evaluation — parallel detection + sequential correlation
+        // Batch evaluation: parallel detection + sequential correlation.
         let event_refs: Vec<&EventInputDecoded> = decoded_events.iter().map(|(_, e)| e).collect();
 
         let mut engine = engine_guard.lock();
         let start = Instant::now();
         let batch_results = engine.process_batch(&event_refs);
         let elapsed = start.elapsed().as_secs_f64();
-        self.metrics.observe_batch_evaluation_duration(elapsed);
+        self.metrics
+            .observe_batch_phase_duration("evaluate", elapsed);
         let per_event_latency = elapsed / event_refs.len() as f64;
 
         let stats = engine.stats();
         self.metrics
             .set_correlation_state_entries(stats.state_entries as u64);
+        drop(engine);
 
-        // Phase 3: Merge results per input line and update metrics
+        // Merge results per input line and update metrics.
+        let merge_results_start = Instant::now();
         let mut line_results = empty_results(batch.len());
 
         for ((line_idx, _), result) in decoded_events.iter().zip(batch_results) {
@@ -416,6 +426,10 @@ impl LogProcessor {
 
             line_results[*line_idx].extend(result);
         }
+        self.metrics.observe_batch_phase_duration(
+            "result_merge",
+            merge_results_start.elapsed().as_secs_f64(),
+        );
 
         BatchProcessOutcome {
             results: line_results,

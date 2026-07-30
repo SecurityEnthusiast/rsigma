@@ -95,7 +95,7 @@ The daemon binds `/metrics` on the same `--api-addr` as the REST API. It exposes
 
 | Concern | Metrics | What they answer |
 |---------|---------|------------------|
-| **Engine throughput** | `rsigma_events_processed_total`, `rsigma_events_parse_errors_total`, `rsigma_detection_matches_total`, `rsigma_correlation_matches_total`, `rsigma_event_processing_seconds`, `rsigma_batch_phase_duration_seconds`, `rsigma_pipeline_latency_seconds`, `rsigma_batch_size`, `rsigma_uptime_seconds` | How fast are we ingesting, how often are rules firing, and how does batch time split between parsing and evaluation? |
+| **Engine throughput** | `rsigma_events_processed_total`, `rsigma_events_parse_errors_total`, `rsigma_detection_matches_total`, `rsigma_correlation_matches_total`, `rsigma_event_processing_seconds`, `rsigma_batch_phase_duration_seconds`, `rsigma_pipeline_latency_seconds`, `rsigma_batch_size`, `rsigma_uptime_seconds` | How fast are we ingesting, how often are rules firing, and how does batch time split across parse, decode merge, observe, evaluate, result merge, and dispatch? |
 | **Queue and back-pressure** | `rsigma_input_queue_depth`, `rsigma_output_queue_depth`, `rsigma_back_pressure_events_total` | Is the engine keeping up with the source? Is the source faster than the sink? |
 | **Rule and state load** | `rsigma_detection_rules_loaded`, `rsigma_correlation_rules_loaded`, `rsigma_correlation_state_entries`, `rsigma_reloads_total`, `rsigma_reloads_failed_total`, `rsigma_dlq_events_total` | How many rules are loaded, how full is the correlation state, are reloads succeeding? |
 | **Per-rule labels** (appear after first match) | `rsigma_detection_matches_by_rule_total{rule_id="..."}`, `rsigma_correlation_matches_by_rule_total{rule_id="..."}` | Which specific rules are firing? |
@@ -106,7 +106,7 @@ The daemon binds `/metrics` on the same `--api-addr` as the REST API. It exposes
 
 Some metrics only appear after their first relevant event (per-rule labels, enrichment counters, OTLP counters, TLS handshake failures). A startup `/metrics` scrape shows a subset of the catalogue; the full {{ rsigma.metrics.names }} emerge as the daemon does real work and as the feature-gated surfaces are exercised.
 
-Scrape `/metrics` at 15-30 s intervals. The histograms (`event_processing_seconds`, `batch_phase_duration_seconds`, `pipeline_latency_seconds`, `batch_size`) use fixed Prometheus bucket boundaries; alert on the `_bucket{le="..."}` quantiles you care about rather than on the raw average. For performance diagnosis, compare the `rsigma_batch_phase_duration_seconds_sum{phase="parse"}` and `phase="evaluate"` deltas over the same interval.
+Scrape `/metrics` at 15-30 s intervals. The histograms (`event_processing_seconds`, `batch_phase_duration_seconds`, `pipeline_latency_seconds`, `batch_size`) use fixed Prometheus bucket boundaries; alert on the `_bucket{le="..."}` quantiles you care about rather than on the raw average. For performance diagnosis, compare the `rsigma_batch_phase_duration_seconds_sum` deltas by `phase` over the same interval.
 
 A minimal scrape config:
 
