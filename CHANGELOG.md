@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Candidate index probes from event top-level keys
+### Candidate index probes from event top-level keys (#419)
 
 The candidate index no longer walks every indexed field on each event. When an event can report its top-level keys (`Event::top_level_keys`), the index probes only witnesses under those keys, so sparse payloads skip the miss storm over thousands of absent Sigma fields. `JsonEvent::get_field` also returns early for dotted paths whose first segment is absent at the root, avoiding path parsing on the common miss.
 
