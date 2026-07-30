@@ -1476,9 +1476,19 @@ pub async fn run_daemon(config: DaemonConfig) {
     let (eval_tx, mut eval_rx) = mpsc::channel::<EvaluatedBatch>(1);
     // Overlap detection-only batches so one batch's serial merge can run while
     // another occupies rayon. Correlation engines stay at 1 (ordered windows).
-    // Override with RSIGMA_DETECT_INFLIGHT; default scales with the rayon pool.
+    // Override with RSIGMA_DETECT_INFLIGHT; default scales with the worker pool
+    // size (RAYON_NUM_THREADS, else available parallelism).
     let detect_inflight = if processor.allows_concurrent_detection() {
-        let default = match rayon::current_num_threads() {
+        let workers = std::env::var("RAYON_NUM_THREADS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|n| *n >= 1)
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(|n| n.get())
+                    .unwrap_or(1)
+            });
+        let default = match workers {
             0 | 1 => 1,
             2..=3 => 2,
             4..=7 => 3,
