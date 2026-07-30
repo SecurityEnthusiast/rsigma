@@ -12,7 +12,9 @@ use crate::model::meta::LanguageContent;
 use crate::model::meta::MetaObject;
 use crate::model::parse_options::ParseOptions;
 use crate::model::sdo::{ObservedData, ObservedDataEmbeddedObject, ObservedDataForm, SdoObject};
-use crate::model::stix_object::{StixObject, deserialize_stix_object_from_value};
+use crate::model::stix_object::{
+    StixObject, deserialize_stix_object_from_value, serde_json_error_to_parse_error,
+};
 use crate::model::validate::{
     granular_markings_from_wire, language_content_translation_matches_target,
     resolve_selector_value, validate_granular_markings_semantics, validate_identity_ref,
@@ -136,7 +138,8 @@ impl Bundle {
             .get("id")
             .ok_or(crate::ParseError::MissingBundleId)
             .and_then(|value| {
-                serde_json::from_value::<StixId>(value.clone()).map_err(crate::ParseError::Json)
+                serde_json::from_value::<StixId>(value.clone())
+                    .map_err(serde_json_error_to_parse_error)
             })?;
 
         if id.type_name() != "bundle" {
@@ -176,7 +179,7 @@ impl Bundle {
                 .ok_or(crate::ParseError::MissingObjectId)
                 .and_then(|id_value| {
                     serde_json::from_value::<StixId>(id_value.clone())
-                        .map_err(crate::ParseError::Json)
+                        .map_err(serde_json_error_to_parse_error)
                 })?;
             let id_key = object_id.as_str().to_owned();
             if id_index.contains_key(&id_key) {

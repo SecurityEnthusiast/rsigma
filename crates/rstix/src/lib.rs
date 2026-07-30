@@ -98,6 +98,9 @@ pub enum ParseError {
         /// Configured limit.
         max: usize,
     },
+    /// A STIX id string failed to parse (`type--uuid` / UUID shape).
+    #[error(transparent)]
+    InvalidStixId(#[from] core::StixIdError),
 }
 
 #[cfg(feature = "pattern")]

@@ -166,13 +166,15 @@ fn capture_unmodeled_properties(
 }
 
 #[cfg(feature = "serde")]
-fn serde_json_error_to_parse_error(err: serde_json::Error) -> crate::ParseError {
+pub(crate) fn serde_json_error_to_parse_error(err: serde_json::Error) -> crate::ParseError {
     let message = err.to_string();
     if let Some(model_err) = crate::model::ModelError::from_serde_message(&message) {
-        crate::ParseError::Model(model_err)
-    } else {
-        crate::ParseError::Json(err)
+        return crate::ParseError::Model(model_err);
     }
+    if let Some(id_err) = crate::serde_impls::stix_id::stix_id_error_from_serde_message(&message) {
+        return crate::ParseError::InvalidStixId(id_err);
+    }
+    crate::ParseError::Json(err)
 }
 
 #[cfg(feature = "serde")]
@@ -238,7 +240,8 @@ pub fn deserialize_stix_object_from_value(
             .get("id")
             .ok_or(crate::ParseError::MissingObjectId)
             .and_then(|id_value| {
-                serde_json::from_value::<StixId>(id_value.clone()).map_err(crate::ParseError::Json)
+                serde_json::from_value::<StixId>(id_value.clone())
+                    .map_err(serde_json_error_to_parse_error)
             })?;
         StixObject::Custom(CustomStixObject {
             type_name: type_name.to_owned(),
@@ -251,7 +254,8 @@ pub fn deserialize_stix_object_from_value(
             .get("id")
             .ok_or(crate::ParseError::MissingObjectId)
             .and_then(|id_value| {
-                serde_json::from_value::<StixId>(id_value.clone()).map_err(crate::ParseError::Json)
+                serde_json::from_value::<StixId>(id_value.clone())
+                    .map_err(serde_json_error_to_parse_error)
             })?;
         StixObject::Custom(CustomStixObject {
             type_name: type_name.to_owned(),

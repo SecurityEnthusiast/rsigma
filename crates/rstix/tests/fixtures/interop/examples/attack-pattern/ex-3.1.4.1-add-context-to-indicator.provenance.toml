@@ -1,0 +1,19 @@
+fixture = "ex-3.1.4.1-add-context-to-indicator.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "22-24"
+source_section = "3.1.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "malformed-json"
+description = "Close the indicator pattern string quote omitted in the published OASIS example."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity, indicator, attack-pattern, and relationship objects in a bundle per REQ-2.3-X-02."
+
+[[divergence_recorded]]
+site = "§3.1.4.1 indicator.pattern"
+defect = 20
+description = "Published example omits the closing quote on the indicator pattern string (invalid JSON)."

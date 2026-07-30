@@ -38,17 +38,16 @@ pub fn assert_testcases_use_bundle_wrapper() {
     for_each_testcase_fixture(|relative| {
         let fixture = load_fixture(relative);
         let value: Value = serde_json::from_str(&fixture.json)
-            .unwrap_or_else(|e| panic!("{} must be valid JSON: {e}", relative));
+            .unwrap_or_else(|e| panic!("{relative} must be valid JSON: {e}"));
         assert_eq!(
             value.get("type"),
             Some(&Value::String("bundle".into())),
-            "{} must use a bundle wrapper",
-            relative
+            "{relative} must use a bundle wrapper"
         );
         let objects = value
             .get("objects")
             .and_then(Value::as_array)
-            .unwrap_or_else(|| panic!("{} bundle must contain objects array", relative));
+            .unwrap_or_else(|| panic!("{relative} bundle must contain objects array"));
         assert!(
             !objects.is_empty(),
             "{relative}: bundle wrapper must contain objects"

@@ -49,6 +49,13 @@ pub(crate) fn diagnostics_from_parse_error(
             .with_fix_suggestion("Ensure every object in the bundle has a unique id."),
         ],
         ParseError::Model(model_err) => vec![diagnostic_from_model_error(model_err, None, None)],
+        ParseError::InvalidStixId(err) => vec![
+            Diagnostic::new(DiagnosticCode::E0003, err.to_string())
+                .with_property_path("id")
+                .with_fix_suggestion(
+                    "Use a STIX id of the form `{type}--{uuid}` with a valid UUID.",
+                ),
+        ],
         ParseError::Json(err) => diagnostics_from_json_error(err),
         ParseError::ObjectLimitExceeded { count, max } => vec![
             Diagnostic::new(
@@ -83,6 +90,15 @@ fn diagnostics_from_json_error(err: &serde_json::Error) -> Vec<Diagnostic> {
     let message = err.to_string();
     if let Some(model_err) = crate::model::ModelError::from_serde_message(&message) {
         return vec![diagnostic_from_model_error(&model_err, None, None)];
+    }
+    if let Some(id_err) = crate::serde_impls::stix_id::stix_id_error_from_serde_message(&message) {
+        return vec![
+            Diagnostic::new(DiagnosticCode::E0003, id_err.to_string())
+                .with_property_path("id")
+                .with_fix_suggestion(
+                    "Use a STIX id of the form `{type}--{uuid}` with a valid UUID.",
+                ),
+        ];
     }
     if err.is_syntax() || err.is_eof() {
         vec![Diagnostic::new(DiagnosticCode::E0001, message)]
