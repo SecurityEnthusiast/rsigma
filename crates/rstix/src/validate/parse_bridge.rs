@@ -1,6 +1,7 @@
 //! Map [`crate::ParseError`] to validation pipeline diagnostics.
 
 use crate::ParseError;
+use crate::core::StixIdError;
 use crate::model::ParseOptions;
 
 use super::diagnostic::{Diagnostic, DiagnosticCode};
@@ -49,13 +50,7 @@ pub(crate) fn diagnostics_from_parse_error(
             .with_fix_suggestion("Ensure every object in the bundle has a unique id."),
         ],
         ParseError::Model(model_err) => vec![diagnostic_from_model_error(model_err, None, None)],
-        ParseError::InvalidStixId(err) => vec![
-            Diagnostic::new(DiagnosticCode::E0003, err.to_string())
-                .with_property_path("id")
-                .with_fix_suggestion(
-                    "Use a STIX id of the form `{type}--{uuid}` with a valid UUID.",
-                ),
-        ],
+        ParseError::InvalidStixId(err) => vec![diagnostic_from_stix_id_error(err)],
         ParseError::Json(err) => diagnostics_from_json_error(err),
         ParseError::ObjectLimitExceeded { count, max } => vec![
             Diagnostic::new(
@@ -86,19 +81,28 @@ pub(crate) fn diagnostics_from_parse_error(
     }
 }
 
+/// A wrong type prefix on a typed reference is a reference defect rather than a
+/// malformed id, and serde reports it without a property path.
+fn diagnostic_from_stix_id_error(err: &StixIdError) -> Diagnostic {
+    match err {
+        StixIdError::TypeMismatch { expected, .. } => {
+            Diagnostic::new(DiagnosticCode::E0021, err.to_string()).with_fix_suggestion(format!(
+                "Point the reference at a `{expected}` object, or move the id to a property that accepts its type."
+            ))
+        }
+        _ => Diagnostic::new(DiagnosticCode::E0003, err.to_string())
+            .with_property_path("id")
+            .with_fix_suggestion("Use a STIX id of the form `{type}--{uuid}` with a valid UUID."),
+    }
+}
+
 fn diagnostics_from_json_error(err: &serde_json::Error) -> Vec<Diagnostic> {
     let message = err.to_string();
     if let Some(model_err) = crate::model::ModelError::from_serde_message(&message) {
         return vec![diagnostic_from_model_error(&model_err, None, None)];
     }
     if let Some(id_err) = crate::serde_impls::stix_id::stix_id_error_from_serde_message(&message) {
-        return vec![
-            Diagnostic::new(DiagnosticCode::E0003, id_err.to_string())
-                .with_property_path("id")
-                .with_fix_suggestion(
-                    "Use a STIX id of the form `{type}--{uuid}` with a valid UUID.",
-                ),
-        ];
+        return vec![diagnostic_from_stix_id_error(&id_err)];
     }
     if err.is_syntax() || err.is_eof() {
         vec![Diagnostic::new(DiagnosticCode::E0001, message)]
