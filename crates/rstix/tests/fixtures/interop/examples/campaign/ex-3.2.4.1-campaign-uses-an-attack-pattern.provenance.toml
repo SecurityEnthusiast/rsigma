@@ -1,0 +1,14 @@
+fixture = "ex-3.2.4.1-campaign-uses-an-attack-pattern.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "29-30"
+source_section = "3.2.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quote on created_by_ref key."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity, campaign, attack-pattern, and relationship objects in a bundle per REQ-2.3-X-02."

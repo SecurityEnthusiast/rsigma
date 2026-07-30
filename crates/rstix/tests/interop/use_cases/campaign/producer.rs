@@ -248,6 +248,15 @@ pub fn assert_prop_name() {
     assert!(!campaign.name.is_empty(), "interop-mandatory name");
 }
 
+/// REQ-CHK-SXP-3.2 / §4.2 Table 56 — Producer test case data (§3.2.3.1 and §3.2.3.2).
+pub fn assert_producer_testcase_data() {
+    for relative in PRODUCER_FIXTURES {
+        validate_interop_fixture(relative, &load_fixture(relative).json).unwrap_or_else(|err| {
+            panic!("{relative}: §3.2.3 producer test case must pass interop gate: {err}")
+        });
+    }
+}
+
 interop_test!(
     "REQ-3.2-P-01",
     "use_cases::campaign::producer::create_campaign",
@@ -344,5 +353,14 @@ interop_test!(
     prop_name,
     {
         assert_prop_name();
+    }
+);
+
+interop_test!(
+    "REQ-CHK-SXP-3.2",
+    "use_cases::campaign::producer::producer_testcase_data",
+    producer_testcase_data,
+    {
+        assert_producer_testcase_data();
     }
 );

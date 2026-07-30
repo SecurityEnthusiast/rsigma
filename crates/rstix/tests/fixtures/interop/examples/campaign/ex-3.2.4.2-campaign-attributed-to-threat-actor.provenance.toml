@@ -1,0 +1,19 @@
+fixture = "ex-3.2.4.2-campaign-attributed-to-threat-actor.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "30-31"
+source_section = "3.2.4.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "malformed-json"
+description = "Restore the opening quote omitted on the relationship id key in the published OASIS example (id\": → \"id\":)."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity, campaign, threat-actor, and relationship objects in a bundle per REQ-2.3-X-02."
+
+[[divergence_recorded]]
+site = "§3.2.4.2 relationship id key"
+defect = 20
+description = "Published example omits the opening quote on the relationship id JSON key (invalid JSON)."
