@@ -12,6 +12,10 @@ pub trait MetricsHook: Send + Sync {
     fn on_correlation_matches(&self, count: u64);
     /// Observe per-event processing latency in seconds.
     fn observe_processing_latency(&self, seconds: f64);
+    /// Observe one batch's input parsing duration in seconds.
+    fn observe_batch_parse_duration(&self, _seconds: f64) {}
+    /// Observe one batch's engine evaluation duration in seconds.
+    fn observe_batch_evaluation_duration(&self, _seconds: f64) {}
     /// The input queue depth changed by `delta` (positive = enqueue, negative = dequeue).
     fn on_input_queue_depth_change(&self, delta: i64);
     /// Back-pressure event: a source tried to send but the channel was full.

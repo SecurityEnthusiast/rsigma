@@ -44,7 +44,19 @@ count_processed() {
     curl -sf "${metrics}" | awk '/^rsigma_events_processed_total/ {sum += $2} END {printf "%d", sum}'
 }
 
+phase_seconds() {
+    curl -sf "${metrics}" | awk -v phase="$1" '
+        $1 == "rsigma_batch_phase_duration_seconds_sum{phase=\"" phase "\"}" {
+            print $2
+            found = 1
+        }
+        END {if (!found) print 0}
+    '
+}
+
 before="$(count_processed)"
+parse_before="$(phase_seconds parse)"
+evaluate_before="$(phase_seconds evaluate)"
 start="$(python3 -c 'import time; print(time.time())')"
 
 load_driver="${LOAD_DRIVER:-auto}"
@@ -80,12 +92,24 @@ for _ in $(seq 1 60); do
 done
 end="$(python3 -c 'import time; print(time.time())')"
 after="$(count_processed)"
+parse_after="$(phase_seconds parse)"
+evaluate_after="$(phase_seconds evaluate)"
 
-python3 - "$before" "$after" "$start" "$end" "$lane" <<'PY'
+python3 - "$before" "$after" "$start" "$end" "$lane" \
+    "$parse_before" "$parse_after" "$evaluate_before" "$evaluate_after" <<'PY'
 import sys
 before, after, start, end = int(sys.argv[1]), int(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4])
 lane = sys.argv[5]
+parse_before, parse_after = float(sys.argv[6]), float(sys.argv[7])
+evaluate_before, evaluate_after = float(sys.argv[8]), float(sys.argv[9])
 n = after - before
 secs = end - start
-print(f"lane={lane} processed={n} wall={secs:.1f}s eps={n / max(secs, 1e-9):.0f}")
+parse_secs = parse_after - parse_before
+evaluate_secs = evaluate_after - evaluate_before
+measured_secs = parse_secs + evaluate_secs
+parse_share = parse_secs / measured_secs if measured_secs > 0 else 0
+print(
+    f"lane={lane} processed={n} wall={secs:.1f}s eps={n / max(secs, 1e-9):.0f} "
+    f"parse={parse_secs:.3f}s evaluate={evaluate_secs:.3f}s parse-share={parse_share:.1%}"
+)
 PY
