@@ -109,6 +109,18 @@ impl<'a> Event for JsonEvent<'a> {
         }
     }
 
+    fn visit_top_level_keys(&self, visit: &mut dyn FnMut(&str)) -> bool {
+        match self.inner.as_ref() {
+            Value::Object(map) => {
+                for key in map.keys() {
+                    visit(key.as_str());
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Check if any string value in the event satisfies a predicate.
     ///
     /// Short-circuits on the first match, avoiding the allocation of
@@ -126,6 +138,10 @@ impl<'a> Event for JsonEvent<'a> {
         let mut values = Vec::new();
         collect_string_values_json(&self.inner, &mut values, MAX_NESTING_DEPTH);
         values
+    }
+
+    fn visit_string_values(&self, visit: &mut dyn FnMut(&str)) {
+        visit_string_values_json(&self.inner, visit, MAX_NESTING_DEPTH);
     }
 
     fn to_json(&self) -> Value {
@@ -327,6 +343,26 @@ fn collect_string_values_json<'a>(v: &'a Value, out: &mut Vec<Cow<'a, str>>, dep
         Value::Array(arr) => {
             for val in arr {
                 collect_string_values_json(val, out, depth - 1);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn visit_string_values_json(v: &Value, visit: &mut dyn FnMut(&str), depth: usize) {
+    if depth == 0 {
+        return;
+    }
+    match v {
+        Value::String(s) => visit(s.as_str()),
+        Value::Object(map) => {
+            for val in map.values() {
+                visit_string_values_json(val, visit, depth - 1);
+            }
+        }
+        Value::Array(arr) => {
+            for val in arr {
+                visit_string_values_json(val, visit, depth - 1);
             }
         }
         _ => {}

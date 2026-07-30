@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Candidate index ASCII case-insensitive Aho-Corasick (#420)
+
+NeedleSet automata now build with ASCII case-insensitive search and prefer a DFA, so ASCII event strings are scanned without allocating a lowercase copy. Keyword probing visits string values in place instead of collecting them into a `Vec`, field probes that need both exact and substring witnesses fold once and reuse the folded bytes, and hot index maps use `ahash` instead of SipHash. The daemon evaluates the next batch while the previous batch's sink/ack dispatch runs, so rayon workers are not parked for the whole dispatch phase.
+
+On the pinned SigmaHQ raw Windows workload with `--logsource-routing`, `--batch-size 512`, and 16 k6 VUs, the median of three same-machine runs moved from about 102k to 118k events/s at one thread and from about 404k to 467k events/s at eight threads versus the post-#419 baseline on the same host.
+
 ### Candidate index probes from event top-level keys (#419)
 
 The candidate index no longer walks every indexed field on each event. When an event can report its top-level keys (`Event::top_level_keys`), the index probes only witnesses under those keys, so sparse payloads skip the miss storm over thousands of absent Sigma fields. `JsonEvent::get_field` also returns early for dotted paths whose first segment is absent at the root, avoiding path parsing on the common miss.

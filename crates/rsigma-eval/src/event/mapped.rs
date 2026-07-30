@@ -61,12 +61,24 @@ impl<E: Event + ?Sized> Event for MappedEvent<'_, E> {
         self.inner.all_string_values()
     }
 
+    fn visit_string_values(&self, visit: &mut dyn FnMut(&str)) {
+        self.inner.visit_string_values(visit)
+    }
+
     fn to_json(&self) -> Value {
         self.inner.to_json()
     }
 
     fn field_keys(&self) -> Vec<Cow<'_, str>> {
         self.inner.field_keys()
+    }
+
+    fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
+        self.inner.top_level_keys()
+    }
+
+    fn visit_top_level_keys(&self, visit: &mut dyn FnMut(&str)) -> bool {
+        self.inner.visit_top_level_keys(visit)
     }
 }
 
