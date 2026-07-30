@@ -181,7 +181,14 @@ impl Metrics {
             &["phase"],
         )
         .unwrap();
-        for phase in ["parse", "evaluate"] {
+        for phase in [
+            "parse",
+            "decode_merge",
+            "observe",
+            "evaluate",
+            "result_merge",
+            "dispatch",
+        ] {
             batch_phase_duration.with_label_values(&[phase]);
         }
         let uptime_seconds = Gauge::with_opts(Opts::new(
@@ -1336,15 +1343,9 @@ impl MetricsHook for Metrics {
         self.processing_latency.observe(seconds);
     }
 
-    fn observe_batch_parse_duration(&self, seconds: f64) {
+    fn observe_batch_phase_duration(&self, phase: &str, seconds: f64) {
         self.batch_phase_duration
-            .with_label_values(&["parse"])
-            .observe(seconds);
-    }
-
-    fn observe_batch_evaluation_duration(&self, seconds: f64) {
-        self.batch_phase_duration
-            .with_label_values(&["evaluate"])
+            .with_label_values(&[phase])
             .observe(seconds);
     }
 
@@ -1588,13 +1589,26 @@ mod tests {
     #[test]
     fn batch_phase_durations_are_exported() {
         let m = Metrics::new();
-        m.observe_batch_parse_duration(0.25);
-        m.observe_batch_evaluation_duration(0.75);
+        m.observe_batch_phase_duration("parse", 0.25);
+        m.observe_batch_phase_duration("evaluate", 0.75);
+        m.observe_batch_phase_duration("result_merge", 0.05);
 
         let output = m.encode();
         assert!(output.contains(r#"rsigma_batch_phase_duration_seconds_sum{phase="parse"} 0.25"#));
         assert!(
             output.contains(r#"rsigma_batch_phase_duration_seconds_sum{phase="evaluate"} 0.75"#)
         );
+        assert!(
+            output
+                .contains(r#"rsigma_batch_phase_duration_seconds_sum{phase="result_merge"} 0.05"#)
+        );
+        for phase in ["decode_merge", "observe", "dispatch"] {
+            assert!(
+                output.contains(&format!(
+                    r#"rsigma_batch_phase_duration_seconds_sum{{phase="{phase}"}} 0"#
+                )),
+                "missing zeroed phase {phase}"
+            );
+        }
     }
 }

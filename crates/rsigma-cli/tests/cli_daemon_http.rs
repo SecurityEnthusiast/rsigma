@@ -73,8 +73,21 @@ fn metrics_returns_prometheus_format() {
         body.contains("rsigma_events_processed_total"),
         "metrics should contain rsigma_events_processed_total"
     );
-    assert!(body.contains(r#"rsigma_batch_phase_duration_seconds_sum{phase="parse"}"#));
-    assert!(body.contains(r#"rsigma_batch_phase_duration_seconds_sum{phase="evaluate"}"#));
+    for phase in [
+        "parse",
+        "decode_merge",
+        "observe",
+        "evaluate",
+        "result_merge",
+        "dispatch",
+    ] {
+        assert!(
+            body.contains(&format!(
+                r#"rsigma_batch_phase_duration_seconds_sum{{phase="{phase}"}}"#
+            )),
+            "missing phase {phase}"
+        );
+    }
 }
 
 #[test]
