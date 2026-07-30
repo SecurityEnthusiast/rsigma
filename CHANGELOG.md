@@ -4,6 +4,14 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix: OASIS §3.2 Campaign interop use-case tests
+
+- Adds `tests/interop/use_cases/campaign/` covering §3.2.1–§3.2.6 against normative §3.2.3 fixtures and non-gating `examples/campaign/` data (CSD01 has no §3.2.7).
+- §3.2.1 description scope is **TESTED**: normative fixtures expose typed Campaign “Green Group Attacks Against Finance”.
+- Producer `REQ-3.2-P-01`..`P-11`, Consumer `REQ-3.2-C-01`..`C-05`, checklist `REQ-CHK-SXP-3.2` / `REQ-CHK-SXC-3.2`, examples `REQ-3.2-EX-4.1` / `EX-4.2`.
+- Table 4 CSD01 typo (`type` = `threat-actor`) is documented; tests enforce STIX §4.2 `campaign`.
+- Not OASIS SXP/SXC certification (**2/21** use cases).
+
 ### Dependency batch (Aug 2026) (#432)
 
 Rolls up four open Dependabot PRs into a single merge. Rust (workspace `Cargo.lock`, with `ci/wasm-smoke/Cargo.lock` and `fuzz/Cargo.lock` synced for the `base64` bump): the patch group (#422) updates `pest`/`pest_derive` 2.8.7 to 2.8.8, `serde_json` 1.0.150 to 1.0.151, `jsonpath-rust` 1.0.5 to 1.0.6, `tokio-stream` 0.1.18 to 0.1.19, `time` 0.3.53 to 0.3.54, `jsonschema` 0.48.1 to 0.48.5, `clap` 4.6.2 to 4.6.4, and `rustls-pki-types` 1.15.0 to 1.15.1; standalone updates move `base64` 0.22.1 to 0.23.0 (#423) and `toml` 0.8.23 to 1.1.3+spec-1.1.0 (#424). CI (all repinned by commit SHA, batched via the `actions-updates` group, #421): `actions/checkout` v7.0.0 to v7.0.1, `taiki-e/install-action` v2.83.3 to v2.85.0, `docker/login-action` v4.4.0 to v4.5.0, `github/codeql-action/upload-sarif` v4.37.1 to v4.37.3, and `zizmorcore/zizmor-action` v0.6.0 to v0.6.1. Held back: `rusqlite` 0.40.1 (#234) requires Rust 1.89 while the workspace MSRV is Rust 1.88; `tikv-jemallocator` 0.7.0 (#425, jemalloc 5.3.1) regresses musl routed daemon throughput about 4-7% versus 0.6.1 (jemalloc 5.3.0) in same-host `scripts/perf/image-compare.sh` runs while still scaling about 4x from one to six rayon threads.

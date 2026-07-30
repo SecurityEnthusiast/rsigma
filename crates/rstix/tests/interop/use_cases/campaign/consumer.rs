@@ -208,6 +208,42 @@ pub fn assert_processes_related() {
     );
 }
 
+/// REQ-CHK-SXC-3.2 / §4.2 Table 55 — Consumer handles §3.2.3 Producer test case data.
+///
+/// Distinct from `REQ-CHK-SXP-3.2` (re-validation only): resolves each use-case Campaign
+/// as a typed SDO and closes `created_by_ref` to a typed Identity.
+pub fn assert_handles_producer_testcases() {
+    for relative in PRODUCER_FIXTURES {
+        let fixture = load_fixture(relative);
+        let objects = parse_fixture_objects(&fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: parse fixture: {err}"));
+        let use_case_ids = use_case_object_ids(relative, &objects);
+        let bundle = validate_interop_fixture(relative, &fixture.json).unwrap_or_else(|err| {
+            panic!("{relative}: §3.2 consumer must handle producer test case: {err}")
+        });
+
+        assert!(
+            !use_case_ids.is_empty(),
+            "{relative}: expected campaign use-case object(s)"
+        );
+        for object_id in use_case_ids {
+            let stix_id = StixId::parse(&object_id).expect("campaign id");
+            let campaign = bundle
+                .get_typed::<Campaign>(&stix_id)
+                .unwrap_or_else(|| panic!("{relative}: typed campaign {object_id}"));
+            let created_by = campaign.common.created_by_ref.as_ref().unwrap_or_else(|| {
+                panic!("{relative}: created_by_ref required for consumer close")
+            });
+            assert!(
+                bundle
+                    .get_typed::<Identity>(created_by.as_stix_id())
+                    .is_some(),
+                "{relative}: created_by_ref must resolve to typed Identity"
+            );
+        }
+    }
+}
+
 interop_test!(
     "REQ-3.2-C-01",
     "use_cases::campaign::consumer::supports_producer_props",
@@ -250,5 +286,14 @@ interop_test!(
     processes_related,
     {
         assert_processes_related();
+    }
+);
+
+interop_test!(
+    "REQ-CHK-SXC-3.2",
+    "use_cases::campaign::consumer::handles_producer_testcases",
+    handles_producer_testcases,
+    {
+        assert_handles_producer_testcases();
     }
 );

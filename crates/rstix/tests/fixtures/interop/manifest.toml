@@ -584,6 +584,19 @@ test_id = "use_cases::campaign::consumer::processes_related"
 fixture = "testcases/campaign/tc-3.2.3.2-campaign-attributed-to-intrusion-set.json"
 
 [[requirement]]
+req_id = "REQ-CHK-SXC-3.2"
+use_case = "campaign"
+section = "3.2.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::campaign::consumer::handles_producer_testcases"
+checklist_row = "3.2.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+[[requirement]]
 req_id = "REQ-CHK-SXC-3.3"
 use_case = "confidence"
 section = "3.3.6"
