@@ -540,7 +540,7 @@ impl RuntimeEngine {
 
     /// Stateless detection for engines that allow concurrent batches.
     ///
-    /// Returns `None` when correlation state requires [`process_batch`].
+    /// Returns `None` when correlation state requires [`Self::process_batch`].
     pub fn process_batch_shared<E: Event + Sync>(
         &self,
         events: &[&E],

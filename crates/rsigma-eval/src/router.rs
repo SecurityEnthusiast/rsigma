@@ -418,7 +418,7 @@ impl SchemaRouter {
     }
 
     /// Stateless classify + detection for a batch. Safe to call under a shared
-    /// borrow when there is no correlation store; see [`process_batch`].
+    /// borrow when there is no correlation store; see [`Self::process_batch`].
     pub fn detect_batch<E: Event + Sync>(&self, events: &[&E]) -> Vec<ProcessResult> {
         let classifier = &self.classifier;
         let plan = &self.plan;
@@ -456,7 +456,7 @@ impl SchemaRouter {
     /// (under the `parallel` feature) and the stateful correlation phase runs
     /// in order. Drop/error outcomes yield empty results for that event.
     ///
-    /// When there is no correlation store this is equivalent to [`detect_batch`]
+    /// When there is no correlation store this is equivalent to [`Self::detect_batch`]
     /// and only needs a shared borrow of the router.
     pub fn process_batch<E: Event + Sync>(&mut self, events: &[&E]) -> Vec<ProcessResult> {
         if self.correlation.is_none() {
