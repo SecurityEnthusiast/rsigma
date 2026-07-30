@@ -79,6 +79,16 @@ pub enum StixObjectKind {
 }
 
 impl StixObjectKind {
+    /// Returns the STIX `type` string.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Sdo(kind) => kind.as_str(),
+            Self::Sco(kind) => kind.as_str(),
+            Self::Sro(kind) => kind.as_str(),
+            Self::Meta(kind) => kind.as_str(),
+        }
+    }
+
     /// Parse kind from a STIX `type` string.
     pub fn from_type_str(value: &str) -> Option<Self> {
         SdoKind::from_type_str(value)
@@ -381,7 +391,11 @@ macro_rules! define_typed_id {
                 D: serde::Deserializer<'de>,
             {
                 let id = <StixId as serde::Deserialize>::deserialize(deserializer)?;
-                Self::from_stix_id(id).map_err(serde::de::Error::custom)
+                Self::from_stix_id(id).map_err(|err| {
+                    serde::de::Error::custom(
+                        crate::serde_impls::stix_id::encode_type_mismatch_for_serde(&err),
+                    )
+                })
             }
         }
     };
