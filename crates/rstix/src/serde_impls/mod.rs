@@ -11,5 +11,5 @@
 //! readers are implemented in this module.
 
 mod confidence;
-mod stix_id;
+pub(crate) mod stix_id;
 mod timestamp;
