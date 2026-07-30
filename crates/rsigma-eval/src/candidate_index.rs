@@ -25,8 +25,8 @@
 //! `engine::diff_tests` hold that line against a full scan.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 
+use ahash::{HashMap, HashMapExt};
 use aho_corasick::{AhoCorasick, MatchKind};
 use rsigma_parser::fieldpath::{first_unescaped, unescape_brackets};
 
@@ -95,8 +95,13 @@ impl NeedleSet {
         // `Standard` is the only match kind that supports overlapping
         // iteration, and overlapping is required: a needle wholly contained
         // in another must still select its own rules.
+        //
+        // Witness needles are stored folded. ASCII case-insensitive search
+        // lets the hot path scan the original haystack without allocating a
+        // lowercase copy; non-ASCII haystacks still fold once before search.
         let automaton = AhoCorasick::builder()
             .match_kind(MatchKind::Standard)
+            .ascii_case_insensitive(true)
             .build(&patterns)
             .ok()?;
 
@@ -106,7 +111,21 @@ impl NeedleSet {
         })
     }
 
+    /// Mark rules whose needles occur in `haystack`.
+    ///
+    /// ASCII haystacks are searched in place (automaton is ASCII
+    /// case-insensitive). Non-ASCII haystacks are Unicode-folded once so
+    /// already-folded Unicode needles still match.
     fn mark(&self, haystack: &str, out: &mut CandidateSet) {
+        if haystack.is_ascii() {
+            self.mark_haystack(haystack, out);
+        } else {
+            let folded = ascii_lowercase_cow(haystack);
+            self.mark_haystack(folded.as_ref(), out);
+        }
+    }
+
+    fn mark_haystack(&self, haystack: &str, out: &mut CandidateSet) {
         for m in self.automaton.find_overlapping_iter(haystack) {
             if let Some(rules) = self.pattern_to_rules.get(m.pattern().as_usize()) {
                 out.extend(rules);
@@ -460,29 +479,36 @@ impl CandidateIndex {
             return;
         }
 
+        let has_exact = !entry.exact.is_empty();
+        let needles = entry.needles.as_ref();
+
         // Every string form the matchers would compare against: scalars
         // by their textual form, arrays member by member.
-        let mut projections: Vec<Cow<'_, str>> = Vec::new();
-        collect_projections(&value, &mut projections);
-        for projection in &projections {
-            let folded = ascii_lowercase_cow(projection);
-            if let Some(rules) = entry.exact.get(folded.as_ref()) {
-                set.extend(rules);
+        for_each_projection(&value, &mut |projection| {
+            if has_exact {
+                // Exact maps are keyed by folded literals; fold once and
+                // reuse the same bytes for substring marking.
+                let folded = ascii_lowercase_cow(projection);
+                if let Some(rules) = entry.exact.get(folded.as_ref()) {
+                    set.extend(rules);
+                }
+                if let Some(needles) = needles {
+                    needles.mark_haystack(folded.as_ref(), set);
+                }
+            } else if let Some(needles) = needles {
+                // Substring-only: ASCII case-insensitive AC scans in place.
+                needles.mark(projection, set);
             }
-            if let Some(needles) = &entry.needles {
-                needles.mark(folded.as_ref(), set);
-            }
-        }
+        });
     }
 
     fn collect_keyword_hits(&self, event: &impl Event, set: &mut CandidateSet) {
         let Some(keyword) = &self.keyword else {
             return;
         };
-        for value in event.all_string_values() {
-            let folded = ascii_lowercase_cow(&value);
-            keyword.mark(folded.as_ref(), set);
-        }
+        event.visit_string_values(&mut |value| {
+            keyword.mark(value, set);
+        });
     }
 
     /// Number of always-evaluated rules an event with `event_product` skips.
@@ -561,15 +587,15 @@ fn positional_root_key(field: &str) -> Option<Cow<'_, str>> {
 /// Collect the string forms of an event value that a matcher would compare
 /// against, mirroring the evaluator's own coercion: numbers and bools by
 /// their textual form, arrays member by member, objects and nulls not at all.
-fn collect_projections<'a>(value: &'a EventValue<'a>, out: &mut Vec<Cow<'a, str>>) {
+fn for_each_projection(value: &EventValue<'_>, visit: &mut dyn FnMut(&str)) {
     match value {
-        EventValue::Str(s) => out.push(Cow::Borrowed(s.as_ref())),
-        EventValue::Int(n) => out.push(Cow::Owned(n.to_string())),
-        EventValue::Float(f) => out.push(Cow::Owned(f.to_string())),
-        EventValue::Bool(b) => out.push(Cow::Borrowed(if *b { "true" } else { "false" })),
+        EventValue::Str(s) => visit(s.as_ref()),
+        EventValue::Int(n) => visit(&n.to_string()),
+        EventValue::Float(f) => visit(&f.to_string()),
+        EventValue::Bool(b) => visit(if *b { "true" } else { "false" }),
         EventValue::Array(members) => {
             for member in members {
-                collect_projections(member, out);
+                for_each_projection(member, visit);
             }
         }
         _ => {}
@@ -721,6 +747,35 @@ detection:
             vec![0]
         );
         assert!(candidates(&index, &json!({"anything": "benign"})).is_empty());
+    }
+
+    /// ASCII case-insensitive automata must select on the original haystack
+    /// casing; folding is only required for non-ASCII event text.
+    #[test]
+    fn substring_and_keyword_select_on_ascii_uppercase_haystack() {
+        let (_, index) = build(
+            r#"
+title: Contains
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+---
+title: Keywords
+detection:
+    keywords:
+        - 'mimikatz'
+    condition: keywords
+"#,
+        );
+        assert_eq!(
+            candidates(&index, &json!({"CommandLine": "WHOAMI /all"})),
+            vec![0]
+        );
+        assert_eq!(
+            candidates(&index, &json!({"payload": "MIMIKATZ.exe"})),
+            vec![1]
+        );
     }
 
     /// Matchers whose value space the index cannot enumerate still gate on

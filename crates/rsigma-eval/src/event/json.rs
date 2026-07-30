@@ -128,6 +128,10 @@ impl<'a> Event for JsonEvent<'a> {
         values
     }
 
+    fn visit_string_values(&self, visit: &mut dyn FnMut(&str)) {
+        visit_string_values_json(&self.inner, visit, MAX_NESTING_DEPTH);
+    }
+
     fn to_json(&self) -> Value {
         self.inner.as_ref().clone()
     }
@@ -327,6 +331,26 @@ fn collect_string_values_json<'a>(v: &'a Value, out: &mut Vec<Cow<'a, str>>, dep
         Value::Array(arr) => {
             for val in arr {
                 collect_string_values_json(val, out, depth - 1);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn visit_string_values_json(v: &Value, visit: &mut dyn FnMut(&str), depth: usize) {
+    if depth == 0 {
+        return;
+    }
+    match v {
+        Value::String(s) => visit(s.as_str()),
+        Value::Object(map) => {
+            for val in map.values() {
+                visit_string_values_json(val, visit, depth - 1);
+            }
+        }
+        Value::Array(arr) => {
+            for val in arr {
+                visit_string_values_json(val, visit, depth - 1);
             }
         }
         _ => {}

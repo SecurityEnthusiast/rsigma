@@ -172,6 +172,16 @@ pub trait Event {
     /// Collect all string values in the event.
     fn all_string_values(&self) -> Vec<Cow<'_, str>>;
 
+    /// Visit every string value in the event without collecting them.
+    ///
+    /// Used by the keyword candidate index. The default walks
+    /// [`all_string_values`]; concrete types override to avoid the `Vec`.
+    fn visit_string_values(&self, visit: &mut dyn FnMut(&str)) {
+        for value in self.all_string_values() {
+            visit(value.as_ref());
+        }
+    }
+
     /// Materialize the event as a `serde_json::Value`.
     fn to_json(&self) -> Value;
 
@@ -250,6 +260,10 @@ impl<T: Event + ?Sized> Event for &T {
 
     fn all_string_values(&self) -> Vec<Cow<'_, str>> {
         (**self).all_string_values()
+    }
+
+    fn visit_string_values(&self, visit: &mut dyn FnMut(&str)) {
+        (**self).visit_string_values(visit)
     }
 
     fn to_json(&self) -> Value {

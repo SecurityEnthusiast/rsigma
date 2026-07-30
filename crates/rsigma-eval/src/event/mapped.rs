@@ -61,6 +61,10 @@ impl<E: Event + ?Sized> Event for MappedEvent<'_, E> {
         self.inner.all_string_values()
     }
 
+    fn visit_string_values(&self, visit: &mut dyn FnMut(&str)) {
+        self.inner.visit_string_values(visit)
+    }
+
     fn to_json(&self) -> Value {
         self.inner.to_json()
     }
