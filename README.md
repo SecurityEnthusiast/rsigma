@@ -29,7 +29,7 @@ For rule quality and editor integration, a built-in linter validates rules again
 
 RSigma builds on open industry standards throughout: [Sigma](https://sigmahq.io/) for detection rules, [OpenTelemetry](https://opentelemetry.io/) for log ingestion and detection export, and [STIX](https://oasis-open.github.io/cti-documentation/stix/intro) and [TAXII](https://oasis-open.github.io/cti-documentation/taxii/intro) for threat intelligence.
 
-Full documentation, including guides, CLI reference, and library API docs, lives at [timescale.github.io/rsigma](https://rsigma.io/).
+Full documentation, including guides, CLI reference, and library API docs, lives at [rsigma.io](https://rsigma.io/).
 
 ![Detection Engineering Loop](assets/detection-loop.svg)
 
