@@ -4,14 +4,20 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix: faithful STIX id errors across the serde boundary
+
+`ParseError::InvalidStixId` now reports the defect in the id that was actually rejected. Recovery previously rebuilt `StixIdError::InvalidUuid` by re-parsing a fixed stand-in id, so the recovered error, and the `STIX-E0003` diagnostic built from it, described the stand-in instead of the input: an id whose final UUID group is short was reported as though it had the wrong number of groups. The tagged payload now carries the rejected id and recovery replays `StixId::parse`, which reproduces the original error, `uuid` crate detail included. Ids longer than 256 bytes are left untagged rather than echoed back, so a hostile document cannot inflate an error message by the length of its own input.
+
+Recovery no longer panics. The stand-in path asserted that a hardcoded id still failed in the expected way, on a path reachable from parsing untrusted documents; malformed payloads now fall back to `ParseError::Json`. Reconstruction of `StixIdError::TypeMismatch` is also gone, along with the leaked allocation it needed to rebuild a `&'static str`: `StixId::parse` cannot produce that variant, and typed-id conversion already crosses the serde boundary as `ModelError::IdTypeMismatch`.
+
 ### rstix: OASIS §3.1 Attack Pattern interop use-case tests (#413)
 
 - Adds `tests/interop/use_cases/attack_pattern/` covering §3.1.1–§3.1.7 against normative §3.1.3 fixtures and non-gating `examples/attack-pattern/` data.
 - §3.1.1 description scope is **TESTED** (not `REPORT_ONLY`): normative fixtures must expose typed Attack Pattern TTPs including the doc’s “Spear Phishing” example.
 - Producer `REQ-3.1-P-01`..`P-13`, Consumer `REQ-3.1-C-01`..`C-05`, checklist `REQ-CHK-SXC-3.1` / `REQ-CHK-SXP-3.1`, examples `REQ-3.1-EX-4.1` / `EX-4.2` / `EX-7.1`.
 - `ex-3.1.4.2` retains published truncated UUID ids (defect 21) and asserts parse rejection — no invented digits.
-- Review follow-up: distinct evidence for P-04 / SXC / C-04; wire `type` for P-05; EX-4.2 matches `ParseError::InvalidStixId(InvalidUuid)` via tagged `StixId` serde recovery (no Display matching / no invented repairs); exact three-digit ms for P-11/P-12.
-- Adds [`ParseError::InvalidStixId`] so truncated/invalid STIX ids survive the serde boundary as typed errors (same tagging approach as `ModelError`).
+- Each requirement row carries evidence distinct from its siblings: `P-04` runs `AttackPattern::validate` plus a strict bundle report instead of repeating the `P-01` gate, `C-04` reads fields through `QueryableStixObject` and validates typed leaves, and `REQ-CHK-SXC-3.1` closes `created_by_ref` to a typed Identity rather than re-validating producer data. `P-05` asserts the wire `type`, `P-11` and `P-12` require exactly three subsecond digits, and `EX-4.2` matches `ParseError::InvalidStixId(InvalidUuid)` instead of substring-matching the error text.
+- Adds `ParseError::InvalidStixId` so truncated or otherwise invalid STIX ids survive the serde boundary as typed errors (same tagging approach as `ModelError`).
 - Not OASIS SXP/SXC certification (**1/21** use cases).
 
 ### rstix: OASIS STIX 2.1 Interop normative fixtures and §2.3 suite checks (#410)

@@ -88,11 +88,15 @@ mod tests {
     fn recovered_uuid_detail_describes_the_rejected_id() {
         let short = parse_error("malware--deadbeef");
         let truncated = parse_error("malware--1121ffbc-364f-857a-9987-92fbcff24ab");
+        // A fixed stand-in cannot describe either id: recovery must not substitute one.
+        let stand_in = parse_error("x--not-a-uuid");
         assert_ne!(
             short.to_string(),
             truncated.to_string(),
             "distinct malformed ids must yield distinct detail"
         );
+        assert_ne!(stand_in.to_string(), truncated.to_string());
+        assert_ne!(stand_in.to_string(), short.to_string());
         let recovered = decode_from_serde(&encode_for_serde(
             "malware--1121ffbc-364f-857a-9987-92fbcff24ab",
             &truncated,
