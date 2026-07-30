@@ -1471,12 +1471,6 @@ pub async fn run_daemon(config: DaemonConfig) {
         });
     }
 
-    // Engine task evaluates batches; a separate dispatch task drains results so
-    // sink/ack work can overlap the next evaluate. When the engine has no
-    // correlation rules, multiple detection batches may run concurrently and a
-    // sequence-numbered reducer restores output order before dispatch.
-    // Capacity 1 bounds how far ordered evaluate can run ahead of dispatch.
-    let (eval_tx, mut eval_rx) = mpsc::channel::<EvaluatedBatch>(1);
     // Overlap detection-only batches so one batch's serial merge can run while
     // another occupies rayon. Correlation engines stay at 1 (ordered windows).
     // Override with RSIGMA_DETECT_INFLIGHT; default scales with the worker pool
@@ -1512,6 +1506,14 @@ pub async fn run_daemon(config: DaemonConfig) {
             "Concurrent detection enabled (no correlation rules)"
         );
     }
+
+    // Engine task evaluates batches; a separate dispatch task drains results so
+    // sink/ack work can overlap the next evaluate. When the engine has no
+    // correlation rules, multiple detection batches may run concurrently and a
+    // sequence-numbered reducer restores output order before dispatch.
+    // Channel depth matches in-flight detection so a quiet input queue cannot
+    // stall completed workers behind a capacity-1 handoff.
+    let (eval_tx, mut eval_rx) = mpsc::channel::<EvaluatedBatch>(detect_inflight);
 
     let dispatch_metrics = metrics.clone();
     let dispatch_ack_tx = ack_tx.clone();
@@ -1622,60 +1624,126 @@ pub async fn run_daemon(config: DaemonConfig) {
         let mut next_seq = 0u64;
         let mut shutdown = false;
 
-        loop {
-            // Bound in-flight detection workers before pulling more input.
-            while join_set.len() >= detect_inflight {
-                match join_set.join_next().await {
-                    Some(Ok(item)) => {
-                        if seq_tx.send(item).await.is_err() {
-                            shutdown = true;
-                            break;
-                        }
+        // Forward a finished detection worker to the ordered reducer.
+        async fn forward_joined(
+            seq_tx: &mpsc::Sender<(u64, EvaluatedBatch)>,
+            res: Result<(u64, EvaluatedBatch), tokio::task::JoinError>,
+        ) -> bool {
+            match res {
+                Ok(item) => {
+                    if seq_tx.send(item).await.is_err() {
+                        tracing::debug!("Dispatch channel closed, engine shutting down");
+                        return false;
                     }
-                    Some(Err(e)) => {
-                        tracing::error!(error = %e, "Detection worker panicked");
-                        shutdown = true;
-                        break;
-                    }
-                    None => break,
+                    true
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Detection worker panicked");
+                    false
                 }
             }
-            if shutdown {
-                break;
-            }
+        }
 
+        loop {
             let pipeline_start = Instant::now();
 
-            let first = {
-                #[cfg(feature = "daemon-otlp")]
-                {
-                    if source_finished {
-                        match event_rx.recv().await {
-                            Some(e) => e,
-                            None => break,
+            // Wait for the next input event, but always drain completed detection
+            // workers while idle. Otherwise a quiet queue leaves finished
+            // spawn_blocking tasks stranded until another event arrives.
+            let first = loop {
+                if detect_inflight > 1 && join_set.len() >= detect_inflight {
+                    if let Some(res) = join_set.join_next().await {
+                        if !forward_joined(&seq_tx, res).await {
+                            shutdown = true;
                         }
-                    } else {
-                        tokio::select! {
-                            event = event_rx.recv() => match event {
-                                Some(e) => e,
-                                None => break,
-                            },
-                            _ = source_done.notified() => {
-                                source_finished = true;
-                                event_rx.close();
-                                match event_rx.recv().await {
-                                    Some(e) => e,
-                                    None => break,
+                    }
+                    if shutdown {
+                        break None;
+                    }
+                    continue;
+                }
+
+                if detect_inflight > 1 && !join_set.is_empty() {
+                    #[cfg(feature = "daemon-otlp")]
+                    {
+                        if source_finished {
+                            tokio::select! {
+                                biased;
+                                res = join_set.join_next() => {
+                                    if let Some(res) = res {
+                                        if !forward_joined(&seq_tx, res).await {
+                                            shutdown = true;
+                                            break None;
+                                        }
+                                    }
+                                    continue;
+                                }
+                                event = event_rx.recv() => break event,
+                            }
+                        } else {
+                            tokio::select! {
+                                biased;
+                                res = join_set.join_next() => {
+                                    if let Some(res) = res {
+                                        if !forward_joined(&seq_tx, res).await {
+                                            shutdown = true;
+                                            break None;
+                                        }
+                                    }
+                                    continue;
+                                }
+                                event = event_rx.recv() => break event,
+                                _ = source_done.notified() => {
+                                    source_finished = true;
+                                    event_rx.close();
+                                    continue;
                                 }
                             }
                         }
                     }
+                    #[cfg(not(feature = "daemon-otlp"))]
+                    {
+                        tokio::select! {
+                            biased;
+                            res = join_set.join_next() => {
+                                if let Some(res) = res {
+                                    if !forward_joined(&seq_tx, res).await {
+                                        shutdown = true;
+                                        break None;
+                                    }
+                                }
+                                continue;
+                            }
+                            event = event_rx.recv() => break event,
+                        }
+                    }
+                } else {
+                    #[cfg(feature = "daemon-otlp")]
+                    {
+                        if source_finished {
+                            break event_rx.recv().await;
+                        }
+                        tokio::select! {
+                            event = event_rx.recv() => break event,
+                            _ = source_done.notified() => {
+                                source_finished = true;
+                                event_rx.close();
+                                break event_rx.recv().await;
+                            }
+                        }
+                    }
+                    #[cfg(not(feature = "daemon-otlp"))]
+                    {
+                        break event_rx.recv().await;
+                    }
                 }
-                #[cfg(not(feature = "daemon-otlp"))]
-                match event_rx.recv().await {
-                    Some(raw_event) => raw_event,
-                    None => break,
-                }
+            };
+
+            if shutdown {
+                break;
+            }
+            let Some(first) = first else {
+                break;
             };
             engine_metrics.on_input_queue_depth_change(-1);
 
@@ -1777,39 +1845,12 @@ pub async fn run_daemon(config: DaemonConfig) {
                         },
                     )
                 });
-
-                while let Some(res) = join_set.try_join_next() {
-                    match res {
-                        Ok(item) => {
-                            if seq_tx.send(item).await.is_err() {
-                                shutdown = true;
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!(error = %e, "Detection worker panicked");
-                            shutdown = true;
-                            break;
-                        }
-                    }
-                }
-                if shutdown {
-                    break;
-                }
             }
         }
 
         while let Some(res) = join_set.join_next().await {
-            match res {
-                Ok(item) => {
-                    if seq_tx.send(item).await.is_err() {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "Detection worker panicked");
-                    break;
-                }
+            if !forward_joined(&seq_tx, res).await {
+                break;
             }
         }
         drop(seq_tx);
