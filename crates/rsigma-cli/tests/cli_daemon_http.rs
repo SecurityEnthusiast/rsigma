@@ -73,6 +73,8 @@ fn metrics_returns_prometheus_format() {
         body.contains("rsigma_events_processed_total"),
         "metrics should contain rsigma_events_processed_total"
     );
+    assert!(body.contains(r#"rsigma_batch_phase_duration_seconds_sum{phase="parse"}"#));
+    assert!(body.contains(r#"rsigma_batch_phase_duration_seconds_sum{phase="evaluate"}"#));
 }
 
 #[test]
@@ -161,6 +163,42 @@ fn ingest_updates_status_counters() {
         v["detection_matches"].as_u64().unwrap() >= 1,
         "detection_matches should be at least 1 for matching event"
     );
+}
+
+#[test]
+fn parse_error_is_processed_once_and_routed_to_dlq() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let dlq = temp_file(".ndjson", "");
+    let dlq_spec = format!("file://{}", dlq.path().display());
+    let daemon = DaemonProcess::spawn_http_with_args(
+        rule.path().to_str().unwrap(),
+        &["--dlq", &dlq_spec, "--input-format", "json"],
+    );
+
+    let (status, body) = http_post(
+        &daemon.url("/api/v1/events"),
+        "not json\n{\"CommandLine\":\"malware.exe\"}",
+    );
+    assert_eq!(status, 200);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&body).unwrap()["accepted"],
+        2
+    );
+
+    let dlq_body = poll_until(Duration::from_secs(5), || {
+        let body = std::fs::read_to_string(dlq.path()).ok()?;
+        body.contains("not json").then_some(body)
+    })
+    .expect("parse error was not routed to the DLQ");
+    assert!(dlq_body.contains("parse error"));
+
+    let metrics = poll_until(Duration::from_secs(5), || {
+        let (_, body) = http_get(&daemon.url("/metrics"));
+        body.contains("rsigma_events_parse_errors_total 1")
+            .then_some(body)
+    })
+    .expect("parse error metric was not incremented exactly once");
+    assert!(metrics.contains("rsigma_events_processed_total 1"));
 }
 
 #[test]

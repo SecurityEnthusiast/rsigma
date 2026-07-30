@@ -1465,6 +1465,7 @@ pub async fn run_daemon(config: DaemonConfig) {
     let engine_processor = processor.clone();
     let engine_metrics = metrics.clone();
     let event_filter = config.event_filter.clone();
+    let event_filter_enabled = !matches!(event_filter.as_ref(), EventFilter::None);
     let batch_size = config.batch_size;
     let input_format = config.input_format.clone();
     let engine_ack_tx = ack_tx.clone();
@@ -1538,56 +1539,63 @@ pub async fn run_daemon(config: DaemonConfig) {
             // confused span nesting on the multi-threaded runtime.
             let shutdown = tracing::Instrument::instrument(
                 async {
-                    let mut valid_payloads = Vec::with_capacity(batch.len());
-                    let mut valid_tokens = Vec::with_capacity(batch.len());
-
+                    let mut payloads = Vec::with_capacity(batch.len());
+                    let mut tokens = Vec::with_capacity(batch.len());
                     for raw_event in batch {
-                        if dlq_enabled
-                            && !raw_event.payload.trim().is_empty()
-                            && rsigma_runtime::parse_line(&raw_event.payload, &input_format)
-                                .is_none()
-                        {
-                            tracing::debug!("Event routed to DLQ: parse error");
-                            if engine_dlq_tx
-                                .send(DlqEntry {
-                                    original_event: raw_event.payload,
-                                    error: "parse error".to_string(),
-                                    timestamp: chrono::Utc::now().to_rfc3339(),
-                                })
-                                .await
-                                .is_err()
-                            {
-                                tracing::warn!("DLQ channel closed, parse-error event dropped");
-                            }
-                            if engine_ack_tx.send(raw_event.ack_token).is_err() {
-                                return true;
-                            }
-                            continue;
-                        }
-                        valid_payloads.push(raw_event.payload);
-                        valid_tokens.push(raw_event.ack_token);
+                        payloads.push(raw_event.payload);
+                        tokens.push(raw_event.ack_token);
                     }
 
-                    if valid_payloads.is_empty() {
+                    if payloads.is_empty() {
                         return false;
                     }
 
                     let process_start = std::time::Instant::now();
-                    let results: Vec<ProcessResult> = engine_processor.process_batch_with_format(
-                        &valid_payloads,
+                    let filter =
+                        event_filter_enabled.then_some(&filter_fn as &rsigma_runtime::EventFilter);
+                    let outcome = engine_processor.process_batch_with_format_detailed(
+                        &payloads,
                         &input_format,
-                        Some(&filter_fn),
+                        filter,
                     );
                     let process_elapsed_ms = process_start.elapsed().as_millis() as u64;
-                    let match_count = results.iter().filter(|r| !r.is_empty()).count();
+                    let match_count = outcome.results.iter().filter(|r| !r.is_empty()).count();
                     tracing::debug!(
-                        batch_size = valid_payloads.len(),
+                        batch_size = payloads.len(),
                         matches = match_count,
                         elapsed_ms = process_elapsed_ms,
                         "Batch processed",
                     );
 
-                    for (result, ack_token) in results.into_iter().zip(valid_tokens) {
+                    let mut parse_errors = outcome.parse_error_indices.into_iter().peekable();
+                    for (index, ((result, ack_token), payload)) in outcome
+                        .results
+                        .into_iter()
+                        .zip(tokens)
+                        .zip(payloads)
+                        .enumerate()
+                    {
+                        if parse_errors.peek().copied() == Some(index) {
+                            parse_errors.next();
+                            if dlq_enabled {
+                                tracing::debug!("Event routed to DLQ: parse error");
+                                if engine_dlq_tx
+                                    .send(DlqEntry {
+                                        original_event: payload,
+                                        error: "parse error".to_string(),
+                                        timestamp: chrono::Utc::now().to_rfc3339(),
+                                    })
+                                    .await
+                                    .is_err()
+                                {
+                                    tracing::warn!("DLQ channel closed, parse-error event dropped");
+                                }
+                            }
+                            if engine_ack_tx.send(ack_token).is_err() {
+                                return true;
+                            }
+                            continue;
+                        }
                         if result.is_empty() {
                             if engine_ack_tx.send(ack_token).is_err() {
                                 tracing::debug!("Ack channel closed, engine shutting down");

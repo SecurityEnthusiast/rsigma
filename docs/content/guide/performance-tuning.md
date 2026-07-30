@@ -132,6 +132,8 @@ rsigma engine daemon -r rules/ \
 
 The daemon does not wait for a batch to fill: it blocks for the first event, then drains up to `--batch-size` events already waiting in the queue. A larger value therefore increases the maximum processing quantum rather than adding a batch-fill timer. Lower it when short bursts need the smallest tail latency, or raise it when sustained load and a large corpus justify more parallel work per lock acquisition. The effective value never exceeds `--buffer-size`; the published SigmaHQ baseline found 512 best on sustained load.
 
+Formatted input parsing fans across the same rayon pool before engine evaluation, with one ordered batch still in flight. On the pinned raw Windows workload with logsource routing, this raised the measured eight-thread median from 306k to 385k events/s while leaving one-thread throughput near 90k events/s. The measured efficiency is 50-52% on eight Apple M4 Pro performance cores, so raising `RAYON_NUM_THREADS` beyond the physical performance-core count should not be expected to scale linearly. Use `rsigma_batch_phase_duration_seconds` to compare parse and evaluation time on your workload.
+
 `--include-event` clones the complete input event into every detection result. Its cost scales with matches rather than inputs: the raw Windows baseline produces about 3 matches per event without routing and about 0.02 with routing, so measure this option on the actual match volume. The checked-in daemon matrix includes both forms, a match-heavy lane, and a handcrafted lane covering event-count, value-count, value-sum, and ordered-temporal correlations; the pinned SigmaHQ tree itself contains no correlation rules.
 
 ## Memory pressure and correlation state

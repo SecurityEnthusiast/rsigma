@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use std::time::Instant;
 
 use arc_swap::ArcSwap;
+use rayon::prelude::*;
 use rsigma_eval::{
     Event, FieldObserver, JsonEvent, ProcessResult, ProcessResultExt, RuleFieldSet, SchemaObserver,
 };
@@ -19,6 +20,12 @@ use crate::tap::{TapPayload, TapRegistry, TapStage};
 /// object into sub-events (e.g. `.records[]`). Only applies to JSON input.
 pub type EventFilter = dyn Fn(&serde_json::Value) -> Vec<serde_json::Value>;
 
+/// Results and per-line parse failures from one ordered batch.
+pub struct BatchProcessOutcome {
+    pub results: Vec<ProcessResult>,
+    pub parse_error_indices: Vec<usize>,
+}
+
 /// Thread-safe handle to the engine, swappable atomically for hot-reload.
 ///
 /// Uses `ArcSwap<Mutex<RuntimeEngine>>` so that:
@@ -28,6 +35,10 @@ pub type EventFilter = dyn Fn(&serde_json::Value) -> Vec<serde_json::Value>;
 ///   batches (they hold an `Arc` to the old engine until their batch completes).
 pub struct LogProcessor {
     engine: Arc<ArcSwap<Mutex<RuntimeEngine>>>,
+    /// Preserves batch and correlation order while parsing runs outside the
+    /// engine mutex. Public callers were serialized by that mutex before the
+    /// split, so this also retains their existing ordering semantics.
+    processing_order: Mutex<()>,
     metrics: Arc<dyn MetricsHook>,
     /// Optional opt-in field observer. When `Some`, every parsed event
     /// flowing through `process_batch_with_format` has its field keys
@@ -52,6 +63,7 @@ impl LogProcessor {
     pub fn new(engine: RuntimeEngine, metrics: Arc<dyn MetricsHook>) -> Self {
         LogProcessor {
             engine: Arc::new(ArcSwap::from_pointee(Mutex::new(engine))),
+            processing_order: Mutex::new(()),
             metrics,
             field_observer: ArcSwap::new(Arc::new(None)),
             schema_observer: ArcSwap::new(Arc::new(None)),
@@ -139,6 +151,7 @@ impl LogProcessor {
         batch: &[String],
         event_filter: &EventFilter,
     ) -> Vec<ProcessResult> {
+        let _order_guard = self.processing_order.lock();
         let engine_guard = self.engine.load();
         let mut engine = engine_guard.lock();
 
@@ -234,8 +247,21 @@ impl LogProcessor {
         format: &InputFormat,
         event_filter: Option<&EventFilter>,
     ) -> Vec<ProcessResult> {
+        self.process_batch_with_format_detailed(batch, format, event_filter)
+            .results
+    }
+
+    /// Process a formatted batch and retain the input indices that failed to
+    /// parse. The daemon uses this to route failures to the DLQ without parsing
+    /// every line a second time.
+    pub fn process_batch_with_format_detailed(
+        &self,
+        batch: &[String],
+        format: &InputFormat,
+        event_filter: Option<&EventFilter>,
+    ) -> BatchProcessOutcome {
+        let _order_guard = self.processing_order.lock();
         let engine_guard = self.engine.load();
-        let mut engine = engine_guard.lock();
 
         // Live event tap: load the active-session snapshot once for the whole
         // batch. Cheap when disabled (one `ArcSwap` load plus an `Option`
@@ -254,23 +280,31 @@ impl LogProcessor {
 
         // Phase 1: Parse each line into decoded events, tracking line origin.
         // For JSON with an event_filter, one line can produce multiple events.
-        let mut decoded_events: Vec<(usize, EventInputDecoded)> = Vec::with_capacity(batch.len());
+        let parse_start = Instant::now();
 
-        for (line_idx, line) in batch.iter().enumerate() {
-            // Raw-stage tap runs before parsing so a non-redacting raw capture
-            // records every non-empty line, including ones that fail to parse.
-            if tap_has_raw
-                && !line.trim().is_empty()
-                && let Some(sessions) = tap_sessions.as_ref()
-            {
+        // Raw capture remains ordered and runs before any parsing, including
+        // for malformed lines. Parsing itself is independent per line and the
+        // indexed parallel collect retains input order.
+        if tap_has_raw && let Some(sessions) = tap_sessions.as_ref() {
+            for line in batch.iter().filter(|line| !line.trim().is_empty()) {
                 for s in sessions.iter().filter(|s| s.stage == TapStage::Raw) {
                     s.offer(TapPayload::Raw(line.clone()));
                 }
             }
+        }
 
-            let Some(decoded) = parse_line(line, format) else {
+        let parsed_lines: Vec<Option<EventInputDecoded>> = batch
+            .par_iter()
+            .map(|line| parse_line(line, format))
+            .collect();
+        let mut decoded_events = Vec::with_capacity(batch.len());
+        let mut parse_error_indices = Vec::new();
+
+        for (line_idx, (line, decoded)) in batch.iter().zip(parsed_lines).enumerate() {
+            let Some(decoded) = decoded else {
                 if !line.trim().is_empty() {
                     self.metrics.on_parse_error();
+                    parse_error_indices.push(line_idx);
                     tracing::debug!("Failed to parse input line");
                 }
                 continue;
@@ -292,9 +326,14 @@ impl LogProcessor {
 
             decoded_events.push((line_idx, decoded));
         }
+        self.metrics
+            .observe_batch_parse_duration(parse_start.elapsed().as_secs_f64());
 
         if decoded_events.is_empty() {
-            return empty_results(batch.len());
+            return BatchProcessOutcome {
+                results: empty_results(batch.len()),
+                parse_error_indices,
+            };
         }
 
         // Optional opt-in field observation. Cheap when disabled: one
@@ -336,9 +375,11 @@ impl LogProcessor {
         // Phase 2: Batch evaluation — parallel detection + sequential correlation
         let event_refs: Vec<&EventInputDecoded> = decoded_events.iter().map(|(_, e)| e).collect();
 
+        let mut engine = engine_guard.lock();
         let start = Instant::now();
         let batch_results = engine.process_batch(&event_refs);
         let elapsed = start.elapsed().as_secs_f64();
+        self.metrics.observe_batch_evaluation_duration(elapsed);
         let per_event_latency = elapsed / event_refs.len() as f64;
 
         let stats = engine.stats();
@@ -376,7 +417,10 @@ impl LogProcessor {
             line_results[*line_idx].extend(result);
         }
 
-        line_results
+        BatchProcessOutcome {
+            results: line_results,
+            parse_error_indices,
+        }
     }
 
     /// Reload rules (and pipelines) without blocking in-flight event processing.
@@ -389,6 +433,10 @@ impl LogProcessor {
     ///
     /// If pipeline or rule loading fails, the old engine remains active.
     pub fn reload_rules(&self) -> Result<crate::engine::EngineStats, String> {
+        // Parsing no longer holds the engine mutex, so use the ordering lock to
+        // keep the initial state/configuration snapshot behind any in-flight
+        // batch just as the old engine-mutex boundary did.
+        let order_guard = self.processing_order.lock();
         // Snapshot the old engine's configuration AND tuning so the
         // replacement reaches `load_rules()` with the same flags. Daemon
         // startup typically sets `set_bloom_prefilter`/`set_bloom_max_bytes`
@@ -415,6 +463,7 @@ impl LogProcessor {
         let cross_rule_ac = old.cross_rule_ac();
         drop(old);
         drop(snapshot);
+        drop(order_guard);
 
         let mut new_engine = RuntimeEngine::new(rules_path, pipelines, corr_config, include_event);
         new_engine.set_pipeline_paths(pipeline_paths);
@@ -463,6 +512,7 @@ impl LogProcessor {
 
     /// Export correlation state from the current engine.
     pub fn export_state(&self) -> Option<rsigma_eval::CorrelationSnapshot> {
+        let _order_guard = self.processing_order.lock();
         let snapshot = self.engine.load();
         let engine = snapshot.lock();
         engine.export_state()
@@ -470,6 +520,7 @@ impl LogProcessor {
 
     /// Import correlation state into the current engine.
     pub fn import_state(&self, snapshot: &rsigma_eval::CorrelationSnapshot) -> bool {
+        let _order_guard = self.processing_order.lock();
         let guard = self.engine.load();
         let mut engine = guard.lock();
         engine.import_state(snapshot)
@@ -1300,6 +1351,34 @@ detection:
         assert!(results[0].detection_count() == 0);
         assert!(results[1].detection_count() == 0);
         assert!(results[2].detection_count() > 0);
+    }
+
+    #[test]
+    fn format_detailed_reports_only_nonempty_parse_failures() {
+        let proc = make_processor(
+            r#"
+title: Test Rule
+status: test
+logsource:
+    category: test
+detection:
+    selection:
+        EventID: 1
+    condition: selection
+"#,
+        );
+
+        let batch = vec![
+            "not json".to_string(),
+            "".to_string(),
+            r#"{"EventID": 1}"#.to_string(),
+            "{broken".to_string(),
+        ];
+        let outcome = proc.process_batch_with_format_detailed(&batch, &InputFormat::Json, None);
+
+        assert_eq!(outcome.results.len(), batch.len());
+        assert_eq!(outcome.parse_error_indices, vec![0, 3]);
+        assert!(outcome.results[2].detection_count() > 0);
     }
 
     #[cfg(feature = "logfmt")]
