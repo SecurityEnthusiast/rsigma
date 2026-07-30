@@ -109,6 +109,18 @@ impl<'a> Event for JsonEvent<'a> {
         }
     }
 
+    fn visit_top_level_keys(&self, visit: &mut dyn FnMut(&str)) -> bool {
+        match self.inner.as_ref() {
+            Value::Object(map) => {
+                for key in map.keys() {
+                    visit(key.as_str());
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Check if any string value in the event satisfies a predicate.
     ///
     /// Short-circuits on the first match, avoiding the allocation of

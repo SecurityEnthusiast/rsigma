@@ -27,7 +27,7 @@
 use std::borrow::Cow;
 
 use ahash::{HashMap, HashMapExt};
-use aho_corasick::{AhoCorasick, MatchKind};
+use aho_corasick::{AhoCorasick, AhoCorasickKind, MatchKind};
 use rsigma_parser::fieldpath::{first_unescaped, unescape_brackets};
 
 use crate::compiler::CompiledRule;
@@ -99,11 +99,21 @@ impl NeedleSet {
         // Witness needles are stored folded. ASCII case-insensitive search
         // lets the hot path scan the original haystack without allocating a
         // lowercase copy; non-ASCII haystacks still fold once before search.
+        // Prefer a DFA for the dense keyword/field automata; fall back if the
+        // DFA is too large to build.
         let automaton = AhoCorasick::builder()
             .match_kind(MatchKind::Standard)
             .ascii_case_insensitive(true)
+            .kind(Some(AhoCorasickKind::DFA))
             .build(&patterns)
-            .ok()?;
+            .ok()
+            .or_else(|| {
+                AhoCorasick::builder()
+                    .match_kind(MatchKind::Standard)
+                    .ascii_case_insensitive(true)
+                    .build(&patterns)
+                    .ok()
+            })?;
 
         Some(NeedleSet {
             automaton,
@@ -446,16 +456,15 @@ impl CandidateIndex {
         // When the event can name its top-level keys, probe only fields under
         // those roots. On sparse payloads (e.g. raw Windows `message`+`product`)
         // this turns an O(indexed fields) miss storm into O(event keys).
-        if let Some(keys) = event.top_level_keys() {
-            for key in keys {
-                if let Some(fields) = self.fields_for_event_key.get(key.as_ref()) {
-                    for field in fields {
-                        if let Some(entry) = self.fields.get(field) {
-                            Self::apply_field_hit(event, field, entry, set);
-                        }
+        if event.visit_top_level_keys(&mut |key| {
+            if let Some(fields) = self.fields_for_event_key.get(key) {
+                for field in fields {
+                    if let Some(entry) = self.fields.get(field) {
+                        Self::apply_field_hit(event, field, entry, set);
                     }
                 }
             }
+        }) {
             return;
         }
 
@@ -749,33 +758,173 @@ detection:
         assert!(candidates(&index, &json!({"anything": "benign"})).is_empty());
     }
 
-    /// ASCII case-insensitive automata must select on the original haystack
-    /// casing; folding is only required for non-ASCII event text.
+    /// Case matrix: index may over-approximate, but must never omit a rule the
+    /// engine would match for ASCII upper/lower, `|cased`, and non-ASCII CI.
     #[test]
-    fn substring_and_keyword_select_on_ascii_uppercase_haystack() {
-        let (_, index) = build(
-            r#"
-title: Contains
+    fn case_folding_matrix_never_drops_true_matches() {
+        let cases: &[(&str, &str, serde_json::Value, bool)] = &[
+            (
+                "ci-contains-upper",
+                r#"
+title: T
 detection:
     selection:
         CommandLine|contains: 'whoami'
     condition: selection
----
-title: Keywords
+"#,
+                json!({"CommandLine": "cmd /c WHOAMI"}),
+                true,
+            ),
+            (
+                "ci-contains-lower",
+                r#"
+title: T
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+"#,
+                json!({"CommandLine": "cmd /c whoami"}),
+                true,
+            ),
+            (
+                "ci-contains-miss",
+                r#"
+title: T
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+"#,
+                json!({"CommandLine": "cmd /c dir"}),
+                false,
+            ),
+            (
+                "cased-contains-exact",
+                r#"
+title: T
+detection:
+    selection:
+        CommandLine|contains|cased: 'WhoAmi'
+    condition: selection
+"#,
+                json!({"CommandLine": "prefix WhoAmi suffix"}),
+                true,
+            ),
+            (
+                "cased-contains-wrong-case",
+                r#"
+title: T
+detection:
+    selection:
+        CommandLine|contains|cased: 'WhoAmi'
+    condition: selection
+"#,
+                json!({"CommandLine": "prefix whoami suffix"}),
+                false,
+            ),
+            (
+                "ci-keyword-upper",
+                r#"
+title: T
 detection:
     keywords:
         - 'mimikatz'
     condition: keywords
 "#,
-        );
-        assert_eq!(
-            candidates(&index, &json!({"CommandLine": "WHOAMI /all"})),
-            vec![0]
-        );
-        assert_eq!(
-            candidates(&index, &json!({"payload": "MIMIKATZ.exe"})),
-            vec![1]
-        );
+                json!({"payload": "MIMIKATZ.exe"}),
+                true,
+            ),
+            (
+                "ci-keyword-lower",
+                r#"
+title: T
+detection:
+    keywords:
+        - 'mimikatz'
+    condition: keywords
+"#,
+                json!({"payload": "mimikatz.exe"}),
+                true,
+            ),
+            (
+                "ci-unicode-contains",
+                r#"
+title: T
+detection:
+    selection:
+        User|contains: 'Ärzte'
+    condition: selection
+"#,
+                json!({"User": "gruppe Ärzte west"}),
+                true,
+            ),
+            (
+                "ci-unicode-contains-folded-haystack",
+                r#"
+title: T
+detection:
+    selection:
+        User|contains: 'ärzte'
+    condition: selection
+"#,
+                json!({"User": "gruppe ÄRZTE west"}),
+                true,
+            ),
+            (
+                "ci-exact-mixed-case",
+                r#"
+title: T
+detection:
+    selection:
+        Image: 'Cmd.EXE'
+    condition: selection
+"#,
+                json!({"Image": "cmd.exe"}),
+                true,
+            ),
+            (
+                "cased-exact-match",
+                r#"
+title: T
+detection:
+    selection:
+        Image|cased: 'Cmd.exe'
+    condition: selection
+"#,
+                json!({"Image": "Cmd.exe"}),
+                true,
+            ),
+            (
+                "cased-exact-wrong-case",
+                r#"
+title: T
+detection:
+    selection:
+        Image|cased: 'Cmd.exe'
+    condition: selection
+"#,
+                json!({"Image": "cmd.exe"}),
+                false,
+            ),
+        ];
+
+        for (name, yaml, event_json, expect_match) in cases {
+            let (engine, index) = build(yaml);
+            let event = JsonEvent::borrow(event_json);
+            let matched = !engine.evaluate(&event).is_empty();
+            assert_eq!(
+                matched, *expect_match,
+                "{name}: engine match expectation drifted"
+            );
+            let selected = index.candidates(&event);
+            if matched {
+                assert!(
+                    selected.contains(&0),
+                    "{name}: index dropped a true engine match; candidates={selected:?}"
+                );
+            }
+        }
     }
 
     /// Matchers whose value space the index cannot enumerate still gate on

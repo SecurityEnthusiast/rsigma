@@ -175,7 +175,7 @@ pub trait Event {
     /// Visit every string value in the event without collecting them.
     ///
     /// Used by the keyword candidate index. The default walks
-    /// [`all_string_values`]; concrete types override to avoid the `Vec`.
+    /// [`Self::all_string_values`]; concrete types override to avoid the `Vec`.
     fn visit_string_values(&self, visit: &mut dyn FnMut(&str)) {
         for value in self.all_string_values() {
             visit(value.as_ref());
@@ -212,6 +212,21 @@ pub trait Event {
     /// probed. The default is `None`.
     fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
         None
+    }
+
+    /// Visit top-level object keys without collecting them.
+    ///
+    /// Returns `false` when the shape is unknown (same meaning as
+    /// [`Self::top_level_keys`] returning `None`). The default collects via
+    /// `top_level_keys`.
+    fn visit_top_level_keys(&self, visit: &mut dyn FnMut(&str)) -> bool {
+        let Some(keys) = self.top_level_keys() else {
+            return false;
+        };
+        for key in keys {
+            visit(key.as_ref());
+        }
+        true
     }
 }
 
@@ -276,6 +291,10 @@ impl<T: Event + ?Sized> Event for &T {
 
     fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
         (**self).top_level_keys()
+    }
+
+    fn visit_top_level_keys(&self, visit: &mut dyn FnMut(&str)) -> bool {
+        (**self).visit_top_level_keys(visit)
     }
 }
 

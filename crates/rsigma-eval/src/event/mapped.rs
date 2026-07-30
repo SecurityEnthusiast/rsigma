@@ -72,6 +72,14 @@ impl<E: Event + ?Sized> Event for MappedEvent<'_, E> {
     fn field_keys(&self) -> Vec<Cow<'_, str>> {
         self.inner.field_keys()
     }
+
+    fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
+        self.inner.top_level_keys()
+    }
+
+    fn visit_top_level_keys(&self, visit: &mut dyn FnMut(&str)) -> bool {
+        self.inner.visit_top_level_keys(visit)
+    }
 }
 
 #[cfg(test)]
