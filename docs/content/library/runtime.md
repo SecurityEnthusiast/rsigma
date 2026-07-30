@@ -157,7 +157,7 @@ For the operator-facing schema, the four primitives, and the recipe catalog, see
 
 ## Custom metrics
 
-Implement `MetricsHook` to ship metrics into your own registry. `NoopMetrics` is a no-op implementation suitable for tests and embedders that do not care. The daemon's own `prometheus`-backed implementation lives in `rsigma-cli/src/daemon/metrics.rs` and is a good template. The hook methods mirror the [27 Prometheus metrics](../reference/metrics.md) the daemon exposes.
+Implement `MetricsHook` to ship metrics into your own registry. `NoopMetrics` is a no-op implementation suitable for tests and embedders that do not care. The daemon's own `prometheus`-backed implementation lives in `rsigma-cli/src/daemon/metrics.rs` and is a good template. The hook methods mirror the [Prometheus metrics](../reference/metrics.md) the daemon exposes.
 
 ```rust
 use rsigma_runtime::{LogProcessor, MetricsHook};
