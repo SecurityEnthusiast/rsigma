@@ -6,7 +6,7 @@
 mod fixtures;
 
 use fixtures::load_spec_fixture;
-use rstix::core::{QueryableStixObject, StixId};
+use rstix::core::{QueryableStixObject, StixId, StixIdError};
 use rstix::model::sdo::AttackPattern;
 use rstix::model::{Bundle, StixObject};
 use rstix::{ParseError, parse_bundle};
@@ -50,6 +50,31 @@ fn bundle_missing_ref_rejects() {
         err,
         ParseError::Model(rstix::model::ModelError::BundleReferenceMissing { .. })
     ));
+}
+
+#[test]
+fn wrong_type_on_typed_reference_names_the_expected_prefix() {
+    let raw = r#"{
+      "type": "bundle",
+      "id": "bundle--00000000-0000-0000-0000-000000000003",
+      "objects": [{
+        "type": "identity",
+        "spec_version": "2.1",
+        "id": "identity--11111111-1111-4111-8111-111111111111",
+        "created": "2016-05-12T08:17:27.000Z",
+        "modified": "2016-05-12T08:17:27.000Z",
+        "name": "Example Org",
+        "identity_class": "organization",
+        "created_by_ref": "malware--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061"
+      }]
+    }"#;
+    match parse_bundle(raw).expect_err("created_by_ref must be an identity") {
+        ParseError::InvalidStixId(StixIdError::TypeMismatch { expected, found }) => {
+            assert_eq!(expected, "identity");
+            assert_eq!(found, "malware");
+        }
+        other => panic!("expected InvalidStixId(TypeMismatch), got: {other:?}"),
+    }
 }
 
 #[test]

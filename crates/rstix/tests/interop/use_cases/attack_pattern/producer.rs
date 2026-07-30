@@ -160,7 +160,7 @@ pub fn assert_spec_conformance() {
 pub fn assert_prop_type() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
-    let (ap, object_id) = load_attack_pattern(FIXTURE_CREATE);
+    let (_ap, object_id) = load_attack_pattern(FIXTURE_CREATE);
     let wire = objects
         .iter()
         .find(|obj| obj.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
@@ -170,8 +170,6 @@ pub fn assert_prop_type() {
         Some("attack-pattern"),
         "wire type must be attack-pattern"
     );
-    // Typed lookup already succeeded in `load_attack_pattern`; keep `ap` live as proof.
-    let _ = ap;
 }
 
 /// REQ-3.1-P-06 — `spec_version` is `2.1`.

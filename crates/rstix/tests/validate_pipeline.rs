@@ -142,6 +142,45 @@ fn pipeline_reports_w0010_for_bad_capec_external_reference() {
 }
 
 #[test]
+fn pipeline_reports_e0021_for_wrong_type_on_typed_reference() {
+    let json = r#"{
+      "type": "bundle",
+      "id": "bundle--00000000-0000-0000-0000-000000000003",
+      "objects": [{
+        "type": "identity",
+        "spec_version": "2.1",
+        "id": "identity--11111111-1111-4111-8111-111111111111",
+        "created": "2016-05-12T08:17:27.000Z",
+        "modified": "2016-05-12T08:17:27.000Z",
+        "name": "Example Org",
+        "identity_class": "organization",
+        "created_by_ref": "malware--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061"
+      }]
+    }"#;
+    let report = Validator::consumer_strict().validate_json_str(json);
+    let diagnostic = report
+        .with_code(DiagnosticCode::E0021)
+        .next()
+        .expect("expected STIX-E0021");
+    assert_eq!(
+        diagnostic.message,
+        "type mismatch: expected 'identity', found 'malware'"
+    );
+    assert!(
+        diagnostic
+            .fix_suggestion
+            .as_deref()
+            .is_some_and(|fix| fix.contains("`identity`")),
+        "fix suggestion must name the required type: {:?}",
+        diagnostic.fix_suggestion
+    );
+    assert!(
+        report.with_code(DiagnosticCode::E0001).next().is_none(),
+        "wrong reference type must not degrade to a generic JSON error"
+    );
+}
+
+#[test]
 fn pipeline_no_i0020_stub_diagnostics_on_clean_bundle() {
     let json =
         r#"{"type":"bundle","id":"bundle--00000000-0000-0000-0000-000000000000","objects":[]}"#;
