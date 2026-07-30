@@ -48,8 +48,7 @@ struct EvaluatedBatch {
 }
 
 /// Shared event filter for concurrent detection workers (`spawn_blocking`).
-type SharedEventFilter =
-    Arc<dyn Fn(&serde_json::Value) -> Vec<serde_json::Value> + Send + Sync>;
+type SharedEventFilter = Arc<dyn Fn(&serde_json::Value) -> Vec<serde_json::Value> + Send + Sync>;
 
 use super::health::HealthState;
 use super::listen::ListenAddr;
