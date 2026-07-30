@@ -524,6 +524,66 @@ test_id = "use_cases::campaign::examples::campaign_attributed_to_threat_actor"
 fixture = "examples/campaign/ex-3.2.4.2-campaign-attributed-to-threat-actor.json"
 
 [[requirement]]
+req_id = "REQ-3.2-C-01"
+use_case = "campaign"
+section = "3.2.5"
+doc_page = 31
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::consumer::supports_producer_props"
+fixture = "testcases/campaign/tc-3.2.3.2-campaign-attributed-to-intrusion-set.json"
+
+[[requirement]]
+req_id = "REQ-3.2-C-02"
+use_case = "campaign"
+section = "3.2.5"
+doc_page = 31
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::consumer::receives_triad"
+fixture = "testcases/campaign/tc-3.2.3.2-campaign-attributed-to-intrusion-set.json"
+
+[[requirement]]
+req_id = "REQ-3.2-C-03"
+use_case = "campaign"
+section = "3.2.5"
+doc_page = 31
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::consumer::resolves_created_by_ref"
+fixture = "testcases/campaign/tc-3.2.3.2-campaign-attributed-to-intrusion-set.json"
+
+[[requirement]]
+req_id = "REQ-3.2-C-04"
+use_case = "campaign"
+section = "3.2.5"
+doc_page = 31
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::consumer::processes_fields"
+fixture = "testcases/campaign/tc-3.2.3.2-campaign-attributed-to-intrusion-set.json"
+
+[[requirement]]
+req_id = "REQ-3.2-C-05"
+use_case = "campaign"
+section = "3.2.5"
+doc_page = 31
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::consumer::processes_related"
+fixture = "testcases/campaign/tc-3.2.3.2-campaign-attributed-to-intrusion-set.json"
+
+[[requirement]]
 req_id = "REQ-CHK-SXC-3.3"
 use_case = "confidence"
 section = "3.3.6"

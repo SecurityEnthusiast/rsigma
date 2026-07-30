@@ -1,5 +1,6 @@
 //! §3.2 Campaign Sharing — Producer and Consumer tests against normative fixtures.
 
+pub mod consumer;
 pub mod description;
 pub mod examples;
 pub mod producer;
