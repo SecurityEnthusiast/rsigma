@@ -28,6 +28,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use aho_corasick::{AhoCorasick, MatchKind};
+use rsigma_parser::fieldpath::{first_unescaped, unescape_brackets};
 
 use crate::compiler::CompiledRule;
 use crate::event::{Event, EventValue};
@@ -158,6 +159,12 @@ impl CandidateSet {
 /// Witness-based inverted index over compiled rules.
 pub(crate) struct CandidateIndex {
     fields: HashMap<String, FieldEntry>,
+    /// Event-facing top-level key → index field paths to probe.
+    ///
+    /// Keys are unescaped the way JSON object keys appear (`args[0]`), while
+    /// values keep the witness spelling (`args\[0\]`, `actor.id`, …). Sparse
+    /// events iterate their own keys and only touch these buckets.
+    fields_for_event_key: HashMap<String, Vec<String>>,
     keyword: Option<NeedleSet>,
     /// Rules with no sound witness, always evaluated.
     always: Vec<usize>,
@@ -177,6 +184,7 @@ impl CandidateIndex {
     pub(crate) fn empty() -> Self {
         CandidateIndex {
             fields: HashMap::new(),
+            fields_for_event_key: HashMap::new(),
             keyword: None,
             always: Vec::new(),
             always_by_product: HashMap::new(),
@@ -318,6 +326,18 @@ impl CandidateIndex {
     }
 
     fn entry(&mut self, field: String) -> &mut FieldEntry {
+        // Register under the unescaped full path so a flat JSON key that
+        // contains dots (`process.command_line`) still finds its witnesses,
+        // and under the first path segment so nested objects (`process: {…}`)
+        // do too. `get_field` itself tries flat then nested.
+        let flat = unescape_brackets(&field).into_owned();
+        push_probe_field(&mut self.fields_for_event_key, flat, &field);
+        if let Some(root) = nested_root_key(&field) {
+            push_probe_field(&mut self.fields_for_event_key, root.into_owned(), &field);
+        } else if let Some(root) = positional_root_key(&field) {
+            // `args[0]` / `args[-1]` need the `args` array present on the event.
+            push_probe_field(&mut self.fields_for_event_key, root.into_owned(), &field);
+        }
         self.fields.entry(field).or_default()
     }
 
@@ -346,6 +366,10 @@ impl CandidateIndex {
                 rules.sort_unstable();
                 rules.dedup();
             }
+        }
+        for bucket in self.fields_for_event_key.values_mut() {
+            bucket.sort_unstable();
+            bucket.dedup();
         }
         self.always.sort_unstable();
         self.always.dedup();
@@ -400,28 +424,53 @@ impl CandidateIndex {
     }
 
     fn collect_field_hits(&self, event: &impl Event, set: &mut CandidateSet) {
-        for (field, entry) in &self.fields {
-            let Some(value) = event.get_field(field) else {
-                continue;
-            };
-            set.extend(&entry.presence);
-
-            if !entry.needs_value() {
-                continue;
+        // When the event can name its top-level keys, probe only fields under
+        // those roots. On sparse payloads (e.g. raw Windows `message`+`product`)
+        // this turns an O(indexed fields) miss storm into O(event keys).
+        if let Some(keys) = event.top_level_keys() {
+            for key in keys {
+                if let Some(fields) = self.fields_for_event_key.get(key.as_ref()) {
+                    for field in fields {
+                        if let Some(entry) = self.fields.get(field) {
+                            Self::apply_field_hit(event, field, entry, set);
+                        }
+                    }
+                }
             }
+            return;
+        }
 
-            // Every string form the matchers would compare against: scalars
-            // by their textual form, arrays member by member.
-            let mut projections: Vec<Cow<'_, str>> = Vec::new();
-            collect_projections(&value, &mut projections);
-            for projection in &projections {
-                let folded = ascii_lowercase_cow(projection);
-                if let Some(rules) = entry.exact.get(folded.as_ref()) {
-                    set.extend(rules);
-                }
-                if let Some(needles) = &entry.needles {
-                    needles.mark(folded.as_ref(), set);
-                }
+        for (field, entry) in &self.fields {
+            Self::apply_field_hit(event, field, entry, set);
+        }
+    }
+
+    fn apply_field_hit(
+        event: &impl Event,
+        field: &str,
+        entry: &FieldEntry,
+        set: &mut CandidateSet,
+    ) {
+        let Some(value) = event.get_field(field) else {
+            return;
+        };
+        set.extend(&entry.presence);
+
+        if !entry.needs_value() {
+            return;
+        }
+
+        // Every string form the matchers would compare against: scalars
+        // by their textual form, arrays member by member.
+        let mut projections: Vec<Cow<'_, str>> = Vec::new();
+        collect_projections(&value, &mut projections);
+        for projection in &projections {
+            let folded = ascii_lowercase_cow(projection);
+            if let Some(rules) = entry.exact.get(folded.as_ref()) {
+                set.extend(rules);
+            }
+            if let Some(needles) = &entry.needles {
+                needles.mark(folded.as_ref(), set);
             }
         }
     }
@@ -470,6 +519,43 @@ impl CandidateIndex {
     pub(crate) fn indexed_field_count(&self) -> usize {
         self.fields.len()
     }
+}
+
+fn push_probe_field(map: &mut HashMap<String, Vec<String>>, key: String, field: &str) {
+    let bucket = map.entry(key).or_default();
+    if !bucket.iter().any(|f| f == field) {
+        bucket.push(field.to_string());
+    }
+}
+
+/// First nested-path segment of `field`, when it has an unescaped dot.
+///
+/// `actor.id` → `actor`. Flat keys (including `process.command_line` as a
+/// single key, or `args\[0\]`) yield `None` here; callers register those via
+/// the unescaped full field name instead.
+fn nested_root_key(field: &str) -> Option<Cow<'_, str>> {
+    let pos = first_unescaped(field, b'.').filter(|&p| p > 0)?;
+    let segment = &field[..pos];
+    let name = match first_unescaped(segment, b'[') {
+        Some(p) if p > 0 => &segment[..p],
+        _ => segment,
+    };
+    if name.is_empty() {
+        return None;
+    }
+    Some(unescape_brackets(name))
+}
+
+/// Root array name for a positional path with no further dots (`args[-1]`).
+///
+/// Escaped-bracket literals (`args\[0\]`) have no unescaped `[` and yield
+/// `None`, so they stay keyed only by their unescaped flat name.
+fn positional_root_key(field: &str) -> Option<Cow<'_, str>> {
+    if first_unescaped(field, b'.').is_some() {
+        return None;
+    }
+    let pos = first_unescaped(field, b'[').filter(|&p| p > 0)?;
+    Some(unescape_brackets(&field[..pos]))
 }
 
 /// Collect the string forms of an event value that a matcher would compare
@@ -532,6 +618,61 @@ detection:
         assert_eq!(candidates(&index, &json!({"EventType": "LOGIN"})), vec![0]);
         assert!(candidates(&index, &json!({"EventType": "logout"})).is_empty());
         assert!(candidates(&index, &json!({"Other": "login"})).is_empty());
+    }
+
+    #[test]
+    fn nested_root_key_segments() {
+        assert_eq!(nested_root_key("CommandLine"), None);
+        assert_eq!(nested_root_key("actor.id").as_deref(), Some("actor"));
+        assert_eq!(nested_root_key("name[0].x").as_deref(), Some("name"));
+        assert_eq!(nested_root_key(r"args\[0\]"), None);
+        assert_eq!(
+            nested_root_key("process.command_line").as_deref(),
+            Some("process")
+        );
+    }
+
+    #[test]
+    fn flat_dotted_json_key_is_selected() {
+        let (_, index) = build(
+            r#"
+title: T
+detection:
+    selection:
+        process.command_line|contains: 'whoami'
+    condition: selection
+"#,
+        );
+        assert_eq!(
+            candidates(&index, &json!({"process.command_line": "cmd /c whoami"})),
+            vec![0]
+        );
+        assert_eq!(
+            candidates(
+                &index,
+                &json!({"process": {"command_line": "cmd /c whoami"}})
+            ),
+            vec![0]
+        );
+    }
+
+    #[test]
+    fn sparse_event_still_finds_nested_field_under_present_root() {
+        let (_, index) = build(
+            r#"
+title: Nested
+detection:
+    selection:
+        actor.id: 'user123'
+    condition: selection
+"#,
+        );
+        assert_eq!(
+            candidates(&index, &json!({"actor": {"id": "user123"}, "noise": 1})),
+            vec![0]
+        );
+        // Absent root must not select the rule even when another key looks similar.
+        assert!(candidates(&index, &json!({"message": "actor.id=user123"})).is_empty());
     }
 
     /// The old exact-only index could not index a substring rule and evaluated
@@ -892,5 +1033,29 @@ detection:
                 );
             }
         }
+    }
+
+    #[test]
+    fn literal_bracket_field_name_is_selected() {
+        let (_, index) = build(
+            r#"
+title: T
+logsource: { category: test }
+detection:
+    selection:
+        args[0]: 'cmd.exe'
+    condition: selection
+"#,
+        );
+        assert!(
+            index.fields.contains_key(r"args\[0\]"),
+            "fields={:?}",
+            index.fields.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            index.fields_for_event_key.get("args[0]"),
+            Some(&vec![r"args\[0\]".to_string()])
+        );
+        assert_eq!(candidates(&index, &json!({"args[0]": "cmd.exe"})), vec![0]);
     }
 }
