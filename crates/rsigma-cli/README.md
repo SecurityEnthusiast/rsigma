@@ -429,6 +429,7 @@ The first three triggers all funnel through one debounced reload task that re-re
 | `rsigma_reloads_total` | counter | | Total rule reload attempts |
 | `rsigma_reloads_failed_total` | counter | | Failed rule reload attempts |
 | `rsigma_event_processing_seconds` | histogram | | Per-event processing latency |
+| `rsigma_batch_phase_duration_seconds` | histogram | `phase` | Per-batch parsing/evaluation duration |
 | `rsigma_pipeline_latency_seconds` | histogram | | End-to-end latency from event dequeue to sink send |
 | `rsigma_batch_size` | histogram | | Number of events processed per batch |
 | `rsigma_input_queue_depth` | gauge | | Current events buffered in source-to-engine channel |

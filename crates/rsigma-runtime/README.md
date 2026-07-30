@@ -5,7 +5,7 @@ Streaming runtime for [rsigma](https://github.com/timescale/rsigma) — input fo
 ## Features
 
 - **Input adapters**: JSON/NDJSON, syslog (RFC 3164/5424), logfmt, CEF, EVTX (Windows Event Log), plain text, and auto-detect. Line-oriented adapters parse raw log lines into typed events implementing the `rsigma_eval::Event` trait. The EVTX adapter reads binary `.evtx` files directly via `EvtxFileReader` and yields `serde_json::Value` records.
-- **`LogProcessor`**: batch evaluation pipeline with atomic engine swap via `ArcSwap`, `MetricsHook` for pluggable metrics, and `EventFilter` for JSON payload extraction.
+- **`LogProcessor`**: ordered batch evaluation pipeline with parallel input parsing, atomic engine swap via `ArcSwap`, `MetricsHook` for pluggable metrics, and `EventFilter` for JSON payload extraction. `process_batch_with_format_detailed` returns a `BatchProcessOutcome` whose `parse_error_indices` lets adapters route malformed lines without parsing them twice.
 - **`RuntimeEngine`**: wraps `Engine` and `CorrelationEngine` with rule loading, reload, and correlation state management.
 - **Dynamic source resolution**: `SourceResolver` trait with `DefaultSourceResolver` implementation fetching data from files, commands, HTTP APIs, and NATS subjects. Includes template expansion, extraction (jq/JSONPath/CEL), caching with TTL, and scheduled refresh.
 - **`DaemonSourceRegistry`**: unified registry of every dynamic source the daemon resolves, loaded from external `--source` files with collision-error semantics. (Pipeline-embedded `sources:` blocks are also merged in for backward compatibility but are deprecated and removed in v1.0.) Used by the daemon to manage all dynamic sources from a single point.

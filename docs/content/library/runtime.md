@@ -38,7 +38,7 @@ tokio = { version = "1", features = ["full"] }
 | Type | Purpose |
 |------|---------|
 | `RuntimeEngine` | Wraps an `Engine` or `CorrelationEngine` plus the on-disk rule path, pipelines, and the dynamic source resolver. Supports hot-reload via `load_rules`. |
-| `LogProcessor` | An `ArcSwap<Mutex<RuntimeEngine>>` with batch processing methods (`process_batch_lines`, `process_batch_with_format`) and a `reload_rules` helper. The daemon glues this to its bounded mpsc plumbing. |
+| `LogProcessor` | An ordered batch processor that parses formatted inputs in parallel before locking its `ArcSwap<Mutex<RuntimeEngine>>`. `process_batch_with_format_detailed` returns `BatchProcessOutcome`, including input indices that failed parsing for single-parse DLQ routing. The daemon glues this to its bounded mpsc plumbing. |
 | `EventSource` trait, `Sink` trait | The plug-in surfaces for inputs and outputs. Built-in: `StdinSource`, `StdoutSink`, `FileSink`, and `NatsSource`/`NatsSink` under the `nats` feature. |
 | `spawn_source(source) -> mpsc::Receiver<RawEvent>` | Convenience helper that runs an `EventSource` on its own task. |
 | `EventFilter` trait | Optional jq/JSONPath pre-extraction applied to each input line. |
@@ -157,7 +157,7 @@ For the operator-facing schema, the four primitives, and the recipe catalog, see
 
 ## Custom metrics
 
-Implement `MetricsHook` to ship metrics into your own registry. `NoopMetrics` is a no-op implementation suitable for tests and embedders that do not care. The daemon's own `prometheus`-backed implementation lives in `rsigma-cli/src/daemon/metrics.rs` and is a good template. The hook methods mirror the [27 Prometheus metrics](../reference/metrics.md) the daemon exposes.
+Implement `MetricsHook` to ship metrics into your own registry. `NoopMetrics` is a no-op implementation suitable for tests and embedders that do not care. The daemon's own `prometheus`-backed implementation lives in `rsigma-cli/src/daemon/metrics.rs` and is a good template. The hook methods mirror the [Prometheus metrics](../reference/metrics.md) the daemon exposes.
 
 ```rust
 use rsigma_runtime::{LogProcessor, MetricsHook};

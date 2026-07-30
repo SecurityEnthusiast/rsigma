@@ -18,6 +18,7 @@ pub struct Metrics {
     pub reloads_failed: IntCounter,
     pub api_auth_failures: IntCounterVec,
     pub processing_latency: Histogram,
+    pub batch_phase_duration: prometheus::HistogramVec,
     pub uptime_seconds: Gauge,
     pub input_queue_depth: IntGauge,
     pub output_queue_depth: IntGauge,
@@ -169,6 +170,20 @@ impl Metrics {
             ]),
         )
         .unwrap();
+        let batch_phase_duration = prometheus::HistogramVec::new(
+            HistogramOpts::new(
+                "rsigma_batch_phase_duration_seconds",
+                "Wall-clock duration of each batch processing phase",
+            )
+            .buckets(vec![
+                0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5,
+            ]),
+            &["phase"],
+        )
+        .unwrap();
+        for phase in ["parse", "evaluate"] {
+            batch_phase_duration.with_label_values(&[phase]);
+        }
         let uptime_seconds = Gauge::with_opts(Opts::new(
             "rsigma_uptime_seconds",
             "Daemon uptime in seconds",
@@ -307,6 +322,9 @@ impl Metrics {
             .unwrap();
         registry
             .register(Box::new(processing_latency.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(batch_phase_duration.clone()))
             .unwrap();
         registry.register(Box::new(uptime_seconds.clone())).unwrap();
         registry
@@ -1015,6 +1033,7 @@ impl Metrics {
             reloads_failed,
             api_auth_failures,
             processing_latency,
+            batch_phase_duration,
             uptime_seconds,
             input_queue_depth,
             output_queue_depth,
@@ -1317,6 +1336,18 @@ impl MetricsHook for Metrics {
         self.processing_latency.observe(seconds);
     }
 
+    fn observe_batch_parse_duration(&self, seconds: f64) {
+        self.batch_phase_duration
+            .with_label_values(&["parse"])
+            .observe(seconds);
+    }
+
+    fn observe_batch_evaluation_duration(&self, seconds: f64) {
+        self.batch_phase_duration
+            .with_label_values(&["evaluate"])
+            .observe(seconds);
+    }
+
     fn on_input_queue_depth_change(&self, delta: i64) {
         if delta > 0 {
             self.input_queue_depth.add(delta);
@@ -1552,5 +1583,18 @@ mod tests {
         assert!(output.contains("rsigma_correlation_matches_by_rule_total"));
         assert!(output.contains(r#"rule_title="Corr Rule""#));
         assert!(output.contains(r#"correlation_type="event_count""#));
+    }
+
+    #[test]
+    fn batch_phase_durations_are_exported() {
+        let m = Metrics::new();
+        m.observe_batch_parse_duration(0.25);
+        m.observe_batch_evaluation_duration(0.75);
+
+        let output = m.encode();
+        assert!(output.contains(r#"rsigma_batch_phase_duration_seconds_sum{phase="parse"} 0.25"#));
+        assert!(
+            output.contains(r#"rsigma_batch_phase_duration_seconds_sum{phase="evaluate"} 0.75"#)
+        );
     }
 }

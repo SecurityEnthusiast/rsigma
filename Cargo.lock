@@ -4618,6 +4618,7 @@ dependencies = [
  "parking_lot",
  "prost",
  "rand 0.10.2",
+ "rayon",
  "rcgen",
  "regex",
  "reqwest 0.12.28",
