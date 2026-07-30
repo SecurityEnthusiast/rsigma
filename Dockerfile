@@ -3,7 +3,8 @@
 # Pin by digest for immutability. Update via Dependabot/Renovate.
 FROM rust:1-alpine@sha256:66f48b19d6e88519e2e58bebe0d945779a6a4ca41c2db17db78c9569655b50ac AS builder
 
-RUN apk add --no-cache musl-dev
+# build-base: jemalloc-sys compiles C for the musl global allocator.
+RUN apk add --no-cache musl-dev build-base
 
 WORKDIR /build
 

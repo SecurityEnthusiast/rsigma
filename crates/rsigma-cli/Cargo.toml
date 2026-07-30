@@ -93,6 +93,9 @@ hyper = { version = "1", features = ["server", "http1", "http2"], optional = tru
 hyper-util = { version = "0.1", features = ["server-auto", "tokio", "service"], optional = true }
 tower-service = { version = "0.3", optional = true }
 
+[target.'cfg(target_env = "musl")'.dependencies]
+tikv-jemallocator = "0.6"
+
 [dev-dependencies]
 assert_cmd = "2.2.2"
 predicates = "3.1.4"

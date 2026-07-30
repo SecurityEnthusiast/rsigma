@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### jemalloc as the musl global allocator (#412)
+
+The released static binary is built against musl, whose mallocng serializes the concurrent allocation that `Engine::evaluate_batch` performs on every batch. That erased the daemon's multicore scaling in the released artifact: on the pinned SigmaHQ corpus with `--logsource-routing` the daemon reached 53,435 events/s across six cores while the same binary evaluated 57,463 events/s on one, so the fan-out returned less than nothing. musl targets now use jemalloc as the global allocator, which raises that daemon figure to 160,238 events/s on fewer cores (3.00x) and 95,505 from 36,875 without routing (2.59x). Single-threaded throughput moves only ~14%, and that disproportion is what identifies the cost as allocator contention rather than per-event work. Match counts are identical either way. Rule loading, being allocation-heavy, drops from 0.86 s to 0.49 s. glibc and macOS builds keep the system allocator since neither shows the contention, so nothing changes for a native build. Building the musl target now needs a C toolchain for `jemalloc-sys`, so the Docker builder installs `build-base`. Measured with `scripts/perf/baseline-eval.sh` and the new `scripts/perf/image-compare.sh`, which sees a class of change the native harnesses cannot.
+
 ### rstix: faithful STIX id errors across the serde boundary (#414)
 
 `ParseError::InvalidStixId` now reports the defect in the id that was actually rejected. Recovery previously rebuilt `StixIdError::InvalidUuid` by re-parsing a fixed stand-in id, so the recovered error, and the `STIX-E0003` diagnostic built from it, described the stand-in instead of the input: an id whose final UUID group is short was reported as though it had the wrong number of groups. The tagged payload now carries the rejected id and recovery replays `StixId::parse`, which reproduces the original error, `uuid` crate detail included. Ids longer than 256 bytes are left untagged rather than echoed back, so a hostile document cannot inflate an error message by the length of its own input.
