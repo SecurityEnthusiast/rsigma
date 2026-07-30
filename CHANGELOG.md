@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix: faithful STIX id errors across the serde boundary
+### rstix: faithful STIX id errors across the serde boundary (#414)
 
 `ParseError::InvalidStixId` now reports the defect in the id that was actually rejected. Recovery previously rebuilt `StixIdError::InvalidUuid` by re-parsing a fixed stand-in id, so the recovered error, and the `STIX-E0003` diagnostic built from it, described the stand-in instead of the input: an id whose final UUID group is short was reported as though it had the wrong number of groups. The tagged payload now carries the rejected id and recovery replays `StixId::parse`, which reproduces the original error, `uuid` crate detail included. Ids longer than 256 bytes are left untagged rather than echoed back, so a hostile document cannot inflate an error message by the length of its own input.
 
