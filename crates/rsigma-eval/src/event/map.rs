@@ -70,6 +70,15 @@ where
             .map(|k| Cow::Borrowed(k.as_ref()))
             .collect()
     }
+
+    fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
+        Some(
+            self.inner
+                .keys()
+                .map(|k| Cow::Borrowed(k.as_ref()))
+                .collect(),
+        )
+    }
 }
 
 #[cfg(test)]

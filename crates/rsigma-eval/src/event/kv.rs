@@ -57,6 +57,15 @@ impl Event for KvEvent {
             .map(|(k, _)| Cow::Borrowed(k.as_str()))
             .collect()
     }
+
+    fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
+        Some(
+            self.fields
+                .iter()
+                .map(|(k, _)| Cow::Borrowed(k.as_str()))
+                .collect(),
+        )
+    }
 }
 
 #[cfg(test)]

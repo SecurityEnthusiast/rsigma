@@ -45,6 +45,10 @@ impl Event for PlainEvent {
     fn field_keys(&self) -> Vec<Cow<'_, str>> {
         Vec::new()
     }
+
+    fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
+        Some(Vec::new())
+    }
 }
 
 #[cfg(test)]
