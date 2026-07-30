@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Parallel daemon parsing and single-parse DLQ routing
+### Parallel daemon parsing and single-parse DLQ routing (#415)
 
 The daemon now parses each formatted input batch in parallel before taking the engine mutex. A separate ordering lock keeps exactly one batch in flight, so raw taps still see every line before parsing, decoded taps and observers retain input order, correlations run in order, output order is unchanged, and an in-flight batch remains attached to the engine snapshot it started with. Hot reload and correlation-state import/export coordinate with the same boundary.
 
