@@ -353,6 +353,138 @@ test_id = "use_cases::campaign::description::description_scope"
 fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
 
 [[requirement]]
+req_id = "REQ-3.2-P-01"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::create_campaign"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-02"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::select_content"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-03"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::identity_compliance"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-04"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::spec_conformance"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-05"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::prop_type"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-06"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::prop_spec_version"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-07"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::prop_id"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-08"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::prop_created_by_ref"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-09"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::prop_created"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-10"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::prop_modified"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.2-P-11"
+use_case = "campaign"
+section = "3.2.2"
+doc_page = 27
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::prop_name"
+fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
+
+[[requirement]]
 req_id = "REQ-CHK-SXC-3.3"
 use_case = "confidence"
 section = "3.3.6"
