@@ -17,7 +17,7 @@ use crate::harness::fixture::load_fixture;
 use crate::harness::interop_gate::{
     InteropGateOptions, validate_interop_fixture, validate_interop_json,
 };
-use crate::use_cases::campaign::FIXTURE_CREATE;
+use crate::use_cases::campaign::{FIXTURE_CREATE, PRODUCER_FIXTURES};
 
 /// Interop millisecond timestamps: exactly three fractional digits before `Z`.
 fn assert_millisecond_rfc3339(label: &str, value: &str) {

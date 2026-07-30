@@ -485,6 +485,19 @@ test_id = "use_cases::campaign::producer::prop_name"
 fixture = "testcases/campaign/tc-3.2.3.1-campaign-test-case.json"
 
 [[requirement]]
+req_id = "REQ-CHK-SXP-3.2"
+use_case = "campaign"
+section = "3.2.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::campaign::producer::producer_testcase_data"
+checklist_row = "3.2.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
 req_id = "REQ-CHK-SXC-3.3"
 use_case = "confidence"
 section = "3.3.6"
