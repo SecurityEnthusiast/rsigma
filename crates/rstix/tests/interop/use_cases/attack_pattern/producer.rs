@@ -3,6 +3,8 @@
 use crate::interop_test;
 use rstix::core::{SpecVersion, StixId};
 use rstix::model::sdo::AttackPattern;
+use rstix::model::{Bundle, ParseOptions};
+use rstix::validate::{Leniency, Validator};
 use serde_json::Value;
 
 use crate::common::fixture_catalog::{parse_fixture_objects, use_case_object_ids};
@@ -12,6 +14,27 @@ use crate::harness::interop_gate::{
     InteropGateOptions, validate_interop_fixture, validate_interop_json,
 };
 use crate::use_cases::attack_pattern::{FIXTURE_CREATE, PRODUCER_FIXTURES};
+
+/// Interop millisecond timestamps: exactly three fractional digits before `Z`.
+fn assert_millisecond_rfc3339(label: &str, value: &str) {
+    let Some((_, frac_and_z)) = value.rsplit_once('.') else {
+        panic!("{label} must include fractional seconds: {value}");
+    };
+    assert!(
+        frac_and_z.ends_with('Z'),
+        "{label} must end with Z: {value}"
+    );
+    let digits = &frac_and_z[..frac_and_z.len() - 1];
+    assert_eq!(
+        digits.len(),
+        3,
+        "{label} must have exactly three subsecond digits: {value}"
+    );
+    assert!(
+        digits.chars().all(|c| c.is_ascii_digit()),
+        "{label} fractional part must be digits: {value}"
+    );
+}
 
 fn load_attack_pattern(relative: &str) -> (AttackPattern, String) {
     let fixture = load_fixture(relative);
@@ -77,15 +100,78 @@ pub fn assert_identity_compliance() {
     assert_identity_shape(relative, identities[0]);
 }
 
-/// REQ-3.1-P-04 — Attack Pattern conforms to STIX §4.1 via interop gate on §3.1.3.1.
+/// REQ-3.1-P-04 — Attack Pattern conforms to STIX §4.1 (typed validate + strict report).
+///
+/// Distinct from P-01: does **not** call the interop gate/overlay. Parses the fixture,
+/// runs [`AttackPattern::validate`], then requires [`Validator::interop_bundle_strict`]
+/// to report valid under Zero leniency (no MUST Error / Zero-failing Warning), including
+/// any diagnostic scoped to this Attack Pattern id.
 pub fn assert_spec_conformance() {
-    assert_create_attack_pattern();
+    let relative = FIXTURE_CREATE;
+    let fixture = load_fixture(relative);
+    let bundle = Bundle::parse_with_options(&fixture.json, &ParseOptions::new().interop_bundle())
+        .unwrap_or_else(|err| panic!("{relative}: parse for §4.1 check: {err}"));
+
+    let objects = parse_fixture_objects(&fixture.json).expect("parse fixture objects");
+    let use_case_ids = use_case_object_ids(relative, &objects);
+    assert_eq!(
+        use_case_ids.len(),
+        1,
+        "{relative}: expected one attack-pattern use-case id"
+    );
+    let object_id = &use_case_ids[0];
+    let ap_id = StixId::parse(object_id).expect("attack-pattern id");
+    let ap = bundle
+        .get_typed::<AttackPattern>(&ap_id)
+        .unwrap_or_else(|| panic!("{relative}: typed attack-pattern {object_id}"));
+    ap.validate()
+        .unwrap_or_else(|err| panic!("{relative}: AttackPattern::validate (§4.1): {err}"));
+
+    let report = Validator::interop_bundle_strict().validate_bundle(&bundle);
+
+    // Non-vacuous MUST channel: Error diagnostics fail regardless of object_id attachment.
+    let errors: Vec<_> = report.errors().collect();
+    assert!(
+        errors.is_empty(),
+        "{relative}: MUST Error diagnostics present: {errors:?}"
+    );
+
+    let scoped_zero_failures: Vec<_> = report
+        .diagnostics()
+        .filter(|d| {
+            let on_ap =
+                d.object_id.as_ref() == Some(&ap_id) || d.message.contains(object_id.as_str());
+            on_ap && Leniency::Zero.fails_validation(d.severity)
+        })
+        .collect();
+    assert!(
+        scoped_zero_failures.is_empty(),
+        "{relative}: Zero-failing diagnostics on Attack Pattern {object_id}: {scoped_zero_failures:?}"
+    );
+
+    assert!(
+        report.is_valid(),
+        "{relative}: interop_bundle_strict (no overlay) must be valid: {:?}",
+        report.diagnostics().collect::<Vec<_>>()
+    );
 }
 
-/// REQ-3.1-P-05 — `type` is `attack-pattern`.
+/// REQ-3.1-P-05 — wire `type` is `attack-pattern` (typed lookup is supporting evidence).
 pub fn assert_prop_type() {
-    let (_ap, _) = load_attack_pattern(FIXTURE_CREATE);
-    assert_eq!(AttackPattern::TYPE_NAME, "attack-pattern");
+    let fixture = load_fixture(FIXTURE_CREATE);
+    let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
+    let (ap, object_id) = load_attack_pattern(FIXTURE_CREATE);
+    let wire = objects
+        .iter()
+        .find(|obj| obj.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
+        .expect("wire attack-pattern");
+    assert_eq!(
+        wire.get("type").and_then(Value::as_str),
+        Some("attack-pattern"),
+        "wire type must be attack-pattern"
+    );
+    // Typed lookup already succeeded in `load_attack_pattern`; keep `ap` live as proof.
+    let _ = ap;
 }
 
 /// REQ-3.1-P-06 — `spec_version` is `2.1`.
@@ -140,7 +226,7 @@ pub fn assert_prop_kill_chain_phases() {
     );
 }
 
-/// REQ-3.1-P-11 — `created` timestamp is present (millisecond RFC 3339 on wire).
+/// REQ-3.1-P-11 — `created` timestamp is present (exactly three subsecond digits).
 pub fn assert_prop_created() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
@@ -153,13 +239,10 @@ pub fn assert_prop_created() {
         .get("created")
         .and_then(Value::as_str)
         .expect("created timestamp");
-    assert!(
-        created.contains('.') && created.ends_with('Z'),
-        "created must be millisecond RFC 3339: {created}"
-    );
+    assert_millisecond_rfc3339("created", created);
 }
 
-/// REQ-3.1-P-12 — `modified` timestamp is present (millisecond RFC 3339 on wire).
+/// REQ-3.1-P-12 — `modified` timestamp is present (exactly three subsecond digits).
 pub fn assert_prop_modified() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
@@ -172,10 +255,7 @@ pub fn assert_prop_modified() {
         .get("modified")
         .and_then(Value::as_str)
         .expect("modified timestamp");
-    assert!(
-        modified.contains('.') && modified.ends_with('Z'),
-        "modified must be millisecond RFC 3339: {modified}"
-    );
+    assert_millisecond_rfc3339("modified", modified);
 }
 
 /// REQ-3.1-P-13 — `name` identifies the Attack Pattern.

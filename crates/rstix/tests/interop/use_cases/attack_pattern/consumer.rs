@@ -1,7 +1,7 @@
 //! §3.1.5 Required Consumer Persona Support (REQ-3.1-C-01..C-05).
 
 use crate::interop_test;
-use rstix::core::StixId;
+use rstix::core::{QueryValue, QueryableStixObject, StixId};
 use rstix::model::sdo::{AttackPattern, Identity, Vulnerability};
 use rstix::model::sro::Relationship;
 use serde_json::Value;
@@ -103,7 +103,11 @@ pub fn assert_resolves_created_by_ref() {
     assert!(checked > 0, "{relative}: expected created_by_ref usage");
 }
 
-/// REQ-3.1-C-04 — Consumer preserves Attack Pattern wire fields (§3.1.3.2; CAN-level in doc).
+/// REQ-3.1-C-04 — Consumer processes Attack Pattern fields via query + leaf validate.
+///
+/// Distinct from C-01 (wire re-serialize preservation + non-empty producer props): uses
+/// [`QueryableStixObject::get_field`] and runs [`KillChainPhase::validate`] /
+/// [`ExternalReference::validate`] on typed members.
 pub fn assert_processes_fields() {
     let relative = FIXTURE_TARGETS;
     let fixture = load_fixture(relative);
@@ -111,12 +115,60 @@ pub fn assert_processes_fields() {
     let use_case_ids = use_case_object_ids(relative, &objects);
     let bundle = validate_interop_fixture(relative, &fixture.json).expect("interop gate");
 
-    for object_id in use_case_ids {
-        let wire = objects
-            .iter()
-            .find(|obj| obj.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
-            .unwrap_or_else(|| panic!("wire object {object_id}"));
-        assert_wire_object_preserved(relative, wire, &bundle, &object_id);
+    assert_eq!(
+        use_case_ids.len(),
+        1,
+        "{relative}: one attack-pattern use-case id"
+    );
+    let object_id = &use_case_ids[0];
+    let stix_id = StixId::parse(object_id).expect("attack-pattern id");
+    let ap = bundle
+        .get_typed::<AttackPattern>(&stix_id)
+        .unwrap_or_else(|| panic!("{relative}: typed attack-pattern {object_id}"));
+
+    match ap.get_field(&["name"]) {
+        Some(QueryValue::Str(name)) => {
+            assert_eq!(
+                name,
+                ap.name.as_str(),
+                "{relative}: get_field(name) mismatch"
+            );
+        }
+        other => panic!("{relative}: expected QueryValue::Str for name, got {other:?}"),
+    }
+    let created_by = ap
+        .common
+        .created_by_ref
+        .as_ref()
+        .unwrap_or_else(|| panic!("{relative}: created_by_ref required for field processing"));
+    match ap.get_field(&["created_by_ref"]) {
+        Some(QueryValue::Id(id)) => {
+            assert_eq!(
+                id,
+                created_by.as_stix_id(),
+                "{relative}: get_field(created_by_ref) mismatch"
+            );
+        }
+        other => panic!("{relative}: expected QueryValue::Id for created_by_ref, got {other:?}"),
+    }
+
+    assert!(
+        !ap.kill_chain_phases.is_empty(),
+        "{relative}: kill_chain_phases required for leaf processing"
+    );
+    for phase in &ap.kill_chain_phases {
+        phase
+            .validate()
+            .unwrap_or_else(|err| panic!("{relative}: kill_chain_phase.validate: {err}"));
+    }
+    assert!(
+        !ap.common.external_references.is_empty(),
+        "{relative}: external_references required for leaf processing"
+    );
+    for reference in &ap.common.external_references {
+        reference
+            .validate()
+            .unwrap_or_else(|err| panic!("{relative}: external_reference.validate: {err}"));
     }
 }
 
@@ -154,11 +206,38 @@ pub fn assert_processes_related() {
 }
 
 /// REQ-CHK-SXC-3.1 / §4.2 Table 55 — Consumer handles §3.1.3 Producer test case data.
+///
+/// Distinct from `REQ-CHK-SXP-3.1` (re-validation only): resolves each use-case Attack
+/// Pattern as a typed SDO and closes `created_by_ref` to a typed Identity.
 pub fn assert_handles_producer_testcases() {
     for relative in PRODUCER_FIXTURES {
-        validate_interop_fixture(relative, &load_fixture(relative).json).unwrap_or_else(|err| {
+        let fixture = load_fixture(relative);
+        let objects = parse_fixture_objects(&fixture.json)
+            .unwrap_or_else(|err| panic!("{relative}: parse fixture: {err}"));
+        let use_case_ids = use_case_object_ids(relative, &objects);
+        let bundle = validate_interop_fixture(relative, &fixture.json).unwrap_or_else(|err| {
             panic!("{relative}: §3.1 consumer must handle producer test case: {err}")
         });
+
+        assert!(
+            !use_case_ids.is_empty(),
+            "{relative}: expected attack-pattern use-case object(s)"
+        );
+        for object_id in use_case_ids {
+            let stix_id = StixId::parse(&object_id).expect("attack-pattern id");
+            let ap = bundle
+                .get_typed::<AttackPattern>(&stix_id)
+                .unwrap_or_else(|| panic!("{relative}: typed attack-pattern {object_id}"));
+            let created_by = ap.common.created_by_ref.as_ref().unwrap_or_else(|| {
+                panic!("{relative}: created_by_ref required for consumer close")
+            });
+            assert!(
+                bundle
+                    .get_typed::<Identity>(created_by.as_stix_id())
+                    .is_some(),
+                "{relative}: created_by_ref must resolve to typed Identity"
+            );
+        }
     }
 }
 
