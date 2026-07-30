@@ -2,63 +2,34 @@
 //!
 //! Deserialize failures are tagged so [`crate::ParseError`] can recover
 //! [`StixIdError`](crate::core::StixIdError) without Display-string matching
-//! (same approach as [`crate::model::serde_error`] for `ModelError`).
-
-use serde::{Deserialize, Serialize};
+//! (same approach as [`crate::model::serde_error`] for `ModelError`). The tagged
+//! payload carries the rejected id, so recovery replays [`StixId::parse`] and
+//! reproduces the original error, including the `uuid` crate's detail.
 
 use crate::core::{StixId, StixIdError};
 
 /// Prefix embedded in serde custom messages.
 const TAG: &str = "\u{001e}rstix-stix-id\u{001e}";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum StixIdErrorWire {
-    MissingDelimiter,
-    EmptyTypeName,
-    InvalidUuid { detail: String },
-    TypeMismatch { expected: String, found: String },
-}
+/// Longest rejected id echoed into the tagged payload. Ids that fail
+/// [`StixId::parse`] are short in practice, and the cap keeps a hostile document
+/// from inflating error strings by the length of its own input. Longer ids fall
+/// back to an untagged message and surface as [`crate::ParseError::Json`].
+const MAX_TAGGED_ID_LEN: usize = 256;
 
-impl From<&StixIdError> for StixIdErrorWire {
-    fn from(err: &StixIdError) -> Self {
-        match err {
-            StixIdError::MissingDelimiter => Self::MissingDelimiter,
-            StixIdError::EmptyTypeName => Self::EmptyTypeName,
-            StixIdError::InvalidUuid(inner) => Self::InvalidUuid {
-                detail: inner.to_string(),
-            },
-            StixIdError::TypeMismatch { expected, found } => Self::TypeMismatch {
-                expected: (*expected).to_owned(),
-                found: found.clone(),
-            },
-        }
+fn encode_for_serde(raw: &str, err: &StixIdError) -> String {
+    if raw.len() > MAX_TAGGED_ID_LEN {
+        return err.to_string();
     }
-}
-
-fn encode_for_serde(err: &StixIdError) -> String {
-    let payload =
-        serde_json::to_string(&StixIdErrorWire::from(err)).expect("stix id error wire json");
+    let payload = serde_json::to_string(raw).expect("json string encoding cannot fail");
     format!("{TAG}{payload}{TAG}{err}")
 }
 
 fn decode_from_serde(message: &str) -> Option<StixIdError> {
     let rest = message.strip_prefix(TAG)?;
     let json_end = rest.find(TAG)?;
-    let json = &rest[..json_end];
-    let wire: StixIdErrorWire = serde_json::from_str(json).ok()?;
-    Some(match wire {
-        StixIdErrorWire::MissingDelimiter => StixIdError::MissingDelimiter,
-        StixIdErrorWire::EmptyTypeName => StixIdError::EmptyTypeName,
-        StixIdErrorWire::InvalidUuid { .. } => match StixId::parse("x--not-a-uuid") {
-            Err(err @ StixIdError::InvalidUuid(_)) => err,
-            other => panic!("expected InvalidUuid placeholder, got {other:?}"),
-        },
-        StixIdErrorWire::TypeMismatch { expected, found } => StixIdError::TypeMismatch {
-            expected: Box::leak(expected.into_boxed_str()),
-            found,
-        },
-    })
+    let raw: String = serde_json::from_str(&rest[..json_end]).ok()?;
+    StixId::parse(&raw).err()
 }
 
 /// Recover a [`StixIdError`] from a serde/`serde_json` error message when tagged.
@@ -81,7 +52,7 @@ impl<'de> serde::Deserialize<'de> for StixId {
         D: serde::Deserializer<'de>,
     {
         let raw = <String as serde::Deserialize>::deserialize(deserializer)?;
-        Self::parse(&raw).map_err(|err| serde::de::Error::custom(encode_for_serde(&err)))
+        Self::parse(&raw).map_err(|err| serde::de::Error::custom(encode_for_serde(&raw, &err)))
     }
 }
 
@@ -89,21 +60,79 @@ impl<'de> serde::Deserialize<'de> for StixId {
 mod tests {
     use super::*;
 
+    fn parse_error(raw: &str) -> StixIdError {
+        StixId::parse(raw).expect_err("id must be rejected")
+    }
+
     #[test]
-    fn tagged_roundtrip_preserves_invalid_uuid_variant() {
-        let err = match StixId::parse("malware--deadbeef") {
-            Err(e @ StixIdError::InvalidUuid(_)) => e,
-            other => panic!("expected InvalidUuid, got {other:?}"),
-        };
-        let message = encode_for_serde(&err);
-        let recovered = decode_from_serde(&message).expect("decode");
-        assert!(matches!(recovered, StixIdError::InvalidUuid(_)));
+    fn tagged_roundtrip_reproduces_the_original_error() {
+        for raw in [
+            "malware--deadbeef",
+            "malware--1121ffbc-364f-857a-9987-92fbcff24ab",
+            "no-delimiter",
+            "--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061",
+        ] {
+            let err = parse_error(raw);
+            let recovered =
+                decode_from_serde(&encode_for_serde(raw, &err)).expect("tagged message decodes");
+            assert_eq!(recovered, err, "recovered error must match original: {raw}");
+            assert_eq!(
+                recovered.to_string(),
+                err.to_string(),
+                "recovered detail must match original: {raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn recovered_uuid_detail_describes_the_rejected_id() {
+        let short = parse_error("malware--deadbeef");
+        let truncated = parse_error("malware--1121ffbc-364f-857a-9987-92fbcff24ab");
+        assert_ne!(
+            short.to_string(),
+            truncated.to_string(),
+            "distinct malformed ids must yield distinct detail"
+        );
+        let recovered = decode_from_serde(&encode_for_serde(
+            "malware--1121ffbc-364f-857a-9987-92fbcff24ab",
+            &truncated,
+        ))
+        .expect("tagged message decodes");
+        assert_eq!(recovered.to_string(), truncated.to_string());
     }
 
     #[test]
     fn deserialize_invalid_uuid_is_recoverable_from_serde_message() {
         let err = serde_json::from_str::<StixId>("\"malware--deadbeef\"").expect_err("must fail");
         let recovered = stix_id_error_from_serde_message(&err.to_string()).expect("tagged");
-        assert!(matches!(recovered, StixIdError::InvalidUuid(_)));
+        assert_eq!(recovered, parse_error("malware--deadbeef"));
+    }
+
+    #[test]
+    fn oversized_id_is_not_tagged() {
+        let raw = format!("malware--{}", "a".repeat(MAX_TAGGED_ID_LEN));
+        let err = parse_error(&raw);
+        let message = encode_for_serde(&raw, &err);
+        assert!(!message.starts_with(TAG), "oversized id must not be tagged");
+        assert_eq!(decode_from_serde(&message), None);
+    }
+
+    #[test]
+    fn untagged_or_forged_messages_do_not_recover() {
+        let forged = format!("invalid type: string {TAG}\"malware--deadbeef\"{TAG}forged");
+        for message in [
+            "invalid type: string".to_owned(),
+            String::new(),
+            TAG.to_owned(),
+            forged,
+            format!("{TAG}\"malware--0c7b5b88-8ff7-4a4d-aa9d-feb398cd0061\"{TAG}valid id"),
+            format!("{TAG}not-json{TAG}bad payload"),
+        ] {
+            assert_eq!(
+                decode_from_serde(&message),
+                None,
+                "must not recover from: {message}"
+            );
+        }
     }
 }
