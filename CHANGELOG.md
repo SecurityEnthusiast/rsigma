@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Candidate index ASCII case-insensitive Aho-Corasick
+### Candidate index ASCII case-insensitive Aho-Corasick (#420)
 
 NeedleSet automata now build with ASCII case-insensitive search, so ASCII event strings are scanned without allocating a lowercase copy. Keyword probing visits string values in place instead of collecting them into a `Vec`, and field probes that need both exact and substring witnesses fold once and reuse the folded bytes. Hot index maps use `ahash` instead of SipHash.
 
