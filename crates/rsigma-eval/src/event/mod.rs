@@ -193,6 +193,16 @@ pub trait Event {
         collect_field_keys_json(&self.to_json(), "", &mut paths);
         paths.into_iter().map(Cow::Owned).collect()
     }
+
+    /// Top-level object keys when the event can report them cheaply.
+    ///
+    /// `Some(keys)` means only those roots exist, so the candidate index may
+    /// restrict field probes to paths under them. `None` means the shape is
+    /// unknown or not a single object root, so every indexed field must be
+    /// probed. The default is `None`.
+    fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
+        None
+    }
 }
 
 /// Maximum nesting depth honoured by `field_keys` default + JsonEvent
@@ -248,6 +258,10 @@ impl<T: Event + ?Sized> Event for &T {
 
     fn field_keys(&self) -> Vec<Cow<'_, str>> {
         (**self).field_keys()
+    }
+
+    fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
+        (**self).top_level_keys()
     }
 }
 

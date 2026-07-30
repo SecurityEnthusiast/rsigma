@@ -60,10 +60,30 @@ impl<'a> Event for JsonEvent<'a> {
     fn get_field(&self, path: &str) -> Option<EventValue<'_>> {
         let value: &Value = &self.inner;
 
-        if let Some(obj) = value.as_object()
-            && let Some(v) = obj.get(path)
-        {
-            return Some(EventValue::from(v));
+        if let Some(obj) = value.as_object() {
+            if let Some(v) = obj.get(path) {
+                return Some(EventValue::from(v));
+            }
+
+            if path.contains('.') || path.contains('[') || path.contains('\\') {
+                // Most candidate-index probes miss. If the first path segment
+                // is absent at the root, skip path parsing and traversal.
+                if let Some(root) = path_root_key(path)
+                    && !obj.contains_key(root.as_ref())
+                {
+                    return None;
+                }
+                let ops = parse_path_ops(path);
+                let mut collected: Vec<EventValue<'_>> = Vec::new();
+                collect_by_ops(value, &ops, &mut collected);
+                return match collected.len() {
+                    0 => None,
+                    1 => collected.pop(),
+                    _ => Some(EventValue::Array(collected)),
+                };
+            }
+
+            return None;
         }
 
         if path.contains('.') || path.contains('[') || path.contains('\\') {
@@ -78,6 +98,15 @@ impl<'a> Event for JsonEvent<'a> {
         }
 
         None
+    }
+
+    fn top_level_keys(&self) -> Option<Vec<Cow<'_, str>>> {
+        match self.inner.as_ref() {
+            Value::Object(map) => Some(map.keys().map(|k| Cow::Borrowed(k.as_str())).collect()),
+            // Non-object roots (arrays, scalars) cannot cheaply describe the
+            // keys the path walker may touch, so callers fall back.
+            _ => None,
+        }
     }
 
     /// Check if any string value in the event satisfies a predicate.
@@ -118,6 +147,30 @@ impl<'a> Event for JsonEvent<'a> {
         collect_field_keys(&self.inner, "", &mut out, MAX_NESTING_DEPTH);
         out
     }
+}
+
+/// First object-key segment of a field path, bracket-unescaped.
+///
+/// `actor.id` → `actor`, `name[0].x` → `name`, `CommandLine` → `CommandLine`.
+/// Leading dots or a bare `[index]` yield `None` (no root object key).
+fn path_root_key(path: &str) -> Option<Cow<'_, str>> {
+    let segment = match first_unescaped(path, b'.') {
+        Some(0) => return None,
+        Some(pos) => &path[..pos],
+        None => path,
+    };
+    if segment.is_empty() {
+        return None;
+    }
+    let name = match first_unescaped(segment, b'[') {
+        Some(0) => return None,
+        Some(pos) => &segment[..pos],
+        None => segment,
+    };
+    if name.is_empty() {
+        return None;
+    }
+    Some(unescape_brackets(name))
 }
 
 /// A single field-path navigation step.
@@ -320,6 +373,45 @@ mod tests {
         let v = json!({"foo": "bar"});
         let event = JsonEvent::borrow(&v);
         assert_eq!(event.get_field("missing"), None);
+    }
+
+    #[test]
+    fn json_dotted_miss_skips_absent_root() {
+        let v = json!({"message": "x", "product": "windows"});
+        let event = JsonEvent::borrow(&v);
+        assert_eq!(event.get_field("Event.EventData.CommandLine"), None);
+        assert_eq!(event.get_field("actor.id"), None);
+        assert_eq!(event.get_field("name[0].x"), None);
+    }
+
+    #[test]
+    fn json_top_level_keys_object() {
+        let v = json!({"message": "x", "product": "windows"});
+        let event = JsonEvent::borrow(&v);
+        let mut keys: Vec<String> = event
+            .top_level_keys()
+            .unwrap()
+            .into_iter()
+            .map(|k| k.into_owned())
+            .collect();
+        keys.sort();
+        assert_eq!(keys, vec!["message", "product"]);
+    }
+
+    #[test]
+    fn json_top_level_keys_non_object_unknown() {
+        let v = json!([{"a": 1}]);
+        let event = JsonEvent::borrow(&v);
+        assert_eq!(event.top_level_keys(), None);
+    }
+
+    #[test]
+    fn path_root_key_segments() {
+        assert_eq!(path_root_key("CommandLine").as_deref(), Some("CommandLine"));
+        assert_eq!(path_root_key("actor.id").as_deref(), Some("actor"));
+        assert_eq!(path_root_key("name[0].x").as_deref(), Some("name"));
+        assert_eq!(path_root_key(".id"), None);
+        assert_eq!(path_root_key("[0].x"), None);
     }
 
     #[test]

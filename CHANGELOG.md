@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Candidate index probes from event top-level keys (#419)
+
+The candidate index no longer walks every indexed field on each event. When an event can report its top-level keys (`Event::top_level_keys`), the index probes only witnesses under those keys, so sparse payloads skip the miss storm over thousands of absent Sigma fields. `JsonEvent::get_field` also returns early for dotted paths whose first segment is absent at the root, avoiding path parsing on the common miss.
+
+On the pinned SigmaHQ raw Windows workload with `--logsource-routing`, `--batch-size 512`, and 16 k6 VUs, the median of three same-machine runs moved from about 93k to 102k events/s at one thread and from about 386k to 404k events/s at eight threads versus the post-#416 baseline on the same host.
+
 ### Batch phase timing for post-parse serial regions (#416)
 
 `rsigma_batch_phase_duration_seconds` now records `decode_merge`, `observe`, `result_merge`, and `dispatch` alongside `parse` and `evaluate`, so operators can rank the remaining ordered-batch costs after parallel parsing. `scripts/perf/baseline-daemon.sh` prints every phase delta and its share of measured batch time.
