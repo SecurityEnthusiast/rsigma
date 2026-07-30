@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Concurrent detection for correlation-free engines
+### Concurrent detection for correlation-free engines (#426)
 
 When the loaded rule set has no correlation rules, the daemon may evaluate more than one input batch at a time. Detection-only and routed engines share the engine under a read lock; a sequence-numbered reducer restores sink and ack order before dispatch. Correlation engines stay single-batch and exclusive. The default in-flight depth scales with the rayon pool (1 on a single worker, up to 4 on eight or more) and can be overridden with `RSIGMA_DETECT_INFLIGHT` (capped at 8).
 
