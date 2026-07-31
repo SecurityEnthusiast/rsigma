@@ -46,6 +46,7 @@ mod parse_rule;
 mod resolve_pipeline;
 mod reverse;
 mod shared;
+mod tune_rules;
 mod validate_rules;
 
 /// Maximum number of concurrent sigma-cli delegations, matching the
@@ -112,7 +113,7 @@ impl RsigmaMcp {
     ///
     /// Each submodule contributes a `*_router()` built by `#[tool_router]`;
     /// [`ToolRouter`] implements `Add`, so summing them yields a router holding
-    /// all 13 tools.
+    /// all 14 tools.
     fn tool_router() -> ToolRouter<Self> {
         Self::parse_rule_router()
             + Self::parse_condition_router()
@@ -127,6 +128,7 @@ impl RsigmaMcp {
             + Self::fix_rules_router()
             + Self::author_ads_router()
             + Self::reverse_router()
+            + Self::tune_rules_router()
     }
 }
 
@@ -153,7 +155,7 @@ impl ServerHandler for RsigmaMcp {
         info.server_info.version = env!("CARGO_PKG_VERSION").to_string();
         info.instructions = Some(
             "Sigma detection-rule toolchain: parse, parse_condition, lint, validate, evaluate, \
-             convert, fix, list fields, resolve pipelines, and author ADS detection-strategy \
+             convert, tune, fix, list fields, resolve pipelines, and author ADS detection-strategy \
              metadata. Every tool accepts inline content (e.g. `yaml`) or a file `path`. Resources \
              expose the lint catalogue, the ADS section catalogue, and modifier / MITRE reference \
              data."

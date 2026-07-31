@@ -73,13 +73,14 @@ async fn tools_list_exposes_all_core_tools() {
         "fix_rules",
         "author_ads",
         "reverse_convert",
+        "tune_rules",
     ] {
         assert!(
             names.contains(&expected.to_string()),
             "missing tool {expected}"
         );
     }
-    assert_eq!(tools.len(), 13, "expected exactly 13 tools, got {names:?}");
+    assert_eq!(tools.len(), 14, "expected exactly 14 tools, got {names:?}");
 
     // parse_rule advertises an input schema with the `yaml` property.
     let parse_rule = tools.iter().find(|t| t.name == "parse_rule").unwrap();
@@ -185,6 +186,32 @@ async fn call_evaluate_events_round_trip() {
     let v = result_json(&result);
     assert_eq!(v["ok"], true);
     assert_eq!(v["summary"]["detection_matches"], 1);
+
+    client.cancel().await.ok();
+    server.cancel().await.ok();
+}
+
+#[tokio::test]
+async fn call_tune_rules_round_trip() {
+    let (server, client) = connect().await;
+
+    let mut req = CallToolRequestParams::new("tune_rules");
+    req.arguments = Some(object!({
+        "yaml": RULE,
+        "false_positives": [
+            { "CommandLine": "whoami /all", "User": "svc_backup" },
+            { "CommandLine": "whoami /all", "User": "svc_backup" }
+        ],
+        "true_positives": [
+            { "CommandLine": "whoami", "User": "attacker" }
+        ],
+        "filter_id": "3f7b1c2e-9a44-4d1e-8f61-2b0c5d9e7a10"
+    }));
+    let result = client.call_tool(req).await.expect("call tune_rules");
+    let value = result_json(&result);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["report"]["verification"]["false_positives_after"], 0);
+    assert_eq!(value["report"]["verification"]["true_positives_after"], 1);
 
     client.cancel().await.ok();
     server.cancel().await.ok();

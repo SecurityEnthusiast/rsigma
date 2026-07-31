@@ -177,7 +177,7 @@ Checked N file(s): X passed, Y failed (A error(s), B warning(s), C info(s))
 
 ### `mcp serve`: Run the MCP server for AI agents
 
-Expose the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio. The agent calls structured tools (`parse_rule`, `parse_condition`, `lint_rules`, `validate_rules`, `evaluate_events`, `convert_rules`, `list_backends`, `list_fields`, `resolve_pipeline`, `list_builtin_pipelines`) and gets back JSON.
+Expose the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio. The agent calls structured tools (`parse_rule`, `parse_condition`, `lint_rules`, `validate_rules`, `evaluate_events`, `tune_rules`, `convert_rules`, `list_backends`, `list_fields`, `resolve_pipeline`, `list_builtin_pipelines`) and gets back JSON.
 
 ```bash
 rsigma mcp serve                                   # stdio MCP server

@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 
 use super::RsigmaMcp;
 use super::shared::{NATIVE_TARGETS, get_backend, invalid, json_result, try_native_backend};
-use crate::input::resolve_path;
+use crate::input::{resolve_confined_path, resolve_path};
 
 /// How long a delegated sigma-cli invocation may run before the subprocess is
 /// killed. pySigma cold-start alone can take seconds; a plugin-heavy convert
@@ -308,26 +308,7 @@ impl RsigmaMcp {
     /// root configured the path passes through unvalidated, consistent with
     /// how the in-process tools read paths in that configuration.
     fn delegated_input_path(&self, path: &str) -> Result<PathBuf, McpError> {
-        let resolved = resolve_path(path, self.root());
-        let Some(root) = self.root() else {
-            return Ok(resolved);
-        };
-        let canonical_root = root.canonicalize().map_err(|e| {
-            invalid(format!(
-                "cannot resolve rules dir '{}': {e}",
-                root.display()
-            ))
-        })?;
-        let canonical = resolved
-            .canonicalize()
-            .map_err(|e| invalid(format!("cannot read '{}': {e}", resolved.display())))?;
-        if !canonical.starts_with(&canonical_root) {
-            return Err(invalid(format!(
-                "path '{path}' escapes the configured --rules-dir; delegated conversions \
-                 may only reference files under it"
-            )));
-        }
-        Ok(canonical)
+        resolve_confined_path(path, self.root())
     }
 }
 
