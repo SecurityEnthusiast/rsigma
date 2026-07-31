@@ -1652,10 +1652,10 @@ pub async fn run_daemon(config: DaemonConfig) {
             // spawn_blocking tasks stranded until another event arrives.
             let first = loop {
                 if detect_inflight > 1 && join_set.len() >= detect_inflight {
-                    if let Some(res) = join_set.join_next().await {
-                        if !forward_joined(&seq_tx, res).await {
-                            shutdown = true;
-                        }
+                    if let Some(res) = join_set.join_next().await
+                        && !forward_joined(&seq_tx, res).await
+                    {
+                        shutdown = true;
                     }
                     if shutdown {
                         break None;
@@ -1670,11 +1670,11 @@ pub async fn run_daemon(config: DaemonConfig) {
                             tokio::select! {
                                 biased;
                                 res = join_set.join_next() => {
-                                    if let Some(res) = res {
-                                        if !forward_joined(&seq_tx, res).await {
-                                            shutdown = true;
-                                            break None;
-                                        }
+                                    if let Some(res) = res
+                                        && !forward_joined(&seq_tx, res).await
+                                    {
+                                        shutdown = true;
+                                        break None;
                                     }
                                     continue;
                                 }
@@ -1684,11 +1684,11 @@ pub async fn run_daemon(config: DaemonConfig) {
                             tokio::select! {
                                 biased;
                                 res = join_set.join_next() => {
-                                    if let Some(res) = res {
-                                        if !forward_joined(&seq_tx, res).await {
-                                            shutdown = true;
-                                            break None;
-                                        }
+                                    if let Some(res) = res
+                                        && !forward_joined(&seq_tx, res).await
+                                    {
+                                        shutdown = true;
+                                        break None;
                                     }
                                     continue;
                                 }
@@ -1706,11 +1706,11 @@ pub async fn run_daemon(config: DaemonConfig) {
                         tokio::select! {
                             biased;
                             res = join_set.join_next() => {
-                                if let Some(res) = res {
-                                    if !forward_joined(&seq_tx, res).await {
-                                        shutdown = true;
-                                        break None;
-                                    }
+                                if let Some(res) = res
+                                    && !forward_joined(&seq_tx, res).await
+                                {
+                                    shutdown = true;
+                                    break None;
                                 }
                                 continue;
                             }
