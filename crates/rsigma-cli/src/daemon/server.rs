@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
@@ -45,6 +46,9 @@ struct EvaluatedBatch {
     tokens: Vec<AckToken>,
     pipeline_start: Instant,
 }
+
+/// Shared event filter for concurrent detection workers (`spawn_blocking`).
+type SharedEventFilter = Arc<dyn Fn(&serde_json::Value) -> Vec<serde_json::Value> + Send + Sync>;
 
 use super::health::HealthState;
 use super::listen::ListenAddr;
@@ -1467,12 +1471,49 @@ pub async fn run_daemon(config: DaemonConfig) {
         });
     }
 
-    // Engine task evaluates batches in order; a separate dispatch task drains
-    // results so batch N+1 can parse/evaluate while batch N's sink/ack work
-    // runs. Correlation and output order stay sequential because evaluate is
-    // still one batch at a time and dispatch consumes the handoff channel in
-    // order. Capacity 1 bounds how far evaluate can run ahead of dispatch.
-    let (eval_tx, mut eval_rx) = mpsc::channel::<EvaluatedBatch>(1);
+    // Overlap detection-only batches so one batch's serial merge can run while
+    // another occupies rayon. Correlation engines stay at 1 (ordered windows).
+    // Override with RSIGMA_DETECT_INFLIGHT; default scales with the worker pool
+    // size (RAYON_NUM_THREADS, else available parallelism).
+    let detect_inflight = if processor.allows_concurrent_detection() {
+        let workers = std::env::var("RAYON_NUM_THREADS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|n| *n >= 1)
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(|n| n.get())
+                    .unwrap_or(1)
+            });
+        let default = match workers {
+            0 | 1 => 1,
+            2..=3 => 2,
+            4..=7 => 3,
+            _ => 4,
+        };
+        std::env::var("RSIGMA_DETECT_INFLIGHT")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|n| *n >= 1)
+            .unwrap_or(default)
+            .min(8)
+    } else {
+        1
+    };
+    if detect_inflight > 1 {
+        tracing::info!(
+            detect_inflight,
+            "Concurrent detection enabled (no correlation rules)"
+        );
+    }
+
+    // Engine task evaluates batches; a separate dispatch task drains results so
+    // sink/ack work can overlap the next evaluate. When the engine has no
+    // correlation rules, multiple detection batches may run concurrently and a
+    // sequence-numbered reducer restores output order before dispatch.
+    // Channel depth matches in-flight detection so a quiet input queue cannot
+    // stall completed workers behind a capacity-1 handoff.
+    let (eval_tx, mut eval_rx) = mpsc::channel::<EvaluatedBatch>(detect_inflight);
 
     let dispatch_metrics = metrics.clone();
     let dispatch_ack_tx = ack_tx.clone();
@@ -1547,44 +1588,162 @@ pub async fn run_daemon(config: DaemonConfig) {
     #[cfg(feature = "daemon-otlp")]
     let engine_source_done = source_done_notify.clone();
     let engine_handle = tokio::spawn(async move {
-        let filter_fn = move |v: &serde_json::Value| crate::apply_event_filter(v, &event_filter);
         #[cfg(feature = "daemon-otlp")]
         let source_done = engine_source_done;
         #[cfg(feature = "daemon-otlp")]
         let mut source_finished = false;
+
+        // Arc so spawn_blocking workers can share a 'static event filter.
+        let runtime_filter: Option<SharedEventFilter> = if event_filter_enabled {
+            let filter = event_filter.clone();
+            Some(Arc::new(move |v: &serde_json::Value| {
+                crate::apply_event_filter(v, filter.as_ref())
+            }))
+        } else {
+            None
+        };
+
+        // Ordered reducer restores batch sequence when detection runs ahead.
+        let (seq_tx, mut seq_rx) = mpsc::channel::<(u64, EvaluatedBatch)>(detect_inflight.max(1));
+        let reducer_eval_tx = eval_tx;
+        let reducer_handle = tokio::spawn(async move {
+            let mut next = 0u64;
+            let mut pending: BTreeMap<u64, EvaluatedBatch> = BTreeMap::new();
+            while let Some((seq, batch)) = seq_rx.recv().await {
+                pending.insert(seq, batch);
+                while let Some(batch) = pending.remove(&next) {
+                    if reducer_eval_tx.send(batch).await.is_err() {
+                        return;
+                    }
+                    next = next.saturating_add(1);
+                }
+            }
+        });
+
+        let mut join_set = tokio::task::JoinSet::new();
+        let mut next_seq = 0u64;
+        let mut shutdown = false;
+
+        // Forward a finished detection worker to the ordered reducer.
+        async fn forward_joined(
+            seq_tx: &mpsc::Sender<(u64, EvaluatedBatch)>,
+            res: Result<(u64, EvaluatedBatch), tokio::task::JoinError>,
+        ) -> bool {
+            match res {
+                Ok(item) => {
+                    if seq_tx.send(item).await.is_err() {
+                        tracing::debug!("Dispatch channel closed, engine shutting down");
+                        return false;
+                    }
+                    true
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Detection worker panicked");
+                    false
+                }
+            }
+        }
+
         loop {
             let pipeline_start = Instant::now();
 
-            let first = {
-                #[cfg(feature = "daemon-otlp")]
-                {
-                    if source_finished {
-                        match event_rx.recv().await {
-                            Some(e) => e,
-                            None => break,
-                        }
-                    } else {
-                        tokio::select! {
-                            event = event_rx.recv() => match event {
-                                Some(e) => e,
-                                None => break,
-                            },
-                            _ = source_done.notified() => {
-                                source_finished = true;
-                                event_rx.close();
-                                match event_rx.recv().await {
-                                    Some(e) => e,
-                                    None => break,
+            // Wait for the next input event, but always drain completed detection
+            // workers while idle. Otherwise a quiet queue leaves finished
+            // spawn_blocking tasks stranded until another event arrives.
+            let first = loop {
+                if detect_inflight > 1 && join_set.len() >= detect_inflight {
+                    if let Some(res) = join_set.join_next().await
+                        && !forward_joined(&seq_tx, res).await
+                    {
+                        shutdown = true;
+                    }
+                    if shutdown {
+                        break None;
+                    }
+                    continue;
+                }
+
+                if detect_inflight > 1 && !join_set.is_empty() {
+                    #[cfg(feature = "daemon-otlp")]
+                    {
+                        if source_finished {
+                            tokio::select! {
+                                biased;
+                                res = join_set.join_next() => {
+                                    if let Some(res) = res
+                                        && !forward_joined(&seq_tx, res).await
+                                    {
+                                        shutdown = true;
+                                        break None;
+                                    }
+                                    continue;
+                                }
+                                event = event_rx.recv() => break event,
+                            }
+                        } else {
+                            tokio::select! {
+                                biased;
+                                res = join_set.join_next() => {
+                                    if let Some(res) = res
+                                        && !forward_joined(&seq_tx, res).await
+                                    {
+                                        shutdown = true;
+                                        break None;
+                                    }
+                                    continue;
+                                }
+                                event = event_rx.recv() => break event,
+                                _ = source_done.notified() => {
+                                    source_finished = true;
+                                    event_rx.close();
+                                    continue;
                                 }
                             }
                         }
                     }
+                    #[cfg(not(feature = "daemon-otlp"))]
+                    {
+                        tokio::select! {
+                            biased;
+                            res = join_set.join_next() => {
+                                if let Some(res) = res
+                                    && !forward_joined(&seq_tx, res).await
+                                {
+                                    shutdown = true;
+                                    break None;
+                                }
+                                continue;
+                            }
+                            event = event_rx.recv() => break event,
+                        }
+                    }
+                } else {
+                    #[cfg(feature = "daemon-otlp")]
+                    {
+                        if source_finished {
+                            break event_rx.recv().await;
+                        }
+                        tokio::select! {
+                            event = event_rx.recv() => break event,
+                            _ = source_done.notified() => {
+                                source_finished = true;
+                                event_rx.close();
+                                break event_rx.recv().await;
+                            }
+                        }
+                    }
+                    #[cfg(not(feature = "daemon-otlp"))]
+                    {
+                        break event_rx.recv().await;
+                    }
                 }
-                #[cfg(not(feature = "daemon-otlp"))]
-                match event_rx.recv().await {
-                    Some(raw_event) => raw_event,
-                    None => break,
-                }
+            };
+
+            if shutdown {
+                break;
+            }
+            let Some(first) = first else {
+                break;
             };
             engine_metrics.on_input_queue_depth_change(-1);
 
@@ -1613,36 +1772,89 @@ pub async fn run_daemon(config: DaemonConfig) {
                 continue;
             }
 
-            let process_start = Instant::now();
-            let filter = event_filter_enabled.then_some(&filter_fn as &rsigma_runtime::EventFilter);
-            let outcome = engine_processor.process_batch_with_format_detailed(
-                &payloads,
-                &input_format,
-                filter,
-            );
-            let process_elapsed_ms = process_start.elapsed().as_millis() as u64;
-            let match_count = outcome.results.iter().filter(|r| !r.is_empty()).count();
-            tracing::debug!(
-                batch_size = payloads.len(),
-                matches = match_count,
-                elapsed_ms = process_elapsed_ms,
-                "Batch processed",
-            );
+            let seq = next_seq;
+            next_seq = next_seq.saturating_add(1);
+            let processor = engine_processor.clone();
+            let format = input_format.clone();
+            let filter = runtime_filter.clone();
 
-            if eval_tx
-                .send(EvaluatedBatch {
-                    outcome,
-                    payloads,
-                    tokens,
-                    pipeline_start,
-                })
-                .await
-                .is_err()
-            {
-                tracing::debug!("Dispatch channel closed, engine shutting down");
+            if detect_inflight == 1 {
+                // Keep the single-batch path on the engine task: no extra thread
+                // hop, same ordering as before concurrent detection.
+                let process_start = Instant::now();
+                let outcome = match filter.as_ref() {
+                    Some(f) => processor.process_batch_with_format_detailed(
+                        &payloads,
+                        &format,
+                        Some(f.as_ref()),
+                    ),
+                    None => processor.process_batch_with_format_detailed(&payloads, &format, None),
+                };
+                let process_elapsed_ms = process_start.elapsed().as_millis() as u64;
+                let match_count = outcome.results.iter().filter(|r| !r.is_empty()).count();
+                tracing::debug!(
+                    batch_size = payloads.len(),
+                    matches = match_count,
+                    elapsed_ms = process_elapsed_ms,
+                    "Batch processed",
+                );
+                if seq_tx
+                    .send((
+                        seq,
+                        EvaluatedBatch {
+                            outcome,
+                            payloads,
+                            tokens,
+                            pipeline_start,
+                        },
+                    ))
+                    .await
+                    .is_err()
+                {
+                    tracing::debug!("Dispatch channel closed, engine shutting down");
+                    break;
+                }
+            } else {
+                join_set.spawn_blocking(move || {
+                    let process_start = Instant::now();
+                    let outcome = match filter.as_ref() {
+                        Some(f) => processor.process_batch_with_format_detailed(
+                            &payloads,
+                            &format,
+                            Some(f.as_ref()),
+                        ),
+                        None => {
+                            processor.process_batch_with_format_detailed(&payloads, &format, None)
+                        }
+                    };
+                    let process_elapsed_ms = process_start.elapsed().as_millis() as u64;
+                    let match_count = outcome.results.iter().filter(|r| !r.is_empty()).count();
+                    tracing::debug!(
+                        batch_size = payloads.len(),
+                        matches = match_count,
+                        elapsed_ms = process_elapsed_ms,
+                        "Batch processed",
+                    );
+                    (
+                        seq,
+                        EvaluatedBatch {
+                            outcome,
+                            payloads,
+                            tokens,
+                            pipeline_start,
+                        },
+                    )
+                });
+            }
+        }
+
+        while let Some(res) = join_set.join_next().await {
+            if !forward_joined(&seq_tx, res).await {
                 break;
             }
         }
+        drop(seq_tx);
+        let _ = reducer_handle.await;
         tracing::info!("Event source exhausted, engine shutting down");
     });
 

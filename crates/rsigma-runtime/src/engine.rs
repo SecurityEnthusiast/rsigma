@@ -526,6 +526,34 @@ impl RuntimeEngine {
         self.rule_field_set.store(Arc::new(field_set));
     }
 
+    /// Whether detection for this engine is stateless across batches.
+    ///
+    /// When true, multiple batches may evaluate concurrently under a shared
+    /// borrow. Correlation engines require exclusive ordered access.
+    pub fn allows_concurrent_detection(&self) -> bool {
+        match &self.engine {
+            EngineVariant::DetectionOnly(_) => true,
+            EngineVariant::WithCorrelations(_) => false,
+            EngineVariant::Routed(router) => !router.has_correlations(),
+        }
+    }
+
+    /// Stateless detection for engines that allow concurrent batches.
+    ///
+    /// Returns `None` when correlation state requires [`Self::process_batch`].
+    pub fn process_batch_shared<E: Event + Sync>(
+        &self,
+        events: &[&E],
+    ) -> Option<Vec<ProcessResult>> {
+        match &self.engine {
+            EngineVariant::DetectionOnly(engine) => Some(engine.evaluate_batch(events)),
+            EngineVariant::Routed(router) if !router.has_correlations() => {
+                Some(router.detect_batch(events))
+            }
+            EngineVariant::WithCorrelations(_) | EngineVariant::Routed(_) => None,
+        }
+    }
+
     /// Process a batch of events using parallel detection + sequential correlation.
     ///
     /// Delegates to `Engine::evaluate_batch` or `CorrelationEngine::process_batch`

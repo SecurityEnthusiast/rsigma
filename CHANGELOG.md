@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Concurrent detection for correlation-free engines (#426)
+
+When the loaded rule set has no correlation rules, the daemon may evaluate more than one input batch at a time. Detection-only and routed engines share the engine under a read lock; a sequence-numbered reducer restores sink and ack order before dispatch. Correlation engines stay single-batch and exclusive. The default in-flight depth scales with the rayon pool (1 on a single worker, up to 4 on eight or more) and can be overridden with `RSIGMA_DETECT_INFLIGHT` (capped at 8).
+
+On the pinned SigmaHQ raw Windows workload with `--logsource-routing`, `--batch-size 512`, and 16 k6 VUs, the median of three same-machine runs at eight threads moved from about 520k events/s with one in-flight batch to about 615k with two and about 654k with four, against a one-thread median of about 138k events/s on the same build.
+
 ### Candidate index ASCII case-insensitive Aho-Corasick (#420)
 
 NeedleSet automata now build with ASCII case-insensitive search and prefer a DFA, so ASCII event strings are scanned without allocating a lowercase copy. Keyword probing visits string values in place instead of collecting them into a `Vec`, field probes that need both exact and substring witnesses fold once and reuse the folded bytes, and hot index maps use `ahash` instead of SipHash. The daemon evaluates the next batch while the previous batch's sink/ack dispatch runs, so rayon workers are not parked for the whole dispatch phase.

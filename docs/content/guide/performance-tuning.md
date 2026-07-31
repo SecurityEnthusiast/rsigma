@@ -120,7 +120,8 @@ These two only matter for the streaming daemon, not for `engine eval`.
 | Flag | Default | Effect |
 |------|---------|--------|
 | `--buffer-size N` | `10000` | Bounded mpsc capacity for both source→engine and engine→sink queues. Higher values absorb burstier input; lower values apply back-pressure sooner. Watch `rsigma_back_pressure_events_total` to see whether the queues are filling. |
-| `--batch-size N` | `128` | Maximum events to process per engine lock acquisition, capped at `--buffer-size`. The batch is the unit `Engine::evaluate_batch` fans across rayon. The published SigmaHQ baseline uses 512. |
+| `--batch-size N` | `128` | Maximum events per detection batch, capped at `--buffer-size`. The batch is the unit `Engine::evaluate_batch` fans across rayon. The published SigmaHQ baseline uses 512. |
+| `RSIGMA_DETECT_INFLIGHT` | scales with rayon (1–4) | How many detection-only batches may evaluate at once when the rule set has no correlation rules. A sequence-numbered reducer restores sink/ack order. Correlation engines ignore this and stay at 1. Cap is 8. |
 
 A typical high-throughput configuration:
 
@@ -132,7 +133,7 @@ rsigma engine daemon -r rules/ \
 
 The daemon does not wait for a batch to fill: it blocks for the first event, then drains up to `--batch-size` events already waiting in the queue. A larger value therefore increases the maximum processing quantum rather than adding a batch-fill timer. Lower it when short bursts need the smallest tail latency, or raise it when sustained load and a large corpus justify more parallel work per lock acquisition. The effective value never exceeds `--buffer-size`; the published SigmaHQ baseline found 512 best on sustained load.
 
-Formatted input parsing fans across the same rayon pool before engine evaluation, with one ordered batch still in flight. On the pinned raw Windows workload with logsource routing, this raised the measured eight-thread median from 306k to 385k events/s while leaving one-thread throughput near 90k events/s. The measured efficiency is 50-52% on eight Apple M4 Pro performance cores, so raising `RAYON_NUM_THREADS` beyond the physical performance-core count should not be expected to scale linearly. Use `rsigma_batch_phase_duration_seconds` (`parse`, `decode_merge`, `observe`, `evaluate`, `result_merge`, `dispatch`) to rank where batch time goes on your workload.
+Formatted input parsing fans across the same rayon pool before engine evaluation. When there are no correlation rules, several batches may be in flight so one batch's serial merge can overlap another's rayon work; set `RSIGMA_DETECT_INFLIGHT=1` to force the older single-batch path. Correlation engines stay one batch at a time. Raising `RAYON_NUM_THREADS` beyond the physical performance-core count should not be expected to scale linearly. Use `rsigma_batch_phase_duration_seconds` (`parse`, `decode_merge`, `observe`, `evaluate`, `result_merge`, `dispatch`) to rank where batch time goes on your workload.
 
 `--include-event` clones the complete input event into every detection result. Its cost scales with matches rather than inputs: the raw Windows baseline produces about 3 matches per event without routing and about 0.02 with routing, so measure this option on the actual match volume. The checked-in daemon matrix includes both forms, a match-heavy lane, and a handcrafted lane covering event-count, value-count, value-sum, and ordered-temporal correlations; the pinned SigmaHQ tree itself contains no correlation rules.
 

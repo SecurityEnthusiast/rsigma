@@ -161,7 +161,7 @@ See [TLS deployment](../../reference/security.md#tls-termination-for-the-api-lis
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--buffer-size <N>` | `10000` | Bounded mpsc capacity for source→engine and engine→sink queues. |
-| `--batch-size <N>` | `128` | Maximum events per engine lock acquisition, capped at `--buffer-size`. Batches enable parallel detection and amortize mutex overhead. |
+| `--batch-size <N>` | `128` | Maximum events per detection batch, capped at `--buffer-size`. Batches enable parallel detection across events. When the rule set has no correlation rules, the daemon may keep several batches in flight (see `RSIGMA_DETECT_INFLIGHT` in [Environment Variables](../../reference/environment-variables.md)); correlation engines stay one batch at a time. |
 | `--drain-timeout <SECONDS>` | `5` | Seconds to wait for in-flight events to drain on shutdown. |
 
 ### NATS (requires the `daemon-nats` build feature)
