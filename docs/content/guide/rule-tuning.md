@@ -67,7 +67,7 @@ filter:
     condition: not (selection or selection_2)
 ```
 
-Each cluster must contain at least two FP exemplars by default, which prevents a unique event from being memorized as a tuning pattern. One filter contains at most five clusters by default so the proposal remains reviewable. `--allow-partial` may emit the verified clusters and identify uncovered FP indexes, but no option permits suppressing a TP.
+Each emitted selection, including a single-selection proposal, must represent at least two FP exemplars by default, which prevents a unique event from being memorized as a tuning pattern. One filter contains at most five clusters by default so the proposal remains reviewable. `--allow-partial` may emit the verified clusters and identify uncovered FP indexes, but no option permits suppressing a TP.
 
 ## Pipelines and logsource
 

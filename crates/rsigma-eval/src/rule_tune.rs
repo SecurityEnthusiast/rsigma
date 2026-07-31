@@ -234,13 +234,19 @@ pub fn tune_rule(
     if true_positives.is_empty() {
         return Err(TuneError::NoTruePositives);
     }
-
     let fp_before = firing_indexes(rule, false_positives)?;
     let tp_before = firing_indexes(rule, true_positives)?;
     if fp_before.len() != false_positives.len() || tp_before.len() != true_positives.len() {
         return Err(TuneError::NonFiringExemplars {
             fp: missing_indexes(false_positives.len(), &fp_before),
             tp: missing_indexes(true_positives.len(), &tp_before),
+        });
+    }
+    if false_positives.len() < config.min_cluster_support {
+        return Err(TuneError::NoCleanSeparator {
+            closest: Vec::new(),
+            blocking_tp: Vec::new(),
+            uncovered_fp: (0..false_positives.len()).collect(),
         });
     }
 
@@ -254,7 +260,7 @@ pub fn tune_rule(
         "selection",
     )?;
 
-    let (mut proposals, uncovered) = if whole.blocking_tp.is_empty() {
+    let (mut proposals, mut uncovered) = if whole.blocking_tp.is_empty() {
         (vec![whole], Vec::new())
     } else {
         propose_clusters(rule, false_positives, true_positives, config, whole)?
@@ -276,14 +282,8 @@ pub fn tune_rule(
             rule.title
         ));
     }
-    if !uncovered.is_empty() {
-        warnings.push(format!(
-            "partial proposal leaves false-positive indexes {uncovered:?} uncovered"
-        ));
-    }
-
     let selections: Vec<Selection> = proposals.iter().map(|p| p.selection.clone()).collect();
-    let filter_yaml = emit_filter_yaml(
+    let mut filter_yaml = emit_filter_yaml(
         rule,
         target,
         &selections,
@@ -306,6 +306,23 @@ pub fn tune_rule(
                 true_positives.len()
             ),
         });
+    }
+    if fp_after != uncovered {
+        uncovered = fp_after.clone();
+        filter_yaml = emit_filter_yaml(
+            rule,
+            target,
+            &selections,
+            false_positives.len() - uncovered.len(),
+            true_positives.len(),
+            config,
+        );
+        validate_filter_yaml(&filter_yaml)?;
+    }
+    if !uncovered.is_empty() {
+        warnings.push(format!(
+            "partial proposal leaves false-positive indexes {uncovered:?} uncovered"
+        ));
     }
 
     let selected_fields: BTreeSet<&str> = selections
@@ -512,6 +529,7 @@ fn propose_clusters(
     whole: GroupProposal,
 ) -> Result<(Vec<GroupProposal>, Vec<usize>), TuneError> {
     let partitions = scalar_partitions(false_positives);
+    let mut best_full: Option<Vec<GroupProposal>> = None;
     let mut best_partial: Option<(Vec<GroupProposal>, Vec<usize>)> = None;
 
     for groups in partitions.values() {
@@ -545,7 +563,13 @@ fn propose_clusters(
         }
         uncovered.sort_unstable();
         if uncovered.is_empty() {
-            return Ok((proposals, uncovered));
+            if best_full
+                .as_ref()
+                .is_none_or(|best| proposals.len() < best.len())
+            {
+                best_full = Some(proposals);
+            }
+            continue;
         }
         if config.allow_partial && !proposals.is_empty() {
             let covered = false_positives.len() - uncovered.len();
@@ -558,6 +582,9 @@ fn propose_clusters(
         }
     }
 
+    if let Some(proposals) = best_full {
+        return Ok((proposals, Vec::new()));
+    }
     if let Some(partial) = best_partial {
         return Ok(partial);
     }
@@ -842,6 +869,25 @@ level: medium
             error,
             TuneError::NonFiringExemplars { fp, tp }
                 if fp == vec![0] && tp.is_empty()
+        ));
+    }
+
+    #[test]
+    fn refuses_single_event_memorization_by_default() {
+        let fps = vec![json!({
+            "Image": r"C:\Program Files\Veeam\backup.exe",
+            "User": "svc_backup"
+        })];
+        let tps = vec![json!({"Image": r"C:\Temp\backup.exe", "User": "attacker"})];
+        let config = TuneConfig {
+            filter_id: Some("3f7b1c2e-9a44-4d1e-8f61-2b0c5d9e7a10".to_string()),
+            ..TuneConfig::default()
+        };
+
+        let error = tune_rule(&rule(), &fps, &tps, &config).unwrap_err();
+        assert!(matches!(
+            error,
+            TuneError::NoCleanSeparator { uncovered_fp, .. } if uncovered_fp == vec![0]
         ));
     }
 

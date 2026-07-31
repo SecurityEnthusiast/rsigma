@@ -26,7 +26,7 @@ The command verifies two invariants before printing anything. First, every suppl
 
 - `--max-fields <N>` defaults to `4` and limits each filter conjunction.
 - `--max-value-cardinality <N>` defaults to `8` and limits exact values in one OR list.
-- `--min-cluster-support <N>` defaults to `2`; a single-event cluster is refused as memorization.
+- `--min-cluster-support <N>` defaults to `2`; every emitted selection must cover at least this many FP exemplars, so a single-event proposal is refused as memorization.
 - `--max-clusters <N>` defaults to `5` and limits selections in one filter.
 - `--allow-partial` permits a proposal that covers only cleanly separable FP clusters while still suppressing no TP. The report names every uncovered FP index.
 - `--expectations <PATH>` validates an existing `rule backtest` expectations file and adds before/after fire counts plus a paste-ready expectations fragment to report mode.
