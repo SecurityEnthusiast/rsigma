@@ -25,11 +25,13 @@ The command verifies two invariants before printing anything. First, every suppl
 ## Tuning controls
 
 - `--max-fields <N>` defaults to `4` and limits each filter conjunction.
+- `--min-fields <N>` defaults to `2` and requires each filter conjunction to include stable context from at least two fields.
 - `--max-value-cardinality <N>` defaults to `8` and limits exact values in one OR list.
 - `--min-cluster-support <N>` defaults to `2`; every emitted selection must cover at least this many FP exemplars, so a single-event proposal is refused as memorization.
 - `--max-clusters <N>` defaults to `5` and limits selections in one filter.
 - `--allow-partial` permits a proposal that covers only cleanly separable FP clusters while still suppressing no TP. The report names every uncovered FP index.
-- `--expectations <PATH>` validates an existing `rule backtest` expectations file and adds before/after fire counts plus a paste-ready expectations fragment to report mode.
+- `--expectations <PATH>` validates an existing `rule backtest` expectations file and adds before/after fire counts plus list entries to insert under its existing `expectations` key.
+- `--fp-corpus <RELATIVE_PATH>` and `--tp-corpus <RELATIVE_PATH>` override the generated backtest corpus scopes. Relative `@path` inputs preserve their directory scope automatically; absolute and inline inputs use stable fallback names unless overridden.
 - `--emit yaml|report` defaults to `yaml`. Report mode follows the global output format.
 
 ## Example
@@ -62,7 +64,7 @@ filter:
 rsigma rule tune -r rules/ --rule 929a690e-bef0-4204-a928-ef5e620d6fcc --fp @false-positives.ndjson --tp @true-positives.ndjson --expectations expectations.yml --emit report --output-format json
 ```
 
-The `expectation_diff` object records target fires over each supplied corpus before and after filtering, lists existing bounds for the target, and emits a fragment with `exactly: 0` for a fully covered FP corpus plus `at_least: <TP count>` for the protected corpus.
+The `expectation_diff` object records target fires over each supplied corpus before and after filtering, lists existing bounds for the target, and emits list entries with `exactly: 0` for a fully covered FP corpus plus `at_least: <TP count>` for the protected corpus. Insert the entries under the existing top-level `expectations` key.
 
 ## Exit codes
 

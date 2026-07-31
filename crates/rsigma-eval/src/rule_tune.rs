@@ -23,6 +23,8 @@ use crate::rule_draft::{DraftConfig, Stability};
 pub struct TuneConfig {
     /// Maximum fields in one filter selection.
     pub max_fields: usize,
+    /// Minimum fields required in every emitted selection.
+    pub min_fields: usize,
     /// Maximum exact values emitted as one OR list.
     pub max_value_cardinality: usize,
     /// Minimum shared token length for inferred string forms.
@@ -43,6 +45,7 @@ impl Default for TuneConfig {
     fn default() -> Self {
         Self {
             max_fields: 4,
+            min_fields: 2,
             max_value_cardinality: 8,
             min_token_len: 4,
             min_cluster_support: 2,
@@ -57,9 +60,9 @@ impl Default for TuneConfig {
 /// Why a tuning proposal could not be produced.
 #[derive(Debug, thiserror::Error)]
 pub enum TuneError {
-    /// A reviewability or inference bound was set to zero.
-    #[error("invalid tuning config: {0} must be greater than zero")]
-    InvalidConfig(&'static str),
+    /// A reviewability or inference bound is invalid.
+    #[error("invalid tuning config: {0}")]
+    InvalidConfig(String),
     /// No false-positive events were provided.
     #[error("no false-positive events to tune")]
     NoFalsePositives,
@@ -220,13 +223,23 @@ pub fn tune_rule(
 ) -> Result<TuneReport, TuneError> {
     for (name, value) in [
         ("max_fields", config.max_fields),
+        ("min_fields", config.min_fields),
         ("max_value_cardinality", config.max_value_cardinality),
+        ("min_token_len", config.min_token_len),
         ("min_cluster_support", config.min_cluster_support),
         ("max_clusters", config.max_clusters),
     ] {
         if value == 0 {
-            return Err(TuneError::InvalidConfig(name));
+            return Err(TuneError::InvalidConfig(format!(
+                "{name} must be greater than zero"
+            )));
         }
+    }
+    if config.min_fields > config.max_fields {
+        return Err(TuneError::InvalidConfig(format!(
+            "min_fields ({}) cannot exceed max_fields ({})",
+            config.min_fields, config.max_fields
+        )));
     }
     if false_positives.is_empty() {
         return Err(TuneError::NoFalsePositives);
@@ -482,9 +495,12 @@ fn propose_group(
             profile.form.clone().expect("ranked form"),
         ));
         blocking_tp = candidate_blocking;
-        if blocking_tp.is_empty() {
+        if blocking_tp.is_empty() && entries.len() >= config.min_fields {
             break;
         }
+    }
+    if entries.len() < config.min_fields {
+        blocking_tp = (0..true_positives.len()).collect();
     }
 
     let fields = ranked
@@ -851,6 +867,9 @@ level: medium
         assert_eq!(report.verification.true_positives_after, 1);
         assert!(report.filter_yaml.contains("condition: not selection"));
         assert!(report.filter_yaml.contains("category: process_creation"));
+        assert!(report.filter_yaml.contains("Image:"));
+        assert!(report.filter_yaml.contains("User: svc_backup"));
+        assert_eq!(report.selections[0].fields.len(), 2);
         assert!(!report.filter_yaml.contains("status:"));
         assert!(
             rsigma_parser::lint_yaml_str(&report.filter_yaml)
@@ -888,6 +907,45 @@ level: medium
         assert!(matches!(
             error,
             TuneError::NoCleanSeparator { uncovered_fp, .. } if uncovered_fp == vec![0]
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_token_length() {
+        let fps = vec![
+            json!({"Image": r"C:\Program Files\Veeam\backup.exe", "User": "svc_backup"}),
+            json!({"Image": r"C:\Program Files\Veeam\backup.exe", "User": "svc_backup"}),
+        ];
+        let tps = vec![json!({"Image": r"C:\Temp\backup.exe", "User": "attacker"})];
+        let config = TuneConfig {
+            min_token_len: 0,
+            ..config()
+        };
+
+        let error = tune_rule(&rule(), &fps, &tps, &config).unwrap_err();
+        assert!(matches!(
+            error,
+            TuneError::InvalidConfig(message) if message.contains("min_token_len")
+        ));
+    }
+
+    #[test]
+    fn rejects_minimum_fields_above_maximum() {
+        let fps = vec![
+            json!({"Image": r"C:\Program Files\Veeam\backup.exe", "User": "svc_backup"}),
+            json!({"Image": r"C:\Program Files\Veeam\backup.exe", "User": "svc_backup"}),
+        ];
+        let tps = vec![json!({"Image": r"C:\Temp\backup.exe", "User": "attacker"})];
+        let config = TuneConfig {
+            min_fields: 3,
+            max_fields: 2,
+            ..config()
+        };
+
+        let error = tune_rule(&rule(), &fps, &tps, &config).unwrap_err();
+        assert!(matches!(
+            error,
+            TuneError::InvalidConfig(message) if message.contains("cannot exceed")
         ));
     }
 

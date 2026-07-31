@@ -38,9 +38,21 @@ pub(crate) struct TuneArgs {
     #[arg(long, value_name = "PATH")]
     pub expectations: Option<PathBuf>,
 
+    /// Backtest corpus scope for the false-positive input.
+    #[arg(long, value_name = "RELATIVE_PATH", requires = "expectations")]
+    pub fp_corpus: Option<String>,
+
+    /// Backtest corpus scope for the true-positive input.
+    #[arg(long, value_name = "RELATIVE_PATH", requires = "expectations")]
+    pub tp_corpus: Option<String>,
+
     /// Maximum fields in one filter selection.
     #[arg(long, default_value_t = 4)]
     pub max_fields: usize,
+
+    /// Minimum fields required in every filter selection.
+    #[arg(long, default_value_t = 2)]
+    pub min_fields: usize,
 
     /// Maximum exact values emitted as one OR list.
     #[arg(long, default_value_t = 8)]
@@ -86,6 +98,7 @@ pub(crate) fn cmd_tune(args: TuneArgs, ctx: OutputCtx) {
 
     let config = TuneConfig {
         max_fields: args.max_fields,
+        min_fields: args.min_fields,
         max_value_cardinality: args.max_value_cardinality,
         min_cluster_support: args.min_cluster_support,
         max_clusters: args.max_clusters,
@@ -119,6 +132,8 @@ pub(crate) fn cmd_tune(args: TuneArgs, ctx: OutputCtx) {
             &resolved,
             args.fp.as_deref(),
             &args.tp,
+            args.fp_corpus.as_deref(),
+            args.tp_corpus.as_deref(),
         ));
     }
 
@@ -146,9 +161,10 @@ fn read_corpus(spec: Option<&str>, label: &str) -> super::draft::Corpus {
     };
     if corpus.parse_errors > 0 {
         eprintln!(
-            "warning: {} {label} line(s) failed to parse as JSON and were skipped",
+            "error: {} {label} record(s) failed to parse; tuning requires the complete corpus",
             corpus.parse_errors
         );
+        process::exit(crate::exit_code::RULE_ERROR);
     }
     corpus
 }
@@ -227,6 +243,13 @@ fn render_report(report: &TuneReport, ctx: &OutputCtx) {
                     diff.true_positives_before,
                     diff.true_positives_after
                 );
+                if !diff.existing.is_empty() {
+                    println!("existing bounds:");
+                    for bound in &diff.existing {
+                        println!("  - {bound}");
+                    }
+                }
+                println!("entries to add under `expectations`:");
                 print!("{}", diff.fragment);
             }
         }
@@ -252,6 +275,8 @@ fn expectation_diff(
     resolved: &super::backtest::expectations::ResolvedExpectations,
     fp_spec: Option<&str>,
     tp_spec: &str,
+    fp_corpus: Option<&str>,
+    tp_corpus: Option<&str>,
 ) -> TuneExpectationDiff {
     let rule_key = rule.id.as_deref().unwrap_or(&rule.title);
     let existing = resolved
@@ -272,10 +297,10 @@ fn expectation_diff(
             ),
         })
         .collect();
-    let fp_label = corpus_label(fp_spec, "false-positives.ndjson");
-    let tp_label = corpus_label(Some(tp_spec), "true-positives.ndjson");
+    let fp_label = corpus_label(fp_corpus, fp_spec, "false-positives.ndjson");
+    let tp_label = corpus_label(tp_corpus, Some(tp_spec), "true-positives.ndjson");
     let fragment = format!(
-        "expectations:\n  - rule: {}\n    corpus: {}\n    exactly: {}\n  - rule: {}\n    corpus: {}\n    at_least: {}\n",
+        "  - rule: {}\n    corpus: {}\n    exactly: {}\n  - rule: {}\n    corpus: {}\n    at_least: {}\n",
         yaml_scalar(rule_key),
         yaml_scalar(&fp_label),
         report.verification.false_positives_after,
@@ -293,12 +318,22 @@ fn expectation_diff(
     }
 }
 
-fn corpus_label(spec: Option<&str>, fallback: &str) -> String {
-    spec.and_then(|spec| spec.strip_prefix('@'))
-        .and_then(|path| std::path::Path::new(path).file_name())
-        .and_then(|name| name.to_str())
-        .unwrap_or(fallback)
-        .to_string()
+fn corpus_label(explicit: Option<&str>, spec: Option<&str>, fallback: &str) -> String {
+    if let Some(explicit) = explicit {
+        return explicit.to_string();
+    }
+    let Some(path) = spec.and_then(|spec| spec.strip_prefix('@')) else {
+        return fallback.to_string();
+    };
+    let path = std::path::Path::new(path);
+    if path.is_relative() {
+        path.to_string_lossy().into_owned()
+    } else {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(fallback)
+            .to_string()
+    }
 }
 
 fn yaml_scalar(value: &str) -> String {
@@ -346,5 +381,21 @@ detection:
         );
         assert!(select_rule(&rules, None).is_err());
         assert_eq!(select_rule(&rules, Some("two")).unwrap().title, "Two");
+    }
+
+    #[test]
+    fn corpus_label_preserves_relative_scope_and_allows_override() {
+        assert_eq!(
+            corpus_label(None, Some("@corpus/windows/fp.ndjson"), "fallback"),
+            "corpus/windows/fp.ndjson"
+        );
+        assert_eq!(
+            corpus_label(
+                Some("windows/fp.ndjson"),
+                Some("@/tmp/fp.ndjson"),
+                "fallback"
+            ),
+            "windows/fp.ndjson"
+        );
     }
 }

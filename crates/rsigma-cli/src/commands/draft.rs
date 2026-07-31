@@ -247,7 +247,7 @@ pub(super) fn read_events(event_arg: Option<&str>, label: &str) -> Result<Corpus
             {
                 #[cfg(feature = "evtx")]
                 {
-                    read_evtx(&path, &mut events)?;
+                    read_evtx(&path, &mut events, &mut parse_errors)?;
                 }
                 #[cfg(not(feature = "evtx"))]
                 {
@@ -287,13 +287,20 @@ pub(super) fn read_events(event_arg: Option<&str>, label: &str) -> Result<Corpus
 }
 
 #[cfg(feature = "evtx")]
-fn read_evtx(path: &std::path::Path, events: &mut Vec<serde_json::Value>) -> Result<(), String> {
+fn read_evtx(
+    path: &std::path::Path,
+    events: &mut Vec<serde_json::Value>,
+    parse_errors: &mut usize,
+) -> Result<(), String> {
     let mut reader = rsigma_runtime::EvtxFileReader::open(path)
         .map_err(|e| format!("Error opening EVTX file '{}': {e}", path.display()))?;
     for record in reader.records() {
         match record {
             Ok(v) => events.push(v),
-            Err(e) => eprintln!("Error reading EVTX record: {e}"),
+            Err(e) => {
+                *parse_errors += 1;
+                eprintln!("Error reading EVTX record: {e}");
+            }
         }
     }
     Ok(())

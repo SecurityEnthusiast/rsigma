@@ -27,7 +27,7 @@ Tuning runs the target through the real evaluator twice:
 
 This catches polarity errors, Sigma wildcard escaping, modifier semantics, pipeline field mappings, filter targeting, and logsource compatibility through the production code path rather than a second approximation.
 
-When `--expectations` is supplied, report mode also lists the target's existing backtest bounds and appends a paste-ready fragment for the FP and TP corpus filenames. The fragment pins the post-filter FP count and requires at least the verified TP count, so the tuning change can carry its own regression evidence into CI.
+When `--expectations` is supplied, report mode also lists the target's existing backtest bounds and emits list entries to add under the file's existing `expectations` key. Relative `@path` inputs preserve their directory scope; `--fp-corpus` and `--tp-corpus` provide explicit scopes for absolute or inline inputs. The entries pin the post-filter FP count and require at least the verified TP count, so the tuning change can carry its own regression evidence into CI.
 
 ## Why the condition is negated
 
@@ -46,7 +46,7 @@ Writing `condition: selection` would invert the intent and narrow the target so 
 
 ## Contrastive field selection
 
-The profiler shares rule drafting's typed values, volatility detection, pattern inference, wildcard escaping, and YAML writer. It ranks fields that are stable across FPs and rare across TPs. Any candidate or conjunction that suppresses a TP is rejected.
+The profiler shares rule drafting's typed values, volatility detection, pattern inference, wildcard escaping, and YAML writer. It ranks fields that are stable across FPs and rare across TPs. Each selection includes stable context from at least two fields by default, even when one field separates the sampled corpora. Any candidate or conjunction that suppresses a TP is rejected.
 
 Exact value sets may contain up to eight values by default because benign service-account or host allowlists commonly exceed the drafting default of four. String values above that limit may still become a readable prefix, suffix, or token form. Regex synthesis is intentionally excluded.
 

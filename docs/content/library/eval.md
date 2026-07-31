@@ -114,7 +114,7 @@ After this, the rule sees ECS field names; an event with `process.command_line` 
 
 `tune_rule(rule, false_positives, true_positives, config)` accepts one parsed, optionally pipeline-transformed `SigmaRule` plus JSON event values. It verifies that every label fires before filtering, profiles reusable value forms from the FP set, rejects candidates that match a TP, emits a standard filter rule, and verifies the final artifact through `Engine::add_collection`.
 
-`TuneConfig` bounds field count, OR-list cardinality, cluster support, and cluster count. `TuneReport` contains the paste-ready YAML, ranked field rationale, emitted selections, FP coverage, warnings, and closed before/after counts. `TuneError::NoCleanSeparator` is returned instead of an unsafe filter when the corpora cannot be separated.
+`TuneConfig` bounds minimum and maximum field count, OR-list cardinality, inferred token length, cluster support, and cluster count. `TuneReport` contains the paste-ready YAML, ranked field rationale, emitted selections, FP coverage, warnings, and closed before/after counts. `TuneError::NoCleanSeparator` is returned instead of an unsafe filter when the corpora cannot be separated.
 
 ## Correlation
 

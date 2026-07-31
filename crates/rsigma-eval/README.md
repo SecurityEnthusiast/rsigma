@@ -132,7 +132,7 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 | Type / function | Description |
 |-----------------|-------------|
 | `tune_rule(rule, false_positives, true_positives, &TuneConfig)` | Profile FP-stable fields, reject forms that match protected TPs, derive supported clusters when needed, emit a filter targeting the rule id, and verify the result through `Engine::add_collection` |
-| `TuneConfig` | Bounds fields, exact-value cardinality, minimum cluster support, maximum clusters, partial coverage, and caller-supplied metadata |
+| `TuneConfig` | Bounds minimum and maximum fields, exact-value cardinality, token length, minimum cluster support, maximum clusters, partial coverage, and caller-supplied metadata |
 | `TuneReport` | Paste-ready filter YAML, ranked field rationale, emitted selections, FP coverage, warnings, and before/after verification |
 | `TuneError` | Empty corpora, non-firing labels, no candidate fields, no clean separator, or an internal emitted-artifact failure |
 

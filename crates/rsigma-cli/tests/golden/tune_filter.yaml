@@ -10,4 +10,5 @@ filter:
         - 929a690e-bef0-4204-a928-ef5e620d6fcc
     selection:
         Image: 'C:\Program Files\Veeam\backup.exe'
+        User: svc_backup
     condition: not selection

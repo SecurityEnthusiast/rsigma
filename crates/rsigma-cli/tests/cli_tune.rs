@@ -267,3 +267,34 @@ fn multiple_rules_require_an_explicit_target() {
         .failure()
         .stderr(predicate::str::contains("pass --rule"));
 }
+
+#[test]
+fn malformed_corpus_record_fails_closed() {
+    let rule = temp_file(".yml", RULE);
+    let fp = temp_file(".ndjson", FALSE_POSITIVES);
+    let tp = temp_file(
+        ".ndjson",
+        concat!(
+            r#"{"Image":"C:\\Temp\\backup.exe","User":"attacker"}"#,
+            "\nnot-json\n",
+        ),
+    );
+
+    rsigma()
+        .args([
+            "rule",
+            "tune",
+            "-r",
+            rule.path().to_str().unwrap(),
+            "--fp",
+            &format!("@{}", fp.path().display()),
+            "--tp",
+            &format!("@{}", tp.path().display()),
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "tuning requires the complete corpus",
+        ));
+}

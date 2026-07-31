@@ -1,13 +1,15 @@
 //! The `tune_rules` tool: propose a verified Sigma filter from FP/TP events.
 
+use std::path::{Path, PathBuf};
+
 use rmcp::{
     ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
     tool_router,
 };
 use rsigma_eval::{
-    TuneConfig, apply_pipelines, parse_pipeline_file, resolve_builtin_pipeline, tune_rule,
+    TuneConfig, apply_pipelines, parse_pipeline, resolve_builtin_pipeline, tune_rule,
 };
-use rsigma_parser::{SigmaCollection, parse_sigma_directory, parse_sigma_file, parse_sigma_yaml};
+use rsigma_parser::{SigmaCollection, parse_sigma_yaml};
 use serde_json::{Value, json};
 
 use crate::input::resolve_confined_path;
@@ -37,6 +39,9 @@ pub struct TuneRulesInput {
     /// Maximum fields in one selection.
     #[serde(default)]
     pub max_fields: Option<usize>,
+    /// Minimum fields required in every emitted selection.
+    #[serde(default)]
+    pub min_fields: Option<usize>,
     /// Maximum exact values in one OR list.
     #[serde(default)]
     pub max_value_cardinality: Option<usize>,
@@ -71,17 +76,37 @@ impl RsigmaMcp {
     }
 
     pub(crate) fn run_tune_rules(&self, input: TuneRulesInput) -> Result<Value, McpError> {
-        let collection = self.load_tune_collection(input.yaml.as_deref(), input.path.as_deref())?;
+        let collection =
+            match self.load_tune_collection(input.yaml.as_deref(), input.path.as_deref()) {
+                Ok(collection) => collection,
+                Err(TuneLoadError::Request(error)) => return Err(error),
+                Err(TuneLoadError::Content(error)) => {
+                    return Ok(json!({ "ok": false, "error": error }));
+                }
+            };
         let mut rule = select_rule(&collection, input.rule.as_deref())?.clone();
-        let pipelines = self.load_tune_pipelines(&input.pipelines)?;
+        let pipelines = match self.load_tune_pipelines(&input.pipelines) {
+            Ok(pipelines) => pipelines,
+            Err(TuneLoadError::Request(error)) => return Err(error),
+            Err(TuneLoadError::Content(error)) => {
+                return Ok(json!({ "ok": false, "error": error }));
+            }
+        };
         if !pipelines.is_empty() {
-            apply_pipelines(&pipelines, &mut rule)
-                .map_err(|error| invalid(format!("pipeline error: {error}")))?;
+            if let Err(error) = apply_pipelines(&pipelines, &mut rule) {
+                return Ok(json!({
+                    "ok": false,
+                    "error": format!("pipeline application error: {error}")
+                }));
+            }
         }
 
         let mut config = TuneConfig::default();
         if let Some(value) = input.max_fields {
             config.max_fields = value;
+        }
+        if let Some(value) = input.min_fields {
+            config.min_fields = value;
         }
         if let Some(value) = input.max_value_cardinality {
             config.max_value_cardinality = value;
@@ -113,27 +138,43 @@ impl RsigmaMcp {
         &self,
         yaml: Option<&str>,
         path: Option<&str>,
-    ) -> Result<SigmaCollection, McpError> {
+    ) -> Result<SigmaCollection, TuneLoadError> {
         let collection = match (yaml, path) {
             (Some(_), Some(_)) => {
-                return Err(invalid("provide either `yaml` or `path`, not both"));
+                return Err(TuneLoadError::Request(invalid(
+                    "provide either `yaml` or `path`, not both",
+                )));
             }
-            (None, None) => return Err(invalid("one of `yaml` or `path` is required")),
-            (Some(yaml), None) => {
-                parse_sigma_yaml(yaml).map_err(|error| invalid(format!("parse error: {error}")))?
+            (None, None) => {
+                return Err(TuneLoadError::Request(invalid(
+                    "one of `yaml` or `path` is required",
+                )));
             }
+            (Some(yaml), None) => parse_sigma_yaml(yaml)
+                .map_err(|error| TuneLoadError::Content(format!("rule parse error: {error}")))?,
             (None, Some(path)) => {
-                let path = resolve_confined_path(path, self.root())?;
+                let path =
+                    resolve_confined_path(path, self.root()).map_err(TuneLoadError::Request)?;
                 if path.is_dir() {
-                    parse_sigma_directory(&path)
+                    load_rule_directory(&path)?
                 } else {
-                    parse_sigma_file(&path)
+                    let yaml = std::fs::read_to_string(&path).map_err(|error| {
+                        TuneLoadError::Request(invalid(format!(
+                            "cannot read '{}': {error}",
+                            path.display()
+                        )))
+                    })?;
+                    parse_sigma_yaml(&yaml).map_err(|error| {
+                        TuneLoadError::Content(format!(
+                            "rule parse error in '{}': {error}",
+                            path.display()
+                        ))
+                    })?
                 }
-                .map_err(|error| invalid(format!("cannot load '{}': {error}", path.display())))?
             }
         };
         if collection.has_errors() {
-            return Err(invalid(format!(
+            return Err(TuneLoadError::Content(format!(
                 "rule collection contains parse errors: {:?}",
                 collection.errors
             )));
@@ -144,26 +185,100 @@ impl RsigmaMcp {
     fn load_tune_pipelines(
         &self,
         specs: &[String],
-    ) -> Result<Vec<rsigma_eval::Pipeline>, McpError> {
+    ) -> Result<Vec<rsigma_eval::Pipeline>, TuneLoadError> {
         let mut pipelines = Vec::with_capacity(specs.len());
         for spec in specs {
             if let Some(result) = resolve_builtin_pipeline(spec) {
-                pipelines.push(
-                    result
-                        .map_err(|error| invalid(format!("builtin pipeline '{spec}': {error}")))?,
-                );
+                pipelines.push(result.map_err(|error| {
+                    TuneLoadError::Content(format!("builtin pipeline '{spec}': {error}"))
+                })?);
             } else {
-                let path = resolve_confined_path(spec, self.root())?;
-                pipelines.push(
-                    parse_pipeline_file(&path).map_err(|error| {
-                        invalid(format!("pipeline '{}': {error}", path.display()))
-                    })?,
-                );
+                let path =
+                    resolve_confined_path(spec, self.root()).map_err(TuneLoadError::Request)?;
+                let yaml = std::fs::read_to_string(&path).map_err(|error| {
+                    TuneLoadError::Request(invalid(format!(
+                        "cannot read pipeline '{}': {error}",
+                        path.display()
+                    )))
+                })?;
+                pipelines.push(parse_pipeline(&yaml).map_err(|error| {
+                    TuneLoadError::Content(format!(
+                        "pipeline parse error in '{}': {error}",
+                        path.display()
+                    ))
+                })?);
             }
         }
         pipelines.sort_by_key(|pipeline| pipeline.priority);
         Ok(pipelines)
     }
+}
+
+enum TuneLoadError {
+    Request(McpError),
+    Content(String),
+}
+
+fn load_rule_directory(root: &Path) -> Result<SigmaCollection, TuneLoadError> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut files = Vec::<PathBuf>::new();
+    while let Some(directory) = pending.pop() {
+        let entries = std::fs::read_dir(&directory).map_err(|error| {
+            TuneLoadError::Request(invalid(format!(
+                "cannot read rule directory '{}': {error}",
+                directory.display()
+            )))
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                TuneLoadError::Request(invalid(format!(
+                    "cannot read an entry under '{}': {error}",
+                    directory.display()
+                )))
+            })?;
+            let path = entry.path();
+            let metadata = std::fs::symlink_metadata(&path).map_err(|error| {
+                TuneLoadError::Request(invalid(format!(
+                    "cannot inspect '{}': {error}",
+                    path.display()
+                )))
+            })?;
+            if metadata.file_type().is_symlink() {
+                return Err(TuneLoadError::Request(invalid(format!(
+                    "rule directory contains a symlink, which is not allowed: '{}'",
+                    path.display()
+                ))));
+            }
+            if metadata.is_dir() {
+                pending.push(path);
+            } else if metadata.is_file()
+                && path.extension().is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("yml") || extension.eq_ignore_ascii_case("yaml")
+                })
+            {
+                files.push(path);
+            }
+        }
+    }
+
+    files.sort();
+    let mut collection = SigmaCollection::new();
+    for path in files {
+        let yaml = std::fs::read_to_string(&path).map_err(|error| {
+            TuneLoadError::Request(invalid(format!(
+                "cannot read '{}': {error}",
+                path.display()
+            )))
+        })?;
+        let parsed = parse_sigma_yaml(&yaml).map_err(|error| {
+            TuneLoadError::Content(format!("rule parse error in '{}': {error}", path.display()))
+        })?;
+        collection.rules.extend(parsed.rules);
+        collection.correlations.extend(parsed.correlations);
+        collection.filters.extend(parsed.filters);
+        collection.errors.extend(parsed.errors);
+    }
+    Ok(collection)
 }
 
 fn select_rule<'a>(
@@ -218,6 +333,7 @@ mod tests {
             true_positives: vec![json!({"CommandLine": "whoami", "User": "attacker"})],
             pipelines: vec![],
             max_fields: None,
+            min_fields: None,
             max_value_cardinality: None,
             min_cluster_support: None,
             max_clusters: None,
@@ -266,5 +382,86 @@ mod tests {
 
         let error = handler().run_tune_rules(input).unwrap_err();
         assert!(format!("{error:?}").contains("set `rule`"));
+    }
+
+    #[test]
+    fn tune_rules_returns_structured_rule_content_errors() {
+        let mut input = input();
+        input.yaml = Some("title: [".to_string());
+
+        let value = handler().run_tune_rules(input).unwrap();
+        assert_eq!(value["ok"], false);
+        assert!(value["error"].as_str().unwrap().contains("parse error"));
+    }
+
+    #[test]
+    fn tune_rules_returns_structured_pipeline_content_errors() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("bad-pipeline.yml"), "transformations: [").unwrap();
+        let server = RsigmaMcp::new(
+            Some(root.path().to_path_buf()),
+            LintConfig::default(),
+            false,
+        );
+        let mut input = input();
+        input.pipelines = vec!["bad-pipeline.yml".to_string()];
+
+        let value = server.run_tune_rules(input).unwrap();
+        assert_eq!(value["ok"], false);
+        assert!(
+            value["error"]
+                .as_str()
+                .unwrap()
+                .contains("pipeline parse error")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tune_rules_rejects_nested_directory_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let rules = root.path().join("rules");
+        let nested = rules.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(rules.join("rule.yml"), VALID_RULE).unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(outside.path(), VALID_RULE).unwrap();
+        symlink(outside.path(), nested.join("escape.yml")).unwrap();
+        let server = RsigmaMcp::new(
+            Some(root.path().to_path_buf()),
+            LintConfig::default(),
+            false,
+        );
+        let mut input = input();
+        input.yaml = None;
+        input.path = Some("rules".to_string());
+
+        let error = server.run_tune_rules(input).unwrap_err();
+        assert!(format!("{error:?}").contains("symlink"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tune_rules_rejects_directory_symlink_cycles() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let rules = root.path().join("rules");
+        std::fs::create_dir_all(&rules).unwrap();
+        std::fs::write(rules.join("rule.yml"), VALID_RULE).unwrap();
+        symlink(&rules, rules.join("cycle")).unwrap();
+        let server = RsigmaMcp::new(
+            Some(root.path().to_path_buf()),
+            LintConfig::default(),
+            false,
+        );
+        let mut input = input();
+        input.yaml = None;
+        input.path = Some("rules".to_string());
+
+        let error = server.run_tune_rules(input).unwrap_err();
+        assert!(format!("{error:?}").contains("symlink"));
     }
 }
