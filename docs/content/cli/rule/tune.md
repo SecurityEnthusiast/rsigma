@@ -29,6 +29,7 @@ The command verifies two invariants before printing anything. First, every suppl
 - `--min-cluster-support <N>` defaults to `2`; a single-event cluster is refused as memorization.
 - `--max-clusters <N>` defaults to `5` and limits selections in one filter.
 - `--allow-partial` permits a proposal that covers only cleanly separable FP clusters while still suppressing no TP. The report names every uncovered FP index.
+- `--expectations <PATH>` validates an existing `rule backtest` expectations file and adds before/after fire counts plus a paste-ready expectations fragment to report mode.
 - `--emit yaml|report` defaults to `yaml`. Report mode follows the global output format.
 
 ## Example
@@ -54,6 +55,14 @@ filter:
         Image|startswith: 'C:\Program Files\Veeam\'
     condition: not selection
 ```
+
+### Carry regression evidence into a rule change
+
+```bash
+rsigma rule tune -r rules/ --rule 929a690e-bef0-4204-a928-ef5e620d6fcc --fp @false-positives.ndjson --tp @true-positives.ndjson --expectations expectations.yml --emit report --output-format json
+```
+
+The `expectation_diff` object records target fires over each supplied corpus before and after filtering, lists existing bounds for the target, and emits a fragment with `exactly: 0` for a fully covered FP corpus plus `at_least: <TP count>` for the protected corpus.
 
 ## Exit codes
 

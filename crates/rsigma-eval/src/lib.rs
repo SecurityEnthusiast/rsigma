@@ -155,8 +155,8 @@ pub use rule_draft::{
 };
 pub use rule_metadata::{RuleBundleMetadata, RuleIdentity, RuleKind, RuleMetadataLookup};
 pub use rule_tune::{
-    TuneConfig, TuneError, TuneFieldDisposition, TuneFieldReport, TuneReport, TuneSelectionReport,
-    TuneVerification, tune_rule,
+    TuneConfig, TuneError, TuneExpectationDiff, TuneFieldDisposition, TuneFieldReport, TuneReport,
+    TuneSelectionReport, TuneVerification, tune_rule,
 };
 pub use schema::{
     FieldValueConfig, OnUnknown, PredicateOutcome, RouteDecision, RoutingConfig, RoutingPlan,

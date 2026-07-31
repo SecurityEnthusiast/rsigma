@@ -6,6 +6,7 @@ use common::{rsigma, temp_file};
 use predicates::prelude::*;
 
 const FILTER_GOLDEN: &str = include_str!("golden/tune_filter.yaml");
+const EXPECTATION_DIFF_GOLDEN: &str = include_str!("golden/tune_expectation_diff.txt");
 
 const RULE: &str = r#"
 title: Suspicious Backup Tool
@@ -198,6 +199,44 @@ transformations:
         .success()
         .stdout(predicate::str::contains("process.executable"))
         .stdout(predicate::str::contains("\n        Image:").not());
+}
+
+#[test]
+fn expectations_report_contains_paste_ready_golden_diff() {
+    let rule = temp_file(".yml", RULE);
+    let expectations = temp_file(
+        ".yml",
+        r#"
+expectations:
+  - rule: 929a690e-bef0-4204-a928-ef5e620d6fcc
+    at_least: 1
+"#,
+    );
+    let output = rsigma()
+        .args([
+            "rule",
+            "tune",
+            "-r",
+            rule.path().to_str().unwrap(),
+            "--tp",
+            r#"{"Image":"C:\\Temp\\backup.exe","User":"attacker"}"#,
+            "--expectations",
+            expectations.path().to_str().unwrap(),
+            "--emit",
+            "report",
+            "--output-format",
+            "table",
+        ])
+        .write_stdin(FALSE_POSITIVES)
+        .output()
+        .expect("run tune expectation diff");
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let diff = stdout
+        .split_once("# Backtest expectation diff\n")
+        .map(|(_, diff)| diff)
+        .expect("expectation diff marker");
+    assert_eq!(diff.trim_end(), EXPECTATION_DIFF_GOLDEN.trim_end());
 }
 
 #[test]

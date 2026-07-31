@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process;
 
 use clap::Args;
-use rsigma_eval::{TuneConfig, TuneReport, apply_pipelines, tune_rule};
+use rsigma_eval::{TuneConfig, TuneExpectationDiff, TuneReport, apply_pipelines, tune_rule};
 
 use super::draft::{EmitMode, read_events};
 use crate::output::{OutputCtx, OutputFormat, render_json};
@@ -33,6 +33,10 @@ pub(crate) struct TuneArgs {
     /// Processing pipeline(s) applied before tuning and verification.
     #[arg(short = 'p', long = "pipeline", value_name = "PATH|NAME")]
     pub pipelines: Vec<PathBuf>,
+
+    /// Existing backtest expectations to validate and include in the diff.
+    #[arg(long, value_name = "PATH")]
+    pub expectations: Option<PathBuf>,
 
     /// Maximum fields in one filter selection.
     #[arg(long, default_value_t = 4)]
@@ -89,7 +93,7 @@ pub(crate) fn cmd_tune(args: TuneArgs, ctx: OutputCtx) {
         filter_id: Some(uuid::Uuid::new_v4().to_string()),
         ..TuneConfig::default()
     };
-    let report = match tune_rule(
+    let mut report = match tune_rule(
         &rule,
         &false_positives.events,
         &true_positives.events,
@@ -101,6 +105,22 @@ pub(crate) fn cmd_tune(args: TuneArgs, ctx: OutputCtx) {
             process::exit(crate::exit_code::RULE_ERROR);
         }
     };
+    if let Some(path) = &args.expectations {
+        let resolved = match super::backtest::expectations::load_and_resolve(path, &collection) {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                eprintln!("error: {error}");
+                process::exit(crate::exit_code::CONFIG_ERROR);
+            }
+        };
+        report.expectation_diff = Some(expectation_diff(
+            &report,
+            &rule,
+            &resolved,
+            args.fp.as_deref(),
+            &args.tp,
+        ));
+    }
 
     match args.emit {
         EmitMode::Yaml => {
@@ -197,6 +217,18 @@ fn render_report(report: &TuneReport, ctx: &OutputCtx) {
             println!();
             println!("# Filter rule");
             print!("{}", report.filter_yaml);
+            if let Some(diff) = &report.expectation_diff {
+                println!();
+                println!("# Backtest expectation diff");
+                println!(
+                    "false positives: {} -> {}; true positives: {} -> {}",
+                    diff.false_positives_before,
+                    diff.false_positives_after,
+                    diff.true_positives_before,
+                    diff.true_positives_after
+                );
+                print!("{}", diff.fragment);
+            }
         }
     }
 }
@@ -211,6 +243,73 @@ fn print_summary_stderr(report: &TuneReport) {
     );
     for warning in &report.warnings {
         eprintln!("warning: {warning}");
+    }
+}
+
+fn expectation_diff(
+    report: &TuneReport,
+    rule: &rsigma_parser::SigmaRule,
+    resolved: &super::backtest::expectations::ResolvedExpectations,
+    fp_spec: Option<&str>,
+    tp_spec: &str,
+) -> TuneExpectationDiff {
+    let rule_key = rule.id.as_deref().unwrap_or(&rule.title);
+    let existing = resolved
+        .expectations
+        .iter()
+        .filter(|expectation| expectation.rule_key == rule_key)
+        .map(|expectation| match &expectation.corpus {
+            Some(corpus) => format!(
+                "{} [{}]: {}",
+                expectation.reference,
+                corpus,
+                expectation.bound.describe()
+            ),
+            None => format!(
+                "{}: {}",
+                expectation.reference,
+                expectation.bound.describe()
+            ),
+        })
+        .collect();
+    let fp_label = corpus_label(fp_spec, "false-positives.ndjson");
+    let tp_label = corpus_label(Some(tp_spec), "true-positives.ndjson");
+    let fragment = format!(
+        "expectations:\n  - rule: {}\n    corpus: {}\n    exactly: {}\n  - rule: {}\n    corpus: {}\n    at_least: {}\n",
+        yaml_scalar(rule_key),
+        yaml_scalar(&fp_label),
+        report.verification.false_positives_after,
+        yaml_scalar(rule_key),
+        yaml_scalar(&tp_label),
+        report.verification.true_positives_after
+    );
+    TuneExpectationDiff {
+        existing,
+        false_positives_before: report.verification.false_positives_before,
+        false_positives_after: report.verification.false_positives_after,
+        true_positives_before: report.verification.true_positives_before,
+        true_positives_after: report.verification.true_positives_after,
+        fragment,
+    }
+}
+
+fn corpus_label(spec: Option<&str>, fallback: &str) -> String {
+    spec.and_then(|spec| spec.strip_prefix('@'))
+        .and_then(|path| std::path::Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn yaml_scalar(value: &str) -> String {
+    let bare_safe = !value.is_empty()
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
+        });
+    if bare_safe {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "''"))
     }
 }
 

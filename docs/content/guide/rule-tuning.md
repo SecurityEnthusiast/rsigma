@@ -9,7 +9,7 @@
 rsigma rule tune -r rules/ --rule <RULE_ID> --fp @false-positives.ndjson --tp @true-positives.ndjson > tuning-filter.yml
 
 # Review the rationale and machine-readable verification.
-rsigma rule tune -r rules/ --rule <RULE_ID> --fp @false-positives.ndjson --tp @true-positives.ndjson --emit report --output-format json
+rsigma rule tune -r rules/ --rule <RULE_ID> --fp @false-positives.ndjson --tp @true-positives.ndjson --expectations expectations.yml --emit report --output-format json
 
 # Confirm the artifact after any manual edits.
 rsigma rule lint tuning-filter.yml
@@ -26,6 +26,8 @@ Tuning runs the target through the real evaluator twice:
 2. The target and proposed filter are added to one `SigmaCollection`. `Engine::add_collection` applies the filter exactly as production loading does. Every TP must still fire and every covered FP must stop firing.
 
 This catches polarity errors, Sigma wildcard escaping, modifier semantics, pipeline field mappings, filter targeting, and logsource compatibility through the production code path rather than a second approximation.
+
+When `--expectations` is supplied, report mode also lists the target's existing backtest bounds and appends a paste-ready fragment for the FP and TP corpus filenames. The fragment pins the post-filter FP count and requires at least the verified TP count, so the tuning change can carry its own regression evidence into CI.
 
 ## Why the condition is negated
 

@@ -160,6 +160,23 @@ pub struct TuneVerification {
     pub true_positives_after: usize,
 }
 
+/// Backtest expectation evidence attached by a caller.
+#[derive(Debug, Clone, Serialize)]
+pub struct TuneExpectationDiff {
+    /// Existing bounds for the target rule from the supplied expectations file.
+    pub existing: Vec<String>,
+    /// Target fires over the FP corpus before filtering.
+    pub false_positives_before: usize,
+    /// Target fires over the FP corpus after filtering.
+    pub false_positives_after: usize,
+    /// Target fires over the TP corpus before filtering.
+    pub true_positives_before: usize,
+    /// Target fires over the TP corpus after filtering.
+    pub true_positives_after: usize,
+    /// Paste-ready expectations YAML for the two supplied corpora.
+    pub fragment: String,
+}
+
 /// A verified tuning proposal and its rationale.
 #[derive(Debug, Clone, Serialize)]
 pub struct TuneReport {
@@ -175,6 +192,9 @@ pub struct TuneReport {
     pub false_positive_coverage: f64,
     /// Advisory notes, including title targeting fallback and partial coverage.
     pub warnings: Vec<String>,
+    /// Optional before/after backtest expectation evidence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expectation_diff: Option<TuneExpectationDiff>,
 }
 
 #[derive(Debug, Clone)]
@@ -325,6 +345,7 @@ pub fn tune_rule(
         false_positive_coverage: (false_positives.len() - uncovered.len()) as f64
             / false_positives.len() as f64,
         warnings,
+        expectation_diff: None,
     })
 }
 

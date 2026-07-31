@@ -1,0 +1,8 @@
+false positives: 2 -> 0; true positives: 1 -> 1
+expectations:
+  - rule: 929a690e-bef0-4204-a928-ef5e620d6fcc
+    corpus: false-positives.ndjson
+    exactly: 0
+  - rule: 929a690e-bef0-4204-a928-ef5e620d6fcc
+    corpus: true-positives.ndjson
+    at_least: 1
