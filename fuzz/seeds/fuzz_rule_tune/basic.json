@@ -1,0 +1,1 @@
+{"fp":[{"Image":"C:\\Program Files\\Veeam\\backup.exe","User":"svc_backup"},{"Image":"C:\\Program Files\\Veeam\\backup.exe","User":"svc_backup"}],"tp":[{"Image":"C:\\Temp\\backup.exe","User":"attacker"}]}

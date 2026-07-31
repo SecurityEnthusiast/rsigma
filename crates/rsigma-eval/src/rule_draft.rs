@@ -35,7 +35,7 @@ use crate::engine::Engine;
 use crate::event::Event;
 use crate::schema::SchemaClassifier;
 
-mod draft_core;
+pub(crate) mod draft_core;
 use draft_core::*;
 
 // =============================================================================

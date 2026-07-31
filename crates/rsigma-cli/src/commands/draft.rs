@@ -216,12 +216,12 @@ fn new_uuid_v4() -> String {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Default)]
-struct Corpus {
-    events: Vec<serde_json::Value>,
-    parse_errors: usize,
+pub(super) struct Corpus {
+    pub(super) events: Vec<serde_json::Value>,
+    pub(super) parse_errors: usize,
 }
 
-fn read_events(event_arg: Option<&str>, label: &str) -> Result<Corpus, String> {
+pub(super) fn read_events(event_arg: Option<&str>, label: &str) -> Result<Corpus, String> {
     let mut events = Vec::new();
     let mut parse_errors = 0usize;
 

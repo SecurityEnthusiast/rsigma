@@ -40,6 +40,7 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 * **[Sigma parsing](https://rsigma.io/library/parser/):** Parses Sigma YAML into a strongly-typed AST with support for detection, correlation, and filter rules
 * **[Array matching](https://rsigma.io/guide/array-matching/) (experimental):** Matches members of arrays in nested event data with any/all-member semantics, same-element correlation, and positional indexing, opt-in via `sigma-version: 3`
 * **[Rule drafting](https://rsigma.io/guide/rule-drafting/):** Drafts a detection rule from exemplar events contrasted against a baseline corpus with `rule draft`
+* **[Rule tuning](https://rsigma.io/guide/rule-tuning/):** Proposes a spec-native filter from false-positive events, verifies that every known true positive still fires, and refuses unsafe separators with `rule tune`
 * **[Built-in linter](https://rsigma.io/guide/linting-rules/):** Validates rules with 85 checks, four severity levels, suppressions, custom tag namespaces, and auto-fix for 14 safe rules
 * **[ADS metadata](https://rsigma.io/guide/detection-strategy/):** Documents rules with [Palantir ADS](https://github.com/palantir/alerting-detection-strategy-framework) sections under `rsigma.ads.*`, enforced by the linter and scaffolded with `rule doc`
 * **LSP server:** Provides real-time diagnostics, completions, hover documentation, document symbols, and quick-fix code actions in [VSCode](https://rsigma.io/editors/vscode/), [Neovim](https://rsigma.io/editors/neovim/), and any LSP-capable editor

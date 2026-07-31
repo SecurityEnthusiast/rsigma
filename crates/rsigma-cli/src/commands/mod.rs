@@ -33,6 +33,7 @@ mod scorecard;
 mod status;
 mod tail;
 mod tap;
+mod tune;
 mod validate;
 mod visibility;
 
@@ -65,5 +66,6 @@ pub(crate) use scorecard::{ScorecardArgs, apply_scorecard_config, cmd_scorecard}
 pub(crate) use status::{StatusArgs, cmd_status};
 pub(crate) use tail::{TailArgs, cmd_tail};
 pub(crate) use tap::{TapArgs, cmd_tap};
+pub(crate) use tune::{TuneArgs, cmd_tune};
 pub(crate) use validate::{ValidateArgs, cmd_validate};
 pub(crate) use visibility::{VisibilityArgs, apply_visibility_config, cmd_visibility};

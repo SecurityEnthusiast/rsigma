@@ -48,6 +48,9 @@ rsigma backend convert -r rules/ -t postgres
 # List all fields referenced by rules (with optional pipeline mapping)
 rsigma rule fields -r rules/ -p ecs_windows
 
+# Propose a verified filter from classified false-positive and true-positive events
+rsigma rule tune -r rules/ --rule <RULE_ID> --fp @false-positives.ndjson --tp @true-positives.ndjson
+
 # List available conversion backends
 rsigma backend targets
 ```
@@ -66,7 +69,7 @@ These flags work with every subcommand, mirroring how `--log-format` does, and t
 
 ## Subcommands
 
-Commands are grouped into four noun-led groups: `engine` (eval / daemon), `rule` (parse / validate / lint / fields / doc / backtest / coverage / scorecard / visibility / hygiene / condition / stdin), `backend` (convert / targets / formats), and `pipeline` (resolve).
+Commands are grouped into four noun-led groups: `engine` (eval/daemon), `rule` (parse/validate/lint/fields/draft/tune/doc/backtest/coverage/scorecard/visibility/hygiene/condition/stdin), `backend` (convert/targets/formats), and `pipeline` (resolve).
 
 ### `config`: YAML configuration
 

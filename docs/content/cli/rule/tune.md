@@ -1,0 +1,67 @@
+# `rsigma rule tune`
+
+Propose a verified Sigma filter rule from false-positive and true-positive exemplar events.
+
+## Synopsis
+
+```text
+rsigma rule tune --rules <PATH> --fp <JSON|@PATH> --tp <JSON|@PATH> [OPTIONS]
+```
+
+## Description
+
+`rule tune` profiles events labeled as false positives against a required set of known true positives and emits a standard Sigma filter rule. The proposal targets one detection rule by id, copies its post-pipeline logsource, and uses `condition: not selection` because the evaluation engine injects a filter condition exactly as written.
+
+The command verifies two invariants before printing anything. First, every supplied FP and TP must fire the unfiltered target rule; non-firing events are labeling errors. Second, after applying the emitted filter through the real `Engine::add_collection` path, no covered FP may fire and every TP must still fire. The command refuses to emit when no clean separator exists.
+
+## Inputs
+
+- `-r, --rules <PATH>`: Sigma rule file or directory.
+- `--rule <ID|TITLE>`: target rule id, with exact-title fallback. Required for a ruleset containing more than one detection rule.
+- `--fp <JSON|@PATH>`: false-positive events as one inline JSON event or an NDJSON/EVTX file. When omitted, reads NDJSON from stdin.
+- `--tp <JSON|@PATH>`: required true-positive events as one inline JSON event or an NDJSON/EVTX file.
+- `-p, --pipeline <PATH|NAME>`: repeatable processing pipeline applied before profiling and verification. Emitted fields and logsource reflect the transformed rule.
+
+## Tuning controls
+
+- `--max-fields <N>` defaults to `4` and limits each filter conjunction.
+- `--max-value-cardinality <N>` defaults to `8` and limits exact values in one OR list.
+- `--min-cluster-support <N>` defaults to `2`; a single-event cluster is refused as memorization.
+- `--max-clusters <N>` defaults to `5` and limits selections in one filter.
+- `--allow-partial` permits a proposal that covers only cleanly separable FP clusters while still suppressing no TP. The report names every uncovered FP index.
+- `--emit yaml|report` defaults to `yaml`. Report mode follows the global output format.
+
+## Example
+
+```bash
+rsigma rule tune -r rules/ --rule 929a690e-bef0-4204-a928-ef5e620d6fcc --fp @false-positives.ndjson --tp @true-positives.ndjson > tuning-filter.yml
+rsigma rule lint tuning-filter.yml
+```
+
+```yaml
+title: Tuning filter for Suspicious Backup Tool
+id: 3f7b1c2e-9a44-4d1e-8f61-2b0c5d9e7a10
+description: 'Suppresses 2 observed false-positive exemplars; verified against 4 true-positive exemplars.'
+author: 'rsigma rule tune'
+logsource:
+    category: process_creation
+    product: windows
+filter:
+    rules:
+        - 929a690e-bef0-4204-a928-ef5e620d6fcc
+    selection:
+        User: svc_backup
+        Image|startswith: 'C:\Program Files\Veeam\'
+    condition: not selection
+```
+
+## Exit codes
+
+- `0`: a verified filter or report was emitted.
+- `2`: rules/events could not be read, labels did not fire before filtering, the target was ambiguous, a pipeline failed, or no clean separator existed.
+
+## See also
+
+- [Rule Tuning](../../guide/rule-tuning.md) for the workflow and safety model.
+- [`rule draft`](draft.md) for authoring a new detection from positive exemplars.
+- [`rule backtest`](backtest.md) for corpus-level regression expectations.

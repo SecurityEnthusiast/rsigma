@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Verified false-positive-driven rule tuning
+
+`rsigma rule tune` now contrasts false-positive events with a required true-positive corpus and proposes a standard Sigma filter rule. It verifies every label against the unfiltered target, applies the emitted filter through the production engine path, and refuses any separator that suppresses a true positive. Stable value forms, wildcard escaping, and deterministic YAML emission are shared with `rule draft`; disjoint benign patterns may become supported multi-selection filters, while minimum cluster support prevents single-event memorization. Pipelines transform the target before profiling so emitted fields and logsource match deployment.
+
 ### Sustained-throughput tuning walkthrough (#430)
 
 The performance guide now provides one end-to-end recipe for sizing rayon, enabling logsource routing, batching sustained traffic, selecting the detection in-flight depth, generating representative HTTP load, and distinguishing engine-only benchmarks from production sink capacity. It also consolidates the measured gains and the final 61.7% eight-worker efficiency result.

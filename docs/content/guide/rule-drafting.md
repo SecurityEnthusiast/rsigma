@@ -69,6 +69,7 @@ The rule uses the exemplars' field names as they appear in the events. ECS exemp
 
 ## See also
 
+- [Rule Tuning](rule-tuning.md) to turn classified false positives into a verified filter for an existing rule.
 - [`rule draft` reference](../cli/rule/draft.md) for every flag and exit code.
 - [Evaluating Rules](evaluating-rules.md) to replay the draft against telemetry.
 - [Linting Rules](linting-rules.md) for the checks the draft is held to.

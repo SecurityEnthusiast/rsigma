@@ -60,6 +60,11 @@ path = "fuzz_targets/fuzz_input_formats.rs"
 doc = false
 
 [[bin]]
+name = "fuzz_rule_tune"
+path = "fuzz_targets/fuzz_rule_tune.rs"
+doc = false
+
+[[bin]]
 name = "fuzz_pipeline_sources_yaml"
 path = "fuzz_targets/fuzz_pipeline_sources_yaml.rs"
 doc = false

@@ -45,6 +45,8 @@ serde_json = "1"   # only if you use the JsonEvent shim
 | `ProcessResult` | Alias for `Vec<EvaluationResult>`. The `CorrelationEngine::process_event` return: every result for an event, detections first then correlations, in evaluation order. |
 | `ProcessResultExt` | Extension trait on `[EvaluationResult]` exposing `detections()` / `correlations()` iterators and `detection_count()` / `correlation_count()`. Bring this into scope when you want kind-filtered iteration without pattern matching. |
 | `CompiledMatcher`, `CompiledRule` | Internal matcher tree types; consume via the AST conversion or build them yourself for an alternative front-end. |
+| `draft_rule`, `DraftConfig`, `DraftReport` | Profile positive exemplars against an optional baseline and emit a verified detection-rule draft. |
+| `tune_rule`, `TuneConfig`, `TuneReport` | Contrast false-positive and true-positive exemplars and emit a verified Sigma filter rule that suppresses no TP. |
 
 The full enum of modifiers, the matcher-optimizer constants, the `rsigma.*` custom-attribute table, and the bloom/cross-rule prefilters live in [the crate README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-eval/README.md).
 
@@ -107,6 +109,12 @@ engine.add_collection(&collection)?;
 ```
 
 After this, the rule sees ECS field names; an event with `process.command_line` matches.
+
+## Rule tuning
+
+`tune_rule(rule, false_positives, true_positives, config)` accepts one parsed, optionally pipeline-transformed `SigmaRule` plus JSON event values. It verifies that every label fires before filtering, profiles reusable value forms from the FP set, rejects candidates that match a TP, emits a standard filter rule, and verifies the final artifact through `Engine::add_collection`.
+
+`TuneConfig` bounds field count, OR-list cardinality, cluster support, and cluster count. `TuneReport` contains the paste-ready YAML, ranked field rationale, emitted selections, FP coverage, warnings, and closed before/after counts. `TuneError::NoCleanSeparator` is returned instead of an unsafe filter when the corpora cannot be separated.
 
 ## Correlation
 
