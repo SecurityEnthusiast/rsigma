@@ -92,13 +92,13 @@ impl RsigmaMcp {
                 return Ok(json!({ "ok": false, "error": error }));
             }
         };
-        if !pipelines.is_empty() {
-            if let Err(error) = apply_pipelines(&pipelines, &mut rule) {
-                return Ok(json!({
-                    "ok": false,
-                    "error": format!("pipeline application error: {error}")
-                }));
-            }
+        if !pipelines.is_empty()
+            && let Err(error) = apply_pipelines(&pipelines, &mut rule)
+        {
+            return Ok(json!({
+                "ok": false,
+                "error": format!("pipeline application error: {error}")
+            }));
         }
 
         let mut config = TuneConfig::default();
