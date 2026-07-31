@@ -12,7 +12,7 @@ The workspace runs six tiers of tests, all gated in CI. PRs are expected to pass
 | Snapshot / golden | `crates/rsigma-{parser,eval,convert}/tests/snapshots/`, `tests/fixtures/dynamic-pipelines/golden/` | `cargo test` plus the SigmaHQ-corpus job for the dynamic-pipelines goldens. | `test` and `sigma-corpus` jobs. |
 | SigmaHQ corpus | `.github/workflows/ci.yml` -> `sigma-corpus` | `cargo build --release --all-features --locked -p rsigma` then `target/release/rsigma rule validate /tmp/sigma/rules/ --verbose` | `sigma-corpus` job, on every PR. |
 | Coverage | `cargo-llvm-cov` (Linux) | `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info` | `coverage` job (advisory, not gating). |
-| Representative performance | `.github/workflows/performance.yml`, `scripts/perf/` | `scripts/perf/fetch-fixtures.sh` then the offline and daemon harnesses | Coarse same-runner base/PR gate; weekly full matrix with retained artifacts. |
+| Representative performance | `.github/workflows/performance.yml`, `scripts/perf/` | `scripts/perf/fetch-fixtures.sh` then the offline and daemon harnesses | Coarse same-runner base/PR gate; weekly full matrix plus native glibc/static musl scaling on dedicated eight-core amd64/arm64 runners. |
 
 ## Unit tests
 
@@ -200,6 +200,8 @@ Criterion microbenchmarks are not gated in CI. The numbers in [Benchmarks](../be
 The Criterion suites use synthetic, mostly exact-match-indexable rules, so they measure hot paths, not representative corpus throughput. For a representative before/after, materialize the pinned SigmaHQ workload with `scripts/perf/fetch-fixtures.sh` and run `scripts/perf/baseline-eval.sh` (offline eval matrix, single core, net of rule load) and `scripts/perf/daemon-matrix.sh` (daemon HTTP end to end across lanes and flag variants, wrapping `scripts/perf/baseline-daemon.sh`). Both take an `RSIGMA` override, so a pre-change build can be measured through the same harness for an honest before-and-after. The daemon matrix includes `--include-event` variants, including the match-heavy lane where event cloning matters most, and a handcrafted event-count/value-count/value-sum/temporal-ordered correlation lane because the pinned SigmaHQ tree contains no correlation rules.
 
 The Performance workflow builds the PR and its base revision on the same GitHub-hosted runner, runs the load-corrected median-of-three offline matrix through one checked-in harness, verifies match counts, and rejects only a head/base EPS ratio below 0.5. That intentionally coarse floor catches order-of-magnitude regressions without pretending shared-runner noise can support fine-grained gating. A weekly/manual job runs five samples of the full offline matrix, reports a deterministic bootstrap 95% confidence interval, runs the daemon matrix, and retains the raw artifacts for 90 days.
+
+Weekly/manual runs also build native glibc and static musl image binaries on dedicated eight-core amd64 and arm64 runners. `scripts/perf/inflight-compare.sh` alternates five samples each at detection depths 4 and 5, then rejects a depth-5 throughput ratio below 0.98 or a backpressure-rate increase above 0.008. This gate covers the allocator and architecture behavior that the native PR comparison cannot observe.
 
 The production candidate index is measured directly, rather than inferred from the witness-audit simulation:
 

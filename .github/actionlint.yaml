@@ -1,0 +1,8 @@
+self-hosted-runner:
+  labels:
+    - rsigma-perf-amd64-8
+    - rsigma-perf-arm64-8
+
+config-variables: null
+
+paths:
