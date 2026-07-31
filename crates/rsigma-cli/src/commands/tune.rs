@@ -46,7 +46,7 @@ pub(crate) struct TuneArgs {
     #[arg(long, default_value_t = 8)]
     pub max_value_cardinality: usize,
 
-    /// Minimum events required in a derived FP cluster.
+    /// Minimum FP events required for every emitted selection.
     #[arg(long, default_value_t = 2)]
     pub min_cluster_support: usize,
 

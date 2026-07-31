@@ -27,7 +27,7 @@ pub struct TuneConfig {
     pub max_value_cardinality: usize,
     /// Minimum shared token length for inferred string forms.
     pub min_token_len: usize,
-    /// Minimum events required in a derived FP cluster.
+    /// Minimum FP events required for every emitted selection.
     pub min_cluster_support: usize,
     /// Maximum selections emitted in one filter rule.
     pub max_clusters: usize,

@@ -40,7 +40,7 @@ pub struct TuneRulesInput {
     /// Maximum exact values in one OR list.
     #[serde(default)]
     pub max_value_cardinality: Option<usize>,
-    /// Minimum FP events in a derived cluster.
+    /// Minimum FP events required for every emitted selection.
     #[serde(default)]
     pub min_cluster_support: Option<usize>,
     /// Maximum selections in the emitted filter.
