@@ -285,7 +285,7 @@ assert_eq!(matches[0].rule_title, "Detect Whoami");
 
 ![rsigma streaming detection architecture](assets/architecture.svg)
 
-A Sigma rule is parsed into a strongly-typed AST (`rsigma-parser`), lowered into a shared intermediate representation (`rsigma-ir`), then compiled and evaluated against live events (`rsigma-eval` inside `rsigma-runtime`), converted into backend-native queries (`rsigma-convert`), or served to editors and AI agents (`rsigma-lsp`, `rsigma-mcp`). The full walkthrough, covering every module and all four execution shapes, lives in the [Architecture reference](https://rsigma.io/reference/architecture/).
+A Sigma rule is parsed into a strongly-typed AST (`rsigma-parser`), lowered into a shared intermediate representation (`rsigma-ir`), then compiled and evaluated against live events (`rsigma-eval` inside `rsigma-runtime`), converted into backend-native queries (`rsigma-convert`), or served to editors and AI agents (`rsigma-lsp`, `rsigma-mcp`). The evaluation library also powers exemplar-driven rule drafting and verified filter tuning through the CLI and MCP. The full walkthrough, covering every module and all four execution shapes, lives in the [Architecture reference](https://rsigma.io/reference/architecture/).
 
 ![rsigma internal architecture](assets/internal_architecture.svg)
 
