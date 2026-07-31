@@ -26,6 +26,10 @@ On the pinned SigmaHQ raw Windows workload with `--logsource-routing`, `--batch-
 
 `rsigma_batch_phase_duration_seconds` now records `decode_merge`, `observe`, `result_merge`, and `dispatch` alongside `parse` and `evaluate`, so operators can rank the remaining ordered-batch costs after parallel parsing. `scripts/perf/baseline-daemon.sh` prints every phase delta and its share of measured batch time.
 
+### rstix: tighten §3.1 Attack Pattern interop evidence (#418)
+
+Closes soft gaps left after #413/#414: `EX-4.2` pins published truncated wire ids and requires bundle parse to carry the same `InvalidUuid` detail those ids share; `P-04` scopes Zero diagnostics by structured `object_id` only; `C-04` keeps `get_field` wire equalities and pins leaf-list cardinality so `KillChainPhase`/`ExternalReference` validate loops run.
+
 ### Parallel daemon parsing and single-parse DLQ routing (#415)
 
 The daemon now parses each formatted input batch in parallel before taking the engine mutex. A separate ordering lock keeps exactly one batch in flight, so raw taps still see every line before parsing, decoded taps and observers retain input order, correlations run in order, output order is unchanged, and an in-flight batch remains attached to the engine snapshot it started with. Hot reload and correlation-state import/export coordinate with the same boundary.
