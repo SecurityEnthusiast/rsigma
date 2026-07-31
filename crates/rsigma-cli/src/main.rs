@@ -24,7 +24,7 @@ use commands::{
     BacktestArgs, ClassifyArgs, ConditionArgs, ConvertArgs, CoverageArgs, DiscoverArgs, DocArgs,
     DraftArgs, EvalArgs, ExplainArgs, FieldsArgs, HygieneArgs, LintArgs, LintCounts,
     ListFormatsArgs, MigrateSourcesArgs, ParseArgs, PipelineDiffArgs, ReverseArgs, ScorecardArgs,
-    StatusArgs, StdinArgs, TailArgs, TapArgs, ValidateArgs, VisibilityArgs,
+    StatusArgs, StdinArgs, TailArgs, TapArgs, TuneArgs, ValidateArgs, VisibilityArgs,
 };
 // `pipeline resolve` resolves dynamic sources, which needs the async runtime
 // (tokio) and the source resolver from rsigma-runtime. Both ship with the
@@ -205,6 +205,9 @@ enum RuleCommands {
 
     /// Draft a detection rule from exemplar events (optionally vs a baseline)
     Draft(DraftArgs),
+
+    /// Propose a verified filter from false-positive and true-positive events
+    Tune(TuneArgs),
 
     /// Convert a SIEM query into a draft Sigma rule (reverse conversion)
     Reverse(ReverseArgs),
@@ -389,6 +392,7 @@ fn dispatch_rule(cmd: RuleCommands, matches: &ArgMatches, ctx: output::OutputCtx
         RuleCommands::Lint(args) => run_lint(args, ctx),
         RuleCommands::Fields(args) => commands::cmd_fields(args, ctx),
         RuleCommands::Draft(args) => commands::cmd_draft(args, ctx),
+        RuleCommands::Tune(args) => commands::cmd_tune(args, ctx),
         RuleCommands::Reverse(args) => commands::cmd_reverse(args, ctx),
         RuleCommands::Doc(args) => {
             let dm = matches

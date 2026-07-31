@@ -23,7 +23,7 @@ flowchart TD
     QUERIES["SQL · SPL · KQL · Lucene · EDR rules<br/>30+ targets via sigma-cli"]
     EDITOR["Editor diagnostics + code actions"]
     AGENTS["MCP clients<br/>Cursor · Claude Code · remote agents"]
-    MCPJSON["Structured JSON<br/>AST · lint findings · matches · queries · fields"]
+    MCPJSON["Structured JSON<br/>AST · lint findings · matches · queries · fields<br/>verified tuning reports + filter YAML"]
 
     subgraph rsigma-parser
         direction TB
@@ -46,6 +46,8 @@ flowchart TD
         ETRAIT --> EPIPE["pipeline/<br/>Pipeline · conditions · transformations<br/>state · finalizers<br/>builtin: ecs_windows · sysmon<br/>dynamic: ${source.*} template expansion"]
         ECOMP["compiler/<br/>compile_to_compiled → CompiledRule<br/>materialize matchers from HIR<br/>matcher optimizer (AnyOf):<br/>Aho-Corasick batching (|contains)<br/>RegexSet batching (|re)<br/>CaseInsensitiveGroup"]
         ECOMP --> EENG["engine/<br/>Engine (stateless)<br/>prefilters:<br/>CandidateIndex (witness pruning)<br/>bloom trigram filter* (substring)<br/>cross-rule AC index** (daachorse)<br/>logsource pruning (conflict-based, product-partitioned)"]
+        ETRAIT --> EAUTHOR["rule authoring<br/>rule_draft · rule_tune<br/>shared profiling · verified YAML"]
+        EAUTHOR -.->|"closed verification"| EENG
         EENG --> ECORR["correlation/<br/>sliding windows · group-by<br/>chaining · suppression · introspect snapshot"]
         ECORR --> ECUST["rsigma.* custom attributes"]
     end
@@ -80,7 +82,7 @@ flowchart TD
     subgraph rsigma-mcp
         direction TB
         MCPSERVE["rsigma mcp serve<br/>stdio · Streamable HTTP (bearer auth · TLS)"]
-        MCPSERVE --> MCPH["RsigmaMcp handler<br/>12 tools: parse_rule · parse_condition · lint_rules<br/>validate_rules · evaluate_events · convert_rules<br/>list_backends · list_fields · resolve_pipeline<br/>list_builtin_pipelines · fix_rules · author_ads<br/>4 resources: lint catalogue · ADS schema · modifiers · MITRE tactics"]
+        MCPSERVE --> MCPH["RsigmaMcp handler<br/>14 tools: parse_rule · parse_condition · lint_rules<br/>validate_rules · evaluate_events · convert_rules<br/>list_backends · list_fields · resolve_pipeline<br/>list_builtin_pipelines · fix_rules · author_ads<br/>reverse_convert · tune_rules<br/>4 resources: lint catalogue · ADS schema · modifiers · MITRE tactics"]
     end
 
     YAML -->|"Raw YAML Value"| SERDE
@@ -99,7 +101,7 @@ flowchart TD
 
     AGENTS -->|"JSON-RPC"| MCPSERVE
     MCPH -.->|"parse · lint · fix · reference"| PARSE
-    MCPH -.->|"compile · evaluate · fields"| ETRAIT
+    MCPH -.->|"compile · evaluate · tune · fields"| ETRAIT
     MCPH -.->|"convert"| CBACK
     MCPH -.->|"sources · enrichment"| RSRC
     MCPH --> MCPJSON
@@ -119,11 +121,11 @@ The dependency direction goes left to right in the diagram above. Higher crates 
 |-------|------|-----------|---------------|
 | [`rsigma-parser`](https://docs.rs/rsigma-parser) | YAML → AST. The only crate that touches Sigma source. | `SigmaCollection`, `SigmaRule`, `CorrelationRule`, `FilterRule`, `Condition`, `SigmaStr`, `Modifier` | — |
 | [`rsigma-ir`](https://docs.rs/rsigma-ir) | Lower the AST into a shared, modifier-resolved HIR consumed by both eval and convert. Faithful, lossless matchers; opt-in optimization passes; a versioned CBOR cache. | `IrRule`, `IrDetection`, `IrCondition`, `IrMatcher`, `IrPattern`, `lower_rule`, `optimize_rule`, `HirCacheHeader`, `encode_rules`, `decode_rules` | — |
-| [`rsigma-eval`](https://docs.rs/rsigma-eval) | Lower rules to HIR, then materialize a matcher tree and evaluate events. Detection and correlation engine. Processing pipeline machinery. HIR restart cache. | `Engine`, `CorrelationEngine`, `Pipeline`, `Transformation`, `CompiledRule`, `Event`, `JsonEvent`, `MatchResult`, `CorrelationResult` | `parallel`, `daachorse-index` |
+| [`rsigma-eval`](https://docs.rs/rsigma-eval) | Lower rules to HIR, then materialize a matcher tree and evaluate events. Detection and correlation engine. Exemplar-driven rule drafting and tuning. Processing pipeline machinery. HIR restart cache. | `Engine`, `CorrelationEngine`, `Pipeline`, `Transformation`, `CompiledRule`, `Event`, `JsonEvent`, `MatchResult`, `CorrelationResult`, `DraftReport`, `TuneReport` | `parallel`, `daachorse-index` |
 | [`rsigma-convert`](https://docs.rs/rsigma-convert) | Render backend-native queries from the HIR. Non-native targets are delegated to sigma-cli. | `Backend` trait, `TextQueryConfig`, `PostgresBackend`, `LynxDbBackend`, `FibratusBackend`, `TestBackend` | — |
 | [`rsigma-runtime`](https://docs.rs/rsigma-runtime) | Streaming runtime. Input adapters, post-evaluation enrichment, sinks, dynamic-source resolver, NATS/OTLP plumbing, hot-reload. | `LogProcessor`, `RuntimeEngine`, `EventSource`, `Sink`, `EnrichmentPipeline`, `SourceResolver`, `SourceCache`, `TemplateExpander`, `EvtxFileReader` | `nats`, `otlp`, `logfmt`, `cef`, `evtx`, `daachorse-index` |
 | [`rsigma-lsp`](https://docs.rs/rsigma-lsp) | Language Server Protocol for editors. Diagnostics from the linter + parser + compiler, plus completions, hovers, and symbols. | `Backend` (tower-lsp impl), `Diagnostic` mapping | — |
-| [`rsigma-mcp`](https://docs.rs/rsigma-mcp) | Model Context Protocol server. Exposes the parser, linter, fixer, evaluator, converter, field extraction, and pipeline resolution as MCP tools and resources for AI agents, returning structured JSON. | `RsigmaMcp` handler, `serve_stdio` | `http` |
+| [`rsigma-mcp`](https://docs.rs/rsigma-mcp) | Model Context Protocol server. Exposes parsing, linting, fixing, evaluation, conversion, reverse conversion, rule tuning, field extraction, and pipeline resolution as MCP tools and resources for AI agents, returning structured JSON. | `RsigmaMcp` handler, `serve_stdio` | `http` |
 | `rstix` | STIX 2.1 library crate. **Data Model + Serialization** complete (`serde`, default; wire MUST at parse [**DD-DM-001**](../library/rstix.md#rstix-wire-format-validation-dd-dm-001); [wire conformance (STIX 2.1)](../library/rstix.md#rstix-wire-conformance-stix-21)). **Pattern Engine** complete (`pattern`). **Validation Pipeline** complete (`validate`, all twelve checks, conformance corpus + per-code diagnostic coverage). **Graph + Marking + Store** complete (`graph`, `marking`, `store`, `store-fs`). **TAXII Client** (`taxii`; [TAXII Client](../library/rstix.md#rstix-taxii-client)). | `Bundle::parse` / `parse_reader`, `Bundle::validate`, `ParseOptions` + typed `TypeRegistry`, 42 typed object families (`serde`); `Pattern::parse` / `evaluate` / … (`pattern`); `Validator` / structured `STIX-E/W/I/H` diagnostics (`validate`); `StixGraph`, `MarkingResolver`, `MemoryStore` / `StixStore` / `FsStore` (`graph` / `marking` / `store` / `store-fs`); `TaxiiClient`, `TaxiiEnvelope`, auth + pagination (`taxii`); deterministic SCO IDs, vocabulary tables | `serde` (default), `pattern`, `validate`, `graph`, `marking`, `store`, `store-fs`, `taxii`, `taxii-native-tls` |
 | `rsigma-cli` | The `rsigma` binary. Wires the other crates into a CLI and the streaming daemon. | `engine eval`, `engine daemon`, `rule *`, `backend *`, `pipeline resolve` | `daemon`, `daemon-nats`, `daemon-otlp`, plus all eval/runtime feature flags. |
 
@@ -181,7 +183,7 @@ PostgreSQL/TimescaleDB, LynxDB, and Fibratus (rule YAML for Windows EDR sensors)
 
 ### Plus: MCP
 
-`rsigma-mcp` exposes the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio, and over Streamable HTTP (with bearer-token auth and TLS) behind the `http` feature. The `RsigmaMcp` handler wraps `rsigma-parser`, `rsigma-eval`, `rsigma-convert`, and `rsigma-runtime` behind 12 tools (parse, lint, fix, validate, evaluate, convert, list backends and fields, resolve and list pipelines, and author ADS metadata) and 4 resources (the lint catalogue, the ADS schema, the modifier reference, and MITRE tactics), returning structured JSON. It is driven by `rsigma mcp serve`. See the [MCP server guide](../guide/mcp-server.md).
+`rsigma-mcp` exposes the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio, and over Streamable HTTP (with bearer-token auth and TLS) behind the `http` feature. The `RsigmaMcp` handler wraps `rsigma-parser`, `rsigma-eval`, `rsigma-convert`, and `rsigma-runtime` behind 14 tools (parse, lint, fix, validate, evaluate, convert, reverse-convert, tune, list backends and fields, resolve and list pipelines, and author ADS metadata) and 4 resources (the lint catalogue, the ADS schema, the modifier reference, and MITRE tactics), returning structured JSON. It is driven by `rsigma mcp serve`. See the [MCP server guide](../guide/mcp-server.md).
 
 ## Data flow
 
@@ -198,6 +200,12 @@ PostgreSQL/TimescaleDB, LynxDB, and Fibratus (rule YAML for Windows EDR sensors)
 - Multi-document YAML (`---`) maps to `SigmaCollection` with each document parsed into the appropriate kind.
 - Conditions go through a separate Pratt parser (`condition.rs`) that consumes the [Sigma condition expression grammar](https://sigmahq.io/docs/basics/conditions.html) with `not > and > or` precedence.
 - The parser is strict on the spec: unknown top-level keys fail compilation; unrecognised modifiers fail compilation. (Linting is a separate pass that surfaces best-practice issues without failing compilation.)
+
+### Exemplar-driven authoring (`rsigma-eval::rule_draft` and `::rule_tune`)
+
+Rule drafting and tuning are deterministic library workflows in `rsigma-eval`, shared by the CLI and MCP adapters. Both profile typed event values through the same stability, value-form, wildcard-escaping, and YAML-emission core. `draft_rule` contrasts positive exemplars with an optional baseline and emits a detection rule. `tune_rule` contrasts confirmed false positives with protected true positives and emits a separate Sigma filter rule targeting the existing detection.
+
+Generated artifacts re-enter the normal parser and evaluator paths before they are returned. Tuning first proves that every supplied label fires the unfiltered target, then loads the target and proposed filter together through `Engine::add_collection` and verifies that covered false positives stop firing while every true positive remains. Pipelines transform the target before profiling, so emitted fields and logsource match the deployment shape.
 
 ### AST to HIR (`rsigma-ir`)
 

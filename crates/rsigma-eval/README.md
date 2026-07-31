@@ -125,6 +125,17 @@ Turns exemplar events into a complete draft Sigma rule, verified end-to-end thro
 | `DraftReport` | `rule_yaml` (parse- and lint-checked), ranked `fields` (`DraftFieldReport` with score, `Stability` class, chosen modifier, values, baseline prevalence), `exemplar_matched`, `baseline_hits`/`baseline_hit_rate`, warnings |
 | `DraftError` | `NoExemplars`, `NoCandidateFields`, `CannotMatchExemplars` (the floor error: an over-broad draft is refused, not emitted), `ForcedFieldMismatch` (a forced include-field absent from some exemplars is named, never silently dropped) |
 
+### Rule tuning (`rule_tune` module)
+
+Contrasts false-positive events with required true-positive exemplars and emits a standard Sigma filter rule only after closed before/after verification through the real engine.
+
+| Type / function | Description |
+|-----------------|-------------|
+| `tune_rule(rule, false_positives, true_positives, &TuneConfig)` | Profile FP-stable fields, reject forms that match protected TPs, derive supported clusters when needed, emit a filter targeting the rule id, and verify the result through `Engine::add_collection` |
+| `TuneConfig` | Bounds minimum and maximum fields, exact-value cardinality, token length, minimum cluster support, maximum clusters, partial coverage, and caller-supplied metadata |
+| `TuneReport` | Paste-ready filter YAML, ranked field rationale, emitted selections, FP coverage, warnings, and before/after verification |
+| `TuneError` | Empty corpora, non-firing labels, no candidate fields, no clean separator, or an internal emitted-artifact failure |
+
 ## Detection Engine
 
 - **Witness-based candidate index**: every rule is analyzed into witnesses, necessary conditions of which at least one holds on any event the rule can match, drawn from exact values, substring needles, keywords, mandatory regex literals, and field presence. The index inverts that relation over a per-field presence list and exact-value map, one Aho-Corasick automaton per field for substring needles, and one keyword automaton scanned against every string value. Rules with no sound witness, chiefly those whose only required branch is negated, are evaluated against every event. Candidates come back in ascending rule order.

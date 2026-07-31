@@ -77,10 +77,10 @@
   <text x="228" y="441" font-size="10.5" fill="#4d4d4d">pipeline/: field mapping &#183; transforms</text>
   <text x="228" y="459" font-size="10.5" fill="#4d4d4d">compiler/: HIR &#8594; CompiledRule + optimizer</text>
   <text x="240" y="475" font-size="10" fill="#808080">Aho-Corasick &#183; RegexSet &#183; CI group</text>
-  <text x="228" y="493" font-size="10.5" fill="#4d4d4d">engine/: Engine (stateless) + CandidateIndex</text>
+  <text x="228" y="493" font-size="10.5" fill="#4d4d4d">engine/: Engine + CandidateIndex + logsource prune</text>
   <text x="240" y="509" font-size="10" fill="#808080">bloom prefilter* &#183; cross-rule AC** &#183; save_hir</text>
   <text x="228" y="527" font-size="10.5" fill="#4d4d4d">correlation/: windows &#183; group-by &#183; chain</text>
-  <text x="240" y="543" font-size="10" fill="#808080">logsource prune &#183; schema classify</text>
+  <text x="240" y="543" font-size="10" fill="#808080">rule_draft &#183; rule_tune: profiled + verified YAML</text>
 
   <!-- ===================== rsigma-convert ===================== -->
   <rect x="520" y="378" width="240" height="164" rx="8" fill="#ffeccf" stroke="#b3873a" stroke-dasharray="4 4"/>
@@ -131,8 +131,8 @@
   <text x="228" y="111" font-size="10.5" fill="#4d4d4d">driven by: rsigma mcp serve</text>
   <text x="228" y="129" font-size="10.5" fill="#4d4d4d">transports: stdio &#183; Streamable HTTP*</text>
   <text x="240" y="145" font-size="10" fill="#808080">bearer auth &#183; TLS</text>
-  <text x="228" y="163" font-size="10.5" fill="#4d4d4d">12 tools: parse &#183; lint &#183; fix &#183; validate</text>
-  <text x="240" y="179" font-size="10" fill="#808080">evaluate &#183; convert &#183; fields &#183; pipelines &#183; ads</text>
+  <text x="228" y="163" font-size="10.5" fill="#4d4d4d">14 tools: parse &#183; lint &#183; fix &#183; validate &#183; evaluate</text>
+  <text x="240" y="179" font-size="10" fill="#808080">convert &#183; reverse &#183; tune &#183; fields &#183; pipelines &#183; ads</text>
   <text x="228" y="197" font-size="10.5" fill="#4d4d4d">4 resources: catalogue &#183; ADS &#183; modifiers &#183; MITRE</text>
   <text x="228" y="217" font-size="10" fill="#808080">wraps parser &#183; eval &#183; convert &#183; runtime</text>
 
@@ -176,7 +176,7 @@
 
   <!-- ===================== rsigma-cli bar ===================== -->
   <rect x="210" y="936" width="850" height="28" rx="3" fill="#e6e6e6" stroke="#808080"/>
-  <text x="224" y="954" font-size="11" fill="#4d4d4d"><tspan font-weight="bold">rsigma-cli</tspan>  wires every crate into the rsigma binary:  engine eval  &#183;  engine daemon  &#183;  backend convert  &#183;  rule / pipeline subcommands</text>
+  <text x="224" y="954" font-size="11" fill="#4d4d4d"><tspan font-weight="bold">rsigma-cli</tspan>  wires every crate into the rsigma binary:  engine eval  &#183;  engine daemon  &#183;  backend convert  &#183;  rule draft / tune  &#183;  pipeline subcommands</text>
 
   <!-- ===================== legend ===================== -->
   <text x="24" y="859" font-size="11" fill="#4d4d4d">*  feature-gated</text>

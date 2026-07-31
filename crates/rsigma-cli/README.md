@@ -48,6 +48,9 @@ rsigma backend convert -r rules/ -t postgres
 # List all fields referenced by rules (with optional pipeline mapping)
 rsigma rule fields -r rules/ -p ecs_windows
 
+# Propose a verified filter from classified false-positive and true-positive events
+rsigma rule tune -r rules/ --rule <RULE_ID> --fp @false-positives.ndjson --tp @true-positives.ndjson
+
 # List available conversion backends
 rsigma backend targets
 ```
@@ -66,7 +69,7 @@ These flags work with every subcommand, mirroring how `--log-format` does, and t
 
 ## Subcommands
 
-Commands are grouped into four noun-led groups: `engine` (eval / daemon), `rule` (parse / validate / lint / fields / doc / backtest / coverage / scorecard / visibility / hygiene / condition / stdin), `backend` (convert / targets / formats), and `pipeline` (resolve).
+Commands are grouped into four noun-led groups: `engine` (eval/daemon), `rule` (parse/validate/lint/fields/draft/tune/doc/backtest/coverage/scorecard/visibility/hygiene/condition/stdin), `backend` (convert/targets/formats), and `pipeline` (resolve).
 
 ### `config`: YAML configuration
 
@@ -174,7 +177,7 @@ Checked N file(s): X passed, Y failed (A error(s), B warning(s), C info(s))
 
 ### `mcp serve`: Run the MCP server for AI agents
 
-Expose the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio. The agent calls structured tools (`parse_rule`, `parse_condition`, `lint_rules`, `validate_rules`, `evaluate_events`, `convert_rules`, `list_backends`, `list_fields`, `resolve_pipeline`, `list_builtin_pipelines`) and gets back JSON.
+Expose the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio. The agent calls structured tools (`parse_rule`, `parse_condition`, `lint_rules`, `validate_rules`, `evaluate_events`, `tune_rules`, `convert_rules`, `list_backends`, `list_fields`, `resolve_pipeline`, `list_builtin_pipelines`) and gets back JSON.
 
 ```bash
 rsigma mcp serve                                   # stdio MCP server

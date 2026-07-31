@@ -175,7 +175,7 @@
   <rect x="44" y="454" width="197" height="82" fill="#e6f2ff" stroke="none"/>
   <text x="142" y="471" font-size="10.5" text-anchor="middle" fill="#4d4d4d">via rsigma mcp serve</text>
   <text x="142" y="489" font-size="10.5" text-anchor="middle" fill="#4d4d4d">parse &#183; lint &#183; fix &#183; validate</text>
-  <text x="142" y="505" font-size="10.5" text-anchor="middle" fill="#4d4d4d">evaluate &#183; convert &#183; fields</text>
+  <text x="142" y="505" font-size="10.5" text-anchor="middle" fill="#4d4d4d">evaluate &#183; convert &#183; tune &#183; fields</text>
   <text x="142" y="523" font-size="10.5" text-anchor="middle" fill="#808080">stdio &#183; HTTP* (bearer &#183; TLS)</text>
 
   <!-- ===================== legend ===================== -->

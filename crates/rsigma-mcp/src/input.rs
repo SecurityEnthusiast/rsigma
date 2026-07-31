@@ -43,3 +43,33 @@ pub(crate) fn resolve_path(path: &str, root: Option<&Path>) -> PathBuf {
         _ => p.to_path_buf(),
     }
 }
+
+/// Resolve and canonicalize a path, confining it to `root` when configured.
+///
+/// Both the root and candidate are canonicalized before containment is checked,
+/// so absolute paths and symlink escapes fail closed.
+pub(crate) fn resolve_confined_path(path: &str, root: Option<&Path>) -> Result<PathBuf, McpError> {
+    let resolved = resolve_path(path, root);
+    let Some(root) = root else {
+        return Ok(resolved);
+    };
+    let canonical_root = root.canonicalize().map_err(|error| {
+        McpError::invalid_params(
+            format!("cannot resolve rules dir '{}': {error}", root.display()),
+            None,
+        )
+    })?;
+    let canonical = resolved.canonicalize().map_err(|error| {
+        McpError::invalid_params(
+            format!("cannot read '{}': {error}", resolved.display()),
+            None,
+        )
+    })?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err(McpError::invalid_params(
+            format!("path '{path}' escapes the configured --rules-dir"),
+            None,
+        ));
+    }
+    Ok(canonical)
+}

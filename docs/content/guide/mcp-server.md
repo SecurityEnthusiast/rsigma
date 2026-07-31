@@ -61,6 +61,7 @@ Every tool accepts **either** inline content (`yaml`, `condition`, `events`) **o
 | `list_builtin_pipelines` | (none) | The builtin pipelines (`ecs_windows`, `fibratus_windows`, `sysmon`). |
 | `fix_rules` | `yaml` or file `path`, `lint_rules`, `write` | Applies safe auto-fixes; returns the fixed YAML and applied/failed/skipped-unsafe counts. `write: true` (path only) persists to disk. |
 | `author_ads` | `yaml` or file/dir `path` | Per rule: the current ADS sections, the required sections missing under the active config, and a `rsigma.ads.*` scaffold to complete. |
+| `tune_rules` | rules (`yaml` or confined file/dir `path`), target `rule`, inline `false_positives` and `true_positives`, optional `pipelines` and tuning bounds | A verified `TuneReport` containing filter YAML, field rationale, clusters, FP coverage, warnings, and before/after counts. |
 
 ## Resources
 
@@ -104,6 +105,26 @@ Convert it to PostgreSQL:
 { "name": "convert_rules", "arguments": { "path": "windows/proc.yml", "target": "postgres", "format": "view" } }
 ```
 
+Propose a filter while protecting a known true positive:
+
+```json
+{
+  "name": "tune_rules",
+  "arguments": {
+    "path": "windows/backup-tool.yml",
+    "rule": "929a690e-bef0-4204-a928-ef5e620d6fcc",
+    "false_positives": [
+      { "Image": "C:\\Program Files\\Veeam\\backup.exe", "User": "svc_backup" },
+      { "Image": "C:\\Program Files\\Veeam\\backup.exe", "User": "svc_backup" }
+    ],
+    "true_positives": [
+      { "Image": "C:\\Temp\\backup.exe", "User": "attacker" }
+    ],
+    "filter_id": "3f7b1c2e-9a44-4d1e-8f61-2b0c5d9e7a10"
+  }
+}
+```
+
 ## sigma-cli delegation
 
 By default the server is pure in-process Rust and `convert_rules` only accepts the native targets. Starting it with `--allow-sigma-cli` (config key `mcp.allow_sigma_cli`) lets `convert_rules` delegate any other target to an installed [sigma-cli](../reference/backends/sigma-cli.md), reaching the full pySigma backend set (`splunk`, `elasticsearch`, `kusto`, `qradar`, `loki`, and more):
@@ -123,8 +144,9 @@ A productive pattern an agent can run end to end:
 1. **Draft** a rule and call `parse_rule` to confirm it is structurally valid.
 2. **Lint** with `lint_rules`; for each finding, the `rule` id and `fixable` flag tell the agent whether to apply a known-safe correction or rewrite by hand.
 3. **Evaluate** with `evaluate_events` against a handful of positive and negative sample events to confirm the rule fires where expected and stays quiet otherwise. `match_detail: "summary"` (or `"full"`) explains *why* each event matched.
-4. **Validate** the whole set with `validate_rules` (optionally with `pipelines`) before shipping.
-5. **Convert** with `convert_rules` to the deployment backend.
+4. **Tune** a noisy rule with `tune_rules`, supplying classified false positives and a protected true-positive set, then review the returned filter and evidence.
+5. **Validate** the whole set with `validate_rules` (optionally with `pipelines`) before shipping.
+6. **Convert** with `convert_rules` to the deployment backend.
 
 ## HTTP deployment
 

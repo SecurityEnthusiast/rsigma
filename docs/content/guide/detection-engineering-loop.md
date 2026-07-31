@@ -14,9 +14,10 @@ RSigma does not replace threat-intel review, severity triage of candidate detect
 
 ### Author
 
-Turn exemplar events into a draft Sigma rule, finish metadata and correlation logic, and document the detection strategy.
+Turn exemplar events into a new Sigma rule or a verified filter for an existing noisy rule, finish metadata and correlation logic, and document the detection strategy.
 
 - [`rule draft`](../cli/rule/draft.md): profile exemplars against a baseline and emit verified YAML. See [Drafting Rules from Logs](rule-drafting.md).
+- [`rule tune`](../cli/rule/tune.md): contrast confirmed false positives with protected true positives and emit a verified Sigma filter. See [Rule Tuning](rule-tuning.md).
 - [`rule lint`](../cli/rule/lint.md) and the [LSP server](../editors/vscode.md): {{ rsigma.lint.rules }}-check validation with auto-fix. See [Linting Rules](linting-rules.md).
 - [`rule doc --scaffold`](../cli/rule/doc.md): stamp in ADS metadata (blind spots, validation recipe, response plan). See [Detection Strategy](detection-strategy.md).
 - [MCP server](mcp-server.md): drive the same toolchain from AI agents.

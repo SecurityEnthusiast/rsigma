@@ -188,9 +188,9 @@
   <path d="M40,320 a8,8 0 0 1 8,-8 h194 a8,8 0 0 1 8,8 v18 h-210 Z" fill="url(#hdrBlue)"/>
   <text x="145" y="74" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#ffffff">Author</text>
   <text class="ink" fill="#374151" x="52" y="102" font-size="10.5">&#8226; rule draft: rules from exemplar logs</text>
-  <text class="ink" fill="#374151" x="52" y="118" font-size="10.5">&#8226; rule reverse: Lucene query &#8594; Sigma</text>
-  <text class="ink" fill="#374151" x="52" y="134" font-size="10.5">&#8226; rule lint: 85 checks &#183; --fix</text>
-  <text class="muted" fill="#6b7280" x="52" y="150" font-size="10.5">&#8226; rule doc &#183; LSP &#183; MCP for AI agents</text>
+  <text class="ink" fill="#374151" x="52" y="118" font-size="10.5">&#8226; rule tune: FP / TP &#8594; verified filter</text>
+  <text class="ink" fill="#374151" x="52" y="134" font-size="10.5">&#8226; rule reverse: Lucene query &#8594; Sigma</text>
+  <text class="muted" fill="#6b7280" x="52" y="150" font-size="10.5">&#8226; lint &#183; doc &#183; LSP &#183; MCP for AI agents</text>
 
   <text x="145" y="202" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#ffffff">Test</text>
   <text class="ink" fill="#374151" x="52" y="230" font-size="10.5">&#8226; engine explain: why (no) match</text>

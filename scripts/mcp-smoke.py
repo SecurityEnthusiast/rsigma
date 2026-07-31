@@ -2,7 +2,7 @@
 """Smoke-test a built ``rsigma mcp serve`` binary end to end.
 
 Drives the MCP server over stdio (default) or Streamable HTTP (``--http``),
-runs the full surface (all 13 tools and 4 resources), and prints a pass/fail
+runs the full surface (all 14 tools and 4 resources), and prints a pass/fail
 summary. This is a quick post-build sanity check against a real binary; CI
 correctness is covered by the crate's Rust tests (``crates/rsigma-mcp/tests``
 and the per-tool unit tests).
@@ -82,6 +82,18 @@ TOOL_CALLS = [
     ("fix_rules", {"yaml": LINT_RULE}),
     ("author_ads", {"yaml": VALID_RULE}),
     ("reverse_convert", {"query": "CommandLine:*whoami*", "title": "Smoke reverse"}),
+    (
+        "tune_rules",
+        {
+            "yaml": VALID_RULE,
+            "false_positives": [
+                {**EVENT, "User": "svc_backup"},
+                {**EVENT, "User": "svc_backup"},
+            ],
+            "true_positives": [{**EVENT, "User": "attacker"}],
+            "filter_id": "33333333-3333-4333-8333-333333333333",
+        },
+    ),
 ]
 
 RESOURCES = [

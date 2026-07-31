@@ -111,6 +111,7 @@ rsigma rule backtest -r rules/ --corpus samples/ --output-format json | jq '.rul
 
 ## See also
 
+- [`rule tune`](tune.md) to derive a verified filter and generate paste-ready FP/TP expectations.
 - [CI/CD](../../guide/ci-cd.md) for the detection-as-code pipeline that wires backtest into GitHub Actions and GitLab CI.
 - [`rule scorecard`](scorecard.md) to feed this JSON report (with the coverage report) into per-rule keep/tune/retire verdicts.
 - [`engine eval`](../engine/eval.md) for one-shot evaluation; backtest is the corpus-replay test harness built on top of it.

@@ -1,6 +1,6 @@
 # Fuzzing
 
-The workspace ships 17 [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuzz.html) harnesses under `fuzz/fuzz_targets/`. The `Fuzz` GitHub Actions workflow runs 16 of them weekly (Monday 03:00 UTC) on `libFuzzer`; `fuzz_eval_matcher_diff` remains a manual differential target.
+The workspace ships 25 [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuzz.html) harnesses under `fuzz/fuzz_targets/`. The `Fuzz` GitHub Actions workflow runs 19 of them weekly (Monday 03:00 UTC) on `libFuzzer`; specialized differential and subsystem targets remain manual.
 
 ## Harness inventory
 
@@ -14,13 +14,21 @@ The workspace ships 17 [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuz
 | `fuzz_regex_compile` | The hardened regex compilation path (size and complexity caps). | 1024 |
 | `fuzz_pipeline_yaml` | Pipeline YAML parser. | 4096 |
 | `fuzz_pipeline_sources_yaml` | Dynamic-pipeline source spec parser. | 8192 |
+| `fuzz_alert_pipeline_config` | Alert-pipeline configuration parser. | 8192 |
 | `fuzz_input_formats` | The line-format parser (auto-detect, JSON, syslog, logfmt, CEF, plain). | 4096 |
+| `fuzz_rule_tune` | False-positive-driven rule tuning over JSON FP and TP corpora. | 65536 |
 | `fuzz_extract_jq` | jq extract language. | 4096 |
 | `fuzz_extract_jsonpath` | JSONPath extract language. | 4096 |
 | `fuzz_extract_cel` | CEL extract language. | 4096 |
 | `fuzz_template_expand` | The `${source.X}` template expander. | 4096 |
 | `fuzz_include_parse` | Include-directive resolution. | 8192 |
 | `fuzz_http_response` | The dynamic-pipeline HTTP-response parsing path. | 65536 |
+| `fuzz_lint_fix` | Linter auto-fix application and reparsing. Not in the weekly matrix; run manually. | (default) |
+| `fuzz_scorecard_promtext` | Detection scorecard Prometheus text parser. Not in the weekly matrix; run manually. | (default) |
+| `fuzz_disposition_record` | Disposition record parsing. Not in the weekly matrix; run manually. | (default) |
+| `fuzz_risk_config` | Risk configuration parsing. Not in the weekly matrix; run manually. | (default) |
+| `fuzz_lucene_frontend` | Lucene reverse-conversion frontend. Not in the weekly matrix; run manually. | (default) |
+| `fuzz_stix_pattern` | STIX pattern parsing. | 65536 |
 | `fuzz_rstix_parse_bundle` | The `rstix::parse_bundle` STIX bundle parse entrypoint. Seed locally from `tests/fixtures/spec/` or a downloaded ATT&CK bundle (see [rstix — Local MITRE ATT&CK corpus test](../library/rstix.md#rstix-testing-local-mitre-attck-corpus)). | 65536 |
 | `fuzz_rstix_validate_json` | The `rstix::Validator::validate_json_str` Validation Pipeline raw JSON entry (`validate` feature). Seeds in `fuzz/seeds/fuzz_rstix_validate_json/`. | 65536 |
 

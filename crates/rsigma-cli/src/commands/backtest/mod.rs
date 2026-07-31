@@ -10,7 +10,7 @@
 //! an independent time slice; carrying window state across files would produce
 //! phantom correlations).
 
-mod expectations;
+pub(crate) mod expectations;
 mod report;
 
 use std::fs::File;
