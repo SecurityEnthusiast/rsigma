@@ -710,7 +710,7 @@ fn emit_logsource(out: &mut String, logsource: &LogSource) {
         }
     }
     let mut custom: Vec<_> = logsource.custom.iter().collect();
-    custom.sort_by(|(a, _), (b, _)| a.cmp(b));
+    custom.sort_by_key(|(key, _)| *key);
     for (key, value) in custom {
         out.push_str(&format!("    {}: {}\n", yaml_str(key), yaml_str(value)));
     }
