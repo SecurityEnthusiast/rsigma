@@ -2,7 +2,7 @@
 
 RSigma can read events from and write detections to [NATS JetStream](https://docs.nats.io/nats-concepts/jetstream). This page covers the daemon's NATS integration: authentication, at-least-once delivery, replay, consumer groups, and the dead-letter queue. For NATS-as-an-input fundamentals see [Streaming Detection](streaming-detection.md).
 
-NATS support is feature-gated. Build the daemon with `daemon-nats`:
+NATS support is feature-gated. Prebuilt release archives and the GHCR Docker image are built with `--all-features`, so they include NATS. From source or `cargo install`, enable `daemon-nats`:
 
 ```bash
 cargo install --locked rsigma --features daemon-nats
@@ -43,7 +43,7 @@ rsigma engine daemon -r rules/ \
 
 ## Authentication
 
-Five auth methods are supported. They're mutually exclusive (the first configured one wins). All credentials can come from CLI flags or environment variables:
+Four credential methods are supported and mutually exclusive on the CLI (setting more than one errors). Mutual TLS is separate and can combine with any of them. Credentials can come from CLI flags or environment variables:
 
 | Method | Flag | Env var |
 |--------|------|---------|
@@ -51,7 +51,7 @@ Five auth methods are supported. They're mutually exclusive (the first configure
 | Token | `--nats-token TOKEN` | `NATS_TOKEN` |
 | Username + password | `--nats-user U --nats-password P` | `NATS_USER`, `NATS_PASSWORD` |
 | NKey | `--nats-nkey SEED` | `NATS_NKEY` |
-| Mutual TLS | `--nats-tls-cert client.pem --nats-tls-key client-key.pem` | (none) |
+| Mutual TLS (additive) | `--nats-tls-cert client.pem --nats-tls-key client-key.pem` | (none) |
 
 Prefer environment variables for secrets in production so they do not show up in `ps aux` or shell history:
 
@@ -72,13 +72,14 @@ rsigma engine daemon -r rules/ \
 
 ## At-least-once delivery
 
-When `--input nats://...` is used, the daemon switches from at-most-once to at-least-once semantics. Each message is wrapped in an `AckToken` that is held until the corresponding detection has been delivered to every output sink. A dedicated ack task resolves tokens after sink confirmation.
+When `--input nats://...` is used, the daemon switches from at-most-once to at-least-once semantics. Each message is wrapped in an `AckToken` that is held until every output sink has committed the corresponding result (delivered or DLQ-parked). A dedicated ack task resolves tokens after that confirmation.
 
 What this guarantees:
 
 - If the daemon panics mid-processing, NATS redelivers after `ack_wait` (configured on the JetStream consumer).
-- If a sink fails (file write error, NATS publish-ack timeout), the source message is NOT acked, so NATS redelivers.
-- If a parse error happens before the engine, the failed event is routed to the [DLQ](#dead-letter-queue) and the source message IS acked, preventing infinite redelivery of unparseable data.
+- While a sink is retrying (file write error, NATS publish-ack timeout), the source message stays unacked so a crash still redelivers.
+- After retries are exhausted (or a permanent sink error), the result is parked in the [DLQ](#dead-letter-queue) when `--dlq` is set, or dropped with a warning when it is not. Either way the source message is then acked so the same failure does not loop forever.
+- If a parse error happens before the engine, the failed event is routed to the DLQ (when configured) and the source message is acked, preventing infinite redelivery of unparseable data.
 
 What this does NOT guarantee:
 
@@ -89,8 +90,8 @@ What this does NOT guarantee:
 
 JetStream consumers can start anywhere in the stream history. The daemon exposes this through three mutually exclusive flags:
 
-| Flag | Behaviour |
-|------|-----------|
+| Flag | Behavior |
+|------|----------|
 | `--replay-from-sequence N` | Start at stream sequence number `N`. Useful for resuming after a known checkpoint. |
 | `--replay-from-time TIMESTAMP` | Start from a wall-clock time. ISO 8601 (`2026-05-15T10:00:00Z`). |
 | `--replay-from-latest` | Start at the last message in the stream, then deliver new messages. Maps to JetStream's `DeliverLast` policy. |
@@ -141,14 +142,12 @@ RSIGMA_CONSUMER_GROUP=detection-workers \
     rsigma engine daemon -r rules/ --input nats://nats.internal:4222/events.>
 ```
 
-Without `--consumer-group`, the daemon derives the consumer name from the subject. Two daemons with the same subject and no explicit group will share a consumer automatically, but you lose the explicit name in the JetStream UI.
+Without `--consumer-group`, the daemon names the consumer `rsigma-daemon-<sanitized-subject>`. Two daemons with the same subject and no explicit group therefore share that durable consumer automatically.
 
 Multi-node correlation state is NOT automatically partitioned by consumer group. Each daemon maintains its own SQLite correlation state. If your rules need cross-node correlation, you have two options:
 
 - Route all events to a single daemon (no consumer group).
 - Partition by `group_by` key upstream (e.g. one consumer-group subject per shard).
-
-A distributed correlation engine across nodes is on the roadmap but not shipped yet.
 
 ## Dead-letter queue
 
@@ -197,7 +196,7 @@ The `rsigma_dlq_events_total` Prometheus counter tracks DLQ volume. Alert on rat
 |---------|---------|
 | Stream `max_age`/`max_msgs` | Long enough to outlast any restart you care to replay across. |
 | Consumer `ack_wait` | Short enough to redeliver quickly on a panic, long enough that legitimate slow processing does not trigger redelivery. 30 to 60 s is a good starting point. |
-| Consumer `max_deliver` | Cap at 5 to 10. Beyond that, DLQ is more honest than infinite redelivery. |
+| Consumer `max_deliver` | Cap at 5 to 10 so JetStream stops redelivering poison messages. That limit is independent of RSigma's `--dlq`; configure both. |
 | `--buffer-size` | Bounded mpsc capacity. Default 10000. Increase to 50000+ for bursty 50k/s ingest. |
 | `--batch-size` | Events per engine mutex acquisition. Default 128, capped at `--buffer-size`; lower it when burst tail latency matters more than sustained throughput. |
 | `--drain-timeout` | Seconds to wait for in-flight events on shutdown. Default 5. Raise to 30 in production so SIGTERM does not lose work. |
