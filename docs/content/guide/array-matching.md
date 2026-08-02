@@ -1,10 +1,14 @@
 # Array Matching
 
 ::: callout warning "Experimental"
-Array matching is a proposed extension to the Sigma specification, not part of Sigma v2.1.0. It was accepted as a Sigma Enhancement Proposal (see [sigma-specification Discussion #106](https://github.com/SigmaHQ/sigma-specification/discussions/106), [SEP #212](https://github.com/SigmaHQ/sigma-specification/issues/212), and [rsigma #158](https://github.com/timescale/rsigma/issues/158)), but the syntax may still change as the spec text is finalized. rsigma implements it as a reference so the design can be validated against real events and multiple backends.
+Array matching is a proposed extension to the Sigma specification, not part of Sigma v2.1.0. It was accepted as a Sigma Enhancement Proposal (see [sigma-specification Discussion #106](https://github.com/SigmaHQ/sigma-specification/discussions/106), [SEP #212](https://github.com/SigmaHQ/sigma-specification/issues/212), and [rsigma #158](https://github.com/timescale/rsigma/issues/158)), but the syntax may still change as the spec text is finalized. RSigma implements it as a reference so the design can be validated against real events and multiple backends.
 :::
 
-Many log sources put values in arrays: AWS CloudTrail, GCP, Okta, Azure Activity, Kubernetes audit, and Windows Event Logs all do. rsigma can match against array members in three ways, all expressed with `[...]` selectors on the field path.
+Many log sources put values in arrays: AWS CloudTrail, GCP, Okta, Azure Activity, Kubernetes audit, and Windows Event Logs all do. RSigma can match against array members in three ways, all expressed with `[...]` selectors on the field path:
+
+1. **Implicit any-member**: a plain field expression matches a scalar or any array member.
+2. **Object-scope blocks**: `field[any]` / `[all]` / `[all_or_empty]` / `[none]` bind several predicates to the **same** element.
+3. **Positional indexing**: `field[N]` / `field[-N]` select one ordered slot.
 
 ## Requires `sigma-version: 3`
 
@@ -25,7 +29,33 @@ detection:
 
 When `sigma-version` is absent, a document resolves to a fixed floor (major `2`, the v2.x line). At the floor a trailing `[...]` is **not** a selector but a literal part of the field name, so an unversioned rule keeps its pre-array-matching meaning and is never silently reinterpreted. Only the major matters (a release string such as `"2.1.0"` is read for its major), since breaking changes occur only at major bumps.
 
-The linter helps catch the mismatch: [`array_matching_without_version`](../reference/lint-rules.md) (warning) flags a rule that uses bracket-selector syntax but resolves below major `3`, and [`unsupported_sigma_version`](../reference/lint-rules.md) (error) flags a declared major newer than rsigma implements. To keep a literal bracket in a field name at major `3`, escape it as `\[` / `\]` (see [Escaping literal brackets](#escaping-literal-brackets)).
+The linter helps catch the mismatch: [`array_matching_without_version`](../reference/lint-rules.md) (warning) flags a rule that uses bracket-selector syntax but resolves below major `3`, and [`unsupported_sigma_version`](../reference/lint-rules.md) (error) flags a declared major newer than RSigma implements. To keep a literal bracket in a field name at major `3`, escape it as `\[` / `\]` (see [Escaping literal brackets](#escaping-literal-brackets)).
+
+## Try it with `engine eval`
+
+Save a `sigma-version: 3` rule and an event whose `connections` array has one matching member, then evaluate:
+
+```bash
+cat > /tmp/array-rule.yml <<'EOF'
+title: Inbound connection to a suspicious network
+id: 0f0e0d0c-0b0a-0908-0706-050403020100
+sigma-version: 3
+status: experimental
+logsource:
+    category: network_connection
+detection:
+    selection:
+        connections[any]:
+            protocol: 'TCP'
+            ip|cidr: '123.1.0.0/16'
+    condition: selection
+level: medium
+EOF
+
+rsigma engine eval --pretty -r /tmp/array-rule.yml -e '{"connections":[{"protocol":"TCP","ip":"123.1.1.1"},{"protocol":"UDP","ip":"10.0.0.1"}]}'
+```
+
+You should get one `EvaluationResult` for the TCP/`123.1.1.1` member. The UDP sibling does not satisfy both predicates on the same element, so it does not fire by itself. See [Evaluating Rules](evaluating-rules.md) for input modes and output shape.
 
 ## Implicit any-member matching
 
@@ -206,7 +236,7 @@ The evaluator resolves the escaped name to the literal field. Backends that cann
 
 ## `[all]` is not the `all` modifier
 
-The existing `all` value-list [modifier](rule-conversion.md) and the `[all]` array quantifier are different axes and compose:
+The existing `all` value-list [modifier](https://sigmahq.io/docs/basics/modifiers.html) and the `[all]` array quantifier are different axes and compose:
 
 ```yaml
 CommandLine|all:            # field contains BOTH listed values (value-list AND)
@@ -218,7 +248,7 @@ ports[all]: 443             # EVERY member of the ports array equals 443
 
 ## Backend support
 
-rsigma's evaluator (`rsigma engine eval` / `engine daemon`) implements all three constructs over ordered JSON arrays and is the reference for the semantics. The converter (`rsigma backend convert`) lowers what each backend can express and errors loudly otherwise, rather than emitting a query with different semantics:
+RSigma's evaluator (`rsigma engine eval` / `engine daemon`) implements all three constructs over ordered JSON arrays and is the reference for the semantics. The converter (`rsigma backend convert`) lowers what each backend can express and errors loudly otherwise, rather than emitting a query with different semantics:
 
 | Construct | Evaluator | PostgreSQL / TimescaleDB (JSONB) | Other backends |
 |-----------|-----------|----------------------------------|----------------|
@@ -228,7 +258,7 @@ rsigma's evaluator (`rsigma engine eval` / `engine daemon`) implements all three
 | Extended block body (`condition:` + named sub-selections) | Yes | Yes (same primitive as the basic block, with a boolean inner predicate `OR` / `NOT`) | Unsupported (`UnsupportedArrayMatching`) |
 | Positional `[N]`, including `[-N]` | Yes | Yes (`->n` / `->>n`, negative subscripts on PG 11+, JSONB mode) | Unsupported (loud error) until backend-specific lowering lands |
 
-PostgreSQL array matching requires JSONB-backed events (set `json_field`); in flat-column mode there is no array to unnest. The object-scope block and positional indexing both report `UnsupportedArrayMatching` on backends that cannot express them (LynxDB and other text backends today, and PostgreSQL flat-column mode), rather than emitting a query that diverges from the evaluator. A backend advertises positional-index support through `Backend::supports_field_index`. Note that Elasticsearch-style backends cannot express positional indexing at all because Lucene arrays are unordered sets; this is exactly why rsigma evaluates the index directly rather than relying on `any`.
+PostgreSQL array matching requires JSONB-backed events (set `json_field`); in flat-column mode there is no array to unnest. The object-scope block and positional indexing both report `UnsupportedArrayMatching` on backends that cannot express them (LynxDB and other text backends today, and PostgreSQL flat-column mode), rather than emitting a query that diverges from the evaluator. A backend advertises positional-index support through `Backend::supports_field_index`. Note that Elasticsearch-style backends cannot express positional indexing at all because Lucene arrays are unordered sets; this is exactly why RSigma evaluates the index directly rather than relying on `any`.
 
 ## See also
 
