@@ -59,8 +59,8 @@ pub fn assert_campaign_attributed_to_threat_actor() {
         StixId::parse("campaign--e5268b6e-4931-42f1-b379-87f48eb41b1e").expect("campaign id");
     assert!(bundle.get_typed::<Campaign>(&campaign_id).is_some());
 
-    let ta_id =
-        StixId::parse("threat-actor--9a8a0d25-7636-429b-a99e-b2a73cd0f11f").expect("threat-actor id");
+    let ta_id = StixId::parse("threat-actor--9a8a0d25-7636-429b-a99e-b2a73cd0f11f")
+        .expect("threat-actor id");
     assert!(bundle.get_typed::<ThreatActor>(&ta_id).is_some());
 
     let relationships: Vec<_> = bundle.objects_of_type::<Relationship>().collect();

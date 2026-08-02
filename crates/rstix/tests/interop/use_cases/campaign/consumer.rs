@@ -63,10 +63,7 @@ pub fn assert_receives_triad() {
     let summary = summarize_fixture_wire(&fixture.json)
         .unwrap_or_else(|err| panic!("{relative}: summarize fixture: {err}"));
     assert_eq!(summary.identity_ids.len(), 1);
-    assert_eq!(
-        summary.primary_sdo_count, 2,
-        "campaign + intrusion-set"
-    );
+    assert_eq!(summary.primary_sdo_count, 2, "campaign + intrusion-set");
     assert_eq!(summary.relationship_count, 1);
 
     let bundle = validate_interop_fixture(relative, &fixture.json)
@@ -123,7 +120,11 @@ pub fn assert_processes_fields() {
     let use_case_ids = use_case_object_ids(relative, &objects);
     let bundle = validate_interop_fixture(relative, &fixture.json).expect("interop gate");
 
-    assert_eq!(use_case_ids.len(), 1, "{relative}: one campaign use-case id");
+    assert_eq!(
+        use_case_ids.len(),
+        1,
+        "{relative}: one campaign use-case id"
+    );
     let object_id = &use_case_ids[0];
     let stix_id = StixId::parse(object_id).expect("campaign id");
     let wire = objects
