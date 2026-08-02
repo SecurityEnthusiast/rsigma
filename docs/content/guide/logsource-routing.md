@@ -21,9 +21,10 @@ This is deliberately different from subset/routing semantics, which would requir
 The extractor resolves each dimension independently, taking the first value it finds:
 
 1. **Event fields.** The event carries `product`/`service`/`category` (or the field names you configure with `--logsource-field-map`). The most accurate per-event signal.
-2. **Static override.** `--event-logsource product=windows,...` sets a fixed logsource for a run dedicated to one source. The most reliable option in practice, since the shipper already knows what it is collecting.
-3. **EVTX-only format default.** `engine eval -e @file.evtx` implies `product: windows` when no explicit or static product is configured, because EVTX is a Windows-only format.
-4. **Otherwise unset**, so pruning fails open and every rule is evaluated.
+2. **Static override.** `--event-logsource product=windows,...` fills a dimension only when that field is absent on the event. Useful for a run dedicated to one source, since the shipper already knows what it is collecting.
+3. **EVTX-only format default.** `engine eval -e @file.evtx` implies `product: windows` when no event field or static product is set, because EVTX is a Windows-only format. The daemon never applies a format default.
+4. **Schema-derived (with schema routing).** When [schema routing](schema-routing.md#schema-derived-logsource) is also enabled, a recognized schema fills any dimension still unset (for example `sysmon` implies `product: windows, service: sysmon`, including custom dimensions for off-taxonomy schemas).
+5. **Otherwise unset**, so pruning fails open and every rule is evaluated.
 
 ### The format guardrail
 
@@ -71,7 +72,7 @@ Beyond the standard `product`/`service`/`category`, rules and events can carry c
 # Read a custom `tenant` dimension from the event's `org` field.
 rsigma engine eval -r rules/ --logsource-routing --logsource-field-map custom.tenant=org -e @events.ndjson
 
-# Pin a static custom dimension for a single-tenant pipeline.
+# Pin a static custom dimension when the event field is absent.
 rsigma engine daemon -r rules/ --input http --logsource-routing --event-logsource product=windows,custom.tenant=acme
 ```
 
@@ -89,7 +90,7 @@ eval:
         region: eu
 ```
 
-When [schema routing](schema-routing.md#schema-derived-logsource) is also enabled, a recognized schema can supply the logsource (including custom dimensions) for events that carry no explicit field.
+Custom dimensions follow the same precedence as the standard three: event field, then static default, then (with schema routing) schema-implied custom keys for still-unset dimensions.
 
 ## Scaling and the index
 
@@ -111,3 +112,10 @@ The daemon exposes these metrics (see [metrics](../reference/metrics.md)):
 - Fail-open: an event with no extractable logsource is evaluated against every rule.
 - Conflict-based: a mis-tag never silently drops a rule on a dimension the event did not assert, and an ambiguous wire format never sets a product.
 - Correlation inherits the pruning, since it evaluates through the same detection engine.
+
+## See also
+
+- [Schema Routing](schema-routing.md) for per-schema pipelines and schema-derived logsource fill.
+- [CLI: `engine eval`](../cli/engine/eval.md) and [`engine daemon`](../cli/engine/daemon.md) for the logsource flags.
+- [Configuration reference](../reference/configuration.md) for the `daemon.logsource_routing` / `eval.logsource_routing` keys.
+- [Prometheus metrics](../reference/metrics.md) for the pruning counters and per-schema gauges.

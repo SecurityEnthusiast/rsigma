@@ -150,7 +150,7 @@ routing:
           tenant: acme
 ```
 
-Resolution per event is explicit event field, then the static `--event-logsource`, then the schema-derived logsource, then any format default, then unset (fail-open). This prunes only at product/service granularity; category-level pruning inside one product (for example `process_creation` versus `ps_script`) still needs the event to assert a category or a pipeline to derive it.
+Resolution per event is explicit event field, then the static `--event-logsource` (or the EVTX-only format default when no product is set), then the schema-derived logsource for any dimension still unset, then unset (fail-open). This prunes only at product/service granularity; category-level pruning inside one product (for example `process_creation` versus `ps_script`) still needs the event to assert a category or a pipeline to derive it.
 
 ## Per-schema rule partitioning
 
