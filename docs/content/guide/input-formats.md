@@ -192,8 +192,8 @@ LogRecord fields are flattened into a JSON event:
 - `severity_text`, `severity_number` preserved as-is.
 - `body` from the LogRecord body (string, map, or array).
 - `trace_id`, `span_id` as hex strings.
-- `attributes.*` dot-flattened from `LogRecord.attributes`.
-- `resource.*` dot-flattened from `Resource.attributes`.
+- LogRecord attributes flattened to top-level keys (unprefixed; primary detection target).
+- `resource.*` from `Resource.attributes`.
 - `scope.name`, `scope.version` from `InstrumentationScope`.
 
 Key-value map bodies are flattened to top-level fields so a Sigma rule against `EventID` works against an OTLP log whose `body` is `{"EventID": 4625, ...}`.
