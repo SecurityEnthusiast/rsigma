@@ -326,26 +326,34 @@ const STALE_BRAND_FILES = [
   "rsigma-logotype.png",
 ];
 
+/** @type {{ svg: string, images: Record<string, Buffer> } | null} */
+let brandImageCache = null;
+
 /**
  * Render the brand image set from the logo SVG: the sidebar logo (one image
  * serves both themes; the mark's orange facets carry it on any background, and
  * the dark theme adds a darker backing in CSS) plus a square PNG favicon.
+ * Memoised on the SVG source so repeated builds in one `docmd dev` session
+ * rasterise once.
  *
- * @param {string} destDir
  * @param {string} logoSvgPath
+ * @returns {Promise<Record<string, Buffer>>}
  */
-async function writeBrandImages(destDir, logoSvgPath) {
-  fs.mkdirSync(destDir, { recursive: true });
+async function renderBrandImages(logoSvgPath) {
   const svg = fs.readFileSync(logoSvgPath, "utf8");
+  if (brandImageCache && brandImageCache.svg === svg) {
+    return brandImageCache.images;
+  }
+
   const mark = await sharp(Buffer.from(svg), { density: 192 })
     .trim()
     .png()
     .toBuffer({ resolveWithObject: true });
 
-  await sharp(mark.data)
+  const logo = await sharp(mark.data)
     .resize({ height: 512, withoutEnlargement: true })
     .png()
-    .toFile(path.join(destDir, "logo.png"));
+    .toBuffer();
 
   // Pad to a square in one pipeline, then resize in another: sharp applies
   // resize before extend within a single pipeline, so they must be separate.
@@ -360,10 +368,43 @@ async function writeBrandImages(destDir, logoSvgPath) {
     })
     .png()
     .toBuffer();
-  await sharp(squareBuf)
-    .resize(256, 256)
-    .png()
-    .toFile(path.join(destDir, "favicon.png"));
+  const favicon = await sharp(squareBuf).resize(256, 256).png().toBuffer();
+
+  const images = { "logo.png": logo, "favicon.png": favicon };
+  brandImageCache = { svg, images };
+  return images;
+}
+
+/**
+ * Write a file only when its bytes differ from what is already on disk.
+ * `docmd dev` watches `docs/assets/` and keys its change detection on
+ * mtime, so an unconditional rewrite of an identical file starts a build
+ * loop that never settles.
+ *
+ * @param {string} filePath
+ * @param {Buffer} data
+ */
+function writeIfChanged(filePath, data) {
+  try {
+    if (fs.readFileSync(filePath).equals(data)) {
+      return;
+    }
+  } catch {
+    // Missing or unreadable: fall through and write.
+  }
+  fs.writeFileSync(filePath, data);
+}
+
+/**
+ * @param {string} destDir
+ * @param {string} logoSvgPath
+ */
+async function writeBrandImages(destDir, logoSvgPath) {
+  fs.mkdirSync(destDir, { recursive: true });
+  const images = await renderBrandImages(logoSvgPath);
+  for (const [name, data] of Object.entries(images)) {
+    writeIfChanged(path.join(destDir, name), data);
+  }
 
   for (const stale of STALE_BRAND_FILES) {
     const stalePath = path.join(destDir, stale);
