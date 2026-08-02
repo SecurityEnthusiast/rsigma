@@ -7,5 +7,6 @@ pub mod identity;
 pub mod producer;
 pub mod relationships;
 pub mod sco;
+pub mod timestamp;
 pub mod validation;
 pub mod wire_preservation;

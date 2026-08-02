@@ -1,7 +1,7 @@
 //! §3.2.1 Description — Campaign Sharing scope.
 
 use rstix::core::StixId;
-use rstix::model::sdo::Campaign;
+use rstix::model::sdo::{Campaign, IntrusionSet};
 
 use crate::harness::fixture::load_fixture;
 use crate::harness::interop_gate::validate_interop_fixture;
@@ -37,6 +37,11 @@ pub fn assert_description_scope() {
         attributed_bundle.objects_of_type::<Campaign>().count(),
         1,
         "§3.2.3.2 must carry a Campaign SDO as described in §3.2.1"
+    );
+    assert_eq!(
+        attributed_bundle.objects_of_type::<IntrusionSet>().count(),
+        1,
+        "§3.2.3.2 must carry an Intrusion Set SDO for the attribution path in §3.2.1"
     );
 }
 

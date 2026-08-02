@@ -9,32 +9,12 @@ use serde_json::Value;
 
 use crate::common::fixture_catalog::{parse_fixture_objects, use_case_object_ids};
 use crate::common::identity::assert_identity_shape;
+use crate::common::timestamp::assert_millisecond_rfc3339;
 use crate::harness::fixture::load_fixture;
 use crate::harness::interop_gate::{
     InteropGateOptions, validate_interop_fixture, validate_interop_json,
 };
 use crate::use_cases::attack_pattern::{FIXTURE_CREATE, PRODUCER_FIXTURES};
-
-/// Interop millisecond timestamps: exactly three fractional digits before `Z`.
-fn assert_millisecond_rfc3339(label: &str, value: &str) {
-    let Some((_, frac_and_z)) = value.rsplit_once('.') else {
-        panic!("{label} must include fractional seconds: {value}");
-    };
-    assert!(
-        frac_and_z.ends_with('Z'),
-        "{label} must end with Z: {value}"
-    );
-    let digits = &frac_and_z[..frac_and_z.len() - 1];
-    assert_eq!(
-        digits.len(),
-        3,
-        "{label} must have exactly three subsecond digits: {value}"
-    );
-    assert!(
-        digits.chars().all(|c| c.is_ascii_digit()),
-        "{label} fractional part must be digits: {value}"
-    );
-}
 
 fn load_attack_pattern(relative: &str) -> (AttackPattern, String) {
     let fixture = load_fixture(relative);
@@ -71,20 +51,39 @@ pub fn assert_select_content() {
         .get_mut("objects")
         .and_then(Value::as_array_mut)
         .expect("objects array");
+    let mut renamed = 0usize;
     for object in objects.iter_mut() {
         if object.get("type").and_then(Value::as_str) == Some("attack-pattern") {
             object["name"] = Value::String("Caller-selected Attack Pattern name".into());
+            renamed += 1;
         }
     }
+    assert_eq!(
+        renamed, 1,
+        "expected exactly one attack-pattern object renamed by caller selection"
+    );
     let json = serde_json::to_string(&root).expect("serialize caller-selected bundle");
     let use_case_ids = use_case_object_ids(FIXTURE_CREATE, &parse_fixture_objects(&json).unwrap());
-    validate_interop_json(
+    let bundle = validate_interop_json(
         &json,
         &InteropGateOptions {
-            use_case_object_ids: use_case_ids,
+            use_case_object_ids: use_case_ids.clone(),
         },
     )
     .expect("caller-selected bundle must pass interop gate");
+    assert_eq!(
+        use_case_ids.len(),
+        1,
+        "caller-selected bundle must expose one attack-pattern use-case id"
+    );
+    let stix_id = StixId::parse(&use_case_ids[0]).expect("attack-pattern id");
+    let ap = bundle
+        .get_typed::<AttackPattern>(&stix_id)
+        .expect("typed attack-pattern after caller selection");
+    assert_eq!(
+        ap.name, "Caller-selected Attack Pattern name",
+        "caller-selected name must survive parse and re-validation"
+    );
 }
 
 /// REQ-3.1-P-03 — Identity in bundle complies with §2.3.4 (fixture-scoped; not a duplicate §2.3 proof).
@@ -179,15 +178,22 @@ pub fn assert_prop_spec_version() {
 
 /// REQ-3.1-P-07 — `id` is a UUID with `attack-pattern--` prefix.
 pub fn assert_prop_id() {
+    let fixture = load_fixture(FIXTURE_CREATE);
+    let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
     let (_, object_id) = load_attack_pattern(FIXTURE_CREATE);
+    let wire = objects
+        .iter()
+        .find(|obj| obj.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
+        .expect("wire attack-pattern");
+    let wire_id = wire
+        .get("id")
+        .and_then(Value::as_str)
+        .expect("wire attack-pattern id");
     assert!(
-        object_id.starts_with("attack-pattern--"),
-        "id must use attack-pattern-- prefix: {object_id}"
+        wire_id.starts_with("attack-pattern--"),
+        "id must use attack-pattern-- prefix: {wire_id}"
     );
-    assert!(
-        StixId::parse(&object_id).is_ok(),
-        "id must be valid STIX id"
-    );
+    StixId::parse(wire_id).expect("wire id must be valid STIX id");
 }
 
 /// REQ-3.1-P-08 — `created_by_ref` points at the Producer Identity.
