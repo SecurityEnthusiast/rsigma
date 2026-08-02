@@ -198,7 +198,7 @@ See [NATS Streaming](nats-streaming.md) for the full replay matrix.
 
 ## HTTP API
 
-The daemon binds an Axum HTTP server on `--api-addr` (default `0.0.0.0:9090`). It serves both REST and Prometheus endpoints, plus OTLP/gRPC and OTLP/HTTP when the feature is enabled. With the optional `daemon-tls` build feature and `--tls-cert`/`--tls-key`, the same listener terminates HTTPS for every protocol on one socket (ALPN negotiates `h2` and `http/1.1`). When `daemon-tls` is built in, the daemon refuses to start on a non-loopback `--api-addr` without TLS or `--allow-plaintext`; loopback always allows plaintext for local development. See the [TLS reference](../reference/security.md#tls-termination-for-the-api-listener) for the flag table and hot-reload semantics.
+The daemon binds an HTTP API listener on `--api-addr` (default `0.0.0.0:9090`). It serves both REST and Prometheus endpoints, plus OTLP/gRPC and OTLP/HTTP when the feature is enabled. With the optional `daemon-tls` build feature and `--tls-cert`/`--tls-key`, the same listener terminates HTTPS for every protocol on one socket (ALPN negotiates `h2` and `http/1.1`). When `daemon-tls` is built in, the daemon refuses to start on a non-loopback `--api-addr` without TLS or `--allow-plaintext`; loopback always allows plaintext for local development. See the [TLS reference](../reference/security.md#tls-termination-for-the-api-listener) for the flag table and hot-reload semantics.
 
 Auth is off by default. Enable a single admin bearer token with `--api-token-env`, or configure per-token roles in `daemon.api.auth`. Pair non-loopback listeners with TLS or a TLS-terminating proxy so tokens are never sent in cleartext. See [HTTP API: Authentication](../reference/http-api.md#authentication).
 
@@ -219,7 +219,7 @@ The table below is a subset of the core surface. The full catalog (incidents, si
 | `/api/v1/detections/stream` | GET | Stream live detections as NDJSON, with optional `level` / `rule` filters. Disabled by default; enable with `daemon.tail.enabled: true`. See [`engine tail`](../cli/engine/tail.md). |
 | `/v1/logs` | POST | OTLP log ingestion (`application/x-protobuf` or `application/json`). |
 
-Wire `/readyz` to your orchestrator's startup probe and `/healthz` to the liveness probe. Scrape `/metrics` at 15-30 s intervals.
+Wire `/readyz` to your orchestrator's startup probe and `/healthz` to the liveness probe. Scrape `/metrics` at 15-30s intervals.
 
 ## Logging
 
