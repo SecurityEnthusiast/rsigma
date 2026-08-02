@@ -43,7 +43,7 @@ RSigma writes detection matches to **stdout** as JSON, and progress messages to 
 rsigma engine eval --pretty -r rules/ -e '{"CommandLine": "cmd /c whoami"}'
 ```
 
-You should see a `MatchResult` like this on stdout:
+You should see an `EvaluationResult` like this on stdout:
 
 ```json
 {

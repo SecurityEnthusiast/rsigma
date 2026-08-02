@@ -10,7 +10,7 @@ rsigma engine eval [OPTIONS] --rules <RULES>
 
 ## Description
 
-Loads rules from a file or directory, optionally applies one or more processing pipelines, reads events from `--event` (or stdin), and writes matched `MatchResult` JSON to stdout. Exits when the event source is exhausted.
+Loads rules from a file or directory, optionally applies one or more processing pipelines, reads events from `--event` (or stdin), and writes matched `EvaluationResult` JSON to stdout. Exits when the event source is exhausted.
 
 This is the right tool for ad-hoc threat hunting, forensic replay over `.evtx` and NDJSON files, and any "run rules against this data, then exit" workflow. For a long-running daemon with hot-reload and metrics, use [`engine daemon`](daemon.md). For per-rule assertions over a corpus (a CI fixture harness with expected-vs-actual fire counts and a JUnit report), use [`rule backtest`](../rule/backtest.md).
 
@@ -56,7 +56,7 @@ The global `--output-format` / `--color` / `--quiet` / `--no-stats` flags apply 
 |------|---------|-------------|
 | `--pretty` | off | Pretty-print JSON output. Kept for backwards compatibility; equivalent to `--output-format json` with pretty-printing on. |
 | `--no-detections` | off | Suppress detection output for rules that exist only to feed correlations (`generate: false`). |
-| `--include-event` | off | Embed the full event JSON in every `MatchResult`. Equivalent to setting `rsigma.include_event: "true"` per-rule. |
+| `--include-event` | off | Embed the full event JSON in every `EvaluationResult`. Equivalent to setting `rsigma.include_event: "true"` per-rule. |
 | `--match-detail <LEVEL>` | `off` | Match-detail verbosity: `off` (field + value only), `summary` (adds matcher kind, selection, case sensitivity, and reports keyword/absence matches), or `full` (also records the matched pattern). See [Evaluating Rules](../../guide/evaluating-rules.md#match-detail). |
 
 ### Correlation behavior

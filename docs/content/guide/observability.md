@@ -21,7 +21,7 @@ rsigma --log-format text engine eval -r rules/ -e @events.ndjson
 | `json` | Structured JSON, one object per line. Same shape the daemon always emits. |
 | `text` | Human-readable text with ANSI colors when stderr is a TTY. |
 
-`--log-format` adds the diagnostic-log stream alongside the existing stdout/stderr output; it never replaces them. So `rsigma --log-format json engine eval ...` still prints the `MatchResult` lines to stdout exactly as before; the JSON log lines arrive on stderr.
+`--log-format` adds the diagnostic-log stream alongside the existing stdout/stderr output; it never replaces them. So `rsigma --log-format json engine eval ...` still prints the `EvaluationResult` lines to stdout exactly as before; the JSON log lines arrive on stderr.
 
 Verbosity is controlled by the standard `RUST_LOG` environment variable (`tracing_subscriber::EnvFilter`). The default is `info`. The flag has no effect on `engine daemon`, which is always JSON.
 

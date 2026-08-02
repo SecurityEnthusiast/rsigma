@@ -16,7 +16,7 @@ This page covers the five input modes, event extraction with jq and JSONPath, co
 | stdin NDJSON | omit `--event`; pipe events on stdin | Same as the NDJSON file mode but from stdin. Exits after EOF. |
 | Inline YAML rule from stdin | `rsigma rule stdin` | Different command, used for parsing rules, not events. |
 
-Every mode produces the same `MatchResult` JSON output on stdout, one object per matched event. Stderr carries status lines.
+Every mode produces the same `EvaluationResult` JSON output on stdout, one object per matched event. Stderr carries status lines.
 
 ### Inline events
 
@@ -115,7 +115,7 @@ For continuous correlation that survives restarts, switch to [streaming detectio
 
 ## Detection output and the `event` field
 
-Each match prints one JSON `MatchResult` on stdout:
+Each match prints one JSON `EvaluationResult` on stdout:
 
 ```json
 {

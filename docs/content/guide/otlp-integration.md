@@ -249,7 +249,7 @@ See [Prometheus metrics reference](../reference/metrics.md) for the full set, an
 
 ## Mixing OTLP with another input
 
-The OTLP endpoint is always active when the feature is compiled in. The `--input` flag controls the **primary** source for events that arrive over stdin, HTTP REST (`/api/v1/events`), or NATS. OTLP logs go through a separate code path but feed into the same engine and produce the same `MatchResult` output.
+The OTLP endpoint is always active when the feature is compiled in. The `--input` flag controls the **primary** source for events that arrive over stdin, HTTP REST (`/api/v1/events`), or NATS. OTLP logs go through a separate code path but feed into the same engine and produce the same `EvaluationResult` output.
 
 This means a single daemon can:
 

@@ -121,7 +121,7 @@ The dependency direction goes left to right in the diagram above. Higher crates 
 |-------|------|-----------|---------------|
 | [`rsigma-parser`](https://docs.rs/rsigma-parser) | YAML → AST. The only crate that touches Sigma source. | `SigmaCollection`, `SigmaRule`, `CorrelationRule`, `FilterRule`, `Condition`, `SigmaStr`, `Modifier` | — |
 | [`rsigma-ir`](https://docs.rs/rsigma-ir) | Lower the AST into a shared, modifier-resolved HIR consumed by both eval and convert. Faithful, lossless matchers; opt-in optimization passes; a versioned CBOR cache. | `IrRule`, `IrDetection`, `IrCondition`, `IrMatcher`, `IrPattern`, `lower_rule`, `optimize_rule`, `HirCacheHeader`, `encode_rules`, `decode_rules` | — |
-| [`rsigma-eval`](https://docs.rs/rsigma-eval) | Lower rules to HIR, then materialize a matcher tree and evaluate events. Detection and correlation engine. Exemplar-driven rule drafting and tuning. Processing pipeline machinery. HIR restart cache. | `Engine`, `CorrelationEngine`, `Pipeline`, `Transformation`, `CompiledRule`, `Event`, `JsonEvent`, `MatchResult`, `CorrelationResult`, `DraftReport`, `TuneReport` | `parallel`, `daachorse-index` |
+| [`rsigma-eval`](https://docs.rs/rsigma-eval) | Lower rules to HIR, then materialize a matcher tree and evaluate events. Detection and correlation engine. Exemplar-driven rule drafting and tuning. Processing pipeline machinery. HIR restart cache. | `Engine`, `CorrelationEngine`, `Pipeline`, `Transformation`, `CompiledRule`, `Event`, `JsonEvent`, `EvaluationResult`, `DetectionBody`, `CorrelationBody`, `DraftReport`, `TuneReport` | `parallel`, `daachorse-index` |
 | [`rsigma-convert`](https://docs.rs/rsigma-convert) | Render backend-native queries from the HIR. Non-native targets are delegated to sigma-cli. | `Backend` trait, `TextQueryConfig`, `PostgresBackend`, `LynxDbBackend`, `FibratusBackend`, `TestBackend` | — |
 | [`rsigma-runtime`](https://docs.rs/rsigma-runtime) | Streaming runtime. Input adapters, post-evaluation enrichment, sinks, dynamic-source resolver, NATS/OTLP plumbing, hot-reload. | `LogProcessor`, `RuntimeEngine`, `EventSource`, `Sink`, `EnrichmentPipeline`, `SourceResolver`, `SourceCache`, `TemplateExpander`, `EvtxFileReader` | `nats`, `otlp`, `logfmt`, `cef`, `evtx`, `daachorse-index` |
 | [`rsigma-lsp`](https://docs.rs/rsigma-lsp) | Language Server Protocol for editors. Diagnostics from the linter + parser + compiler, plus completions, hovers, and symbols. | `Backend` (tower-lsp impl), `Diagnostic` mapping | — |
@@ -151,7 +151,7 @@ No I/O, no thread spawning, no async runtime. The same `Engine` struct backs eve
 
 ### 2. One-shot CLI (`engine eval`)
 
-`rsigma-cli` reads rules and events, instantiates `Engine`, evaluates each event, prints `MatchResult` lines to stdout, exits. Useful for fixtures, hunts, and forensic replay over `.evtx`. See [`engine eval`](../cli/engine/eval.md) and [Evaluating Rules](../guide/evaluating-rules.md).
+`rsigma-cli` reads rules and events, instantiates `Engine`, evaluates each event, prints `EvaluationResult` lines to stdout, exits. Useful for fixtures, hunts, and forensic replay over `.evtx`. See [`engine eval`](../cli/engine/eval.md) and [Evaluating Rules](../guide/evaluating-rules.md).
 
 ### 3. Streaming daemon (`engine daemon`)
 
@@ -235,8 +235,8 @@ For each event:
    - Bloom trigram filter (`set_bloom_prefilter(true)`).
    - Cross-rule Aho-Corasick (`set_cross_rule_ac(true)`, requires `daachorse-index` build feature).
 2. For each candidate rule, walk the matcher tree against the event.
-3. Emit a `MatchResult` per firing detection.
-4. Feed every firing detection into `CorrelationEngine`; any correlation that crosses its threshold emits a `CorrelationResult`.
+3. Emit an `EvaluationResult` with a `Detection` body per firing detection.
+4. Feed every firing detection into `CorrelationEngine`; any correlation that crosses its threshold emits an `EvaluationResult` with a `Correlation` body.
 
 The engine itself is stateless. Correlation state lives on the `CorrelationEngine`, with a hard cap (`max_state_entries`, default 100,000; 10% eviction on overrun). See [Performance Tuning: memory pressure and correlation state](../guide/performance-tuning.md#memory-pressure-and-correlation-state).
 
