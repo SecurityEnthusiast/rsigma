@@ -1,14 +1,13 @@
 # Enrichers
 
-Post-evaluation enrichers run after `engine.evaluate()` produces a `ProcessResult` and before each result is serialized to a sink. They inject contextual data — asset info, IP reputation, identity, GeoIP, runbook URLs — into the `enrichments.<field>` map on each detection or correlation, so every downstream consumer (RSoar, Grafana, Loki, custom scripts) sees the same structured context without re-fetching it.
+Post-evaluation enrichers run after `engine.evaluate()` produces each `EvaluationResult` and before that result is serialized to a sink. They inject contextual data (asset info, IP reputation, identity, GeoIP, runbook URLs) into the `enrichments.<field>` map on each detection or correlation, so every downstream consumer (RSoar, Grafana, Loki, custom scripts) sees the same structured context without re-fetching it.
 
-This page covers what to put in `--enrichers <path>`, how the four primitives compose into the IRQL `enrich_<keyfield>_<target>` recipe catalog, and how to promote a recipe to a Rust-coded named enricher when one of the four primitives is not enough. The CLI flag itself is documented under [`engine daemon`](../cli/engine/daemon.md#post-evaluation-enrichment); per-call Prometheus metrics live in [Prometheus metrics](../reference/metrics.md#enrichment-6-metrics).
+This page covers what to put in `--enrichers <path>`, how the four primitives compose into the `enrich_<keyfield>_<target>` recipe catalog, and how to promote a recipe to a Rust-coded named enricher when one of the four primitives is not enough. The CLI flag itself is documented under [`engine daemon`](../cli/engine/daemon.md#post-evaluation-enrichment); per-call Prometheus metrics live in [Prometheus metrics](../reference/metrics.md#enrichment-6-metrics).
 
 ## Why post-evaluation, not in-pipeline
 
 Processing pipelines (`-p`) run *before* the engine evaluates a rule: they map field names, filter events, and inject literal values. Enrichers run *after* the engine has already decided that a detection or correlation fired. The two surfaces are complementary:
-
-- Use a pipeline when you want to normalise field names, drop noisy events, or inject a fixed list (threat-intel IOCs, allow-list users) into rule conditions. The pipeline runs once per event.
+- Use a pipeline when you want to normalize field names, drop noisy events, or inject a fixed list (threat-intel IOCs, allow-list users) into rule conditions. The pipeline runs once per event.
 - Use an enricher when you want to attach context to a *firing* detection (asset owner, IP reputation, runbook URL). The enricher runs once per match, not once per event, and its work never re-affects rule evaluation.
 
 This split keeps the evaluation hot path independent of any external system: a downstream HTTP outage cannot stop the engine from emitting detections, only from enriching them.
@@ -113,7 +112,7 @@ The decision matrix:
 - **Cache miss** → if `default` is configured, inject it; otherwise apply `on_error`
 - **Extract evaluation error** (invalid jq, type mismatch) → always applies `on_error`, even with `default` set
 
-`lookup` requires at least one dynamic source to be configured on the daemon via `--source <file>`. The loader surfaces a clear error at startup if a `lookup` enricher is configured without a source cache. (Source declarations live only in `--source` files; pipeline-embedded `sources:` was removed in v1.0. See the [Dynamic Sources reference](../reference/dynamic-sources.md#source-declaration).)
+`lookup` requires at least one dynamic source to be configured on the daemon via `--source <file>`. The loader surfaces a clear error at startup if a `lookup` enricher is configured without a source cache. (Source declarations live only in `--source` files; pipeline-embedded `sources:` is removed. See the [Dynamic Sources reference](../reference/dynamic-sources.md#source-declaration).)
 
 ### `http`: per-result HTTP fetch with optional response cache
 
@@ -136,7 +135,7 @@ Per-result `reqwest` request with template-expanded URL, headers, and optional b
     tags: ["attack.execution", "attack.defense_evasion"]
 ```
 
-Each enricher instance owns its own response cache: two enrichers hitting the same URL with different `Authorization` headers do not share entries.
+Each enricher instance owns its own response cache: two enrichers hitting the same URL with different `Authorization` headers do not share entries. Response bodies are capped at 10 MiB (same default as HTTP dynamic sources). Outbound URLs follow the daemon [`--egress-policy`](../reference/security.md#http-egress-policy-ssrf-defense) (SSRF / cloud-metadata defense at DNS resolution time).
 
 ### `command`: per-result local-process execution
 
@@ -161,7 +160,7 @@ Per-result `tokio::process::Command` invocation with template-expanded argv and 
 
 The four primitives cover almost every operational use case via composition. Recipes are *field-parametric*: substitute the field names your pipeline actually produces (`SourceIp`, `cip`, `client.ip`, `ClientIp`, ...) for the placeholders below.
 
-### `enrich_ip_employee` — identity lookup by source IP
+### `enrich_ip_employee`: identity lookup by source IP
 
 ```yaml
 # sources.yml -- loaded via `rsigma engine daemon --source sources.yml`
@@ -192,19 +191,86 @@ enrichers:
 
 Expected `enrichments.employee` shape: `{"user": "alice", "team": "Platform"}` or `"unknown"` on miss.
 
-### `enrich_username_employee` — identity lookup by username
+### `enrich_username_employee`: identity lookup by username
 
-Same source as above, key by username instead.
+Same pattern as above, keyed by username. The source file is an object keyed by user name (or rebuild the extract to match your directory shape):
 
-### `enrich_ip_geoip` — country/city/ASN by IP
+```yaml
+# sources.yml
+sources:
+  - id: employee_directory_by_user
+    type: file
+    path: /etc/rsigma/employees-by-user.json
+    format: json
+    refresh: 1h
+```
 
-Prefer `lookup` if a GeoIP dump fits in memory; fall back to `http` for vendor APIs.
+```yaml
+# enrichers.yml
+enrichers:
+  - id: enrich_username_employee
+    kind: detection
+    type: lookup
+    inject_field: employee
+    source: employee_directory_by_user
+    extract: '."${detection.fields.User}"'
+    extract_type: jq
+    default: null
+```
 
-### `enrich_hash_virustotal` — hash reputation with cache
+### `enrich_ip_geoip`: country/city/ASN by IP
 
-`cache_ttl` is mandatory for the 4 req/min free tier and a major win for duplicate-detection bursts on any tier. See the YAML in the `http` example above.
+Prefer `lookup` if a GeoIP dump fits in memory:
 
-### `enrich_cve_kev` — known-exploited-vulnerability flag
+```yaml
+# sources.yml
+sources:
+  - id: geoip_db
+    type: file
+    path: /var/lib/geoip/cidr-to-country.json
+    format: json
+    refresh: 24h
+```
+
+```yaml
+# enrichers.yml
+enrichers:
+  - id: enrich_ip_geoip
+    kind: detection
+    type: lookup
+    inject_field: geoip
+    source: geoip_db
+    extract: '.[] | select(.cidr | test("${detection.fields.SourceIp}"))'
+    extract_type: jq
+    default: { country: "unknown" }
+```
+
+For vendor APIs, use `http` with a `cache_ttl` instead of shipping a dump (same shape as the VirusTotal recipe below).
+
+### `enrich_hash_virustotal`: hash reputation with cache
+
+`cache_ttl` is mandatory for the 4 req/min free tier and a major win for duplicate-detection bursts on any tier:
+
+```yaml
+# enrichers.yml
+enrichers:
+  - id: enrich_hash_virustotal
+    kind: detection
+    type: http
+    inject_field: file_reputation
+    url: "https://www.virustotal.com/api/v3/files/${detection.fields.SHA256}"
+    method: GET
+    headers:
+      x-apikey: "${VIRUSTOTAL_API_KEY}"
+    cache_ttl: 1h
+    extract: ".data.attributes.last_analysis_stats"
+    extract_type: jq
+    on_error: skip
+    scope:
+      tags: ["attack.execution", "attack.defense_evasion"]
+```
+
+### `enrich_cve_kev`: known-exploited-vulnerability flag
 
 Pulls the CISA KEV catalog as a dynamic-pipelines source, then flags CVEs that appear in it.
 
@@ -231,16 +297,18 @@ enrichers:
     default: null
 ```
 
-### `enrich_url_runbook` — synthesised runbook URL
+### `enrich_url_runbook`: synthesized runbook URL
 
 Pure string interpolation, no I/O. Use this any time a downstream consumer (Slack, PagerDuty, RSoar) needs a per-detection link.
 
 ```yaml
-- id: enrich_url_runbook
-  kind: detection
-  type: template
-  inject_field: runbook_url
-  template: "https://wiki.internal/runbooks/${detection.rule.id}"
+# enrichers.yml
+enrichers:
+  - id: enrich_url_runbook
+    kind: detection
+    type: template
+    inject_field: runbook_url
+    template: "https://wiki.internal/runbooks/${detection.rule.id}"
 ```
 
 ### When to pick which primitive
@@ -256,7 +324,7 @@ The four primitives cover almost every use case via composition. A bespoke Rust-
 
 1. **It bundles non-trivial data** (a dataset committed to the repo and `include_bytes!`-ed at compile time). Recipes can't express vendored data.
 2. **It needs a parser the YAML primitives don't expose** (e.g. MaxMind's binary GeoLite2 format, the STIX 2.1 graph with parent/child resolution). Adding the parser as a generic source might cost more than just shipping the enricher.
-3. **It provides a stable named contract**: downstream consumers reference a specific `enrichments.<field>` shape directly. A recipe-driven approach lets every operator pick their own `inject_field`, which is fine for ad-hoc enrichment but bad for a contract that crosses team or organisational boundaries.
+3. **It provides a stable named contract**: downstream consumers reference a specific `enrichments.<field>` shape directly. A recipe-driven approach lets every operator pick their own `inject_field`, which is fine for ad-hoc enrichment but bad for a contract that crosses team or organizational boundaries.
 4. **It implements a non-obvious algorithm** (e.g. coalescing per-result hash lookups into one batched-GET request). This is implementable as a recipe but the implementation is fragile.
 
 External crates wire a bespoke type via `register_builtin(name, factory)`:
@@ -298,7 +366,9 @@ Every `(enricher_id, kind, status)` triple and every HTTP-cache `enricher_id` ro
 
 ## See also
 
-- [`engine daemon` reference](../cli/engine/daemon.md) for the `--enrichers` flag.
+- [`engine daemon` reference](../cli/engine/daemon.md#post-evaluation-enrichment) for the `--enrichers` flag.
 - [Dynamic Pipeline Sources](../reference/dynamic-sources.md) for the source cache that `lookup` reads from.
-- [Prometheus metrics](../reference/metrics.md) for the full metric definitions.
+- [Security Hardening](../reference/security.md#http-egress-policy-ssrf-defense) for egress policy on HTTP enrichers and body size caps.
+- [Prometheus metrics](../reference/metrics.md#enrichment-6-metrics) for the full metric definitions.
+- [Adding enrichers](../developers/adding-enrichers.md) for shipping a bespoke `register_builtin` type.
 - [`rsigma-runtime`](../library/runtime.md) for the `Enricher` trait, `EnrichmentPipeline`, and `register_builtin` API.
