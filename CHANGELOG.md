@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix: OASIS §3.2 Campaign interop use-case tests
+### rstix: OASIS §3.2 Campaign interop use-case tests (#433)
 
 - Adds `tests/interop/use_cases/campaign/` covering §3.2.1–§3.2.6 against normative §3.2.3 fixtures and non-gating `examples/campaign/` data (CSD01 has no §3.2.7).
 - §3.2.1 description scope is **TESTED**: normative fixtures expose typed Campaign “Green Group Attacks Against Finance”.
