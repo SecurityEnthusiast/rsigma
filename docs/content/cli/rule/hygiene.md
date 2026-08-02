@@ -10,7 +10,7 @@ rsigma rule hygiene --rules <PATH>... [OPTIONS]
 
 ## Description
 
-`rule hygiene` assembles the raw signals rsigma already produces into a single report of retirement and clean-up candidates. The 2026 detection-engineering maturity guidance treats retirement as a first-class discipline: every detection needs an owner, a last-fired date, and a deletion bar, and the rule catalog grows until the team drowns unless something drives the cull. A rule that has not fired in a year, or fires only on false positives, is a deletion candidate. This command surfaces those candidates.
+`rule hygiene` assembles the raw signals RSigma already produces into a single report of retirement and clean-up candidates. Mature detection programs treat rule management and maintenance as ongoing work (see Elastic's [DEBMM](https://www.elastic.co/security-labs/elastic-releases-debmm) and the [SANS detection engineering lifecycle](https://www.sans.org/blog/logs-alerts-introducing-detection-engineering-poster)): without a cull, the catalog fills with silent, noisy, unowned, and stale rules. This command surfaces those candidates.
 
 It runs no evaluation against the rules. The static signals read straight off the parsed rules; the silence and noisy signals join a Prometheus snapshot or endpoint; the broken-coverage signal joins a field-observability snapshot. It is an offline `rule`-group command with no engine or hot-path involvement.
 

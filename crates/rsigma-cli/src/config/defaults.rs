@@ -104,9 +104,9 @@ pub(crate) const SCORECARD_FAIL_ON: &str = "none";
 /// test pins the clap flag default to this constant.
 pub(crate) const DOC_FAIL_ON_MISSING: bool = false;
 /// `rule hygiene` duration thresholds. A drift-guard test pins the clap flag
-/// defaults to these constants. One year is the retirement-cadence default the
-/// 2026 detection-engineering maturity guidance uses for both silence and
-/// modified-date staleness.
+/// defaults to these constants. One year is a practical default for both
+/// silence and modified-date staleness; override per program via flags or
+/// `hygiene.*` config.
 pub(crate) const HYGIENE_SILENT_THRESHOLD: &str = "365d";
 pub(crate) const HYGIENE_STALE_THRESHOLD: &str = "365d";
 
