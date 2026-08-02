@@ -1,6 +1,6 @@
 # Lint Rules
 
-`rsigma rule lint` runs {{ rsigma.lint.rules }} built-in checks derived from the Sigma v2.1.0 specification, plus {{ rsigma.lint.reserved }} reserved enum value (`empty_filter_rules`) that no production code currently emits. This page is the canonical catalogue: every rule's ID, default severity, what it flags, and whether `--fix` can auto-correct it.
+`rsigma rule lint` runs {{ rsigma.lint.rules }} built-in checks derived from the Sigma v2.1.0 specification, plus {{ rsigma.lint.reserved }} reserved enum value (`empty_filter_rules`) that no production code currently emits. This page is the canonical catalog: every rule's ID, default severity, what it flags, and whether `--fix` can auto-correct it.
 
 For the workflow and CLI surface see [Linting Rules](../guide/linting-rules.md) and the [`rule lint` CLI reference](../cli/rule/lint.md). For the source of truth see [`crates/rsigma-parser/src/lint`](https://github.com/timescale/rsigma/tree/main/crates/rsigma-parser/src/lint).
 
@@ -26,7 +26,7 @@ Override the threshold with `--fail-level warning` or `--fail-level info`. See [
 | Reserved (no production emission yet) | {{ rsigma.lint.reserved }} |
 | **Total** | **{{ rsigma.lint.total }}** ({{ rsigma.lint.autofix }} of which have safe auto-fixes via `--fix`) |
 
-The `hint` severity is defined but not yet used by any of the shipped rules. Future rules may use it.
+The `hint` severity is defined but not used by any of the shipped rules.
 
 ### The {{ rsigma.lint.autofix }} safe-fix rules
 
@@ -38,14 +38,14 @@ The `hint` severity is defined but not yet used by any of the shipped rules. Fut
 | `logsource_value_not_lowercase` | `warning` | Lowercase the offending `category`/`product`/`service` value. |
 | `duplicate_tags` | `warning` | Remove the duplicate tag entry. |
 | `duplicate_references` | `warning` | Remove the duplicate URL. |
-| `duplicate_fields` | `warning` | Remove the duplicate field declaration. |
+| `duplicate_fields` | `warning` | Remove the duplicate entry from the top-level `fields:` list. |
 | `single_value_all_modifier` | `warning` | Remove the redundant `all` modifier on a single-value item. |
 | `all_with_re` | `warning` | Remove the redundant `all` modifier when used alongside `re`. |
 | `wildcard_only_value` | `warning` | Replace the lone `*` value with `exists: true`. |
 | `filter_has_level` | `warning` | Remove the inapplicable `level:` from the filter rule. |
 | `filter_has_status` | `warning` | Remove the inapplicable `status:` from the filter rule. |
 | `unknown_key` | `info` | Replace a typo'd key with the closest known key (when the edit distance is small). |
-| `ads_unknown_section` | `info` | Rename an unrecognised `rsigma.ads.*` key to the closest known ADS section (when the edit distance is small). |
+| `ads_unknown_section` | `info` | Rename an unrecognized `rsigma.ads.*` key to the closest known ADS section (when the edit distance is small). |
 
 ## Infrastructure rules (4)
 
@@ -58,7 +58,7 @@ Fired by the linter's loader and runner before per-rule checks even start. Canno
 | `file_read_error` | `error` | — | The lint path could not be opened (IO error, permission denied). |
 | `schema_violation` | `error` | — | When `--schema` is set, the rule fails the JSON schema. Schema violations attach the JSON schema error message verbatim. |
 
-## Shared metadata rules (16)
+## Shared metadata rules (17)
 
 Apply to detection, correlation, and filter rules alike.
 
@@ -66,22 +66,23 @@ Apply to detection, correlation, and filter rules alike.
 |------|----------|-----|-------------|
 | `missing_title` | `error` | — | Rule has no `title:` field. |
 | `empty_title` | `error` | — | `title:` is present but empty. |
-| `title_too_long` | `warning` | — | `title:` exceeds the recommended length. |
-| `name_too_long` | `warning` | — | A `name:` field (e.g. on a correlation reference) exceeds the recommended length. |
+| `title_too_long` | `warning` | — | `title:` exceeds 256 characters. |
+| `name_too_long` | `warning` | — | A `name:` field (e.g. on a correlation reference) exceeds 256 characters. |
 | `missing_author` | `info` | — | The rule has no `author:` field. |
 | `missing_description` | `info` | — | The rule has no `description:` field. |
-| `description_too_long` | `warning` | — | `description:` exceeds the recommended length. |
+| `description_too_long` | `warning` | — | `description:` exceeds 65535 characters. |
 | `invalid_status` | `error` | yes | `status:` is not one of `stable`, `test`, `experimental`, `deprecated`, `unsupported`. The fix replaces it with the closest match. |
 | `invalid_level` | `error` | yes | `level:` is not one of `informational`, `low`, `medium`, `high`, `critical`. The fix replaces it with the closest match. |
 | `missing_level` | `warning` | — | The rule has no `level:` field. |
-| `invalid_date` | `error` | — | `date:` is not ISO 8601 (`YYYY-MM-DD` or `YYYY/MM/DD`). |
-| `invalid_modified` | `error` | — | `modified:` is not a valid date. |
+| `invalid_date` | `error` | — | `date:` is not `YYYY-MM-DD`. |
+| `invalid_modified` | `error` | — | `modified:` is not `YYYY-MM-DD`. |
 | `modified_before_date` | `warning` | — | `modified:` is earlier than `date:`. |
 | `invalid_id` | `warning` | — | `id:` is not a valid UUID. Replace it with a freshly generated UUIDv4 manually. |
+| `taxonomy_too_long` | `warning` | — | Top-level `taxonomy:` exceeds 256 characters. |
 | `non_lowercase_key` | `warning` | yes | A top-level key uses non-lowercase characters (e.g. `Title:` instead of `title:`). The fix lowercases the key. |
-| `unknown_key` | `info` | yes | An unrecognised top-level key. The fix suggests the closest known key when the edit distance is small (e.g. `descirption` → `description`). |
+| `unknown_key` | `info` | yes | An unrecognized top-level key. The fix suggests the closest known key when the edit distance is small (e.g. `descirption` → `description`). |
 
-## Detection rules (19)
+## Detection rules (18)
 
 Apply to detection rules (`detection:` block + `condition:`).
 
@@ -92,14 +93,13 @@ Apply to detection rules (`detection:` block + `condition:`).
 | `missing_condition` | `error` | — | `detection:` has no `condition:` key. |
 | `missing_logsource` | `error` | — | The rule has no `logsource:` block. |
 | `logsource_value_not_lowercase` | `warning` | yes | A `logsource.category/product/service` value uses non-lowercase characters. The fix lowercases the value. |
-| `duplicate_fields` | `warning` | yes | A detection item lists the same field name twice. The fix removes the duplicate. |
+| `duplicate_fields` | `warning` | yes | The top-level `fields:` list contains the same name twice. The fix removes the duplicate entry. |
 | `duplicate_references` | `warning` | yes | `references:` contains the same URL twice. The fix dedupes. |
 | `duplicate_tags` | `warning` | yes | `tags:` contains the same tag twice. The fix dedupes. |
 | `invalid_tag` | `warning` | — | A tag value does not match the Sigma tag spec (`namespace.value`). |
-| `unknown_tag_namespace` | `warning` | — | A tag uses a namespace outside the recognised set (`attack`, `cve`, `detection`, `tlp`, `stp`, `informational`). |
-| `falsepositive_too_short` | `warning` | — | `falsepositives:` entries are below the recommended minimum length. |
-| `scope_too_short` | `warning` | — | A scope token (in `tags:` or `name:` namespaces) is below the minimum length. |
-| `taxonomy_too_long` | `warning` | — | A namespace component (in `tags:` or `name:`) is above the maximum length. |
+| `unknown_tag_namespace` | `warning` | — | A tag uses a namespace outside the recognized set (`attack`, `cve`, `detection`, `tlp`, `stp`, `informational`). |
+| `falsepositive_too_short` | `warning` | — | A `falsepositives:` entry is shorter than 2 characters. |
+| `scope_too_short` | `warning` | — | A top-level `scope:` list entry is shorter than 2 characters. |
 | `wildcard_only_value` | `warning` | yes | A detection value is just `*`. The fix replaces it with `exists: true`, which is what the author almost certainly meant. |
 | `null_in_value_list` | `warning` | — | A `null` literal appears inside a list of values. Sigma's semantics around `null` in lists are spec-ambiguous; this flags the case so the author can be explicit. |
 | `empty_value_list` | `warning` | — | A detection item with a list value is empty. |
@@ -125,11 +125,11 @@ Apply to correlation rules (`correlation:` block).
 | `gap_without_session` | `error` | — | `gap:` is set without `window: session`. The gap only applies to session windows. |
 | `invalid_gap_format` | `error` | — | `gap:` is not a valid duration (`5m`, `1h`, `30s`). |
 | `missing_correlation_condition` | `error` | — | `correlation:` has no `condition:` block. |
-| `missing_condition_field` | `error` | — | `correlation.condition` is missing the required field for the chosen correlation type (e.g. `gte` for `event_count`, `field` for `value_sum`). |
+| `missing_condition_field` | `error` | — | `correlation.condition` is missing `field:` for types that require it (`value_count`, `value_sum`, `value_avg`, `value_percentile`). |
 | `condition_value_not_numeric` | `error` | — | The numeric threshold in `correlation.condition` is not a number. |
-| `missing_group_by` | `error` | — | `value_*` and grouping-based correlations need a `group-by:`. |
+| `missing_group_by` | `error` | — | `correlation:` has no `group-by:` (required once `type:` is set). |
 | `generate_not_boolean` | `error` | — | The `generate:` field is not a boolean. |
-| `invalid_condition_operator` | `error` | — | The condition uses an operator not valid for the correlation type (e.g. `lt` is not valid for `event_count`). |
+| `invalid_condition_operator` | `error` | — | A key in `correlation.condition` is not one of `gt`, `gte`, `lt`, `lte`, `eq`, `neq` (the `field` key is exempt). |
 
 ## Filter rules (8 IDs, 7 emitted)
 
@@ -139,12 +139,12 @@ Apply to filter rules (`kind: filter` with a `filter:` block). The eighth row (`
 |------|----------|-----|-------------|
 | `missing_filter` | `error` | — | A `kind: filter` rule has no `filter:` block. |
 | `missing_filter_logsource` | `error` | — | Filter rule has no `logsource:`. |
-| `missing_filter_rules` | `error` | — | `filter:` has no `rules:` list. |
+| `missing_filter_rules` | `error` | — | `filter.rules` is present but not a list of rule IDs, a single rule ID string, or `any`. Absence of `rules` is allowed. |
 | `missing_filter_selection` | `error` | — | `filter:` has no `selection:` block. |
 | `missing_filter_condition` | `error` | — | `filter:` has no `condition:`. |
 | `filter_has_level` | `warning` | yes | Filter rules should not carry `level:`. The fix removes the field. |
 | `filter_has_status` | `warning` | yes | Filter rules should not carry `status:`. The fix removes the field. |
-| `empty_filter_rules` | reserved | — | Variant declared in the enum and asserted in a regression test, but no production code emits it today. May be repurposed in a future release. |
+| `empty_filter_rules` | reserved | — | Variant declared in the enum and asserted in a regression test, but no production code emits it today. |
 
 ## Modifier and `related:` hygiene (7)
 
@@ -187,7 +187,7 @@ Optional [Alerting and Detection Strategy](https://github.com/palantir/alerting-
 | `ads_missing_priority` | `info` | — | No `rsigma.ads.priority` rationale (the `level` field still covers severity). |
 | `ads_missing_response` | `warning` | — | No `rsigma.ads.response` plan. |
 | `ads_empty_section` | `info` | — | A present `rsigma.ads.*` section is blank or too short. |
-| `ads_unknown_section` | `info` | yes | An unrecognised `rsigma.ads.*` key (likely a typo). The fix renames it to the closest known section. |
+| `ads_unknown_section` | `info` | yes | An unrecognized `rsigma.ads.*` key (likely a typo). The fix renames it to the closest known section. |
 
 Configure the bar with an `ads:` block in `.rsigma-lint.yml`:
 
@@ -280,7 +280,7 @@ detection:
     condition: selection
 ```
 
-Sigma's top-level keys (`title:`, `id:`, `logsource:`, `detection:`, `level:` …) are case-sensitive. `Title:` is **not** recognised by the parser; the rule silently has no title. The fix lowercases the offending key.
+Sigma's top-level keys (`title:`, `id:`, `logsource:`, `detection:`, `level:` …) are case-sensitive. `Title:` is **not** recognized by the parser; the rule silently has no title. The fix lowercases the offending key.
 
 ### `condition_references_unknown`
 
@@ -337,22 +337,18 @@ No auto-fix because the migration is structural (split into a base detection plu
 Trigger:
 
 ```yaml
-detection:
-    selection:
-        CommandLine|contains: whoami
-        CommandLine|contains: net.exe
-    condition: selection
+fields:
+    - CommandLine
+    - User
+    - CommandLine
 ```
 
-YAML preserves duplicate keys silently; the parser keeps only the last one, so the `whoami` match is dropped. The fix removes the earlier duplicate. If you wanted both, use a single key with a list of values, or split the selections.
+The top-level `fields:` list names fields to surface in matches. A duplicate entry is redundant and the fix removes it. This rule does not detect duplicate YAML keys inside a detection selection (YAML keeps only the last key); use a single key with a value list when you need multiple values on one field.
 
 ```yaml
-detection:
-    selection:
-        CommandLine|contains:
-            - whoami
-            - net.exe
-    condition: selection
+fields:
+    - CommandLine
+    - User
 ```
 
 ### `unknown_tag_namespace`
@@ -365,9 +361,9 @@ tags:
     - mittre.t1059       # typo: should be attack.t1059
 ```
 
-The recognised tag namespaces are `attack.*`, `cve.*`, `detection.*`, `tlp.*`, `stp.*`, and `informational.*`. The fix is to manually replace the unknown namespace with the closest valid one (the linter doesn't auto-correct; tag namespaces are ambiguous enough that silent rewrites would be unsafe).
+The recognized tag namespaces are `attack.*`, `cve.*`, `detection.*`, `tlp.*`, `stp.*`, and `informational.*`. The fix is to manually replace the unknown namespace with the closest valid one (the linter doesn't auto-correct; tag namespaces are ambiguous enough that silent rewrites would be unsafe).
 
-To allow organisation-specific namespaces, pass `--tag-namespace <name>` on the CLI (repeatable) or add a `tag_namespaces` list to `.rsigma-lint.yml`:
+To allow organization-specific namespaces, pass `--tag-namespace <name>` on the CLI (repeatable) or add a `tag_namespaces` list to `.rsigma-lint.yml`:
 
 ```yaml
 tag_namespaces:
@@ -403,19 +399,20 @@ The valid `status:` values are `stable`, `test`, `experimental`, `deprecated`, `
 
 ## How to read the source for any rule
 
-Every lint rule's emission lives in a single file under [`crates/rsigma-parser/src/lint/rules/`](https://github.com/timescale/rsigma/tree/main/crates/rsigma-parser/src/lint/rules):
+Every lint rule's emission lives under [`crates/rsigma-parser/src/lint/rules/`](https://github.com/timescale/rsigma/tree/main/crates/rsigma-parser/src/lint/rules), with a few loader/CLI exceptions noted below:
 
 | File | Rules |
 |------|-------|
-| `metadata.rs` | Shared metadata rules (title, id, level, status, date, author, description). |
-| `detection.rs` | Detection-block rules (condition references, logsource, tags, references, modifiers). |
+| `metadata.rs` | Shared metadata (title, id, level, status, date, author, description, name, taxonomy, non-lowercase keys). |
+| `detection.rs` | Detection-block rules (condition references, logsource, tags, references, fields, scope, falsepositives, modifiers, value-list hygiene, flattened array correlation, `related:`). |
 | `correlation.rs` | Correlation-block rules. |
 | `filter.rs` | Filter-block rules. |
+| `version.rs` | `unsupported_sigma_version`, `array_matching_without_version`. |
 | `ads.rs` | ADS detection-strategy presence checks (`ads_missing_*`, `ads_empty_section`, `ads_unknown_section`). |
-| `shared.rs` | Cross-kind helpers (unknown_key, non_lowercase_key). |
-| `mod.rs` | Infrastructure (`yaml_parse_error`, `not_a_mapping`, `file_read_error`, `missing_title`, `missing_description`, `missing_author`, `title_too_long`, `missing_condition`). |
+| `shared.rs` | `unknown_key`. |
+| `mod.rs` | Module wiring for the rule packages above. |
 
-Each emission is a call to `error(LintRule::X, ...)`, `warning(LintRule::X, ...)`, `info(LintRule::X, ...)`, or `hint(LintRule::X, ...)`. The full enum lives at [`crates/rsigma-parser/src/lint/mod.rs`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-parser/src/lint/mod.rs).
+Infrastructure findings (`yaml_parse_error`, `not_a_mapping`, `file_read_error`) and cross-document reference checks (`sigma_version_mismatch`, `unknown_rule_reference`) are produced by the lint loader/runner in [`crates/rsigma-parser/src/lint/mod.rs`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-parser/src/lint/mod.rs). `schema_violation` is attached by the CLI when `--schema` fails. Each emission is a call to `error(LintRule::X, ...)`, `warning(LintRule::X, ...)`, `info(LintRule::X, ...)`, or `hint(LintRule::X, ...)`. The full enum and the programmatic catalog live in that same module and in [`catalogue.rs`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-parser/src/lint/catalogue.rs).
 
 ## See also
 
