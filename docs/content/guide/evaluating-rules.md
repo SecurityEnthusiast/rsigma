@@ -64,7 +64,7 @@ tail -f -n +0 /var/log/audit.json | rsigma engine eval -r rules/
 helr run | rsigma engine eval -r rules/ -p ecs.yml
 ```
 
-Unlike the daemon, stdin eval still ends when the pipe closes. Use it for batch replay and unix composition; use [streaming detection](streaming-detection.md) when the source is long-lived. Collectors such as [Helr](../ecosystem/helr.md) and [Vector](otlp-integration.md) fit either path depending on whether you want a one-shot run or a service.
+Use eval for one-shot pipes and batch replay. For a long-lived service, start [`engine daemon`](streaming-detection.md#start-the-daemon) with `--input http` (or NATS/unix) and post events with curl or a collector; a finite stdin pipe into the daemon also ends the process once the writer closes. Collectors such as [Helr](../ecosystem/helr.md) and [Vector](otlp-integration.md) fit either path depending on whether you want a one-shot run or a service.
 
 ## Pipelines and field mapping
 

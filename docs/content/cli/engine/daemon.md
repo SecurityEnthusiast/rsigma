@@ -274,13 +274,20 @@ See the [Triage Feedback Loop](../../guide/triage-feedback.md) guide.
 
 ## Examples
 
-### Minimal daemon: stdin → stdout
+### Minimal daemon: HTTP ingest + curl
 
 ```bash
-rsigma engine daemon -r rules/
+rsigma engine daemon -r rules/ --input http --api-addr 127.0.0.1:9090
 ```
 
-Reads NDJSON from stdin, writes detections to stdout. Default API on `0.0.0.0:9090`.
+```bash
+curl -sS http://127.0.0.1:9090/readyz
+curl -sS -X POST http://127.0.0.1:9090/api/v1/events \
+  -H 'Content-Type: application/x-ndjson' \
+  --data '{"CommandLine":"whoami /priv"}'
+```
+
+Accepts `POST /api/v1/events`; detections write to stdout. Default `--input stdin` is for a long-lived writer; closing stdin drains and exits the daemon. Prefer [`engine eval`](eval.md) for one-shot pipes. See [Streaming Detection: Start the daemon](../../guide/streaming-detection.md#start-the-daemon).
 
 ### HTTP ingest with persistent state
 
@@ -291,7 +298,7 @@ rsigma engine daemon -r rules/ \
     --pipeline ecs_windows
 ```
 
-Accepts `POST /api/v1/events` for ingest; correlation state survives restarts.
+Correlation state survives restarts.
 
 ### NATS source + sink + DLQ
 
