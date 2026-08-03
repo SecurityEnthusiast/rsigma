@@ -46,7 +46,9 @@ For a narrative tutorial see [Evaluating Rules](../../guide/evaluating-rules.md)
 
 | Flag | Description |
 |------|-------------|
-| `-p, --pipeline <PIPELINES>` | Processing pipeline(s) to apply. Accepts the builtin names (`ecs_windows`, `sysmon`) or YAML file paths. Repeatable; applied in priority order. |
+| `-p, --pipeline <PIPELINES>` | Processing pipeline(s) to apply. Accepts the builtin names (`ecs_windows`, `fibratus_windows`, `sysmon`) or YAML file paths. Repeatable; applied in priority order. |
+
+Dynamic pipeline sources are not resolved by `engine eval`. Dynamic references stay unresolved and a stderr note points you at [`pipeline resolve`](../pipeline/resolve.md) or [`engine daemon`](daemon.md).
 
 ### Output
 
@@ -156,13 +158,14 @@ rsigma engine eval -r rules/ -e @events.ndjson --output-format table
 
 A width-aligned `LEVEL | RULE | TYPE | DETAIL` table appears on stdout. Use `--output-format csv` or `--output-format tsv` to pipe into a spreadsheet instead. See [Output Formats](../../reference/output.md).
 
-### EVTX file with the bundled Windows-mapping pipeline
+### EVTX file (Windows Event Log)
 
 ```bash
 rsigma engine eval -r rules/ -e @Security.evtx
+rsigma engine eval -r rules/ -p sysmon -e @Microsoft-Windows-Sysmon%4Operational.evtx
 ```
 
-EVTX records are nested under `Event.System.*` and `Event.EventData.*`; rules must reference fields by their full dotted path. See [Input Formats](../../guide/input-formats.md#evtx-windows-event-log-feature-gated).
+Requires the `evtx` feature (included in release binaries and the Docker image). Records keep the nested `Event.System.*` / `Event.EventData.*` shape from the Windows XML; rules must use those full dotted paths. The builtin `sysmon` and `ecs_windows` pipelines do not flatten that nested EVTX shape; they help once events are already flat (or for Sysmon EventID routing on flat fields). See [Input Formats](../../guide/input-formats.md#evtx-windows-event-log-feature-gated).
 
 ### Tail a JSON log file into the engine
 
@@ -204,15 +207,16 @@ rsigma engine eval -r rules/ --suppress 5m --action reset \
 |------|---------|
 | `0` | Events processed cleanly. With `--fail-on-detection`, no rule fired. Per-rule parse errors are logged as warnings but do not change the exit code. |
 | `1` | With `--fail-on-detection`, at least one detection or correlation fired. |
-| `2` | The rules path itself could not be read. Use [`rule validate`](../rule/validate.md) for a strict per-rule gate that fails on parse or compile errors. |
-| `3` | Configuration error: bad `-p`, malformed `--suppress`, invalid `--jq` filter, etc. |
+| `2` | The rules path or `--event @path` file could not be read. Use [`rule validate`](../rule/validate.md) for a strict per-rule gate that fails on parse or compile errors. |
+| `3` | Configuration error: missing `--rules`/`eval.rules`, bad `-p`, malformed `--suppress`, invalid `--jq` filter, bad logsource options, etc. |
 
 ## See also
 
 - [Evaluating Rules](../../guide/evaluating-rules.md) for the narrative version with event-extraction patterns and correlation walkthroughs.
 - [Input Formats](../../guide/input-formats.md) for JSON, syslog, logfmt, CEF, EVTX, OTLP, plain text, and auto-detect.
-- [Processing Pipelines](../../guide/processing-pipelines.md) for `-p` semantics and the builtin pipelines.
+- [Processing Pipelines](../../guide/processing-pipelines.md) for `-p` semantics and the builtin pipelines (`ecs_windows`, `fibratus_windows`, `sysmon`).
 - [Performance Tuning](../../guide/performance-tuning.md) for `--bloom-prefilter` and `--cross-rule-ac`.
 - [CI/CD](../../guide/ci-cd.md) for `--fail-on-detection` patterns.
+- [Schema Routing](../../guide/schema-routing.md) and [Logsource-Aware Evaluation](../../guide/logsource-routing.md) for the routing flags above.
 - [`rule backtest`](../rule/backtest.md) for per-rule corpus assertions and CI reports.
 - [`engine daemon`](daemon.md) for the long-running streaming counterpart.
