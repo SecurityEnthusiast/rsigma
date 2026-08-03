@@ -22,7 +22,11 @@ html[data-theme="dark"] .sidebar-header .logo-link img {
   border-radius: 0.6rem;
 }
 
-.sidebar-header .logo-text {
+/* The docmd theme renders the sidebar logo as an image only, so the wordmark
+   beside it comes from CSS. Doing it here rather than rewriting built HTML
+   keeps `docmd dev` and `docmd build` showing the same header. */
+.sidebar-header .logo-link::after {
+  content: "RSigma";
   font-size: 2rem;
   font-weight: 800;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -31,7 +35,7 @@ html[data-theme="dark"] .sidebar-header .logo-link img {
   line-height: 1;
 }
 
-html[data-theme="dark"] .sidebar-header .logo-text {
+html[data-theme="dark"] .sidebar-header .logo-link::after {
   color: #fff;
 }
 

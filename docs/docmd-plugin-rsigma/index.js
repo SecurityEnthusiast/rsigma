@@ -184,18 +184,6 @@ function linkifyIssueRefs(md, repoUrl) {
 }
 
 /**
- * @param {string} text
- * @returns {string}
- */
-function escapeHtml(text) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/**
  * Render inline-code spans (`` `code` ``) in an already-HTML-escaped string as
  * `<code>` elements. Used where HTML renders (the visible header title).
  *
@@ -245,24 +233,6 @@ function renderMarkdownTitles(html) {
       content.includes("`") ? `${open}${stripInlineCode(content)}${close}` : match,
   );
   return out;
-}
-
-/**
- * Append a plain-text site label beside the sidebar logo image.
- *
- * @param {string} html
- * @param {string | undefined} text
- * @returns {string}
- */
-function injectSidebarLogoText(html, text) {
-  if (!text || html.includes('class="logo-text"')) {
-    return html;
-  }
-  const label = `<span class="logo-text">${escapeHtml(text)}</span>`;
-  return html.replace(
-    /(<div class="sidebar-header">\s*<a\b[^>]*\bclass="logo-link"[^>]*>)([\s\S]*?)(<\/a>)/,
-    (_match, open, inner, close) => `${open}${inner}${label}${close}`,
-  );
 }
 
 /**
@@ -499,24 +469,12 @@ export default {
     await writeBrandImages(path.join(outputDir, "assets", "images"), logoSvg);
     await writeBrandImages(path.join(docsRoot, "assets", "images"), logoSvg);
     let stripped = 0;
-    let logoTextInjected = 0;
     let titlesRendered = 0;
-    const logoText =
-      typeof ctx?.config?.logo === "object" && ctx.config.logo.text
-        ? String(ctx.config.logo.text)
-        : undefined;
     for (const file of collectHtmlFiles(outputDir)) {
       const html = fs.readFileSync(file, "utf8");
       let next = html.replace(/[ \t]*<base\b[^>]*>\n?/i, "");
       if (next !== html) {
         stripped += 1;
-      }
-      if (logoText) {
-        const withLogoText = injectSidebarLogoText(next, logoText);
-        if (withLogoText !== next) {
-          logoTextInjected += 1;
-          next = withLogoText;
-        }
       }
       next = injectAnalyticsConsentMode(next);
       const withTitles = renderMarkdownTitles(next);
@@ -529,9 +487,7 @@ export default {
       }
     }
     log(
-      `docmd-plugin-rsigma: stripped <base> tag from ${stripped} pages` +
-        (logoText ? `, added logo text to ${logoTextInjected} pages` : "") +
-        `, rendered Markdown in ${titlesRendered} page titles`,
+      `docmd-plugin-rsigma: stripped <base> tag from ${stripped} pages, rendered Markdown in ${titlesRendered} page titles`,
     );
   },
 };
