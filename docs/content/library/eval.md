@@ -37,6 +37,7 @@ serde_json = "1"   # only if you use the JsonEvent shim
 | `CorrelationConfig` | Limits on correlation state (`max_state_entries`, `max_event_buffer`). Default `100_000` and `10_000`. |
 | `Pipeline` | Parsed processing pipeline. Applied to rules at `add_collection` time, in priority order. |
 | `pipeline::parse_pipeline(&str) -> Result<Pipeline>` | Parse a pipeline YAML string. |
+| `TransformedRule` + `transform_rule` / `transform_collection` | Apply pipelines and hand back the rewritten rule, the transformation ids that fired, and the merged `PipelineState`, without compiling or loading. `Engine::transform_rule` / `Engine::transform_collection` do the same over an engine's configured pipelines. |
 | `LogSourceExtractor` | Derives an event's `LogSource` from configurable fields plus optional static defaults, for conflict-based logsource pruning. Pass to `Engine::set_logsource_extractor`. |
 | `Event` trait + `JsonEvent`, `KvEvent`, `MapEvent`, `PlainEvent` | The event shapes the engine consumes. |
 | `EvaluationResult` | One detection match or correlation firing. Composes a `RuleHeader` (rule metadata, custom attributes, optional enrichments) and a `ResultBody::Detection(DetectionBody)` / `ResultBody::Correlation(CorrelationBody)` payload. Serializes to one flat JSON object per result. |
@@ -109,6 +110,41 @@ engine.add_collection(&collection)?;
 ```
 
 After this, the rule sees ECS field names; an event with `process.command_line` matches.
+
+## Reading the rule a pipeline produced
+
+`add_collection` discards the rewritten Sigma AST and keeps only the compiled rules, so a caller that needs to act on what a pipeline decided asks for the rewrite explicitly. The common case is a collector that subscribes to log channels: rather than hardcoding a second copy of the pipeline's category-to-channel mapping, read the `logsource` the pipeline rewrote.
+
+```rust
+use rsigma_eval::{Engine, transform_collection};
+use rsigma_eval::pipeline::parse_pipeline;
+use rsigma_parser::parse_sigma_yaml;
+
+let pipelines = vec![parse_pipeline(&pipeline_yaml)?];
+let collection = parse_sigma_yaml(&rule_yaml)?;
+
+let mut channels = std::collections::BTreeSet::new();
+for transformed in transform_collection(&pipelines, &collection)? {
+    if let Some(service) = &transformed.rule.logsource.service {
+        channels.insert(service.clone());
+    }
+    // `transformed.applied_items` lists the ids of the transformations that
+    // fired, so you can tell "nothing matched" from "matched and rewrote".
+}
+
+// The originals are unchanged, so load them normally.
+let mut engine = Engine::new();
+for pipeline in pipelines {
+    engine.add_pipeline(pipeline);
+}
+engine.add_collection(&collection)?;
+```
+
+`TransformedRule` also carries `state`, the merged `PipelineState`, which is where `set_state` and `query_expression_placeholders` values land.
+
+Both functions clone and re-run the pipelines, the same work `add_collection` does, so they belong on the load or reload path and not on the per-event path. If only the logsource matters, `Engine::rules()` after loading is cheaper: each `CompiledRule` retains its post-pipeline `logsource`.
+
+They also apply pipelines in slice order rather than by `priority`, matching `apply_pipelines`. Pass the slice through `merge_pipelines` when chaining several, or use `Engine::transform_collection`, which uses the engine's already-sorted pipelines.
 
 ## Rule tuning
 

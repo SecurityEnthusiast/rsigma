@@ -28,7 +28,7 @@ use crate::compiler::{
 use crate::error::{EvalError, Result};
 use crate::event::Event;
 use crate::logsource::LogSourceExtractor;
-use crate::pipeline::{Pipeline, apply_pipelines};
+use crate::pipeline::{Pipeline, TransformedRule, apply_pipelines, transform_collection};
 use crate::result::{EvaluationResult, MatchDetailLevel};
 use crate::rule_metadata::{RuleBundleMetadata, RuleMetadataLookup};
 
@@ -476,6 +476,33 @@ impl Engine {
         }
         self.rebuild_index();
         Ok(())
+    }
+
+    /// Apply this engine's pipelines to `rule` and return the rewritten rule,
+    /// without compiling or loading anything.
+    ///
+    /// Use this to read what the configured pipelines do to a rule: the
+    /// rewritten `logsource`, the conditions a pipeline injected, or which
+    /// transformation ids fired. Loading a rule discards the rewritten Sigma AST
+    /// and keeps only the compiled form, so this is the way to see it.
+    ///
+    /// The engine is not modified and no rule is added. Cost is one clone plus
+    /// one pipeline pass, the same as the load path pays, so call it once per
+    /// rule set load rather than per event. If only the rewritten logsource
+    /// matters, read it from [`Engine::rules`] after loading instead: the
+    /// compiled rules already carry it.
+    pub fn transform_rule(&self, rule: &SigmaRule) -> Result<TransformedRule> {
+        crate::pipeline::transform_rule(&self.pipelines, rule)
+    }
+
+    /// Apply this engine's pipelines to every detection rule in `collection`.
+    ///
+    /// Per-rule equivalent of [`Engine::transform_rule`], in collection order.
+    pub fn transform_collection(
+        &self,
+        collection: &SigmaCollection,
+    ) -> Result<Vec<TransformedRule>> {
+        transform_collection(&self.pipelines, collection)
     }
 
     /// Add all detection rules from a collection, applying the given pipelines.

@@ -1895,6 +1895,306 @@ transformations:
     assert!(parsing::validate_source_refs(&source_refs, Some(&external)).is_ok());
 }
 
+// =============================================================================
+// transform_rule / transform_collection
+// =============================================================================
+
+/// Sysmon-shaped routing: inject an EventID per category, then unify the
+/// logsource onto the sysmon service.
+fn sysmon_routing_pipeline() -> Pipeline {
+    parse_pipeline(
+        r#"
+name: sysmon routing
+priority: 10
+transformations:
+  - id: sysmon_process_creation
+    type: add_condition
+    conditions:
+      EventID: 1
+    rule_conditions:
+      - type: logsource
+        category: process_creation
+        product: windows
+  - id: sysmon_logsource
+    type: change_logsource
+    product: windows
+    service: sysmon
+    rule_conditions:
+      - type: logsource
+        product: windows
+"#,
+    )
+    .unwrap()
+}
+
+fn process_creation_rule_yaml() -> &'static str {
+    r#"
+title: Whoami Execution
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+"#
+}
+
+#[test]
+fn test_transform_rule_reports_rewritten_logsource_and_applied_ids() {
+    let pipeline = sysmon_routing_pipeline();
+    let collection = rsigma_parser::parse_sigma_yaml(process_creation_rule_yaml()).unwrap();
+
+    let transformed = transform_rule(&[pipeline], &collection.rules[0]).unwrap();
+
+    assert_eq!(
+        transformed.rule.logsource.service.as_deref(),
+        Some("sysmon"),
+        "change_logsource should be visible on the returned rule"
+    );
+    assert_eq!(
+        transformed.applied_items,
+        vec![
+            "sysmon_logsource".to_string(),
+            "sysmon_process_creation".to_string()
+        ],
+        "applied ids are sorted"
+    );
+
+    // The injected EventID condition reaches the detection block.
+    let named = &transformed.rule.detection.named;
+    let has_event_id = named.values().any(|detection| {
+        format!("{detection:?}").contains("EventID")
+            || format!("{detection:?}").contains("event_id")
+    });
+    assert!(has_event_id, "add_condition should inject the EventID item");
+}
+
+#[test]
+fn test_transform_rule_leaves_input_untouched() {
+    let pipeline = sysmon_routing_pipeline();
+    let collection = rsigma_parser::parse_sigma_yaml(process_creation_rule_yaml()).unwrap();
+    let original = &collection.rules[0];
+
+    let transformed = transform_rule(&[pipeline], original).unwrap();
+
+    assert_eq!(original.logsource.service, None);
+    assert_eq!(
+        transformed.rule.logsource.service.as_deref(),
+        Some("sysmon")
+    );
+}
+
+#[test]
+fn test_transform_rule_without_pipelines_is_a_passthrough() {
+    let collection = rsigma_parser::parse_sigma_yaml(process_creation_rule_yaml()).unwrap();
+
+    let transformed = transform_rule(&[], &collection.rules[0]).unwrap();
+
+    assert!(transformed.applied_items.is_empty());
+    assert_eq!(transformed.rule.logsource.service, None);
+    assert_eq!(transformed.rule.title, collection.rules[0].title);
+}
+
+/// Two pipelines that only compose one way: `second` renames the field
+/// `first` produces, so `process.command_line` in the output proves that
+/// `first` ran before `second`.
+fn chained_rename_pipelines() -> (Pipeline, Pipeline) {
+    let first = parse_pipeline(
+        r#"
+name: first
+priority: 10
+transformations:
+  - id: to_intermediate
+    type: field_name_mapping
+    mapping:
+      CommandLine: intermediate.command_line
+"#,
+    )
+    .unwrap();
+    let second = parse_pipeline(
+        r#"
+name: second
+priority: 20
+transformations:
+  - id: to_final
+    type: field_name_mapping
+    mapping:
+      intermediate.command_line: process.command_line
+"#,
+    )
+    .unwrap();
+    (first, second)
+}
+
+#[test]
+fn test_transform_rule_applies_pipelines_in_slice_order() {
+    let (first, second) = chained_rename_pipelines();
+    let collection = rsigma_parser::parse_sigma_yaml(process_creation_rule_yaml()).unwrap();
+
+    let transformed = transform_rule(&[first, second], &collection.rules[0]).unwrap();
+
+    assert_eq!(
+        transformed.applied_items,
+        vec!["to_final".to_string(), "to_intermediate".to_string()]
+    );
+    let rendered = format!("{:?}", transformed.rule.detection.named);
+    assert!(
+        rendered.contains("process.command_line"),
+        "second pipeline should see the first pipeline's output: {rendered}"
+    );
+}
+
+#[test]
+fn test_transform_rule_honors_priority_after_merge_pipelines() {
+    // Handed to transform_rule out of priority order, the chain cannot compose:
+    // `second` runs against a field that does not exist yet.
+    let (first, second) = chained_rename_pipelines();
+    let collection = rsigma_parser::parse_sigma_yaml(process_creation_rule_yaml()).unwrap();
+
+    let unsorted = transform_rule(&[second.clone(), first.clone()], &collection.rules[0]).unwrap();
+    assert!(
+        !format!("{:?}", unsorted.rule.detection.named).contains("process.command_line"),
+        "slice order is honored as-is, so the reversed chain does not compose"
+    );
+
+    // merge_pipelines sorts by priority, which is how an Engine holds them.
+    let mut pipelines = vec![second, first];
+    merge_pipelines(&mut pipelines);
+    let sorted = transform_rule(&pipelines, &collection.rules[0]).unwrap();
+    assert!(
+        format!("{:?}", sorted.rule.detection.named).contains("process.command_line"),
+        "after sorting, the chain composes again"
+    );
+}
+
+#[test]
+fn test_transform_collection_covers_every_detection_rule() {
+    let pipeline = sysmon_routing_pipeline();
+    let yaml = r#"
+title: First
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+---
+title: Second
+logsource:
+    product: linux
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: id
+    condition: selection
+"#;
+    let collection = rsigma_parser::parse_sigma_yaml(yaml).unwrap();
+
+    let transformed = transform_collection(&[pipeline], &collection).unwrap();
+
+    assert_eq!(transformed.len(), 2);
+    assert_eq!(transformed[0].rule.title, "First");
+    assert_eq!(
+        transformed[0].rule.logsource.service.as_deref(),
+        Some("sysmon")
+    );
+    // The linux rule matches neither rule_condition, so nothing fires.
+    assert_eq!(transformed[1].rule.title, "Second");
+    assert_eq!(transformed[1].rule.logsource.service, None);
+    assert!(transformed[1].applied_items.is_empty());
+}
+
+#[test]
+fn test_transform_collection_scopes_state_per_rule() {
+    // Fires only for the windows rule, so the linux rule's result must not
+    // inherit either the applied id or the state key.
+    let pipeline = parse_pipeline(
+        r#"
+name: windows only
+transformations:
+  - id: set_windows_index
+    type: set_state
+    key: index
+    value: windows-sysmon
+    rule_conditions:
+      - type: logsource
+        product: windows
+"#,
+    )
+    .unwrap();
+    let yaml = r#"
+title: Windows
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+---
+title: Linux
+logsource:
+    product: linux
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: id
+    condition: selection
+"#;
+    let collection = rsigma_parser::parse_sigma_yaml(yaml).unwrap();
+
+    let transformed = transform_collection(&[pipeline], &collection).unwrap();
+
+    assert_eq!(
+        transformed[0]
+            .state
+            .get_state("index")
+            .and_then(|v| v.as_str()),
+        Some("windows-sysmon")
+    );
+    assert_eq!(
+        transformed[0].applied_items,
+        vec!["set_windows_index".to_string()]
+    );
+
+    assert!(
+        transformed[1].state.get_state("index").is_none(),
+        "state must not leak from the previous rule"
+    );
+    assert!(
+        transformed[1].applied_items.is_empty(),
+        "applied ids must not leak from the previous rule"
+    );
+}
+
+#[test]
+fn test_transform_rule_exposes_pipeline_state() {
+    let pipeline = parse_pipeline(
+        r#"
+name: stateful
+transformations:
+  - id: set_index
+    type: set_state
+    key: index
+    value: windows-sysmon
+"#,
+    )
+    .unwrap();
+    let collection = rsigma_parser::parse_sigma_yaml(process_creation_rule_yaml()).unwrap();
+
+    let transformed = transform_rule(&[pipeline], &collection.rules[0]).unwrap();
+
+    assert_eq!(
+        transformed
+            .state
+            .get_state("index")
+            .and_then(|v| v.as_str()),
+        Some("windows-sysmon")
+    );
+}
+
 #[test]
 fn test_validate_source_refs_undeclared_even_with_externals() {
     let refs = vec![sources::SourceRef {

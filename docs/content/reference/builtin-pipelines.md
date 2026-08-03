@@ -112,6 +112,8 @@ Each transformation is `add_condition` with a matching `rule_conditions: logsour
 
 After the routing conditions, a final `change_logsource` rewrites every Windows rule to `product: windows, service: sysmon` so downstream backends can use the unified logsource.
 
+That rewrite is also the routing decision itself, in a form a consumer can read: rather than re-deriving which channel a `process_creation` rule belongs to, read `logsource.service` off the transformed rule. Use `Engine::rules()` after loading, or [`transform_collection`](../guide/processing-pipelines.md#inspecting-the-rewritten-rule) when you need the rule without loading it. A custom pipeline that routes by `add_condition` alone leaves the logsource untouched, so mirror this closing transformation if anything downstream keys off `service`.
+
 ### When it does NOT help
 
 `sysmon` assumes events already have a flat `EventID` field. It does not flatten the nested EVTX shape. For raw `.evtx` input, either:

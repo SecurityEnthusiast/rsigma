@@ -10,7 +10,7 @@ A pipeline is a list of **transformations** applied to each rule in priority ord
 
 - Map field names: `CommandLine` becomes `process.command_line`.
 - Inject conditions: every `process_creation` rule gets `EventID: 1` added.
-- Set logsource: rewrite `product: windows` to `product: windows_sysmon`.
+- Set logsource: rewrite `product: windows` to `product: windows, service: sysmon`.
 - Drop rules that target a different schema.
 - Set backend-specific options like `postgres.table` or `index`.
 
@@ -60,12 +60,13 @@ The argument is first checked against [builtin pipelines](#builtin-pipelines). I
 
 ## Builtin pipelines
 
-RSigma embeds two ready-to-use pipelines in the binary, so common cases need no external file:
+RSigma embeds three ready-to-use pipelines in the binary, so common cases need no external file:
 
 | Name | What it does |
 |------|--------------|
 | `ecs_windows` | Maps Sigma/Sysmon field names to Elastic Common Schema (ECS). Use with Winlogbeat, Elastic Agent, or any pipeline that produces ECS-shaped events. |
-| `sysmon` | Adds `EventID` conditions to route by Sysmon event type. Use when evaluating against raw Sysmon JSON. |
+| `fibratus_windows` | Maps Sigma field names to Fibratus kernel-event fields. Use with `backend convert -t fibratus`. |
+| `sysmon` | Adds `EventID` conditions to route by Sysmon event type, then rewrites the logsource to `product: windows, service: sysmon`. Use when evaluating against raw Sysmon JSON. |
 
 ```bash
 rsigma engine eval -r rules/ -p ecs_windows -e '{"process.command_line": "whoami"}'
@@ -169,6 +170,61 @@ rsigma engine eval -r rules/ \
 ```
 
 If two pipelines set the same custom attribute on the same rule, the last one wins.
+
+## Inspecting the rewritten rule
+
+Loading rules keeps only the compiled form, so the rewritten Sigma rule is not something you can read back off an engine. Two surfaces hand it to you.
+
+From the CLI, [`pipeline diff`](../cli/pipeline/diff.md) prints the before/after rule AST and the transformation ids that fired:
+
+```bash
+rsigma pipeline diff -r rules/ -p sysmon --output-format json
+```
+
+From code, `transform_rule` and `transform_collection` return the rewritten rule alongside those same ids:
+
+```rust
+use rsigma_eval::{transform_collection, parse_pipeline};
+use rsigma_parser::parse_sigma_yaml;
+
+let pipelines = vec![parse_pipeline(&std::fs::read_to_string("windows.yml")?)?];
+let collection = parse_sigma_yaml(&rule_yaml)?;
+
+for transformed in transform_collection(&pipelines, &collection)? {
+    // `logsource` reflects change_logsource; the detection block carries
+    // whatever add_condition injected.
+    println!(
+        "{}: service={:?} applied={:?}",
+        transformed.rule.title,
+        transformed.rule.logsource.service,
+        transformed.applied_items,
+    );
+}
+```
+
+`Engine::transform_rule` and `Engine::transform_collection` do the same over an engine's already-configured pipelines, without loading anything.
+
+This is how a collector avoids keeping a second copy of the pipeline's mapping. If your pipeline routes Sigma categories to Sysmon event IDs with `add_condition`, add a closing `change_logsource` so the routing decision also lands on the logsource, which is what a consumer keying off `service` reads:
+
+```yaml
+  - id: sysmon_logsource
+    type: change_logsource
+    product: windows
+    service: sysmon
+    rule_conditions:
+      - type: logsource
+        product: windows
+```
+
+The builtin `sysmon` pipeline already ends with exactly that transformation.
+
+Three notes on cost and correctness:
+
+- These functions clone and re-transform, the same work the load path does. Call them once per rule set load or reload, never per event.
+- They do not consume the rules. Pass the original, untransformed collection to `add_collection`, or apply pipelines once and load the result into an engine with no pipelines configured. Doing both to the same rules applies the pipelines twice.
+- The free functions apply pipelines in the order of the slice you hand them, not by `priority`. Sort with `merge_pipelines` first if you are chaining several, which is what an engine does internally. The `Engine::` methods already use the engine's sorted pipelines.
+
+When all you need is the rewritten logsource, skip the transform entirely and read it from the loaded rules: `Engine::rules()` exposes each `CompiledRule`, whose `logsource` already reflects `change_logsource`.
 
 ## Custom attributes (`rsigma.*` and `postgres.*`)
 

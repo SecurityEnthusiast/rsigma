@@ -1297,6 +1297,133 @@ level: low
 }
 
 #[test]
+fn test_transform_collection_uses_the_engine_pipelines() {
+    use crate::pipeline::parse_pipeline;
+
+    let pipeline = parse_pipeline(
+        r#"
+name: sysmon routing
+transformations:
+  - id: sysmon_process_creation
+    type: add_condition
+    conditions:
+      EventID: 1
+    rule_conditions:
+      - type: logsource
+        category: process_creation
+  - id: sysmon_logsource
+    type: change_logsource
+    service: sysmon
+    rule_conditions:
+      - type: logsource
+        product: windows
+"#,
+    )
+    .unwrap();
+
+    let collection = parse_sigma_yaml(
+        r#"
+title: Whoami Execution
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+level: medium
+"#,
+    )
+    .unwrap();
+
+    let engine = Engine::new_with_pipeline(pipeline);
+    let transformed = engine.transform_collection(&collection).unwrap();
+
+    assert_eq!(transformed.len(), 1);
+    assert_eq!(
+        transformed[0].rule.logsource.service.as_deref(),
+        Some("sysmon")
+    );
+    assert_eq!(
+        transformed[0].applied_items,
+        vec![
+            "sysmon_logsource".to_string(),
+            "sysmon_process_creation".to_string()
+        ]
+    );
+
+    // Inspecting does not load anything.
+    assert_eq!(engine.rule_count(), 0);
+}
+
+#[test]
+fn test_transform_rule_without_pipelines_is_a_passthrough() {
+    let collection = parse_sigma_yaml(
+        r#"
+title: Whoami Execution
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+level: medium
+"#,
+    )
+    .unwrap();
+
+    let engine = Engine::new();
+    let transformed = engine.transform_rule(&collection.rules[0]).unwrap();
+
+    assert!(transformed.applied_items.is_empty());
+    assert_eq!(transformed.rule.logsource.service, None);
+}
+
+#[test]
+fn test_loaded_compiled_rules_carry_the_rewritten_logsource() {
+    use crate::pipeline::parse_pipeline;
+
+    let pipeline = parse_pipeline(
+        r#"
+name: sysmon logsource
+transformations:
+  - id: sysmon_logsource
+    type: change_logsource
+    service: sysmon
+    rule_conditions:
+      - type: logsource
+        product: windows
+"#,
+    )
+    .unwrap();
+
+    let collection = parse_sigma_yaml(
+        r#"
+title: Whoami Execution
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+level: medium
+"#,
+    )
+    .unwrap();
+
+    let mut engine = Engine::new_with_pipeline(pipeline);
+    engine.add_collection(&collection).unwrap();
+
+    assert_eq!(
+        engine.rules()[0].logsource.service.as_deref(),
+        Some("sysmon"),
+        "the cheaper path for logsource-only consumers"
+    );
+}
+
+#[test]
 fn test_pipeline_replace_string_e2e() {
     use crate::pipeline::parse_pipeline;
 

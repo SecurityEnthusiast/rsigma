@@ -4,6 +4,16 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Post-pipeline rule retrieval (#437)
+
+Pipelines rewrite a rule before it is compiled, and loading the rule kept only the compiled form, so the rewritten Sigma AST was reachable only by hand-rolling `apply_pipelines_with_state` around a clone. An embedder that derives runtime behavior from the rewrite, such as choosing which Windows event channels to collect from a `logsource` that `change_logsource` unified onto the sysmon service, had to duplicate the pipeline's own mapping in its code to get there.
+
+`rsigma-eval` now exposes `transform_rule` and `transform_collection`, returning a `TransformedRule` with the rewritten rule, the sorted ids of the transformations that fired, and the merged `PipelineState`; `Engine::transform_rule` and `Engine::transform_collection` do the same over an engine's configured pipelines without loading anything. Both are inspection-only siblings of the load path: the load and evaluation paths are unchanged, no rule AST is retained on the engine, and an engine that never calls them costs exactly what it did before. `PipelineState` is now re-exported from the crate root.
+
+The pipelines guide gains an "Inspecting the rewritten rule" section covering the CLI (`pipeline diff`) and library routes, the closing `change_logsource` that makes a routing decision readable off `logsource.service`, and the load-time-only cost. The eval library page carries the collector example and the builtin pipelines reference explains why the `sysmon` pipeline ends in `change_logsource`. The guide also correctly lists three builtin pipelines rather than two.
+
+Corrects the ordering contract documented on the surrounding pipeline functions. `apply_pipelines`, `apply_pipelines_with_state`, and `apply_pipelines_to_correlation` walk the slice they are handed and never sort, so they no longer claim to run "in priority order"; each points at `merge_pipelines` instead, whose own docs no longer claim to apply pipelines or combine them into one, since it only sorts a slice in place. Every in-repo caller already sorts first, so this is a documentation correction rather than a behavior change. `Pipeline::apply_to_collection` and `transform_collection` now cross-reference and spell out how they differ: the former takes one pipeline and shares a single `PipelineState` across the collection, the latter takes several and scopes `applied_items` and `state` to each rule.
+
 ### Documentation accuracy overhaul (#435)
 
 Aligns the published docmd site with current CLI flags, daemon auth and HTTP behavior, backends, feature flags, crate surfaces, and contributor workflows. Guides, CLI, library, reference, deployment, editors, ecosystem, and developers pages drop roadmap wording, correct dynamic-source `--source` / `--source-file` wiring, builtin pipelines, exit codes, NATS/OTLP/Helr examples, and WASM ABI status, and refresh testing and fuzzing inventories against CI.

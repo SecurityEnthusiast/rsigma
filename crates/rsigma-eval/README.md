@@ -35,6 +35,8 @@ This library is part of [rsigma].
 | `cross_rule_ac_enabled()` | Whether the cross-rule AC pre-filter is currently enabled (`daachorse-index` only) |
 | `rule_count()` | Number of loaded rules |
 | `rules()` | Access the compiled rules slice |
+| `transform_rule(rule: &SigmaRule)` | Apply the engine's pipelines and return the rewritten rule as a `TransformedRule`, without compiling or loading (inspection only) |
+| `transform_collection(collection: &SigmaCollection)` | Per-rule `transform_rule` over a collection, in collection order |
 
 ### Correlation Engine
 
@@ -87,9 +89,13 @@ A non-short-circuiting, bloom-free recording evaluator that backs `rsigma engine
 | `parse_sources_file(path: &Path)` | Parse a standalone source YAML file (top-level `sources:` list) |
 | `parse_sources_dir(dir: &Path)` | Parse all `*.yml`/`*.yaml` source files in a directory |
 | `validate_source_refs(pipeline, external_ids)` | Validate that `${source.*}` references resolve against declared and/or external source IDs |
-| `apply_pipelines(pipelines, rule)` | Apply all pipelines to a rule in priority order |
-| `apply_pipelines_with_state(pipelines, rule)` | Apply pipelines and return the merged `PipelineState` (for backends) |
-| `merge_pipelines(pipelines)` | Merge multiple pipelines into one (sorted by priority) |
+| `apply_pipelines(pipelines, rule)` | Apply all pipelines to a rule, in slice order |
+| `apply_pipelines_with_state(pipelines, rule)` | Same ordering, and returns the merged `PipelineState` (for backends) |
+| `merge_pipelines(pipelines)` | Sort a pipeline slice by `priority` in place, lower first. Despite the name it does not combine or apply them; call it before the `apply_*` / `transform_*` functions, which walk the slice as given |
+| `transform_rule(pipelines, rule)` | Apply pipelines to a clone and return a `TransformedRule` (rewritten rule + sorted applied ids + merged state); the input rule is untouched. Slice order, like `apply_pipelines`: sort with `merge_pipelines` to match engine behavior |
+| `transform_collection(pipelines, collection)` | Per-rule `transform_rule` over a collection's detection rules, in collection order |
+
+`TransformedRule { rule, applied_items, state }` is for callers that need the rewritten Sigma AST rather than an evaluation: deriving which log channels to collect from a `change_logsource`-rewritten `logsource`, reporting the conditions a pipeline injected, or asserting in a test that a mapping applied. Loading rules into an `Engine` keeps only the compiled form, so this is how the rewritten rule is read. It is inspection-only and belongs on the rule-set load path, not the per-event path; when only the rewritten logsource matters, `Engine::rules()` already carries it after loading and costs nothing extra.
 
 ### Rule field extraction (`fields` module)
 
