@@ -43,7 +43,7 @@ flowchart TD
     subgraph rsigma-eval
         direction TB
         ETRAIT["Event trait<br/>JsonEvent · KvEvent · PlainEvent<br/>schema classify (content signatures)"]
-        ETRAIT --> EPIPE["pipeline/<br/>Pipeline · conditions · transformations<br/>state · finalizers<br/>builtin: ecs_windows · sysmon<br/>dynamic: ${source.*} template expansion"]
+        ETRAIT --> EPIPE["pipeline/<br/>Pipeline · conditions · transformations<br/>state · finalizers<br/>builtin: ecs_windows · fibratus_windows · sysmon<br/>dynamic: ${source.*} template expansion"]
         ECOMP["compiler/<br/>compile_to_compiled → CompiledRule<br/>materialize matchers from HIR<br/>matcher optimizer (AnyOf):<br/>Aho-Corasick batching (|contains)<br/>RegexSet batching (|re)<br/>CaseInsensitiveGroup"]
         ECOMP --> EENG["engine/<br/>Engine (stateless)<br/>prefilters:<br/>CandidateIndex (witness pruning)<br/>bloom trigram filter* (substring)<br/>cross-rule AC index** (daachorse)<br/>logsource pruning (conflict-based, product-partitioned)"]
         ETRAIT --> EAUTHOR["rule authoring<br/>rule_draft · rule_tune<br/>shared profiling · verified YAML"]
@@ -62,7 +62,7 @@ flowchart TD
 
     subgraph rsigma-lsp
         direction TB
-        LSERV["LSP server over stdio<br/>tower-lsp"]
+        LSERV["LSP server over stdio<br/>tower-lsp-server"]
         LSERV --> LDIAG["diagnostics<br/>lint + parse + compile"]
         LDIAG --> LFEAT["completions · hover<br/>document symbols"]
         LFEAT --> LEDIT["Editors<br/>VS Code · Neovim · Helix · Zed"]
@@ -76,7 +76,7 @@ flowchart TD
         RENG --> RENRICH["enrichment/ post-eval pipeline<br/>primitives: template · lookup · http · command<br/>kind-aware: ${detection.*} · ${correlation.*}<br/>scope filter · HTTP response cache · on_error<br/>writes RuleHeader.enrichments"]
         RENRICH --> RPOST["post-engine layers (opt-in)<br/>risk/ per-entity scoring + risk incidents<br/>alert pipeline/ silence · inhibit ·<br/>dedup · incident grouping<br/>dispositions/ per-rule false-positive ratio"]
         RPOST --> RIO["io/<br/>EventSource (stdin · HTTP · NATS · unix*)<br/>OTLP* (HTTP + gRPC)<br/>TLS* termination (mTLS · cert hot-reload)<br/>on shared API listener (TCP or unix*)<br/>Sink (stdout · file · NATS · OTLP* · webhook · unix*)<br/>async delivery: per-sink workers · retry/backoff · DLQ"]
-        RSRC["sources/ (dynamic pipelines)<br/>DaemonSourceRegistry: external (--source) · collision-error<br/>SourceResolver: HTTP · command · file · NATS<br/>TemplateExpander · SourceCache (SQLite TTL)<br/>RefreshScheduler: interval · watch · push<br/>SIGHUP · NATS control · includes<br/>extract: jq · JSONPath · CEL"]
+        RSRC["sources/ (dynamic pipelines)<br/>DaemonSourceRegistry: external (--source)<br/>(pipeline-embedded sources: rejected)<br/>SourceResolver: HTTP · command · file · NATS<br/>TemplateExpander · SourceCache (SQLite TTL)<br/>RefreshScheduler: interval · watch · push<br/>SIGHUP · NATS control · includes<br/>extract: jq · JSONPath · CEL"]
     end
 
     subgraph rsigma-mcp
@@ -124,7 +124,7 @@ The dependency direction goes left to right in the diagram above. Higher crates 
 | [`rsigma-eval`](https://docs.rs/rsigma-eval) | Lower rules to HIR, then materialize a matcher tree and evaluate events. Detection and correlation engine. Exemplar-driven rule drafting and tuning. Processing pipeline machinery. HIR restart cache. | `Engine`, `CorrelationEngine`, `Pipeline`, `Transformation`, `CompiledRule`, `Event`, `JsonEvent`, `EvaluationResult`, `DetectionBody`, `CorrelationBody`, `DraftReport`, `TuneReport` | `parallel`, `daachorse-index` |
 | [`rsigma-convert`](https://docs.rs/rsigma-convert) | Render backend-native queries from the HIR. Non-native targets are delegated to sigma-cli. | `Backend` trait, `TextQueryConfig`, `PostgresBackend`, `LynxDbBackend`, `FibratusBackend`, `TestBackend` | `sigma-cli` |
 | [`rsigma-runtime`](https://docs.rs/rsigma-runtime) | Streaming runtime. Input adapters, post-evaluation enrichment, sinks, dynamic-source resolver, NATS/OTLP plumbing, hot-reload. | `LogProcessor`, `RuntimeEngine`, `EventSource`, `Sink`, `EnrichmentPipeline`, `SourceResolver`, `SourceCache`, `TemplateExpander`, `EvtxFileReader` | `nats`, `otlp`, `logfmt`, `cef`, `evtx`, `uds`, `daachorse-index` |
-| [`rsigma-lsp`](https://docs.rs/rsigma-lsp) | Language Server Protocol for editors. Diagnostics from the linter + parser + compiler, plus completions, hovers, and symbols. | `Backend` (tower-lsp impl), `Diagnostic` mapping | none |
+| [`rsigma-lsp`](https://docs.rs/rsigma-lsp) | Language Server Protocol for editors. Diagnostics from the linter + parser + compiler, plus completions, hovers, and symbols. | `Backend` (tower-lsp-server impl), `Diagnostic` mapping | none |
 | [`rsigma-mcp`](https://docs.rs/rsigma-mcp) | Model Context Protocol server. Exposes parsing, linting, fixing, evaluation, conversion, reverse conversion, rule tuning, field extraction, and pipeline resolution as MCP tools and resources for AI agents, returning structured JSON. | `RsigmaMcp` handler, `serve_stdio`, `serve_http` | `http` |
 | `rstix` | STIX 2.1 library crate. **Data Model + Serialization** complete (`serde`, default; wire MUST at parse [**DD-DM-001**](../library/rstix.md#rstix-wire-format-validation-dd-dm-001); [wire conformance (STIX 2.1)](../library/rstix.md#rstix-wire-conformance-stix-21)). **Pattern Engine** complete (`pattern`). **Validation Pipeline** complete (`validate`, all twelve checks, conformance corpus + per-code diagnostic coverage). **Graph + Marking + Store** complete (`graph`, `marking`, `store`, `store-fs`). **TAXII Client** (`taxii`; [TAXII Client](../library/rstix.md#rstix-taxii-client)). | `Bundle::parse` / `parse_reader`, `Bundle::validate`, `ParseOptions` + typed `TypeRegistry`, 42 typed object families (`serde`); `Pattern::parse` / `evaluate` / … (`pattern`); `Validator` / structured `STIX-E/W/I/H` diagnostics (`validate`); `StixGraph`, `MarkingResolver`, `MemoryStore` / `StixStore` / `FsStore` (`graph` / `marking` / `store` / `store-fs`); `TaxiiClient`, `TaxiiEnvelope`, auth + pagination (`taxii`); deterministic SCO IDs, vocabulary tables | `serde` (default), `pattern`, `validate`, `graph`, `marking`, `store`, `store-fs`, `taxii`, `taxii-store`, `taxii-native-tls` |
 | `rsigma-cli` | The `rsigma` binary. Wires the other crates into a CLI and the streaming daemon. | `engine eval`, `engine daemon`, `rule *`, `backend *`, `pipeline resolve`, `mcp serve` | `daemon`, `mcp`, `daemon-nats`, `daemon-otlp`, `daemon-tls`, plus all eval/runtime feature flags. |
@@ -179,7 +179,7 @@ PostgreSQL/TimescaleDB, LynxDB, and Fibratus (rule YAML for Windows EDR sensors)
 
 ### Plus: LSP
 
-`rsigma-lsp` runs over stdio via `tower-lsp`. On every save, it parses, lints, and compiles the buffer through `rsigma-parser` + `rsigma-eval`, then maps any findings into LSP diagnostics. It also exposes completions, hovers, and document symbols. See [VS Code](../editors/vscode.md) and [Neovim](../editors/neovim.md).
+`rsigma-lsp` runs over stdio via `tower-lsp-server`. On every save, it parses, lints, and compiles the buffer through `rsigma-parser` + `rsigma-eval`, then maps any findings into LSP diagnostics. It also exposes completions, hovers, and document symbols. See [VS Code](../editors/vscode.md) and [Neovim](../editors/neovim.md).
 
 ### Plus: MCP
 

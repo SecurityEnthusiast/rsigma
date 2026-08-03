@@ -27,7 +27,7 @@ flowchart TD
     subgraph rsigma-eval
         direction TB
         ETRAIT["Event trait\nJsonEvent · KvEvent · PlainEvent\nschema classify (content signatures)"]
-        ETRAIT --> EPIPE["pipeline/\nPipeline · conditions · transformations\nstate · finalizers\nbuiltin: ecs_windows · sysmon\ndynamic: ${source.*} template expansion"]
+        ETRAIT --> EPIPE["pipeline/\nPipeline · conditions · transformations\nstate · finalizers\nbuiltin: ecs_windows · fibratus_windows · sysmon\ndynamic: ${source.*} template expansion"]
         ECOMP["compiler/\ncompile_to_compiled → CompiledRule\nmaterialize matchers from HIR\nmatcher optimizer (AnyOf):\nAho-Corasick batching (|contains)\nRegexSet batching (|re)\nCaseInsensitiveGroup"]
         ECOMP --> EENG["engine/\nEngine (stateless)\nprefilters:\nCandidateIndex (witness pruning)\nbloom trigram filter* (substring)\ncross-rule AC index** (daachorse)\nlogsource pruning (conflict-based, product-partitioned)"]
         ETRAIT --> EAUTHOR["rule authoring\nrule_draft · rule_tune\nshared profiling · verified YAML"]
@@ -46,7 +46,7 @@ flowchart TD
 
     subgraph rsigma-lsp
         direction TB
-        LSERV["LSP server over stdio\ntower-lsp"]
+        LSERV["LSP server over stdio\ntower-lsp-server"]
         LSERV --> LDIAG["diagnostics\nlint + parse + compile"]
         LDIAG --> LFEAT["completions · hover\ndocument symbols"]
         LFEAT --> LEDIT["Editors\nVS Code · Neovim · Helix · Zed"]
@@ -60,7 +60,7 @@ flowchart TD
         RENG --> RENRICH["enrichment/ post-eval pipeline\nprimitives: template · lookup · http · command\nkind-aware: ${detection.*} · ${correlation.*}\nscope filter · HTTP response cache · on_error\nwrites RuleHeader.enrichments"]
         RENRICH --> RPOST["post-engine layers (opt-in)\nrisk/ per-entity scoring + risk incidents\nalert pipeline/ silence · inhibit ·\ndedup · incident grouping\ndispositions/ per-rule false-positive ratio"]
         RPOST --> RIO["io/\nEventSource (stdin · HTTP · NATS · unix*)\nOTLP* (HTTP + gRPC)\nTLS* termination (mTLS · cert hot-reload)\non shared API listener (TCP or unix*)\nSink (stdout · file · NATS · OTLP* · webhook · unix*)\nasync delivery: per-sink workers · retry/backoff · DLQ"]
-        RSRC["sources/ (dynamic pipelines)\nDaemonSourceRegistry: external (--source) +\npipeline-embedded (deprecated) · collision-error\nSourceResolver: HTTP · command · file · NATS\nTemplateExpander · SourceCache (SQLite TTL)\nRefreshScheduler: interval · watch · push\nSIGHUP · NATS control · includes\nextract: jq · JSONPath · CEL"]
+        RSRC["sources/ (dynamic pipelines)\nDaemonSourceRegistry: external (--source)\n(pipeline-embedded sources: rejected)\nSourceResolver: HTTP · command · file · NATS\nTemplateExpander · SourceCache (SQLite TTL)\nRefreshScheduler: interval · watch · push\nSIGHUP · NATS control · includes\nextract: jq · JSONPath · CEL"]
     end
 
     subgraph rsigma-mcp
