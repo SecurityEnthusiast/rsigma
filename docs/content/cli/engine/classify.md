@@ -10,15 +10,15 @@ rsigma engine classify [OPTIONS]
 
 ## Description
 
-Reads events and prints, per event, the schema RSigma recognizes it as (or `unknown`), plus a per-schema summary. Recognition is content-based: it keys off marker fields and values, not the wire format, so it tells ECS, flat Sysmon, rendered Windows Event Log, CEF, and OCSF apart even when they all arrive as JSON.
+Reads events and prints, per event, the schema RSigma recognizes it as (or `unknown`), plus a per-schema summary. Recognition is content-based: it keys off marker fields and values, not the wire format, so it tells ECS, flat Sysmon, rendered Windows Event Log, CEF, OCSF, and the Cloud/SaaS/Container builtins apart even when they all arrive as JSON.
 
-This is a diagnostic for understanding a mixed dataset and for tuning schema signatures before wiring them into a pipeline. It does not load rules or evaluate detections. For the live equivalent on a running daemon, see the `GET /api/v1/schemas` endpoint and the `--observe-schemas` flag on [`engine daemon`](daemon.md).
+This is a diagnostic for understanding a mixed dataset and for tuning schema signatures before wiring them into a pipeline. It does not load rules or evaluate detections. For the live equivalent on a running daemon, see the `GET /api/v1/schemas` endpoint and the `--observe-schemas` flag on [`engine daemon`](daemon.md). Offline signature proposals for unrecognized shapes are covered by [`engine discover-schemas`](discover-schemas.md).
 
 ## Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-e, --event <EVENT>` | stdin | A single event as a JSON string, or `@path` to read NDJSON from a file. Without this flag, reads NDJSON from stdin. |
+| `-e, --event <EVENT>` | stdin | A single event as a JSON string, or `@path` to read NDJSON from a file. Without this flag, reads NDJSON from stdin. Binary `.evtx` paths are rejected with guidance to decode via [`engine eval`](eval.md) or convert to NDJSON first. |
 | `--schema-config <PATH>` | unset | YAML file of user-defined schema signatures (and optional `routing:` bindings), merged over the built-ins. |
 | `--explain` | off | Show, per event, why it classified as it did: the matched signature's per-predicate pass/fail, or for an unknown event the closest near-miss. |
 | `--check` | off | Validate the `--schema-config` and exit (does not read events). Reports unreachable signatures, unknown or duplicate routing bindings, and missing pipeline files; exits non-zero on any finding. |
@@ -27,18 +27,22 @@ The global [`--output-format`](../../reference/output.md) flag selects `json`, `
 
 ## Built-in schemas
 
+Host and endpoint shapes:
+
 | Schema | Recognized by |
 |--------|---------------|
 | `ecs_windows` | `ecs.version` present plus a Windows marker (`winlog.*`, `host.os.type: windows`). Implies `product: windows`; routes as `ecs`. |
 | `ecs_linux` | `ecs.version` present plus a Linux marker (`host.os.type: linux`, `host.os.kernel`). Implies `product: linux`; routes as `ecs`. |
 | `ecs` | `ecs.version` present |
 | `ocsf` | `class_uid` and `metadata.version` present |
-| `windows_eventlog` | `Event.System.EventID` or `Event.System.Provider` present (rendered EVTX) |
+| `windows_eventlog` | `Event.System.EventID` or `Event.System.Provider` present (rendered EVTX JSON) |
 | `sysmon` | the Sysmon channel/provider, or flat `EventID` + `ProcessGuid` + `Image`/`CommandLine` |
 | `cef` | `deviceVendor`, `deviceProduct`, and `signatureId` present |
-| `generic_json` | any structured event matching no specific schema |
+| `generic_json` | any structured event matching no more-specific schema (specificity 0) |
 
-An event that matches no signature (for example a field-less object or non-JSON line) is reported as `unknown`, which is the signal for an unsupported schema.
+Cloud, SaaS, and container shapes (always-on): `aws_cloudtrail`, `aws_vpcflow`, `azure_activitylogs`, `azure_auditlogs`, `azure_signinlogs`, `azure` (product-only fallback), `gcp_audit`, `m365_audit`, `github_audit`, `okta_system_log`, `onelogin_events`, `k8s_audit`, `docker_events`, `osquery_result`. Marker fields and shipper recipes are in [Cloud Collection Recipes](../../guide/cloud-collection-recipes.md); specificities are in [Schema Signatures](../../reference/schema-signatures.md#specificity).
+
+An event that matches no signature (for example a field-less object `{}` or a non-JSON line counted as a parse error) is reported as `unknown`. A different-name specificity tie is reported as `ambiguous` on the event and in the summary.
 
 ## User signatures
 
@@ -105,14 +109,22 @@ rsigma engine classify -e @sample.ndjson --schema-config schemas.yml --output-fo
 
 ## Output
 
-The structured report carries a `summary` (`total_events`, `classified`, `unknown`, `parse_errors`, and `by_schema` counts) and an `events` array with the `index`, `schema`, and `specificity` of each event. In `table`, `csv`, and `tsv` formats the per-event rows go to stdout and the summary line to stderr.
+The structured report carries a `summary` (`total_events`, `classified`, `unknown`, `ambiguous`, `parse_errors`, and `by_schema` counts) and an `events` array with the `index`, `schema`, `specificity`, optional `ambiguous`, optional `explanation` (with `--explain`), and optional `route` (when the config has `routing:`) of each event. In `table`, `csv`, `tsv`, and `ndjson` formats the per-event rows go to stdout and the summary line to stderr (unless `--no-stats`).
 
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
-| `0` | Success |
-| `2` | Bad input (invalid inline JSON, unreadable file) |
-| `3` | Bad schema config |
+| `0` | Success (or `--check` found no issues) |
+| `2` | Bad event input (invalid inline JSON, unreadable `@path`, or a `.evtx` path) |
+| `3` | Bad schema config (unreadable/invalid `--schema-config`, or `--check` findings) |
 
 See [Exit Codes](../../reference/exit-codes.md) for the full scheme.
+
+## See also
+
+- [Schema Signatures](../../reference/schema-signatures.md) for the grammar, predicate forms, and builtin specificities.
+- [Schema Routing](../../guide/schema-routing.md) for bindings driven by the same classifier.
+- [Cloud Collection Recipes](../../guide/cloud-collection-recipes.md) for Cloud/SaaS/Container marker fields.
+- [`engine discover-schemas`](discover-schemas.md) for offline signature proposals.
+- [`engine daemon`](daemon.md) for `--observe-schemas` and `GET /api/v1/schemas`.
