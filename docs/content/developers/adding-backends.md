@@ -6,12 +6,12 @@ A native backend always takes precedence over [sigma-cli delegation](../referenc
 
 ## Decide on the shape
 
-Two flavours of backend, depending on how much pySigma-style boilerplate you want to inherit:
+Two flavors of backend, depending on how much pySigma-style boilerplate you want to inherit:
 
-1. **Text-query backend.** Set `text_query_config()` to a `TextQueryConfig` and let the trait's default methods walk the lowered IR for you. This is how `PostgresBackend`, `LynxDbBackend`, and `FibratusBackend` are built. Use this if your target language is a flat boolean expression with `field op value` shapes.
-2. **Custom backend.** Override `convert_rule` outright. Use this when your target language has fundamentally different structure (a tree-shaped JSON DSL like Elasticsearch query DSL, or a pipeline of stages like Splunk SPL).
+1. **Text-query backend.** Hold a `&'static TextQueryConfig` on your struct and implement the `Backend` methods by calling the `text_convert_*` helpers (and usually `convert_rule_via_ir` for `convert_rule`). There is no `Backend::text_query_config()` method. This is how `PostgresBackend`, `LynxDbBackend`, and `FibratusBackend` are built. Use this if your target language is a flat boolean expression with `field op value` shapes.
+2. **Custom backend.** Override `convert_rule` outright (and the leaf converters as needed). Use this when your target language has fundamentally different structure (a tree-shaped JSON DSL like Elasticsearch query DSL, or a pipeline of stages like Splunk SPL).
 
-Most SIEMs fit shape 1.
+Most SIEMs fit shape 1. See `crates/rsigma-convert/src/backends/lynxdb/mod.rs` or `postgres/mod.rs` for complete references.
 
 ## Walkthrough: a text-query backend
 
@@ -29,7 +29,7 @@ crates/rsigma-convert/src/backends/
 
 Add `pub mod splunk;` to `crates/rsigma-convert/src/backends/mod.rs`.
 
-Step 2: write the `TextQueryConfig` constant. The full schema lives on [docs.rs/rsigma-convert](https://docs.rs/rsigma-convert). `TextQueryConfig` does not have a `Default` impl; the cleanest pattern is to copy `crates/rsigma-convert/src/backends/postgres/mod.rs` (the `POSTGRES_CONFIG` block at the top of the file) or `lynxdb/mod.rs` (the `LYNX_CONFIG` block) as a starting template and edit the operators, quoting, and templates to match your target language. The key fields you almost always need to set:
+Step 2: write the `TextQueryConfig` constant. The full schema lives on [docs.rs/rsigma-convert](https://docs.rs/rsigma-convert). `TextQueryConfig` does not have a `Default` impl; the cleanest pattern is to copy `crates/rsigma-convert/src/backends/postgres/mod.rs` (the `POSTGRES_CONFIG` block at the top of the file) or `lynxdb/mod.rs` (the `LYNXDB_CONFIG` block) as a starting template and edit the operators, quoting, and templates to match your target language. The key fields you almost always need to set:
 
 | Field | Example |
 |-------|---------|
@@ -43,12 +43,20 @@ Step 2: write the `TextQueryConfig` constant. The full schema lives on [docs.rs/
 
 Run `rustdoc` (`cargo doc --open -p rsigma-convert`) for the full list of ~90 fields.
 
-Step 3: implement the trait.
+Step 3: implement the trait. Hold the config as `&'static TextQueryConfig`, delegate `convert_rule` to `convert_rule_via_ir`, and implement leaf converters plus `finish_query` / `finalize_query`. `ConversionState` is from `rsigma_convert::state`; `PipelineState` is from `rsigma_eval::pipeline::state`.
 
 ```rust
-use rsigma_convert::{Backend, TextQueryConfig};
-use rsigma_convert::error::Result;
-use rsigma_eval::pipeline::ConversionState;
+use rsigma_convert::{
+    Backend, TextQueryConfig,
+    condition_ir::convert_rule_via_ir,
+    error::Result,
+    state::ConversionState,
+    text_convert_condition_and, text_convert_condition_not, text_convert_condition_or,
+    text_convert_field_str_ir, text_escape_and_quote_field,
+    // … other text_convert_* helpers as needed
+};
+use rsigma_eval::pipeline::state::PipelineState;
+use rsigma_ir::{IrPattern, IrStrOp};
 use rsigma_parser::SigmaRule;
 
 pub struct SplunkBackend {
@@ -81,16 +89,61 @@ impl Backend for SplunkBackend {
           ("savedsearch", "savedsearches.conf stanza")]
     }
 
-    fn text_query_config(&self) -> Option<&TextQueryConfig> {
-        Some(self.config)
+    fn convert_rule(
+        &self,
+        rule: &SigmaRule,
+        output_format: &str,
+        pipeline_state: &PipelineState,
+    ) -> Result<Vec<String>> {
+        convert_rule_via_ir(self, rule, output_format, pipeline_state)
+    }
+
+    fn convert_condition_and(&self, exprs: &[String]) -> Result<String> {
+        Ok(text_convert_condition_and(self.config, exprs))
+    }
+
+    fn convert_condition_or(&self, exprs: &[String]) -> Result<String> {
+        Ok(text_convert_condition_or(self.config, exprs))
+    }
+
+    fn convert_condition_not(&self, expr: &str) -> Result<String> {
+        Ok(text_convert_condition_not(self.config, expr))
+    }
+
+    fn escape_and_quote_field(&self, field: &str) -> String {
+        text_escape_and_quote_field(self.config, field)
+    }
+
+    fn convert_field_str(
+        &self,
+        field: &str,
+        op: IrStrOp,
+        pattern: &IrPattern,
+        case_insensitive: bool,
+        _state: &mut ConversionState,
+    ) -> Result<rsigma_convert::state::ConvertResult> {
+        text_convert_field_str_ir(self.config, field, op, pattern, case_insensitive)
+    }
+
+    // … implement the remaining leaf converters (eq_num, eq_bool, null, …)
+    // by calling the matching text_convert_* helpers or writing target-specific SQL/SPL.
+
+    fn finish_query(
+        &self,
+        _rule: &SigmaRule,
+        query: String,
+        _state: &ConversionState,
+    ) -> Result<String> {
+        Ok(query)
     }
 
     fn finalize_query(
         &self,
         rule: &SigmaRule,
         query: String,
-        output_format: &str,
+        _index: usize,
         _state: &ConversionState,
+        output_format: &str,
     ) -> Result<String> {
         match output_format {
             "default" => Ok(format!("index={} | search {}", self.index, query)),
@@ -104,6 +157,10 @@ impl Backend for SplunkBackend {
             _ => Err(rsigma_convert::ConvertError::RuleConversion(
                 format!("unknown output format: {output_format}"))),
         }
+    }
+
+    fn finalize_output(&self, queries: Vec<String>, _output_format: &str) -> Result<String> {
+        Ok(queries.join("\n"))
     }
 }
 ```
@@ -119,37 +176,46 @@ pub use backends::splunk::SplunkBackend;
 
 ## Wire it into the CLI
 
-Open `crates/rsigma-cli/src/commands/convert.rs`. The `get_backend` function is a small match on the `-t/--target` string:
+Open `crates/rsigma-cli/src/commands/convert.rs`. Native backends are registered in `try_native_backend` and listed in `NATIVE_TARGETS`:
 
 ```rust
-fn get_backend(target: &str, options: &HashMap<String, String>) -> Box<dyn Backend> {
+const NATIVE_TARGETS: &[&str] = &["postgres", "lynxdb", "fibratus", "splunk"];
+
+fn try_native_backend(
+    target: &str,
+    options: &std::collections::HashMap<String, String>,
+) -> Option<Box<dyn rsigma_convert::Backend>> {
     match target {
-        "postgres" | "postgresql" | "pg" =>
-            Box::new(PostgresBackend::from_options(options)),
-        "lynxdb" =>
-            Box::new(LynxDbBackend::new()),
-        "splunk" =>                                      // ← add this
-            Box::new(SplunkBackend::from_options(options)),
+        "postgres" | "postgresql" | "pg" => Some(Box::new(
+            rsigma_convert::backends::postgres::PostgresBackend::from_options(options),
+        )),
+        "lynxdb" => Some(Box::new(
+            rsigma_convert::backends::lynxdb::LynxDbBackend::new(),
+        )),
+        "fibratus" => Some(Box::new(
+            rsigma_convert::backends::fibratus::FibratusBackend::from_options(options),
+        )),
+        "splunk" => Some(Box::new(SplunkBackend::from_options(options))),
         "test" => /* ... */,
-        _ => /* fall through to unknown-target error */,
+        _ => None,
     }
 }
 ```
 
-Update the `Available targets:` error message at the bottom of the function and the `cmd_list_targets` printer earlier in the same file so unknown targets and `rsigma backend targets` both include the new option.
+Update `NATIVE_TARGETS`, the `Available targets:` / install-hint paths that take `NATIVE_TARGETS`, and the `cmd_list_targets` printer in the same file so unknown targets and `rsigma backend targets` both include the new option.
 
 Then run `cargo install --path crates/rsigma-cli --force --features daemon` and:
 
 ```bash
 rsigma backend targets
-# postgres, lynxdb, splunk, test
+# postgres, lynxdb, fibratus, splunk, …
 
 rsigma backend convert -t splunk -O index=security rule.yml
 ```
 
 ## Test it
 
-Add an integration test under `crates/rsigma-convert/tests/`:
+Add an integration test under `crates/rsigma-convert/tests/`. Prefer a golden-style file mirroring the existing suites:
 
 ```rust
 use rsigma_convert::{convert_collection, backends::splunk::SplunkBackend};
@@ -164,26 +230,27 @@ fn splunk_basic_keyword() {
 }
 ```
 
-Cover at least: keyword match, field=value, regex (`re|`), CIDR, IN-list (`OR`-folding), NULL, negation, and at least one correlation rule. The existing `crates/rsigma-convert/tests/postgres.rs` and `lynxdb.rs` files are the reference structure.
+Cover at least: keyword match, field=value, regex (`re|`), CIDR, IN-list (`OR`-folding), NULL, negation, and at least one correlation rule. The existing `crates/rsigma-convert/tests/golden_postgres.rs`, `golden_lynxdb.rs`, and `golden_fibratus.rs` files are the reference structure.
 
-If your backend produces stable golden output, add a fixture under `tests/fixtures/dynamic-pipelines/` and a comparison loop in CI; the existing `Golden file comparison for rsigma pipeline resolve` step in `.github/workflows/ci.yml` is the template.
+If your backend produces stable golden output, add expected files under `crates/rsigma-convert/tests/golden/<name>/` and compare in the test; the Postgres / LynxDB / Fibratus golden suites are the template.
 
 ## Document it
 
 Three places to update:
 
-1. **Per-backend reference page** at `docs/reference/backends/<name>.md`. Use the existing [PostgreSQL backend reference](../reference/backends/postgres.md) as the template: modifier-mapping table, options table, output-format catalogue, examples.
-2. **CLI reference for `rsigma backend convert`** at `docs/cli/backend/convert.md` if your backend introduces new options.
+1. **Per-backend reference page** at `docs/content/reference/backends/<name>.md`. Use the existing [PostgreSQL backend reference](../reference/backends/postgres.md) as the template: modifier-mapping table, options table, output-format catalog, examples.
+2. **CLI reference for `rsigma backend convert`** at `docs/content/cli/backend/convert.md` if your backend introduces new options.
 3. **Backend list page** in `docs/docmd.config.js` navigation under Reference → Backends.
 
 ## Checklist
 
 - [ ] Module added under `crates/rsigma-convert/src/backends/<name>/mod.rs`.
 - [ ] Re-exported from `crates/rsigma-convert/src/lib.rs`.
-- [ ] `Backend` trait implemented (or `TextQueryConfig` set).
-- [ ] CLI dispatch wired in `crates/rsigma-cli/src/commands/convert.rs`.
-- [ ] Integration tests in `crates/rsigma-convert/tests/<name>.rs`.
-- [ ] Backend reference page under `docs/reference/backends/<name>.md`.
+- [ ] `Backend` trait implemented (config held on the struct; `text_convert_*` / `convert_rule_via_ir` used for text-query backends).
+- [ ] `finish_query` and `finalize_query` implemented.
+- [ ] CLI dispatch wired in `try_native_backend` + `NATIVE_TARGETS` in `crates/rsigma-cli/src/commands/convert.rs`.
+- [ ] Integration / golden tests in `crates/rsigma-convert/tests/golden_<name>.rs`.
+- [ ] Backend reference page under `docs/content/reference/backends/<name>.md`.
 - [ ] CHANGELOG entry.
 
 ## See also

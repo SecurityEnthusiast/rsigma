@@ -2,6 +2,8 @@
 
 The streaming runtime accepts events as raw text lines and dispatches them through `parse_line(line, format) -> Option<EventInputDecoded>`. Each variant of `InputFormat` corresponds to one adapter under `crates/rsigma-runtime/src/input/`. This page walks through adding a new one (a binary protocol, a vendor-specific log shape, a new structured-text format), wiring it into the CLI, and gating it behind a feature flag.
 
+EVTX is not an `InputFormat` line parser: `EvtxFileReader` reads binary `.evtx` files and bypasses `parse_line`. Binary or file-oriented formats may need a similar dedicated reader path rather than a new `InputFormat` variant.
+
 ## Pick the right `EventInputDecoded` shape
 
 `EventInputDecoded` is a three-arm enum that wraps a typed event payload:
@@ -12,7 +14,7 @@ The streaming runtime accepts events as raw text lines and dispatches them throu
 | `Kv` | `rsigma_eval::KvEvent` | The format is a flat `Vec<(String, String)>` of string fields (logfmt, classic key=value lines). |
 | `Plain` | `rsigma_eval::PlainEvent` | No structure available; only keyword matching makes sense (raw `/var/log/messages`). |
 
-Pick the shape that minimises copies. If your format already produces a `serde_json::Value`, use `Json` and bypass the conversion cost. If it produces a flat keyed string list, use `Kv` and the engine consumes it directly.
+Pick the shape that minimizes copies. If your format already produces a `serde_json::Value`, use `Json` and bypass the conversion cost. If it produces a flat keyed string list, use `Kv` and the engine consumes it directly.
 
 If you need a fourth shape (a structured non-JSON tree, a typed proto message), open an issue first; adding a new `EventInputDecoded` variant changes every match arm in this module.
 
@@ -113,7 +115,9 @@ pub fn parse_line(line: &str, format: &InputFormat) -> Option<EventInputDecoded>
 }
 ```
 
-Step 6: optionally extend `auto_detect` so users on `--input auto` (the default) hit your format. Keep it cheap: a single byte / prefix check before the more expensive JSON parse. If your format does not have a cheap fingerprint, do not add it to auto; ship it as an explicit `--input <name>` opt-in.
+Step 6: optionally extend `auto_detect` so users on `--input-format auto` (the default) hit your format. Keep it cheap: a single byte / prefix check before the more expensive JSON parse. If your format does not have a cheap fingerprint, do not add it to auto; ship it as an explicit `--input-format <name>` opt-in.
+
+`--input` selects the event source URL/mode (stdin, HTTP, NATS, and on Unix a unix-domain socket). `--input-format` selects the line parser. Do not conflate the two flags.
 
 ## Gate it behind a feature
 
@@ -134,19 +138,22 @@ lecf-parser = { version = "0.3", optional = true }
 lecf = ["dep:lecf-parser"]
 ```
 
-Then in `crates/rsigma-cli/Cargo.toml`:
+Then in `crates/rsigma-cli/Cargo.toml`, add a **separate** CLI feature that forwards to the runtime feature. Do not stuff line-format features into the `daemon` feature:
 
 ```toml
 [features]
 default = []
-daemon = ["dep:tokio", "dep:axum", "rsigma-runtime/logfmt", "rsigma-runtime/cef", "rsigma-runtime/lecf"]
+daemon = ["rsigma-runtime", /* … daemon deps … */]
+logfmt = ["rsigma-runtime/logfmt"]
+cef = ["rsigma-runtime/cef"]
+lecf = ["rsigma-runtime/lecf"]
 ```
 
 The Docker image and release archives are built with `--all-features`; opt-in users that build from source can keep their binary lean by omitting the feature.
 
 ## Wire it into the CLI
 
-The `--input` flag is parsed in `crates/rsigma-cli/src/daemon/`. The current value-parser already accepts strings; add a `"lecf"` arm in the match that turns the string into an `InputFormat`. Look for the existing `"cef"` / `"logfmt"` arms; same pattern.
+The `--input-format` flag is parsed in `crates/rsigma-cli/src/commands/daemon.rs` (via `parse_input_format`). The current value-parser already accepts strings; add a `"lecf"` arm in the match that turns the string into an `InputFormat`. Look for the existing `"cef"` / `"logfmt"` arms; same pattern. Mirror the same flag on `engine eval` and `rule backtest` if those commands should accept the format too.
 
 ## Test it
 
@@ -191,9 +198,9 @@ Two test layers:
 
 Three places:
 
-1. **User guide** at `docs/guide/input-formats.md`. Add a section with the format description, a sample input line, and any caveats.
-2. **CLI reference** at `docs/cli/engine/daemon.md` (the `--input` flag accepts a new value).
-3. **Feature flags reference** at `docs/reference/feature-flags.md`. Add `lecf` to the `rsigma-runtime` and `rsigma-cli` rows.
+1. **User guide** at `docs/content/guide/input-formats.md`. Add a section with the format description, a sample input line, and any caveats.
+2. **CLI reference** at `docs/content/cli/engine/daemon.md` (the `--input-format` flag accepts a new value).
+3. **Feature flags reference** at `docs/content/reference/feature-flags.md`. Add `lecf` to the `rsigma-runtime` and `rsigma-cli` rows.
 
 ## Checklist
 
@@ -202,8 +209,8 @@ Three places:
 - [ ] `InputFormat::<Name>` variant added (feature-gated if optional).
 - [ ] `parse_line` dispatch extended.
 - [ ] `auto_detect` extended (only if your format has a cheap fingerprint).
-- [ ] Feature flag added to `rsigma-runtime/Cargo.toml` and forwarded by `rsigma-cli`.
-- [ ] CLI `--input` value-parser extended.
+- [ ] Feature flag added to `rsigma-runtime/Cargo.toml` and a separate passthrough feature in `rsigma-cli` (not folded into `daemon`).
+- [ ] CLI `--input-format` value-parser extended.
 - [ ] Unit + integration tests in `rsigma-runtime`.
 - [ ] Fuzz harness for the new parser (if it ingests untrusted bytes).
 - [ ] Guide, CLI reference, and feature-flags reference updated.

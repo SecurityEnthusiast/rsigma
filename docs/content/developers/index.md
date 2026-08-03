@@ -8,15 +8,18 @@ These pages are for contributors hacking on rsigma itself, not consumers of the 
 rsigma/
 ├── crates/
 │   ├── rsigma-parser/      # Sigma YAML → AST, {{ rsigma.lint.rules }} lint rules
+│   ├── rsigma-ir/          # Intermediate representation for conversion and eval
 │   ├── rsigma-eval/        # Compiler, matcher, correlation engine, pipelines
-│   ├── rsigma-convert/     # Backend trait + Postgres and LynxDB implementations
+│   ├── rsigma-convert/     # Backend trait + Postgres, LynxDB, Fibratus backends
 │   ├── rsigma-runtime/     # Streaming runtime, input parsers, dynamic sources
+│   ├── rsigma-mcp/         # MCP server for agent tooling
 │   ├── rsigma-cli/         # The `rsigma` binary
-│   └── rsigma-lsp/         # The `rsigma-lsp` language server
-├── docs/                   # This site (MkDocs Material)
-├── fuzz/                   # 15 cargo-fuzz harnesses
+│   ├── rsigma-lsp/         # The `rsigma-lsp` language server
+│   └── rstix/              # STIX 2.1 parsing, patterns, and validation
+├── docs/                   # This site (docmd)
+├── fuzz/                   # 25 cargo-fuzz harnesses
 ├── tests/fixtures/         # Cross-crate test data (dynamic pipelines, etc.)
-├── pipelines/              # Built-in processing pipelines (ecs_windows, sysmon)
+├── crates/rsigma-eval/pipelines/  # Built-in processing pipelines (ecs_windows, fibratus_windows, sysmon)
 ├── .github/workflows/      # CI: test, fuzz, audit, docker, publish, release
 └── Cargo.toml              # Workspace; single shared version
 ```
@@ -30,6 +33,8 @@ For the runtime data flow and how the crates talk to each other, see [Architectu
 | Understand the crate graph and data flow | [Architecture](../reference/architecture.md). |
 | Add a new SIEM backend (Elastic, Splunk, …) | [Adding Backends](adding-backends.md). |
 | Add a new input format (CEF, EVTX, custom binary) | [Adding Input Formats](adding-input-formats.md). |
+| Add a new dynamic source type | [Adding Dynamic Sources](adding-sources.md). |
+| Add a bespoke enricher | [Adding Enrichers](adding-enrichers.md). |
 | Add or change a lint rule, or extend the LSP | [Linter and LSP](linter-and-lsp.md). |
 | Write or run tests | [Testing](testing.md). |
 | Write or run fuzz harnesses | [Fuzzing](fuzzing.md). |
@@ -69,5 +74,5 @@ Either of:
 
 - [Architecture](../reference/architecture.md) for the system overview.
 - [Lint Rules reference](../reference/lint-rules.md) before you touch lints.
-- The per-crate README on GitHub for the exhaustive trait surface that the [Library](../library/index.md) pages summarise.
+- The per-crate README on GitHub for the exhaustive trait surface that the [Library](../library/index.md) pages summarize.
 - The [GitHub issues](https://github.com/timescale/rsigma/issues) tagged `good first issue` for entry points.

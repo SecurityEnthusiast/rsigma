@@ -2,6 +2,8 @@
 
 Dynamic pipeline sources (`http`, `command`, `file`, `nats`) live behind one trait: `SourceResolver`. Each `DynamicSource` carries a typed `SourceType` plus shared metadata (`id`, refresh policy, error policy, optional extract). The shipped `DefaultSourceResolver` dispatches on `SourceType`, hits the right adapter, and stores the result in a shared `Arc<SourceCache>`. This page walks through adding a new source type (S3, BigQuery, Redis, an internal HTTP endpoint with non-standard auth) and wiring it into the parser, resolver, and CLI.
 
+Source declarations live in standalone YAML loaded with `--source` / `--source-file`. Each file has a top-level `sources:` list. Pipeline-embedded `sources:` is rejected (hard parse error pointing at `rsigma rule migrate-sources`).
+
 ## Decide on the shape
 
 Two ways to add a new source:
@@ -24,6 +26,7 @@ pub enum SourceType {
     File   { path: PathBuf, format: DataFormat, extract: Option<ExtractExpr> },
     Command{ command: Vec<String>, format: DataFormat, extract: Option<ExtractExpr> },
     Http   { url: String, method: Option<String>, headers: HashMap<String,String>,
+             body: Option<String>,
              format: DataFormat, extract: Option<ExtractExpr> },
     Nats   { url: String, subject: String, format: DataFormat, extract: Option<ExtractExpr> },
     S3     { bucket: String, key: String, region: Option<String>,        // ← new
@@ -31,9 +34,14 @@ pub enum SourceType {
 }
 ```
 
+`Http` already includes an optional `body` field (verbatim after `${VAR}` expansion; when set and `method` is unset, the request defaults to `POST`). Preserve that when you touch the enum.
+
 Step 2: parse the YAML. Every existing variant has a `parse_<type>_source` block in [`crates/rsigma-eval/src/pipeline/parsing.rs`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-eval/src/pipeline/parsing.rs); copy one as a template. Keep the same field-name conventions (`format`, `extract`, `refresh`, `on_error`, `required`) so operators only learn one mental model.
 
+Put the new type in a **standalone** source file (not inside a pipeline):
+
 ```yaml
+# sources.yml  (loaded via --source / --source-file)
 sources:
   - id: cmdb_snapshot
     type: s3
@@ -45,6 +53,8 @@ sources:
       interval: 600s
     on_error: use_cached
 ```
+
+Pipelines reference resolved values with `${source.<id>}`; they must not declare a top-level `sources:` block.
 
 Step 3: write the resolver adapter.
 
@@ -137,7 +147,7 @@ async fn resolve(&self, source: &DynamicSource) -> Result<ResolvedValue, SourceE
 }
 ```
 
-The `cache.store(&source.id, &value.data)` call in the success arm is shared across every `SourceType`, so your new variant gets cache write + `on_error: use_cached` / `use_default` / `fail` behaviour for free.
+The `cache.store(&source.id, &value.data)` call in the success arm is shared across every `SourceType`, so your new variant gets cache write + `on_error: use_cached` / `use_default` / `fail` behavior for free.
 
 Step 5: feature-flag heavy dependencies. The `aws-sdk-s3` crate pulls in tokio-compat I/O, a TLS stack, and a sigv4 implementation; gate it behind a feature so the default daemon binary stays small.
 
@@ -197,7 +207,7 @@ impl CompositeResolver {
 #[async_trait]
 impl SourceResolver for CompositeResolver {
     async fn resolve(&self, source: &DynamicSource) -> Result<ResolvedValue, SourceError> {
-        // Recognise our private "vendor://..." URLs in the http variant.
+        // Recognize our private "vendor://..." URLs in the http variant.
         if let SourceType::Http { url, .. } = &source.source_type
             && let Some(rest) = url.strip_prefix("vendor://")
         {
@@ -220,7 +230,7 @@ Three layers, mirroring the existing `crates/rsigma-runtime/tests/sources_integr
 
 1. **Unit test the parser** (in `crates/rsigma-eval/src/pipeline/tests.rs`). Pin the YAML → typed `SourceType::S3 { … }` mapping, cover required-field-missing errors, default values, and the `extract` plumbing.
 2. **Integration test the resolver** against a stub backend. The existing `command.rs` test uses `echo`; the `http.rs` test uses `wiremock`. For S3, use `aws-smithy-http`'s test client or stand up a `LocalStack` container behind `testcontainers` (the daemon NATS tests use this pattern).
-3. **End-to-end test in the daemon** (under `crates/rsigma-cli/tests/`). Spawn `rsigma engine daemon` with a pipeline that declares your source, send a triggering event, assert the resulting NDJSON line carries the resolved value (via `${source.X}` template expansion) or a `lookup` enricher hit. The existing `cli_daemon_enrichment.rs` is the reference shape.
+3. **End-to-end test in the daemon** (under `crates/rsigma-cli/tests/`). Spawn `rsigma engine daemon` with a pipeline that references your source via `${source.<id>}` and a standalone `--source` file that declares it, send a triggering event, assert the resulting NDJSON line carries the resolved value or a `lookup` enricher hit. The existing `cli_daemon_enrichment.rs` is the reference shape.
 
 ## Observability
 
@@ -236,8 +246,8 @@ Add the new label value (`"s3"`) to the daemon's `source_type_label` helper in [
 
 ## Document it
 
-1. **Reference page** under [`docs/reference/dynamic-sources.md`](../reference/dynamic-sources.md): YAML schema for the new type, dependency on any feature flag, behaviour of `format`/`extract`/`refresh`/`on_error`, security notes (size cap, timeout, secret handling).
-2. **Guide page**: extend [`docs/guide/processing-pipelines.md`](../guide/processing-pipelines.md) with a one-paragraph example that uses the new type.
+1. **Reference page** under [`docs/content/reference/dynamic-sources.md`](../reference/dynamic-sources.md): YAML schema for the new type, dependency on any feature flag, behavior of `format`/`extract`/`refresh`/`on_error`, security notes (size cap, timeout, secret handling).
+2. **Guide page**: extend [`docs/content/guide/processing-pipelines.md`](../guide/processing-pipelines.md) with a one-paragraph example that uses the new type via a standalone `--source` file.
 3. **CHANGELOG** entry under the next release.
 
 ## Security checklist
@@ -258,13 +268,13 @@ Source resolution touches the network and the filesystem; before merging:
 - [ ] Dispatch arm added to `DefaultSourceResolver::resolve`.
 - [ ] Feature flag in `rsigma-runtime` and pass-through in `rsigma-cli` if heavy deps.
 - [ ] `source_type_label` extended in `instrumented_resolver.rs` so metrics label correctly.
-- [ ] Unit + integration + E2E tests in the layers above.
+- [ ] Unit + integration + E2E tests in the layers above (standalone `--source` file, not pipeline-embedded `sources:`).
 - [ ] Reference + guide docs updated.
 - [ ] Security checklist signed off.
 - [ ] CHANGELOG entry.
 
 ## See also
 
-- [Dynamic Pipeline Sources](../reference/dynamic-sources.md) — operator-facing reference for every shipped source type.
-- [`rsigma-runtime`](../library/runtime.md) — the `SourceResolver` trait and `DefaultSourceResolver`.
-- [Adding an enricher](adding-enrichers.md) — the analogous walkthrough for bespoke enrichers, which read from the same `SourceCache` via the `lookup` primitive.
+- [Dynamic Pipeline Sources](../reference/dynamic-sources.md): operator-facing reference for every shipped source type.
+- [`rsigma-runtime`](../library/runtime.md): the `SourceResolver` trait and `DefaultSourceResolver`.
+- [Adding an enricher](adding-enrichers.md): the analogous walkthrough for bespoke enrichers, which read from the same `SourceCache` via the `lookup` primitive.

@@ -8,14 +8,14 @@ A bespoke Rust-coded enricher is justified only when at least one of these holds
 
 1. **It bundles non-trivial data**: a dataset committed to the repo and `include_bytes!`-ed at compile time (a MITRE ATT&CK STIX bundle, a vendored mini-IOC list). Recipes can't express vendored data.
 2. **It needs a parser the YAML primitives don't expose**: MaxMind's binary GeoLite2, the STIX 2.1 graph with parent/child resolution, a binary signature database. Adding the parser as a generic source might cost more than just shipping the enricher.
-3. **It provides a stable named contract**: downstream consumers reference a specific `enrichments.<field>` shape directly. A recipe-driven approach lets every operator pick their own `inject_field`, which is fine for ad-hoc enrichment but bad for a contract that crosses team or organisational boundaries.
+3. **It provides a stable named contract**: downstream consumers reference a specific `enrichments.<field>` shape directly. A recipe-driven approach lets every operator pick their own `inject_field`, which is fine for ad-hoc enrichment but bad for a contract that crosses team or organizational boundaries.
 4. **It implements a non-obvious algorithm**: e.g. coalescing per-result hash lookups into one batched-GET request. This is implementable as a recipe but the implementation is fragile.
 
 If none of these apply, ship a recipe under `crates/rsigma-cli/README.md` instead. Promoting a recipe to a bespoke type later does not change the YAML shape, only the `type:` value.
 
 ## Walkthrough: a hypothetical `enrich_ip_passive_dns_batched` enricher
 
-This example shipsbatched per-event lookups against a passive DNS API, coalescing repeated calls into one upstream request per `(api_key, ip)` tuple within a sliding 1-second window. The behaviour is fragile to express as a recipe; criterion (4) applies.
+This example ships batched per-event lookups against a passive DNS API, coalescing repeated calls into one upstream request per `(api_key, ip)` tuple within a sliding 1-second window. The behavior is fragile to express as a recipe; criterion (4) applies.
 
 The crate layout. Bespoke enrichers usually live in their own external crate so they can be versioned and feature-gated independently of `rsigma-runtime`. The skeleton:
 
@@ -246,6 +246,6 @@ Three places to update when you ship the type:
 
 ## See also
 
-- [Enrichers](../guide/enrichers.md) — the operator-facing guide for the YAML schema, the four primitives, and the recipe catalog.
-- [`rsigma-runtime`](../library/runtime.md) — the public surface (`Enricher`, `EnrichmentPipeline`, `register_builtin`).
-- [Adding a dynamic source](adding-sources.md) — the analogous walkthrough for new pipeline source types.
+- [Enrichers](../guide/enrichers.md): the operator-facing guide for the YAML schema, the four primitives, and the recipe catalog.
+- [`rsigma-runtime`](../library/runtime.md): the public surface (`Enricher`, `EnrichmentPipeline`, `register_builtin`).
+- [Adding a dynamic source](adding-sources.md): the analogous walkthrough for new pipeline source types.

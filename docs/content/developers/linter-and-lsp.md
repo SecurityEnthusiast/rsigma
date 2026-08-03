@@ -10,7 +10,7 @@ This page explains how the two pieces fit together, how to add a new lint rule, 
                    ┌────────────────────────────────────────────┐
                    │  rsigma-parser::lint                       │
                    │                                            │
-                   │  pub enum LintRule { ... 66 variants }     │
+                   │  pub enum LintRule { … {{ rsigma.lint.rules }} variants } │
                    │  pub enum Severity { Error|Warning|... }   │
                    │  pub struct LintWarning {                  │
                    │    rule, severity, message, path,          │
@@ -29,19 +29,19 @@ This page explains how the two pieces fit together, how to add a new lint rule, 
               └────────────────────┘    └────────────────────────┘
 ```
 
-The CLI and the LSP share the same `lint_yaml_str_with_config` function; their only differences are output shape and timing (the LSP re-lints on every keystroke and overlays a Span -> LSP `Range` translation).
+The CLI and the LSP share the same `lint_yaml_str_with_config` function; their only differences are output shape and timing (the LSP re-lints on a 150 ms debounce for `did_change`, and immediately on open/save) plus a Span -> LSP `Range` translation.
 
 ## LintRule, Severity, and LintWarning
 
 | Type | Defined in | What it does |
 |------|------------|--------------|
-| `LintRule` | `crates/rsigma-parser/src/lint/mod.rs` | Enum with one variant per check (67 today, one of them the reserved `empty_filter_rules`). `Display` gives the snake_case ID used in CLI output, in YAML `# rsigma-disable:` suppressions, and in CI grep filters. |
+| `LintRule` | `crates/rsigma-parser/src/lint/mod.rs` | Enum with one variant per check ({{ rsigma.lint.total }} total, including reserved variants such as `empty_filter_rules`). `Display` gives the snake_case ID used in CLI output, in YAML `# rsigma-disable …` suppressions, and in CI grep filters. |
 | `Severity` | same file | `Error`, `Warning`, `Info`, `Hint`. Severity is configurable per rule via `LintConfig.severity_overrides`; `--fail-level` decides which severity gates the exit code. |
 | `LintWarning` | same file | One finding. Carries the rule, severity, human message, JSON pointer `path`, optional source `Span` (line/col), and optional `Fix`. |
-| `Fix` + `FixPatch` + `FixDisposition` | same file | An auto-fix proposal. `FixDisposition` is `Safe` or `Unsafe`; only `Safe` fixes are applied by `rsigma rule lint --fix` and by LSP code actions. `FixPatch` is `ReplaceValue`, `ReplaceKey`, or `Remove`. |
+| `Fix` + `FixPatch` + `FixDisposition` | same file | An auto-fix proposal. `FixDisposition` is `Safe` or `Unsafe`; only `Safe` fixes are applied by `rsigma rule lint --fix` and by LSP code actions. `Unsafe` is reserved for future use and is not offered in the CLI or LSP today. `FixPatch` is `ReplaceValue`, `ReplaceKey`, or `Remove`. |
 | `LintConfig` | same file | Per-rule severity overrides, suppression patterns, and the `--fail-level` resolver. |
 
-The full catalogue with severities and fix availability is the [Lint Rules reference](../reference/lint-rules.md). Every rule has a string ID (e.g. `missing_title`) produced by the `Display` impl on `LintRule`.
+The compile-time catalog of severities and fix availability is [`crates/rsigma-parser/src/lint/catalogue.rs`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-parser/src/lint/catalogue.rs). The user-facing table is the [Lint Rules reference](../reference/lint-rules.md). Every rule has a string ID (e.g. `missing_title`) produced by the `Display` impl on `LintRule`.
 
 ## Adding a new lint rule
 
@@ -82,7 +82,7 @@ impl fmt::Display for LintRule {
 }
 ```
 
-The string ID must be `lower_snake_case` and stable; never rename it once shipped (users put it in `# noqa: <id>` comments).
+The string ID must be `lower_snake_case` and stable; never rename it once shipped (users put it in `# rsigma-disable <id>` comments).
 
 Step 4: pick a default severity and (if you intend to support `--fix`) write a `Fix`.
 
@@ -106,13 +106,15 @@ pub(super) fn check_author_has_email(rule: &Mapping, path: &str, out: &mut Vec<L
 }
 ```
 
-`err`, `warning`, and `info` are the severity-shorthand constructors; `safe_fix` builds an `Option<Fix>` with `FixDisposition::Safe`. They live in the parent `mod.rs`. Construct an `Unsafe` fix as a literal `Some(Fix { disposition: FixDisposition::Unsafe, ... })`. There is no `hint` constructor; emit `Severity::Hint` warnings by building a `LintWarning` directly.
+`err`, `warning`, and `info` are the severity-shorthand constructors; `safe_fix` builds an `Option<Fix>` with `FixDisposition::Safe`. They live in the parent `mod.rs`. Construct an `Unsafe` fix as a literal `Some(Fix { disposition: FixDisposition::Unsafe, ... })` only if you are reserving the disposition for later; `--fix` and the LSP apply only `Safe` today. There is no `hint` constructor; emit `Severity::Hint` warnings by building a `LintWarning` directly.
 
 Step 5: call your check from the file's top-level `check_<bucket>` function so the lint driver invokes it.
 
 Step 6: cover it with tests in the same file's `#[cfg(test)] mod tests` block. The existing tests in `metadata.rs` are the reference shape: each test loads a small YAML fragment, runs the lint driver, and asserts on the variants in `Vec<LintWarning>`.
 
-Step 7: update the [Lint Rules reference](../reference/lint-rules.md) catalogue (the source-of-truth table for severities and fix availability lives there).
+Step 7: register severity and `FixDisposition` in [`catalogue.rs`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-parser/src/lint/catalogue.rs). That file is the compile-time source of truth for default severity and whether a Safe fix exists.
+
+Step 8: update the [Lint Rules reference](../reference/lint-rules.md) (the user-facing catalog).
 
 ## Writing a `Fix`
 
@@ -139,30 +141,36 @@ Three operations:
 - `ReplaceKey { path, new_key }`. Rename a mapping key (e.g. fix a typo).
 - `Remove { path }`. Drop a key or array element.
 
-`Safe` fixes are applied by `rsigma rule lint --fix` (without prompting) and offered as one-click code actions in the LSP. `Unsafe` fixes are visible in CLI output (a hint that a fix exists) but only the LSP exposes them, and only via an explicit code-action invocation. Reserve `Safe` for changes that cannot break any rule that previously parsed and matched events.
+`Safe` fixes are applied by `rsigma rule lint --fix` (without prompting) and offered as one-click code actions in the LSP. `Unsafe` is reserved and is not applied or offered today. Reserve `Safe` for changes that cannot break any rule that previously parsed and matched events.
 
 ## Suppressions
 
 Two layers, both already implemented:
 
-- **YAML comments.** A line comment `# rsigma-disable-next-line: missing_title, invalid_status` suppresses those rules for the immediately following line; `# rsigma-disable-next-line` (no list) suppresses all rules on the next line. A file-level `# rsigma-disable: missing_title` suppresses those rules across the whole document, and `# rsigma-disable` (no list) suppresses every rule in the document. The parser is in `parse_inline_suppressions`.
-- **`LintConfig`.** Programmatic; CLI flags map as `--disable <id1,id2>` -> `LintConfig.disabled_rules`, `--exclude '<glob>'` -> `LintConfig.exclude_patterns`, `--tag-namespace <ns>` -> `LintConfig.tag_namespaces`, and a YAML config file (`rsigma-lint.yml` or `--lint-config`) feeds all four fields plus `severity_overrides`.
+- **YAML comments.** There is **no colon** after the directive. A line comment `# rsigma-disable-next-line missing_title, invalid_status` suppresses those rules for the immediately following line; `# rsigma-disable-next-line` (no list) suppresses all rules on the next line. A file-level `# rsigma-disable missing_title` suppresses those rules across the whole document, and `# rsigma-disable` (no list) suppresses every rule in the document. The parser is in `parse_inline_suppressions`.
+- **`LintConfig`.** Programmatic; CLI flags map as `--disable <id1,id2>` -> `LintConfig.disabled_rules`, `--exclude '<glob>'` -> `LintConfig.exclude_patterns`, `--tag-namespace <ns>` -> `LintConfig.tag_namespaces`, and a YAML config file (`.rsigma-lint.yml` / `.rsigma-lint.yaml`, or `--config <path>`) feeds all four fields plus `severity_overrides`.
 
 `apply_suppressions(warnings, &LintConfig, &InlineSuppressions) -> Vec<LintWarning>` filters out suppressed warnings and applies the severity overrides. Both the CLI and the LSP call it after linting.
 
 ## Connecting to the LSP
 
-`rsigma-lsp` re-lints on every text-document `did_change` / `did_open` event:
+`rsigma-lsp` produces three diagnostic layers in `diagnostics.rs`:
+
+1. **Lint** via `lint_yaml_str_with_config` (includes YAML structure findings the linter reports).
+2. **Parse** via `parse_sigma_yaml` (AST parse errors).
+3. **Compile** via `compile_rule` for each successfully parsed rule.
+
+Diagnostics run immediately on document open and save, and on a 150 ms debounce for `did_change`:
 
 ```rust
 // crates/rsigma-lsp/src/diagnostics.rs
 pub fn diagnose_with_config(text: &str, config: &LintConfig) -> Vec<Diagnostic> {
     let warnings = lint_yaml_str_with_config(text, config);
-    warnings.iter().map(|w| lint_warning_to_diagnostic(w, text, &index)).collect()
+    // … map lint warnings, then parse_sigma_yaml / compile_rule layers …
 }
 ```
 
-Adding a new lint rule does not require any LSP code change: the diagnostic generator iterates whatever the linter returns. Severities, source ranges, and `noqa:` suppressions all flow through unchanged.
+Adding a new lint rule does not require any LSP code change: the diagnostic generator iterates whatever the linter returns. Severities, source ranges, and `# rsigma-disable` suppressions all flow through unchanged.
 
 Code actions (one-click fixes) likewise inherit the new rule automatically as long as your `Fix` is `Safe`:
 
@@ -185,7 +193,7 @@ The other LSP modules are smaller and orthogonal to lints:
 |--------|---------|---------------------|
 | `completion.rs` | Field name and keyword completions. | Adding entries to the static completion table, or wiring a context-sensitive resolver. |
 | `position.rs` | UTF-16 / UTF-8 / byte-offset conversion. | Rarely; touch only if you spot a multi-byte off-by-one. |
-| `data.rs` | Static reference data (modifier list, well-known tags, severity colours). | Adding entries to the constant arrays. |
+| `data.rs` | Static reference data (modifier list, well-known tags, severity colors). | Adding entries to the constant arrays. |
 | `server.rs` | The LSP server-loop wiring (`tower_lsp_server`). | Adding new LSP methods (e.g. hover, goto-definition). |
 
 The LSP has no integration tests of its own today; manual testing through the VS Code extension is the current verification path.
@@ -194,17 +202,18 @@ The LSP has no integration tests of its own today; manual testing through the VS
 
 - [ ] `LintRule::<Name>` variant added in `crates/rsigma-parser/src/lint/mod.rs`.
 - [ ] String ID added to the `Display` impl (`lower_snake_case`, stable).
+- [ ] Default severity and `FixDisposition` registered in `catalogue.rs`.
 - [ ] Default severity chosen; `err`/`warning`/`info` constructor used.
 - [ ] Detection function in the right `lint/rules/<bucket>.rs` file.
 - [ ] Driver call added in that bucket's top-level `check_*` function.
 - [ ] (Optional) `Fix` with `FixDisposition::Safe` + a covering `FixPatch` sequence.
 - [ ] Unit tests in the `tests` module of the same file.
-- [ ] Entry in [`docs/reference/lint-rules.md`](../reference/lint-rules.md) catalogue (and "selected examples" section if the rule is non-obvious).
+- [ ] Entry in [`docs/content/reference/lint-rules.md`](../reference/lint-rules.md) catalog (and "selected examples" section if the rule is non-obvious).
 - [ ] Mention in the next release-notes entry under `### Linter`.
 
 ## See also
 
-- [Lint Rules reference](../reference/lint-rules.md) for the user-facing catalogue.
+- [Lint Rules reference](../reference/lint-rules.md) for the user-facing catalog.
 - [`rsigma rule lint`](../cli/rule/lint.md) CLI reference.
 - [`rsigma-parser` lint module](https://github.com/timescale/rsigma/blob/main/crates/rsigma-parser/src/lint/mod.rs) for the full types.
 - [`rsigma-lsp` README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-lsp/README.md).
