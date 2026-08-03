@@ -31,9 +31,9 @@ The daemon renders the bundle, so the global `--output-format` has no say in how
 
 ## Authentication
 
-The bundle route requires the `incident-bundles:read` permission when the daemon has [API authentication](../../reference/security.md#daemon-api-authentication) enabled. That permission is deliberately separate from the `incidents:read` that gates the incident list, because a bundle hands out rule documentation and risk entities as well.
+The bundle route requires the `incident-bundles:read` permission when the daemon has [API authentication](../../reference/http-api.md#authentication) enabled. That permission is deliberately separate from the `incidents:read` that gates the incident list, because a bundle hands out rule documentation and risk entities as well. The built-in `reader` role (`*:read`) covers both; see also [Security: Daemon API authentication](../../reference/security.md#daemon-api-authentication).
 
-The token is read from an environment variable and never taken as an argument, so it does not appear in the process list or in shell history. An unset or empty variable sends no `Authorization` header at all, which against an authenticated daemon fails with a `401` rather than silently exporting nothing.
+The token is read from an environment variable and never taken as an argument, so it does not appear in the process list or in shell history. An unset or empty variable sends no `Authorization` header at all, which against an authenticated daemon fails with a `401` rather than silently exporting nothing. Use `--auth-token-env` when the secret lives under a different variable name.
 
 ```bash
 export RSIGMA_API_TOKEN="$(cat /run/secrets/rsigma-token)"
@@ -72,21 +72,22 @@ rsigma engine incidents export f8bcd62a829b1126 --addr https://daemon.internal:9
 ### Export every open incident
 
 ```bash
-curl -sS http://127.0.0.1:9090/api/v1/incidents \
+curl -sS -H "Authorization: Bearer $RSIGMA_API_TOKEN" \
+  http://127.0.0.1:9090/api/v1/incidents \
   | jq -r '.incidents[] | select(.bundle_ready) | .incident_id' \
   | while read -r id; do
       rsigma engine incidents export "$id" --output "bundles/$id.json"
     done
 ```
 
-The `bundle_ready` filter skips incidents still inside `group_wait`; those return `409` because their contents can still change.
+The `bundle_ready` filter skips incidents still inside `group_wait`; those return `409` because their contents can still change. Drop the `Authorization` header when the daemon has no API auth configured. Listing needs `incidents:read`; each export needs `incident-bundles:read`.
 
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | The bundle was fetched and written. |
-| `3` | The daemon could not be reached, returned a non-2xx status, or the output file could not be written. |
+| `3` | The daemon could not be reached, returned a non-2xx status (`401`/`403` auth, `404` unknown or resolved id, `409` still in `group_wait`, `503` grouping off, …), or the output file could not be written. |
 
 A non-2xx response is reported with its status and the daemon's own explanation, so the reason is visible without a second request:
 
@@ -99,7 +100,9 @@ no such open incident
 ## See also
 
 - [HTTP API: incident bundles](../../reference/http-api.md#get-apiv1incidentsidbundle) for the raw endpoint, the bundle schema, and the status codes.
+- [HTTP API: Authentication](../../reference/http-api.md#authentication) for bearer tokens and the `incident-bundles:read` permission.
 - [Alert Pipeline](../../guide/alert-pipeline.md) for how incidents are grouped in the first place.
 - [Detection Strategy](../../guide/detection-strategy.md) for the ADS sections a bundle carries.
 - [Risk-Based Alerting](../../guide/risk-based-alerting.md) for the risk entities a bundle joins.
 - [`engine daemon`](daemon.md) for the service this command queries.
+- [`engine status`](status.md) for the sibling daemon-client `--addr` convention.
