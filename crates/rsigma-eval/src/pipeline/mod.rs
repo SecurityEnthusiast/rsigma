@@ -146,6 +146,11 @@ impl Pipeline {
     /// Apply this pipeline to all rules in a collection.
     ///
     /// Returns cloned, transformed rules (originals are not modified).
+    ///
+    /// One `PipelineState` is shared by every rule, so `set_state` values and
+    /// `applied_items` accumulate across the collection. For several pipelines
+    /// at once, or for per-rule applied ids and state, use
+    /// [`transform_collection`].
     pub fn apply_to_collection(&self, collection: &SigmaCollection) -> Result<Vec<SigmaRule>> {
         let mut state = PipelineState::new(self.vars.clone());
         let mut transformed = Vec::with_capacity(collection.rules.len());
@@ -422,12 +427,20 @@ fn remap_correlation_fields(corr: &mut CorrelationRule, mapper: impl Fn(&str) ->
 // Multi-pipeline support
 // =============================================================================
 
-/// Sort pipelines by priority (lower = first) and apply them in order.
+/// Sort pipelines by priority in place, lower first.
+///
+/// Despite the name this only orders the slice; it neither combines the
+/// pipelines nor applies them. Call it before [`apply_pipelines`] and friends,
+/// which walk the slice as given. [`Engine::add_pipeline`](crate::Engine) sorts
+/// on insert, so engine callers get this for free.
 pub fn merge_pipelines(pipelines: &mut [Pipeline]) {
     pipelines.sort_by_key(|p| p.priority);
 }
 
-/// Apply multiple pipelines to a rule in priority order.
+/// Apply multiple pipelines to a rule, in the order of the slice.
+///
+/// Ordering is the caller's: sort with [`merge_pipelines`] first if the
+/// pipelines are meant to run by `priority`.
 ///
 /// Each pipeline gets its own `PipelineState`, but the state is carried across
 /// transformations within a single pipeline.
@@ -440,6 +453,8 @@ pub fn apply_pipelines(pipelines: &[Pipeline], rule: &mut SigmaRule) -> Result<(
 }
 
 /// Apply multiple pipelines to a rule, returning the merged [`PipelineState`].
+///
+/// Runs the pipelines in slice order, like [`apply_pipelines`].
 ///
 /// Unlike [`apply_pipelines`], this function accumulates state from all pipelines
 /// into a single `PipelineState` so that conversion backends can read values set
@@ -560,6 +575,11 @@ pub fn transform_rule(pipelines: &[Pipeline], rule: &SigmaRule) -> Result<Transf
 /// Per-rule equivalent of [`transform_rule`], in collection order. Correlation
 /// and filter rules are not included; correlation rules transform through
 /// [`apply_pipelines_to_correlation`].
+///
+/// Each rule is transformed with its own state, so `applied_items` and `state`
+/// on each result describe that rule alone. This is the difference from
+/// [`Pipeline::apply_to_collection`], which shares one state across the whole
+/// collection and takes a single pipeline.
 pub fn transform_collection(
     pipelines: &[Pipeline],
     collection: &SigmaCollection,
@@ -571,8 +591,11 @@ pub fn transform_collection(
         .collect()
 }
 
-/// Apply multiple pipelines to a correlation rule in priority order,
-/// returning the merged pipeline state.
+/// Apply multiple pipelines to a correlation rule in slice order, returning the
+/// merged pipeline state.
+///
+/// As with [`apply_pipelines`], sort with [`merge_pipelines`] first to run them
+/// by `priority`.
 pub fn apply_pipelines_to_correlation(
     pipelines: &[Pipeline],
     corr: &mut CorrelationRule,

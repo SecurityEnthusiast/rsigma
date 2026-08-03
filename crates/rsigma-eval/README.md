@@ -89,9 +89,9 @@ A non-short-circuiting, bloom-free recording evaluator that backs `rsigma engine
 | `parse_sources_file(path: &Path)` | Parse a standalone source YAML file (top-level `sources:` list) |
 | `parse_sources_dir(dir: &Path)` | Parse all `*.yml`/`*.yaml` source files in a directory |
 | `validate_source_refs(pipeline, external_ids)` | Validate that `${source.*}` references resolve against declared and/or external source IDs |
-| `apply_pipelines(pipelines, rule)` | Apply all pipelines to a rule in priority order |
-| `apply_pipelines_with_state(pipelines, rule)` | Apply pipelines and return the merged `PipelineState` (for backends) |
-| `merge_pipelines(pipelines)` | Merge multiple pipelines into one (sorted by priority) |
+| `apply_pipelines(pipelines, rule)` | Apply all pipelines to a rule, in slice order |
+| `apply_pipelines_with_state(pipelines, rule)` | Same ordering, and returns the merged `PipelineState` (for backends) |
+| `merge_pipelines(pipelines)` | Sort a pipeline slice by `priority` in place, lower first. Despite the name it does not combine or apply them; call it before the `apply_*` / `transform_*` functions, which walk the slice as given |
 | `transform_rule(pipelines, rule)` | Apply pipelines to a clone and return a `TransformedRule` (rewritten rule + sorted applied ids + merged state); the input rule is untouched. Slice order, like `apply_pipelines`: sort with `merge_pipelines` to match engine behavior |
 | `transform_collection(pipelines, collection)` | Per-rule `transform_rule` over a collection's detection rules, in collection order |
 

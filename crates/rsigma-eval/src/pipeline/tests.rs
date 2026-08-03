@@ -2107,6 +2107,69 @@ detection:
 }
 
 #[test]
+fn test_transform_collection_scopes_state_per_rule() {
+    // Fires only for the windows rule, so the linux rule's result must not
+    // inherit either the applied id or the state key.
+    let pipeline = parse_pipeline(
+        r#"
+name: windows only
+transformations:
+  - id: set_windows_index
+    type: set_state
+    key: index
+    value: windows-sysmon
+    rule_conditions:
+      - type: logsource
+        product: windows
+"#,
+    )
+    .unwrap();
+    let yaml = r#"
+title: Windows
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: whoami
+    condition: selection
+---
+title: Linux
+logsource:
+    product: linux
+    category: process_creation
+detection:
+    selection:
+        CommandLine|contains: id
+    condition: selection
+"#;
+    let collection = rsigma_parser::parse_sigma_yaml(yaml).unwrap();
+
+    let transformed = transform_collection(&[pipeline], &collection).unwrap();
+
+    assert_eq!(
+        transformed[0]
+            .state
+            .get_state("index")
+            .and_then(|v| v.as_str()),
+        Some("windows-sysmon")
+    );
+    assert_eq!(
+        transformed[0].applied_items,
+        vec!["set_windows_index".to_string()]
+    );
+
+    assert!(
+        transformed[1].state.get_state("index").is_none(),
+        "state must not leak from the previous rule"
+    );
+    assert!(
+        transformed[1].applied_items.is_empty(),
+        "applied ids must not leak from the previous rule"
+    );
+}
+
+#[test]
 fn test_transform_rule_exposes_pipeline_state() {
     let pipeline = parse_pipeline(
         r#"
