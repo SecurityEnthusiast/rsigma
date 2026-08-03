@@ -1,6 +1,8 @@
 # CLI Reference
 
-`rsigma` is a single binary that exposes every operation through noun-led command groups: `engine`, `rule`, `backend`, `pipeline`, `config`, and (when built with the `mcp` feature) `mcp`. Each subcommand is independent and self-contained; there is no global state. A YAML config file is optional but supported, with strict CLI > env > file > default precedence. See the [Configuration Reference](../reference/configuration.md).
+`rsigma` is a single binary that exposes every operation through noun-led command groups: `engine`, `rule`, `backend`, `pipeline`, `mcp`, and `config`. Each subcommand is independent and self-contained; there is no global state. A YAML config file is optional but supported, with strict flag > env > file > default precedence. See the [Configuration Reference](../reference/configuration.md).
+
+`engine daemon` and `pipeline resolve` require the `daemon` Cargo feature; `mcp` requires the `mcp` feature. Prebuilt release archives and the GHCR Docker image are built with `--all-features`, so those commands are present there. Source builds need the matching features enabled.
 
 This reference documents every subcommand with its flag table, verified examples, and exit-code semantics. For narrative walkthroughs see the [User Guide](../guide/evaluating-rules.md).
 
@@ -10,10 +12,10 @@ This reference documents every subcommand with its flag table, verified examples
 |-------|-------------|--------------|
 | [`engine`](engine/eval.md) | `eval`, `explain`, `classify`, `discover-schemas`, `status`, `incidents export`, `tap`, `tail`, `daemon` | Run and inspect Sigma rules against events: one-shot, explain, classify, or long-running |
 | [`rule`](rule/parse.md) | `parse`, `validate`, `lint`, `fields`, `draft`, `tune`, `reverse`, `doc`, `backtest`, `coverage`, `scorecard`, `visibility`, `hygiene`, `condition`, `stdin`, `migrate-sources` | Inspect, draft, lint, tune, reverse-convert, backtest, score, and ATT&CK-map Sigma rule files |
-| [`backend`](backend/convert.md) | `convert`, `targets`, `formats` | Convert Sigma rules into backend-native queries (PostgreSQL, LynxDB, Fibratus, …) |
+| [`backend`](backend/convert.md) | `convert`, `targets`, `formats` | Convert Sigma rules into backend-native queries (PostgreSQL, LynxDB, Fibratus, and delegated sigma-cli targets) |
 | [`pipeline`](pipeline/diff.md) | `diff`, `resolve` | Diff pipeline rewrites and test dynamic sources |
+| [`mcp`](mcp/serve.md) | `serve` | Run the Model Context Protocol server for agent tooling (`mcp` feature) |
 | [`config`](config/init.md) | `init`, `validate`, `show`, `schema`, `path`, `reload` | Scaffold, validate, introspect, and reload the YAML config file |
-| [`mcp`](mcp/serve.md) | `serve` | Run the Model Context Protocol server for agent tooling (feature-gated) |
 
 ## Global flags
 
@@ -43,7 +45,7 @@ rsigma
 │   │   └── export             export open incidents from a running daemon
 │   ├── tap                    capture a bounded window of the live event stream
 │   ├── tail                   stream a running daemon's live detections
-│   └── daemon                 long-running streaming detection
+│   └── daemon                 long-running streaming detection (`daemon` feature)
 ├── rule
 │   ├── parse                  parse a single rule file, dump AST as JSON
 │   ├── validate               parse + compile a directory of rules
@@ -67,21 +69,21 @@ rsigma
 │   └── formats                list output formats for one backend
 ├── pipeline
 │   ├── diff                   show how pipelines rewrite a rule before evaluation
-│   └── resolve                offline source resolution + dry-run for dynamic pipelines
-├── config
-│   ├── init                   scaffold a commented rsigma.yaml
-│   ├── validate               check files for unknown keys and inactive sections
-│   ├── show                   print the effective config with per-leaf sources
-│   ├── schema                 emit the JSON Schema
-│   ├── path                   list the config files that would be loaded
-│   └── reload                 hot-reload a running daemon (POST /api/v1/reload)
-└── mcp                        (feature-gated)
-    └── serve                  run the Model Context Protocol server
+│   └── resolve                offline source resolution + dry-run (`daemon` feature)
+├── mcp                        (`mcp` feature)
+│   └── serve                  run the Model Context Protocol server
+└── config
+    ├── init                   scaffold a commented rsigma.yaml
+    ├── validate               check files for unknown keys and inactive sections
+    ├── show                   print the effective config with per-leaf sources
+    ├── schema                 emit the JSON Schema
+    ├── path                   list the config files that would be loaded
+    └── reload                 hot-reload a running daemon (POST /api/v1/reload)
 ```
 
 ## Exit codes
 
-Every subcommand uses the same four-code scheme. Full table and CI patterns are in the [CI/CD guide](../guide/ci-cd.md#exit-codes).
+Every subcommand uses the same four-code scheme. Full table and CI patterns are in the [Exit Codes](../reference/exit-codes.md) reference and the [CI/CD guide](../guide/ci-cd.md#exit-codes).
 
 | Code | Meaning |
 |------|---------|
@@ -101,10 +103,11 @@ Every subcommand uses the same four-code scheme. Full table and CI patterns are 
 | `RSIGMA_API_TOKEN` | Bearer token for daemon-client calls that send auth (for example `engine incidents export`). | Selected daemon clients. |
 | `RSIGMA_MCP_AUTH_TOKEN` | Bearer token for `mcp serve --http`. | `mcp serve`. |
 
-See [Environment Variables reference](../reference/environment-variables.md) for the complete list.
+See [Environment Variables reference](../reference/environment-variables.md) for the complete list, including the layered `RSIGMA_<SECTION>__*` config overrides.
 
 ## See also
 
 - [Installation](../getting-started/installation.md) for how to obtain the binary.
 - [Quick Start](../getting-started/quick-start.md) for the three-minute "run your first rule" path.
 - [User Guide](../guide/evaluating-rules.md) for narrative walkthroughs of each command.
+- [Feature Flags](../reference/feature-flags.md) for the `daemon`, `mcp`, and related Cargo features.
