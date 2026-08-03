@@ -10,6 +10,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 - §3.2.1 description scope is **TESTED**: normative fixtures expose typed Campaign “Green Group Attacks Against Finance”.
 - Producer `REQ-3.2-P-01`..`P-11`, Consumer `REQ-3.2-C-01`..`C-05`, checklist `REQ-CHK-SXP-3.2` / `REQ-CHK-SXC-3.2`, examples `REQ-3.2-EX-4.1` / `EX-4.2`.
 - Table 4 CSD01 typo (`type` = `threat-actor`) is documented; tests enforce STIX §4.2 `campaign`.
+- Tightens the equivalent §3.1 Attack Pattern rows in the same pass: `P-02` pins that caller selection renames exactly one object and that the selected name survives parse and re-validation, and `P-07` reads the id from the wire use-case object so its parse no longer restates a parse the typed lookup already performed. The RFC 3339 millisecond check both use cases share now lives in `tests/interop/common/timestamp.rs`.
 - Not OASIS SXP/SXC certification (**2/21** use cases).
 
 ### Dependency batch (Aug 2026) (#432)

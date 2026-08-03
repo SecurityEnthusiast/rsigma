@@ -185,15 +185,13 @@ pub fn assert_prop_spec_version() {
 pub fn assert_prop_id() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
-    let (_, object_id) = load_campaign(FIXTURE_CREATE);
-    let wire = objects
-        .iter()
-        .find(|obj| obj.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
-        .expect("wire campaign");
-    let wire_id = wire
-        .get("id")
-        .and_then(Value::as_str)
-        .expect("wire campaign id");
+    let use_case_ids = use_case_object_ids(FIXTURE_CREATE, &objects);
+    assert_eq!(
+        use_case_ids.len(),
+        1,
+        "{FIXTURE_CREATE}: expected one campaign use-case id"
+    );
+    let wire_id = &use_case_ids[0];
     assert!(
         wire_id.starts_with("campaign--"),
         "id must use campaign-- prefix: {wire_id}"
