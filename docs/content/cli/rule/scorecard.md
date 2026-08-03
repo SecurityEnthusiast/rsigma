@@ -24,7 +24,7 @@ The two JSON reports are required. The Prometheus snapshot and the triage feed a
 | Coverage report | `--coverage <FILE>` | yes | Per-rule ATT&CK technique and tactic mapping, plus the per-technique rule count used for sole-coverage analysis. |
 | Prometheus snapshot or endpoint | `--metrics <FILE\|URL>` | no | Production true-positive volume from `rsigma_detection_matches_by_rule_total` and `rsigma_correlation_matches_by_rule_total`, joined by `rule_title`. |
 | Prometheus query API | `--metrics-window <DURATION>` | no | When `--metrics` is a Prometheus query-API base, switches to a `query_range` over the window to derive last-fired and the current value. |
-| Triage disposition feed | `--triage <FILE>` | no | Live per-rule false-positive ratio and, where present, MTTD/MTTR. |
+| Triage disposition feed | `--triage <FILE>` | no | Live per-rule false-positive ratio and, when present on the feed, MTTD/MTTR. |
 
 Both JSON reports are owned by rsigma, so the scorecard shares the producer structs and version-checks any on-disk report against the shipped release: a report from an incompatible build fails the typed deserialize and exits `3`.
 
@@ -61,9 +61,9 @@ The bands default to the SOC quality-metrics thresholds and are fully configurab
 
 - **retire**: precision proxy below the retire floor (`0.10`), or zero volume across both the corpus and the metrics window (a dead rule).
 - **tune**: precision proxy in the review band (at or above the retire floor and below the keep floor), or a live false-positive ratio above the ceiling (`0.50`). A retire candidate that is the sole coverage for an ATT&CK technique is downgraded here with a coverage-risk note, so the program never silently drops coverage.
-- **keep**: precision proxy at or above the keep floor (`0.80`), with enough volume and a recent enough last-fired.
+- **keep**: precision proxy at or above the keep floor (`0.80`), with enough volume and, when last-fired is known via `--metrics-window`, a recent enough last-fired.
 
-Missing optional inputs degrade the verdict rather than blocking it: with no `--metrics`, volume and staleness come from the corpus alone; with no `--triage`, the live false-positive ratio and latency are blank and the verdict falls back to the corpus precision proxy.
+Missing optional inputs degrade the verdict rather than blocking it: with no `--metrics`, volume comes from the corpus alone and the staleness gate is not enforced; with no `--triage`, the live false-positive ratio and any MTTD/MTTR fields are blank and the verdict falls back to the corpus precision proxy.
 
 ## Triage feed
 
