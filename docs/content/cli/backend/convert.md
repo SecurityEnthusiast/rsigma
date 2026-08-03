@@ -38,15 +38,17 @@ Global `--output-format json` wraps queries in a `{target, format, queries:[…]
 
 | Flag | Description |
 |------|-------------|
-| `-p, --pipeline <PIPELINE>` | Processing pipeline(s) (repeatable). Builtin names (`ecs_windows`, `sysmon`) or YAML file paths. |
+| `-p, --pipeline <PIPELINE>` | Processing pipeline(s) (repeatable). Builtin names (`ecs_windows`, `fibratus_windows`, `sysmon`) or YAML file paths. |
 | `--without-pipeline` | Skip the pipeline-requirement check that some backends enforce. Use when you know the rules already match your target schema. |
 
 ### Backend options and error handling
 
 | Flag | Description |
 |------|-------------|
-| `-O, --option <KEY=VALUE>` | Backend-specific option. Repeatable. PostgreSQL examples: `-O table=okta_events`, `-O json_field=data`, `-O timestamp_field=time`, `-O case_sensitive_re=true`. See [PostgreSQL backend reference](../../reference/backends/postgres.md) for the full list. |
+| `-O, --option <KEY=VALUE>` | Backend-specific option. Repeatable. PostgreSQL examples: `-O table=okta_events`, `-O json_field=data`, `-O timestamp_field=time`, `-O case_sensitive_re=true`. Correlation engines that advertise methods also accept `-O correlation_method=NAME` (see [`backend formats`](formats.md)). See [PostgreSQL backend reference](../../reference/backends/postgres.md) for the full list. |
 | `-s, --skip-unsupported` | Skip rules that the backend cannot represent instead of failing the run with exit `2`. The skipped rules are reported on stderr. |
+
+Dynamic pipeline sources are not resolved by `backend convert`. A pipeline that references `${source.<id>}` still converts with unresolved placeholders; use [`pipeline resolve`](../pipeline/resolve.md) to inspect sources or [`engine daemon`](../engine/daemon.md) to evaluate with live resolution.
 
 ## Examples
 
@@ -123,5 +125,5 @@ psql -f /var/lib/rsigma/sql/views.sql
 
 - [Rule Conversion](../../guide/rule-conversion.md) for the full workflow.
 - [`backend targets`](targets.md) and [`backend formats`](formats.md) for the discovery commands.
-- [PostgreSQL backend reference](../../reference/backends/postgres.md), [LynxDB backend reference](../../reference/backends/lynxdb.md).
+- [PostgreSQL backend reference](../../reference/backends/postgres.md), [LynxDB backend reference](../../reference/backends/lynxdb.md), [Fibratus backend reference](../../reference/backends/fibratus.md).
 - [`rule fields`](../rule/fields.md) for auditing which fields each rule references before conversion.
