@@ -1,50 +1,16 @@
 # Alert Pipeline
 
-The alert pipeline is an optional post-engine stage in the daemon's output path, between post-evaluation [enrichment](enrichers.md) and the sinks. It is modeled on the Prometheus Alertmanager processing pipeline and is strictly post-engine: it consumes `EvaluationResult`s and emits `EvaluationResult`s, so the evaluation hot path is untouched.
+The alert pipeline is an optional post-engine stage in the daemon's output path. It runs after post-evaluation [enrichment](enrichers.md) (and after [risk-based alerting](risk-based-alerting.md) when `--risk` is set) and before the sinks. It is modeled on the Prometheus Alertmanager processing pipeline and is strictly post-engine: it consumes `EvaluationResult`s, passes survivors through as `EvaluationResult`s, and (when grouping is enabled) also emits `IncidentResult`s on a background tick, so the evaluation hot path is untouched.
 
 It is configured with a separate YAML file via `--alert-pipeline <path>` (or the `daemon.alert_pipeline` config key) and is hot-reloaded on `SIGHUP`, file-watcher changes, and `POST /api/v1/reload`; a failed reload keeps the previous pipeline active.
 
 The schema is strict: an unknown field at any level is a load error naming the field and the valid alternatives. This keeps a misspelling such as `group.wait` from silently selecting the default `group_wait`.
 
-This page covers silencing, inhibition, deduplication, and incident grouping. The stages run in that order (the mute stages first): a muted result never dedups or opens an incident.
+This page covers inhibition, silencing, deduplication, and incident grouping. The stages run in that order (the mute stages first): a muted result never dedups or opens an incident.
 
-## Silencing
+## Matchers
 
-A silence mutes results matching a set of matchers for a time window, modeled on Alertmanager silences. A muted result is acked and dropped before dedup, so it neither emits nor contributes to an incident.
-
-Silences come from two origins:
-
-- **static**: declared in the `--alert-pipeline` config under `silences:`. Re-seeded on hot-reload (the previous static set is replaced); use these for maintenance-as-code.
-- **api**: created at runtime over `POST /api/v1/silences`, independent of the config file. Use these for ad-hoc mutes during an incident.
-
-### Matchers
-
-A matcher is `selector <op> value`, where the left-hand side is a [field selector](#field-selectors) and `<op>` is one of `=` (equals), `!=` (not equals), `=~` (regex match), `!~` (regex no-match). Regex operators are anchored (full match). A matcher set is ANDed: every matcher must match. The same matcher engine backs inhibition.
-
-### Config (static silences)
-
-```yaml
-silences:
-  - matchers:
-      - selector: rule
-        op: "="
-        value: noisy-rule
-      - selector: level
-        op: "!="
-        value: critical
-    comment: "muted during migration"
-    created_by: ops
-    # starts_at / ends_at are optional RFC 3339 timestamps; absent means
-    # active immediately / never expires.
-```
-
-### The silence API
-
-- `POST /api/v1/silences` creates a silence from a JSON body (`matchers`, optional `starts_at`/`ends_at` RFC 3339, `created_by`, `comment`) and returns the assigned `id`. It returns `429 Too Many Requests` once the dynamic-silence cap (`max_silences`, default 1000) is reached; delete silences or raise the cap.
-- `GET /api/v1/silences` lists every silence with its derived `state` (`pending` / `active` / `expired`) and `origin`.
-- `DELETE /api/v1/silences/{id}` removes a silence.
-
-Expired silences are garbage-collected on the background tick. The dynamic (API) silence count is bounded by `max_silences` so an unbounded number of silences cannot accumulate; static silences from the config do not count against it. Metrics: `rsigma_silenced_total` (results muted) and `rsigma_silences_active` (currently-active silences).
+A matcher is `selector <op> value`, where the left-hand side is a [field selector](#field-selectors) and `<op>` is one of `=` (equals), `!=` (not equals), `=~` (regex match), `!~` (regex no-match). Regex operators are anchored (full match). A matcher set is ANDed: every matcher must match. The same matcher engine backs both inhibition and silencing.
 
 ## Inhibition
 
@@ -74,6 +40,40 @@ Two behaviors follow Alertmanager:
 - Inhibition is **non-transitive**: a *silenced* source still inhibits its targets (the source index is updated before silencing), but an *inhibited* target does not become a source.
 
 Metrics: `rsigma_inhibited_total{rule}` (results muted, by rule name) and `rsigma_inhibit_sources_active` (currently-active sources).
+
+## Silencing
+
+A silence mutes results matching a set of matchers for a time window, modeled on Alertmanager silences. A muted result is dropped before dedup, so it neither emits nor contributes to an incident.
+
+Silences come from two origins:
+
+- **static**: declared in the `--alert-pipeline` config under `silences:`. Re-seeded on hot-reload (the previous static set is replaced); use these for maintenance-as-code.
+- **api**: created at runtime over `POST /api/v1/silences`, independent of the config file. Use these for ad-hoc mutes during an incident.
+
+### Config (static silences)
+
+```yaml
+silences:
+  - matchers:
+      - selector: rule
+        op: "="
+        value: noisy-rule
+      - selector: level
+        op: "!="
+        value: critical
+    comment: "muted during migration"
+    created_by: ops
+    # starts_at / ends_at are optional RFC 3339 timestamps; absent means
+    # active immediately / never expires.
+```
+
+### The silence API
+
+- `POST /api/v1/silences` creates a silence from a JSON body (`matchers`, optional `starts_at`/`ends_at` RFC 3339, `created_by`, `comment`) and returns the assigned `id`. It returns `429 Too Many Requests` once the dynamic-silence cap (`max_silences`, default 1000) is reached; delete silences or raise the cap.
+- `GET /api/v1/silences` lists every silence with its derived `state` (`pending` / `active` / `expired`) and `origin`.
+- `DELETE /api/v1/silences/{id}` removes a silence.
+
+Expired silences are garbage-collected on the background tick. The dynamic (API) silence count is bounded by `max_silences` so an unbounded number of silences cannot accumulate; static silences from the config do not count against it. Metrics: `rsigma_silenced_total` (results muted) and `rsigma_silences_active` (currently-active silences).
 
 ## Deduplication
 
@@ -141,15 +141,15 @@ The dedup stage exposes (see [Metrics](../reference/metrics.md)):
 - `rsigma_dedup_summaries_emitted_total` — `repeat` plus `resolved` records emitted.
 - `rsigma_alert_pipeline_duration_seconds` — stage duration.
 
+### Relationship to `rsigma.suppress`
+
+Dedup here is a sink-path stage that applies to detection and correlation results alike. It is distinct from the correlation engine's per-rule `rsigma.suppress`, which is engine-side and applies only to correlation firings. The two can be used together.
+
 ## Persistence
 
 When the daemon runs with `--state-db <PATH>`, the alert pipeline's state is persisted to the SQLite store alongside the correlation snapshot, in its own `rsigma_alert_pipeline_state` table. The snapshot carries the active dedup alerts, open incidents, the dynamic (API) silences, and the inhibition active-source index; static silences come from config and are re-seeded on boot. It is written periodically (`--state-save-interval`) and on graceful shutdown, and restored on boot.
 
 Restore is window-aware: dedup alerts past `resolve_timeout`, incidents past their `resolve_timeout`, silences past `ends_at`, and inhibition sources past their rule's `duration` are dropped during restore, so stale state never lingers. Deterministic `group_by` incident ids are preserved across the restart. A snapshot whose version does not match the current build is ignored with a warning (the daemon starts fresh). `--clear-state` skips the restore (and `--keep-state` forces it), matching the correlation-state flags.
-
-### Relationship to `rsigma.suppress`
-
-Dedup here is a sink-path stage that applies to detection and correlation results alike. It is distinct from the correlation engine's per-rule `rsigma.suppress`, which is engine-side and applies only to correlation firings. The two can be used together.
 
 ## Grouping
 
@@ -195,7 +195,7 @@ group:
 
 ### Wire shape
 
-An `IncidentResult` is one flat NDJSON object, disambiguated downstream by the presence of an `incident_id` key. It carries the `state` (`open` / `resolved`), the `trigger` (`group_wait` / `group_interval` / `repeat` / `resolved`), the window bounds, the `max_level`, the `result_count`, per-rule `rule_counts`, the `group_by` key (group_by mode) or `entities` map (entity_graph mode), and the `refs` or `results`. Incidents are delivered to stdout/file/NATS sinks; with `nats_subject` set, incidents publish to that dedicated subject instead of the detection stream. OTLP and webhook sinks do not receive incidents.
+An `IncidentResult` is one flat NDJSON object, disambiguated downstream by the presence of an `incident_id` key. It carries the `state` (`open` / `resolved`), the `trigger` (`group_wait` / `group_interval` / `repeat` / `resolved`), the window bounds, the `max_level`, the `result_count`, per-rule `rule_counts`, the `group_by` key (group_by mode) or `entities` map (entity_graph mode), and the `refs` or `results`. Incidents are delivered to stdout, file, NATS, and unix sinks; with `nats_subject` set, incidents publish to that dedicated subject instead of the detection stream. OTLP and webhook sinks do not receive incidents.
 
 Open incidents are also readable at `GET /api/v1/incidents`, and one at a time at `GET /api/v1/incidents/{id}`.
 
@@ -219,3 +219,12 @@ See [`engine incidents export`](../cli/engine/incidents-export.md) and [HTTP API
 - `rsigma_incidents_emitted_total{trigger}` — incident emissions by trigger.
 - `rsigma_incident_results_total` — total incident records emitted.
 - `rsigma_incident_overmerge_total{guard}` — entity-graph guard hits (`stop_value` / `cardinality_ceiling`).
+
+## See also
+
+- [CLI reference: `engine daemon`](../cli/engine/daemon.md) for `--alert-pipeline` and state flags.
+- [Enrichers](enrichers.md) for the stage that runs immediately before this one (or before risk).
+- [Risk-Based Alerting](risk-based-alerting.md) for the optional stage between enrichment and the alert pipeline.
+- [Webhooks](webhooks.md) for templated detection delivery (incidents are not sent to webhook sinks).
+- [Prometheus metrics reference](../reference/metrics.md) for the full alert-pipeline metric set.
+- [HTTP API reference](../reference/http-api.md) for `/api/v1/silences`, `/api/v1/incidents`, and incident bundles.
