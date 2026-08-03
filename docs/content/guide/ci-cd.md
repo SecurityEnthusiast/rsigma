@@ -1,6 +1,6 @@
 # CI/CD
 
-RSigma is designed to drop into a detection-as-code workflow. The CLI surfaces that matter for CI are `rule lint`, `rule validate`, `rule backtest`, `rule coverage`, `engine eval`, and `backend convert`. Each exits with a structured code that lets CI runners distinguish "no findings, clean exit" from "the tool ran but reported findings" from "the tool could not run because of a configuration or rule error."
+RSigma is designed to drop into a detection-as-code workflow. The CLI surfaces that matter for CI are `rule lint`, `rule validate`, `rule backtest`, `rule coverage`, `rule scorecard`, `rule hygiene`, `rule doc`, `engine eval`, and `backend convert`. Each exits with a structured code that lets CI runners distinguish "no findings, clean exit" from "the tool ran but reported findings" from "the tool could not run because of a configuration or rule error."
 
 This page covers the exit-code model, the fixture harness (`rule backtest`), the failure-controlling flags (`--fail-on-detection`, `--fail-level`), and copy-paste pipelines for GitHub Actions, GitLab CI, pre-commit, and a generic shell runner.
 
@@ -11,13 +11,13 @@ Every `rsigma` command uses the same four-code scheme. The split is the conventi
 | Code | Meaning | Triggered by |
 |------|---------|--------------|
 | `0` | Success. The tool ran cleanly. With `--fail-on-detection`, no detection or correlation fired. | Default happy path. Also returned when `rule lint` produces findings below the `--fail-level` threshold. |
-| `1` | Findings. The tool ran cleanly but found something noteworthy. | `eval --fail-on-detection` with at least one match; `rule lint --fail-level <X>` with at least one finding at or above `X`. |
+| `1` | Findings. The tool ran cleanly but found something noteworthy. | `eval --fail-on-detection` with at least one match; `rule lint --fail-level <X>` with at least one finding at or above `X`; a failed `rule backtest` expectation; `rule coverage --fail-on-gaps`; `rule scorecard --fail-on`; `rule hygiene --fail-on`; `rule doc --fail-on-missing`. |
 | `2` | Rule error. The input rules could not be parsed, compiled, or converted. | `rule validate` with parse or compile errors; `backend convert` when conversion fails or every rule fails; `engine eval` and `rule lint` when the rules path itself cannot be read. |
 | `3` | Configuration error. A pipeline file could not be loaded, a CLI argument was invalid, or the tool was misconfigured. | Bad `-p` path, unknown `-t backend`, malformed `--suppress` duration, unreadable schema file. |
 
 The exact source of truth is the [`exit_code` module](https://github.com/timescale/rsigma/blob/main/crates/rsigma-cli/src/exit_code.rs).
 
-A few non-obvious behaviours worth pinning down:
+A few non-obvious behaviors worth pinning down:
 
 - `engine eval` exits `0` when a rule file contains a Sigma parse error (it logs a warning to stderr and continues with the rules that did load). Use `rule validate` if you want a parse error to fail the build.
 - `engine eval` exits `0` by default even when matches fire. Pass `--fail-on-detection` if you want detections to fail the build.
@@ -26,7 +26,7 @@ A few non-obvious behaviours worth pinning down:
 
 ## `rule backtest` for fixture suites
 
-`rule backtest` is the recommended fixture harness. It replays a corpus (a file or a directory walked recursively), tallies how many times each rule fired, and diffs those counts against an expectations file. Unlike `engine eval --fail-on-detection`, which is corpus-global and passes when *any* rule fires, backtest asserts per rule, so a broken rule cannot be masked by an unrelated rule matching the same fixture.
+`rule backtest` is the recommended fixture harness. It replays a corpus (a file or a directory walked recursively), tallies how many times each rule fired, and diffs those counts against an expectations file. `engine eval --fail-on-detection` is corpus-global: it fails as soon as *any* rule fires, and says nothing about which one. Backtest asserts per rule, so a rule that stopped firing cannot be masked by an unrelated rule matching the same fixture.
 
 Declare what each rule must do in an expectations file:
 
@@ -191,7 +191,7 @@ jobs:
   detection-as-code:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0 # required for the merge-base fields-drift diff
@@ -205,7 +205,7 @@ jobs:
           coverage-targets: ci/threat-model.txt
 ```
 
-The action installs a checksum- and SLSA-attestation-verified rsigma release (cached per version and target, no insecure fallback), then runs `rule lint` (PR diff annotations generated from the stable `--output-format json` envelope, not text-scraping problem matchers), `rule validate --resolve-sources`, a merge-base fields-drift diff, `rule backtest`, and `rule coverage`, and keeps a single sticky summary comment up to date. It needs `pull-requests: write` for the comment and `fetch-depth: 0` on checkout for the fields-drift diff. Pin a concrete `version:` so a silent rsigma upgrade cannot change CI behaviour between runs; the minimum supported version is the release where `rule backtest` and `rule coverage` shipped. See the [action repository](https://github.com/timescale/rsigma-action) for the full input and output reference; hardened consumers can pin the action by commit SHA instead of the `@v1` major tag.
+The action installs a checksum- and SLSA-attestation-verified rsigma release (cached per version and target, no insecure fallback), then runs `rule lint` (PR diff annotations generated from the stable `--output-format json` envelope, not text-scraping problem matchers), `rule validate --resolve-sources`, a merge-base fields-drift diff, `rule backtest`, and `rule coverage`, and keeps a single sticky summary comment up to date. It needs `pull-requests: write` for the comment and `fetch-depth: 0` on checkout for the fields-drift diff. Pin a concrete `version:` so a silent rsigma upgrade cannot change CI behavior between runs; the minimum supported version is the release where `rule backtest` and `rule coverage` shipped. See the [action repository](https://github.com/timescale/rsigma-action) for the full input and output reference; hardened consumers can pin the action by commit SHA instead of the `@v1` major tag.
 
 ### Manual workflow
 
@@ -231,7 +231,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: cargo install --locked rsigma --version "${RSIGMA_VERSION}"
@@ -242,7 +242,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: cargo install --locked rsigma --version "${RSIGMA_VERSION}"
@@ -254,7 +254,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: cargo install --locked rsigma --version "${RSIGMA_VERSION}"
@@ -278,7 +278,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: cargo install --locked rsigma --version "${RSIGMA_VERSION}"
@@ -301,7 +301,7 @@ For a faster CI loop, install from the precompiled archives instead of `cargo in
           rsigma --version
 ```
 
-`RSIGMA_VERSION` is taken from the workflow-level `env:` shown above; pin it to a released tag so a silent rsigma upgrade cannot change CI behaviour between runs.
+`RSIGMA_VERSION` is taken from the workflow-level `env:` shown above; pin it to a released tag so a silent rsigma upgrade cannot change CI behavior between runs.
 
 ::: callout tip "Audit your detection workflow with zizmor"
 Detection-as-code repositories should hold themselves to the same supply-chain hygiene they expect from the rest of the org. Run [zizmor](https://github.com/zizmorcore/zizmor) against `.github/workflows/` to catch missing `permissions:`, unpinned actions, script-injection-prone GitHub-context interpolations, and other GHA pitfalls. RSigma's own workflows pass `zizmor --pedantic` with zero findings; the [`zizmor.yml`](https://github.com/timescale/rsigma/blob/main/.github/workflows/zizmor.yml) workflow is a small reference to copy.
@@ -419,8 +419,8 @@ $RSIGMA_BIN rule backtest -r "$RULES_DIR" -p "$PIPELINE" \
 
 ## Tips and gotchas
 
-- **Cache the rsigma binary** between CI runs. The `cargo install` form compiles rsigma from source and typically takes several minutes on a GitHub-hosted runner; the precompiled archive download completes in under 5 seconds. The release page ships archives for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, and `aarch64-pc-windows-msvc`.
-- **Pin the rsigma version** in CI. Detection-as-code repos test specific behaviour; a silent rsigma upgrade can flip a previously-fixed bug. Use `cargo install --locked rsigma --version {{ rsigma.version }}` or pin the precompiled archive URL.
+- **Cache the rsigma binary** between CI runs. The `cargo install` form compiles rsigma from source and typically takes several minutes on a GitHub-hosted runner; the precompiled archive download completes in under 5 seconds. The release page ships archives for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, and `aarch64-pc-windows-msvc`. Linux and macOS archives are `.tar.gz`; the two Windows archives are `.zip`.
+- **Pin the rsigma version** in CI. Detection-as-code repos test specific behavior; a silent rsigma upgrade can flip a previously-fixed bug. Use `cargo install --locked rsigma --version {{ rsigma.version }}` or pin the precompiled archive URL.
 - **Separate lint and validate jobs**. They fail for different reasons. A combined job hides which check broke.
 - **Avoid `set +e` around rsigma**. Structured exit codes are the API. Wrapping commands in `|| true` or `set +e` defeats the whole model.
 - **JSON output for diagnostic logs**. Pass `--log-format json` so CI log aggregators (Datadog CI Visibility, Buildkite test analytics) can parse run metadata without regex. Stdout/stderr are unchanged; only structured diagnostic logs flip to JSON. See [Observability](observability.md).
@@ -435,4 +435,5 @@ $RSIGMA_BIN rule backtest -r "$RULES_DIR" -p "$PIPELINE" \
 - [CLI reference: `rule backtest`](../cli/rule/backtest.md), [`rule coverage`](../cli/rule/coverage.md), [`rule scorecard`](../cli/rule/scorecard.md), [`engine eval`](../cli/engine/eval.md), [`rule lint`](../cli/rule/lint.md), [`rule validate`](../cli/rule/validate.md), [`backend convert`](../cli/backend/convert.md).
 - [ATT&CK Coverage](attack-coverage.md) for the coverage workflow.
 - [Detection Scorecard](detection-scorecard.md) for the keep/tune/retire verdict workflow.
+- [Rule Hygiene](rule-hygiene.md) for the retirement and clean-up gate.
 - [`timescale/rsigma-action`](https://github.com/timescale/rsigma-action) for the one-step GitHub Actions gate.
