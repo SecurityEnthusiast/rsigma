@@ -101,7 +101,7 @@ curl -sS http://127.0.0.1:9090/readyz
 503 body:
 
 ```json
-{"status":"starting","rules_loaded":false}
+{"status":"not_ready","rules_loaded":false}
 ```
 
 ## Status and counters

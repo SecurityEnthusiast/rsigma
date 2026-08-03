@@ -1,16 +1,17 @@
 # Builtin Pipelines
 
-RSigma embeds two ready-to-use processing pipelines in the binary so common Windows deployments work with no external YAML file. Reference them by name from any subcommand that accepts `-p`:
+RSigma embeds three ready-to-use processing pipelines in the binary so common Windows deployments work with no external YAML file. Reference them by name from any subcommand that accepts `-p`:
 
 ```bash
 rsigma engine eval   -r rules/ -p ecs_windows -e @events.ndjson
 rsigma engine daemon -r rules/ -p sysmon
+rsigma backend convert rules/ -t fibratus -p fibratus_windows
 rsigma backend convert rules/ -t postgres -p ecs_windows
 ```
 
-Builtins are baked at compile time. Updating their content means upgrading rsigma; they are not file-watched, do not appear under `--reload`, and cannot be tweaked at runtime. Copy the YAML out to a local file (sources below) if you need to customise.
+Builtins are baked at compile time. Updating their content means upgrading rsigma; they are not file-watched, do not appear under `--reload`, and cannot be tweaked at runtime. Copy the YAML out to a local file (sources below) if you need to customize.
 
-The source YAMLs live under [`crates/rsigma-eval/pipelines/`](https://github.com/timescale/rsigma/tree/main/crates/rsigma-eval/pipelines).
+The builtin registry is the source of truth (`ecs_windows`, `fibratus_windows`, `sysmon` via `builtin_names()`). Extra YAML files may live under [`crates/rsigma-eval/pipelines/`](https://github.com/timescale/rsigma/tree/main/crates/rsigma-eval/pipelines) (for example `gcp_audit.yml`) without being builtins; load those by path with `-p path/to/file.yml`.
 
 ## `ecs_windows`
 
@@ -44,6 +45,24 @@ Each transformation is gated by `rule_conditions: logsource.category` so only th
 ### Pair with the right input
 
 `ecs_windows` assumes the agent has already flattened the Windows events into ECS shape. It does NOT flatten raw `.evtx` records (those are nested under `Event.System.*` and `Event.EventData.*`). For raw `.evtx` files, use dotted-path rules or write a custom flattening pipeline. See [Input Formats: EVTX](../guide/input-formats.md#evtx-windows-event-log-feature-gated).
+
+## `fibratus_windows`
+
+Maps Sigma Windows logsource categories and PascalCase fields onto Fibratus kernel-event names and the lowercase-dotted Fibratus vocabulary (`ps.exe`, `ps.cmdline`, `file.path`, `net.dip`, …). Use it when converting Windows rules to Fibratus YAML so the output matches upstream Fibratus rules-library style.
+
+```bash
+rsigma backend convert -t fibratus -p fibratus_windows rules/windows/process_creation/
+```
+
+Priority: `20`. Source: [`pipelines/fibratus_windows.yml`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-eval/pipelines/fibratus_windows.yml).
+
+### What it does
+
+- `field_name_mapping` renames Sigma fields to Fibratus attributes per category (`process_creation`, `network_connection`, `file_event`, `image_load`, `registry_*`, `dns_query`, `pipe_created`, `create_remote_thread`, and related).
+- `add_condition` injects `evt.name` discriminators (for example `CreateProcess`, `Connect`) so Fibratus can short-circuit on the event name before the rest of the body.
+- Field notes follow Fibratus 3.0.0: on `CreateProcess`, `ps.*` describes the created (child) process and `ps.parent.*` the parent; cross-process targets use `evt.arg[...]`.
+
+Pair with [`backend convert -t fibratus`](../cli/backend/convert.md) and the [Fibratus backend reference](backends/fibratus.md).
 
 ## `sysmon`
 

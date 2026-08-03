@@ -2,8 +2,8 @@
 
 Sigma rules accept a `custom_attributes:` mapping for engine and backend hints that aren't part of the core Sigma spec. RSigma recognizes two namespaces:
 
-- `rsigma.*` — engine and correlation behaviour, mostly per-rule overrides of `engine eval` and `engine daemon` CLI flags.
-- `postgres.*` — PostgreSQL/TimescaleDB backend routing, used by `backend convert -t postgres` to put specific rules on specific tables, schemas, or databases.
+- `rsigma.*`: engine and correlation behavior, mostly per-rule overrides of `engine eval` and `engine daemon` CLI flags.
+- `postgres.*`: PostgreSQL/TimescaleDB backend routing, used by `backend convert -t postgres` to put specific rules on specific tables, schemas, or databases.
 
 CLI flags and library API calls always take precedence over `custom_attributes` values. Engine-level attributes (`rsigma.timestamp_field`, `rsigma.suppress`, `rsigma.action`) apply only when the CLI did not already set the corresponding flag. Per-correlation attributes always override engine defaults for that rule.
 
@@ -112,9 +112,9 @@ custom_attributes:
 
 The generated SQL targets `siem.process_events` instead of the default `security_events`.
 
-## Other namespaces (future)
+## Other namespaces
 
-The `custom_attributes:` mapping is namespace-aware: only `rsigma.*` and `postgres.*` are interpreted by the engine and PostgreSQL backend today. Other namespaces survive parsing but have no behaviour attached. Future backends (LynxDB extensions, planned ATT&CK enricher) will reserve their own namespaces; today's rules using unknown namespaces will silently be ignored, so an authoring mistake (a typo like `rsima.suppress`) will be silent. Always lint with [`rule lint`](../cli/rule/lint.md), which flags unknown `rsigma.*` and `postgres.*` keys.
+The `custom_attributes:` mapping is namespace-aware: only `rsigma.*` and `postgres.*` are interpreted by the engine and PostgreSQL backend. Other namespaces survive parsing but have no behavior attached, so a typo like `rsima.suppress` is silent. Always lint with [`rule lint`](../cli/rule/lint.md), which flags unknown `rsigma.*` and `postgres.*` keys.
 
 ## See also
 

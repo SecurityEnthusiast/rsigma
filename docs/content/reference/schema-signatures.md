@@ -46,6 +46,8 @@ User signatures default to specificity 50. The built-ins are:
 
 The `ecs_windows` and `ecs_linux` specializations recognize an ECS event that also carries a platform marker, so they win over plain `ecs` and can attach a platform-specific implied logsource. They are aliases of `ecs` for routing (see [schema aliases](../guide/schema-routing.md#schema-aliases)), so an existing `ecs` binding still matches them.
 
+`generic_json` is a built-in catch-all for events that have at least one structured field but match no higher-specificity signature. Events with no structured fields (empty objects, raw text) match no signature and are reported as unknown (`schema: null` / the `rsigma_events_unknown_schema_total` counter). Binding `generic_json` away (or omitting it from a custom classifier) makes ordinary structured events unknown as well.
+
 ## Field names
 
 Predicate field names use the same dot-notation as event field access, so they resolve against both nested objects and flattened dotted keys. `ecs.version` matches both `{"ecs": {"version": "8.0"}}` and `{"ecs.version": "8.0"}`, and `Event.System.EventID` matches the rendered Windows Event Log nesting.

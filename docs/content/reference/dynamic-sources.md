@@ -35,6 +35,12 @@ A directory path loads all `*.yml`/`*.yaml` files in it, sorted alphabetically:
 rsigma engine daemon -r rules/ -p pipeline.yml --source sources.d/
 ```
 
+Offline resolution uses the same declaration files through [`pipeline resolve --source-file`](../cli/pipeline/resolve.md):
+
+```bash
+rsigma pipeline resolve -p pipeline.yml --source-file sources.yml --pretty
+```
+
 The flag is repeatable, so you can load from multiple files and directories:
 
 ```bash
@@ -348,7 +354,7 @@ Every dynamic source path enforces hard limits to bound resource consumption. Pe
 | Refresh interval minimum | `MIN_REFRESH_INTERVAL` | 1 s | not configurable (lower values clamp with a warning) |
 | NATS message size cap | `MAX_SOURCE_RESPONSE_BYTES` | 10 MiB | not configurable |
 | Include nesting depth | `MAX_INCLUDE_DEPTH` | 1 | not configurable |
-| Remote include resolution | — | off | `--allow-remote-include` daemon flag |
+| Remote include resolution | none | off | `--allow-remote-include` daemon flag |
 
 Exceeding any limit produces a `SourceErrorKind::ResourceLimit` failure with a descriptive message. See [Security Hardening](security.md) for the broader catalogue.
 

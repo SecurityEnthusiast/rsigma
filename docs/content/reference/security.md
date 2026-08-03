@@ -30,7 +30,7 @@ These limits are sized so that the engine remains bounded under pathological inp
 | Command execution timeout | `DEFAULT_COMMAND_TIMEOUT` | 30 s | `timeout` |
 | Refresh interval minimum | `MIN_REFRESH_INTERVAL` | 1 s | not configurable (clamps with warning) |
 | Include nesting depth | `MAX_INCLUDE_DEPTH` | 1 | not configurable |
-| Remote include resolution | — | off | `--allow-remote-include` daemon flag |
+| Remote include resolution | none | off | `--allow-remote-include` daemon flag |
 
 Each limit produces a `SourceErrorKind::ResourceLimit` failure with a descriptive message. The full source-level catalogue lives at [Dynamic Pipeline Sources: resource limits](dynamic-sources.md#resource-limits).
 
@@ -140,7 +140,7 @@ Hot-reload: cert rotation funnels through the daemon's central debounced reload 
 
 Observability: `/metrics` exposes `rsigma_tls_certificate_expiry_seconds` (signed; negative once expired) and `rsigma_tls_active_connections`. A single WARN is logged at startup (and on every successful reload) when the active cert expires within 30 days; wire that line into the existing log-based alerting.
 
-Out of scope for this feature today: ACME / Let's Encrypt automation. Operators point `--tls-cert` and `--tls-key` at renewed files (cert-manager, certbot, Vault PKI, ...) and send SIGHUP. Encrypted private keys are also out of scope; the flag (`--tls-key-password` / `RSIGMA_TLS_KEY_PASSWORD`) is reserved for a future release and currently rejects with a clear `openssl rsa` hint.
+Out of scope for this feature today: ACME / Let's Encrypt automation. Operators point `--tls-cert` and `--tls-key` at renewed files (cert-manager, certbot, Vault PKI, ...) and send SIGHUP. Encrypted private keys are not supported; `--tls-key-password` / `RSIGMA_TLS_KEY_PASSWORD` is rejected at startup with a clear `openssl rsa` hint. Decrypt the key before loading it.
 
 OTLP receiver authentication has two options: mTLS (`--tls-client-ca`) so every OpenTelemetry agent pins to a known CA, or a bearer token with the `events:ingest` permission (see [Daemon API authentication](#daemon-api-authentication)); the OTLP/gRPC service reads the same `authorization` metadata OpenTelemetry Collector exporters send via the `headers` setting.
 

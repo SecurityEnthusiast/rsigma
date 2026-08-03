@@ -1,6 +1,6 @@
 # Feature Flags
 
-`rsigma` is a workspace of eight library crates (`rsigma-parser`, `rsigma-eval`, `rsigma-convert`, `rsigma-runtime`, `rsigma-mcp`, `rsigma-cli`, `rsigma-lsp`, `rstix`), several of which expose Cargo features that gate optional dependencies and code paths. This page documents every feature, its default state, what it pulls in, and how to enable it when building from source.
+`rsigma` is a workspace of nine library crates (`rsigma-parser`, `rsigma-ir`, `rsigma-eval`, `rsigma-convert`, `rsigma-runtime`, `rsigma-mcp`, `rsigma-cli`, `rsigma-lsp`, `rstix`), several of which expose Cargo features that gate optional dependencies and code paths. This page documents every feature, its default state, what it pulls in, and how to enable it when building from source.
 
 The CLI ships with sensible defaults; the precompiled release archives and the GHCR Docker image are built with `--all-features`, so every feature documented here is available out of the box.
 
@@ -26,7 +26,7 @@ The detection and correlation engine. Used as a library and re-exported by `rsig
 
 | Feature | Default | Pulls in | What it enables |
 |---------|---------|----------|-----------------|
-| `parallel` | no | `rayon` | Parallel batch evaluation via `Engine::evaluate_batch_parallel`. The CLI enables this by default through its dependency declaration. |
+| `parallel` | no | `rayon` | Parallel batch evaluation inside `Engine::evaluate_batch`. The CLI enables this by default through its dependency declaration. |
 | `daachorse-index` | no | `daachorse` | Cross-rule Aho-Corasick pre-filter. See above. |
 
 ## `rsigma-runtime`
@@ -40,6 +40,7 @@ The streaming runtime (event sources, sinks, daemon plumbing, dynamic pipelines)
 | `logfmt` | no | (none beyond the parser) | `logfmt` input parser. |
 | `cef` | no | (none beyond the parser) | `cef` input parser. |
 | `evtx` | no | `evtx` | `.evtx` file reader. |
+| `uds` | no | (Unix only) | Unix-domain socket event source and sink. Pulled in by the CLI `daemon` feature on Unix. |
 | `daachorse-index` | no | `rsigma-eval/daachorse-index` | Cross-rule AC support when used from `rsigma-runtime` consumers. |
 
 ## `rsigma-convert`
@@ -54,11 +55,15 @@ The conversion engine. Used as a library and re-exported by `rsigma-cli`.
 
 | Feature | Default | Pulls in | What it enables |
 |---------|---------|----------|-----------------|
-| `fix` | yes | `yamlpath`, `yamlpatch`, tree-sitter YAML | The source-preserving `lint::fix` module and crate-root `apply_fixes_to_source`/`SourceFixOutcome` re-exports. Disable default features for parser/evaluator-only `wasm32-unknown-unknown` builds. Parsing, validation, lint diagnostics, and fix metadata remain available without it. |
+| `fix` | yes | `yamlpath`, `yamlpatch` | The source-preserving `lint::fix` module and crate-root `apply_fixes_to_source`/`SourceFixOutcome` re-exports. Disable default features for parser/evaluator-only `wasm32-unknown-unknown` builds. Parsing, validation, lint diagnostics, and fix metadata remain available without it. |
 
 ## `rsigma-mcp`
 
-The Model Context Protocol server library. No Cargo features of its own; it is gated into the CLI by the `mcp` feature above.
+The Model Context Protocol server library. Gated into the CLI by the `mcp` feature above.
+
+| Feature | Default | Pulls in | What it enables |
+|---------|---------|----------|-----------------|
+| `http` | no | `axum`, `rmcp/transport-streamable-http-server` | `serve_http` / `http_router` for Streamable HTTP (`/mcp`). Bearer-token auth is configured by the CLI; TLS for the listener is provided by `rsigma-cli` when built with `daemon-tls`. |
 
 ## `rstix`
 
@@ -67,15 +72,16 @@ STIX 2.1 library crate. **Data Model + Serialization** is complete with `serde` 
 | Feature | Default | Pulls in | What it enables |
 |---------|---------|----------|-----------------|
 | `serde` | yes | `serde`, `serde_json`, `idna`, `url`, `email_address`, `base64`, `encoding_rs` | `Bundle::parse`, `parse_reader`, `serde` on all model types, T1 advisory `Bundle::validate`, DD-DM-001 wire format checks on domain/email/url. |
-| `pattern` | no | `serde`, `base64`, `ipnet`, `regex`, `unicode-normalization` | `Pattern::parse`, `Pattern::evaluate`, `Pattern::matches_single`, `Pattern::matches_single_with_bundle`, `Pattern::evaluate_observed_data`, `Pattern::canonical`, `IndicatorPattern` STIX AST wiring at deserialize, `PatternAst`, `ObservationContext`, `PatternScoType`, `PatternError`, `PatternMatchError` — STIX Specification §9 Levels 1–3. See [rstix Pattern Engine](../library/rstix.md#rstix-pattern-engine-stix-9). |
+| `pattern` | no | `serde`, `base64`, `ipnet`, `regex`, `unicode-normalization` | `Pattern::parse`, `Pattern::evaluate`, `Pattern::matches_single`, `Pattern::matches_single_with_bundle`, `Pattern::evaluate_observed_data`, `Pattern::canonical`, `IndicatorPattern` STIX AST wiring at deserialize, `PatternAst`, `ObservationContext`, `PatternScoType`, `PatternError`, `PatternMatchError`. STIX Specification §9 Levels 1–3. See [rstix Pattern Engine](../library/rstix.md#rstix-pattern-engine-stix-9). |
 | `validate` | no | `serde`, `pattern` | `Validator`, `ValidatorBuilder` (`with_allow_custom`, `with_parse_options`, `with_phase`), `ValidationPhase`, structured `STIX-E/W/I/H` diagnostics, `validate_json_str` / `validate_json_value` / `validate_bundle` / `validate_object`. See [Validation Pipeline](../library/rstix.md#rstix-validation-pipeline). |
 | `graph` | no | `serde` | `StixGraph`, `EdgeTraversal`, `RelationshipExpander`, SRO + ref graph construction. See [Graph + Marking + Store](../library/rstix.md#rstix-graph-marking-store). |
 | `marking` | no | `serde` | `MarkingResolver`, `TlpV2Level`, granular selector resolution, disclosure checks. |
 | `store` | no | `serde` | `StixStore`, `MemoryStore`, `StixQuery` (typed + full-text search), `ImportReport`. |
-| `store-fs` | no | `store` | `FsStore` — filesystem-backed durable store. |
-| `taxii` | no | `serde`, `reqwest`, `tokio`, `secrecy`, `futures`, `hickory-resolver`, `p12-keystore`, rustls stack | `TaxiiClient`, `TaxiiEnvelope`, auth providers, pagination, retry, rustls TLS (PEM + PKCS#12 mTLS), DANE (`dane_require_dnssec`), DNS SRV — OASIS TAXII 2.1 HTTP client. See [TAXII Client](../library/rstix.md#rstix-taxii-client). |
+| `store-fs` | no | `store` | `FsStore`, filesystem-backed durable store. |
+| `taxii` | no | `serde`, `reqwest`, `tokio`, `secrecy`, `futures`, `hickory-resolver`, `p12-keystore`, rustls stack | `TaxiiClient`, `TaxiiEnvelope`, auth providers, pagination, retry, rustls TLS (PEM + PKCS#12 mTLS), DANE (`dane_require_dnssec`), DNS SRV. OASIS TAXII 2.1 HTTP client. See [TAXII Client](../library/rstix.md#rstix-taxii-client). |
+| `taxii-store` | no | `taxii`, `store` | TAXII collection ingest into a `StixStore`. |
 
-Without the `serde` feature, only **Core Foundation** APIs are available (typed IDs, vocab tables, programmatic model types — no bundle parsing). Enable `pattern` for the Pattern Engine (implies `serde`). Enable `validate` for the Validation Pipeline (`cargo build -p rstix --features validate`).
+Without the `serde` feature, only **Core Foundation** APIs are available (typed IDs, vocab tables, programmatic model types; no bundle parsing). Enable `pattern` for the Pattern Engine (implies `serde`). Enable `validate` for the Validation Pipeline (`cargo build -p rstix --features validate`).
 
 ## Building with features
 
@@ -118,11 +124,9 @@ rsigma engine daemon --help | grep -q cross-rule-ac && echo on || echo off
 
 # evtx?
 echo "" | rsigma engine eval -r /dev/null -e @/dev/null --input-format json 2>&1 | grep -q "evtx" || echo "evtx feature not required for JSON inputs"
-
-# Inspect feature flags via the binary's version output (planned: not yet implemented).
 ```
 
-A first-class `rsigma --features` introspection flag would be a nice-to-have but is not implemented today.
+There is no first-class `rsigma --features` introspection flag. Use `--help` presence checks as above.
 
 ## See also
 

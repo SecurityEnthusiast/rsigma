@@ -25,7 +25,7 @@ All layers that exist are loaded and merged. There is no first-match-wins fallba
 
 Passing `--config <PATH>` replaces the discovery chain entirely: only that file is loaded (and a bad path is a hard error, so misspellings surface immediately).
 
-The `~/.config/rsigma` location is computed by honouring `XDG_CONFIG_HOME` explicitly rather than `dirs::config_dir()`, so on macOS the path stays under `~/.config/rsigma` instead of `~/Library/Application Support/`. The `rsigma install` workflow uses the same layout.
+The `~/.config/rsigma` location is computed by honoring `XDG_CONFIG_HOME` explicitly rather than `dirs::config_dir()`, so on macOS the path stays under `~/.config/rsigma` instead of `~/Library/Application Support/`. The `rsigma install` workflow uses the same layout.
 
 ## Format
 
@@ -82,6 +82,7 @@ daemon:
     max_sessions: 2         # concurrent tail sessions (a session over the cap gets 409)
   schema:
     observe: false          # opt-in: count events per recognized schema (or --observe-schemas)
+    discover: false         # opt-in: sample unknown shapes for signature suggestions (or --discover-schemas; implies observe)
     routing: false          # opt-in: route each event to its schema's pipeline-set (or --schema-routing)
     partition_rules: false  # gated: compile platform-locked per-schema engines with only applicable rules (or --schema-partition-rules)
     # config: /etc/rsigma/schema.yml   # user schema signatures + routing bindings (--schema-config)
@@ -96,7 +97,7 @@ daemon:
     #   product: windows
     #   custom:             # extra dimensions: dimension name -> literal value
     #     tenant: acme
-    strict: false           # reserved for a future strict subset-routing mode
+    # strict: false         # accepted in the schema; currently ignored
 
 eval:
   rules: ./rules
@@ -113,7 +114,16 @@ eval:
     #   product: product
     # event_logsource:
     #   product: windows
-    strict: false
+    # strict: false         # accepted in the schema; currently ignored
+
+doc:
+  fail_on_missing: false    # CI gate for ADS metadata completeness
+
+mcp:
+  # http_addr: 127.0.0.1:3001   # unset means stdio; maps to --http
+  # lint_config: ./.rsigma-lint.yml
+  # rules_dir: ./rules
+  allow_sigma_cli: false    # let convert_rules delegate non-native targets
 
 backtest:
   rules: ./rules
@@ -172,11 +182,11 @@ Run [`rsigma config init`](../cli/config/init.md) to scaffold a full, commented 
 | `daemon.tail` | `engine daemon` | Live detection-tail limits (`enabled`, `buffer_events`, `max_sessions`). Disabled by default; enable with `enabled: true` or `--enable-tail`. The rest are config-file-only. See [HTTP API: Live detection tail](http-api.md#live-detection-tail). |
 | `daemon.dispositions` | `engine daemon` | Triage feedback loop (`enabled`, `source`, `window`, `numerator`, `min_sample`). Disabled by default; enable with `enabled: true`, `--enable-dispositions`, or a configured `source`. See the [Triage Feedback Loop](../guide/triage-feedback.md) guide. |
 | `daemon.engine.cross_rule_ac` | `engine daemon` | Inert unless built with `daachorse-index`. |
-| `daemon.schema` | `engine daemon` | Schema classification and routing (`observe`, `routing`, `config`, `on_unknown`). All opt-in. See [Schema Routing](../guide/schema-routing.md). |
-| `daemon.logsource_routing` | `engine daemon` | Conflict-based logsource pruning (`enabled`, `field_map`, `event_logsource`, reserved `strict`). Opt-in. See [Logsource-Aware Evaluation](../guide/logsource-routing.md). |
+| `daemon.schema` | `engine daemon` | Schema classification and routing (`observe`, `discover`, `routing`, `partition_rules`, `config`, `on_unknown`). All opt-in. See [Schema Routing](../guide/schema-routing.md). |
+| `daemon.logsource_routing` | `engine daemon` | Conflict-based logsource pruning (`enabled`, `field_map`, `event_logsource`). `strict` is accepted and ignored. Opt-in. See [Logsource-Aware Evaluation](../guide/logsource-routing.md). |
 | `eval` | `engine eval` | Mirrors the eval flag surface. |
-| `eval.schema` | `engine eval` | Schema routing for one-shot eval (`routing`, `config`, `on_unknown`). `observe` has no effect here. |
-| `eval.logsource_routing` | `engine eval` | Conflict-based logsource pruning for one-shot eval (`enabled`, `field_map`, `event_logsource`, reserved `strict`). |
+| `eval.schema` | `engine eval` | Schema routing for one-shot eval (`routing`, `config`, `on_unknown`). `observe`/`discover` have no effect here. |
+| `eval.logsource_routing` | `engine eval` | Conflict-based logsource pruning for one-shot eval (`enabled`, `field_map`, `event_logsource`). `strict` is accepted and ignored. |
 | `backtest` | `rule backtest` | `rules`, `corpus`, `expectations`, `unexpected`, `pipelines`, and the syslog input knobs. `unexpected` has no compiled default so the expectations-file default can apply. |
 | `coverage` | `rule coverage` | `rules`, `atomics`, `baseline`, `targets`, `fail_on_gaps`. |
 | `scorecard` | `rule scorecard` | The two required reports (`backtest`, `coverage`), the verdict thresholds (`min_precision`, `tune_max_precision`, `retire_max_precision`, `min_volume`, `stale_window`, `max_fp_ratio`), the optional inputs (`metrics`, `metrics_window`, `triage`), `fail_on`, and `report`. |
@@ -196,7 +206,7 @@ Supply these via environment variables (or `--flag` for ad-hoc use). Putting the
 
 ## Environment layer
 
-Two parallel schemes are honoured:
+Two parallel schemes are honored:
 
 1. **Uniform `RSIGMA_<SECTION>__<KEY>` (recommended).** Nested keys use the `__` separator; single underscores stay inside a key. Values are parsed as YAML scalars so types coerce naturally (ints, bools, lists). Examples:
 
