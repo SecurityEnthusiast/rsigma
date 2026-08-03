@@ -9,20 +9,20 @@ The extension also runs as-is in [Cursor](https://cursor.sh/) and any other VS C
 | Capability | Detail |
 |------------|--------|
 | Diagnostics | All {{ rsigma.lint.rules }} lint rules, plus YAML and condition-expression parse errors, plus per-rule compile errors. Three layers run on every save and after a 150 ms debounce on every change. |
-| Code actions | One-click quick-fixes for 13 of the lint rules (the `Safe` fix set). Cursor over a squiggle, press `Cmd+.` / `Ctrl+.`, pick the suggestion. |
+| Code actions | One-click quick-fixes for the {{ rsigma.lint.autofix }} lint rules with a `Safe` fix. Cursor over a squiggle, press `Cmd+.` / `Ctrl+.`, pick the suggestion. |
 | Completions | Modifier names after `|`, MITRE ATT&CK tags inside `tags:`, valid `status` / `level` / `product` / `category` / `service` values, top-level keys, selection names referenced from `condition:`. |
 | Hover | Modifier documentation, MITRE ATT&CK tactic and technique descriptions (with link-out to attack.mitre.org). |
 | Document symbols | Hierarchical outline of `title`, `logsource`, `detection`, `correlation`, used by VS Code's Outline view and breadcrumb. |
 
-All capabilities work uniformly on detection rules, correlation rules, filter rules, and processing pipelines, since they share the same parser and linter.
+All capabilities target Sigma detection, correlation, and filter rules. Processing pipeline YAML is not a first-class LSP document type; open pipelines may produce generic YAML/Sigma parse noise rather than pipeline-aware diagnostics.
 
 ## Install
 
-The published extension is not yet on the VS Code Marketplace; install from a local VSIX for now.
+The extension is distributed from the repository under `editors/vscode/`. Install it from a local VSIX:
 
 ### Prerequisites
 
-1. Install the language server. Either `cargo install rsigma-lsp` or pick it up from the [release archive](../getting-started/installation.md) (the `rsigma-lsp` binary ships alongside `rsigma`). Confirm it is on your `$PATH`:
+1. Install the language server. Either `cargo install --locked rsigma-lsp` or unpack `rsigma-lsp` from the [release archive](../getting-started/installation.md) (it ships alongside `rsigma`). Confirm it is on your `$PATH`:
 
     ```bash
     rsigma-lsp --version
@@ -70,17 +70,17 @@ For a folder of Sigma rules, this is a sensible `.vscode/settings.json`:
 }
 ```
 
-The first two lines make sure VS Code treats your rules as YAML (and thus activates the rsigma extension). Disabling `yaml.validate` avoids double-squiggles from the generic YAML language server. Disabling formatting prevents the YAML formatter from rewriting wildcard patterns and reflowing condition expressions; the rsigma extension does not provide formatting yet.
+The first two lines make sure VS Code treats your rules as YAML (and thus activates the rsigma extension). Disabling `yaml.validate` avoids double-squiggles from the generic YAML language server. Disabling formatting prevents the YAML formatter from rewriting wildcard patterns and reflowing condition expressions; the rsigma extension does not provide formatting.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| No squiggles, even on obviously broken YAML. | Extension did not start. | Open the `rsigma` output channel: `View -> Output`, pick `rsigma` from the dropdown. Look for `Started rsigma-lsp`. |
+| No squiggles, even on obviously broken YAML. | Extension did not start. | Open the `rsigma` output channel: `View -> Output`, pick `rsigma` from the dropdown. Look for language-client startup errors or a `Failed to start rsigma language server` toast. |
 | `rsigma-lsp: command not found` in the output channel. | Server binary not on `$PATH`. | `which rsigma-lsp` from your shell; if empty, install it (see prerequisites). If it is on `$PATH` only inside your shell init, set `rsigma.serverPath` to the absolute path. |
-| Diagnostics work, but quick-fixes do nothing. | The lint rule does not have a `Safe` auto-fix. | See the [fixable-rules list](../reference/lint-rules.md). The 13 rules with a `Yes` in the Fix column are the ones the extension can act on. |
+| Diagnostics work, but quick-fixes do nothing. | The lint rule does not have a `Safe` auto-fix. | See the [fixable-rules list](../reference/lint-rules.md). The {{ rsigma.lint.autofix }} rules with a `Yes` in the Fix column are the ones the extension can act on. |
 | Stale diagnostics after changing `.rsigma-lint.yml`. | The server caches config per document. | Close and reopen the file, or run `Developer: Reload Window`. |
-| The server panics or hangs. | A bug, or a malformed rule that exercises a known path. | `Cmd+Shift+P -> rsigma: Show Server Log`, capture the trace, and file an issue with the snippet that triggered it. Setting `rsigma.trace.server` to `verbose` first gives the maintainers the full wire log. |
+| The server panics or hangs. | A bug, or a malformed rule that exercises a known path. | Open the `rsigma` output channel, capture the log, and file an issue with the snippet that triggered it. Setting `rsigma.trace.server` to `verbose` first gives the maintainers the full wire log. |
 
 ## Debugging
 
@@ -95,7 +95,7 @@ Then in VS Code, set `rsigma.serverPath` to a wrapper script that spawns the ser
 ## See also
 
 - [Linting rules](../guide/linting-rules.md) for the operator-facing CLI workflow.
-- [Lint Rules reference](../reference/lint-rules.md) for the full {{ rsigma.lint.rules }}-rule catalogue and which {{ rsigma.lint.autofix }} have safe auto-fixes.
+- [Lint Rules reference](../reference/lint-rules.md) for the full {{ rsigma.lint.rules }}-rule catalog and which {{ rsigma.lint.autofix }} have safe auto-fixes.
 - [Linter and LSP](../developers/linter-and-lsp.md) for the contributor walkthrough.
 - [Neovim, Helix, Zed](neovim.md) for other LSP-aware editors.
 - [`rsigma-lsp` README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-lsp/README.md) for the full capability matrix and protocol details.
