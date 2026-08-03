@@ -1996,10 +1996,10 @@ fn test_transform_rule_without_pipelines_is_a_passthrough() {
     assert_eq!(transformed.rule.title, collection.rules[0].title);
 }
 
-#[test]
-fn test_transform_rule_applies_pipelines_in_priority_order() {
-    // The later pipeline (higher priority number) renames the field the earlier
-    // one produced, so the final name proves the ordering.
+/// Two pipelines that only compose one way: `second` renames the field
+/// `first` produces, so `process.command_line` in the output proves that
+/// `first` ran before `second`.
+fn chained_rename_pipelines() -> (Pipeline, Pipeline) {
     let first = parse_pipeline(
         r#"
 name: first
@@ -2024,7 +2024,12 @@ transformations:
 "#,
     )
     .unwrap();
+    (first, second)
+}
 
+#[test]
+fn test_transform_rule_applies_pipelines_in_slice_order() {
+    let (first, second) = chained_rename_pipelines();
     let collection = rsigma_parser::parse_sigma_yaml(process_creation_rule_yaml()).unwrap();
 
     let transformed = transform_rule(&[first, second], &collection.rules[0]).unwrap();
@@ -2037,6 +2042,29 @@ transformations:
     assert!(
         rendered.contains("process.command_line"),
         "second pipeline should see the first pipeline's output: {rendered}"
+    );
+}
+
+#[test]
+fn test_transform_rule_honors_priority_after_merge_pipelines() {
+    // Handed to transform_rule out of priority order, the chain cannot compose:
+    // `second` runs against a field that does not exist yet.
+    let (first, second) = chained_rename_pipelines();
+    let collection = rsigma_parser::parse_sigma_yaml(process_creation_rule_yaml()).unwrap();
+
+    let unsorted = transform_rule(&[second.clone(), first.clone()], &collection.rules[0]).unwrap();
+    assert!(
+        !format!("{:?}", unsorted.rule.detection.named).contains("process.command_line"),
+        "slice order is honored as-is, so the reversed chain does not compose"
+    );
+
+    // merge_pipelines sorts by priority, which is how an Engine holds them.
+    let mut pipelines = vec![second, first];
+    merge_pipelines(&mut pipelines);
+    let sorted = transform_rule(&pipelines, &collection.rules[0]).unwrap();
+    assert!(
+        format!("{:?}", sorted.rule.detection.named).contains("process.command_line"),
+        "after sorting, the chain composes again"
     );
 }
 

@@ -470,7 +470,7 @@ pub fn apply_pipelines_with_state(
 /// that a mapping applied.
 #[derive(Debug, Clone)]
 pub struct TransformedRule {
-    /// The rule after every pipeline ran, in priority order.
+    /// The rule after every pipeline ran.
     pub rule: SigmaRule,
     /// Ids of the transformations that fired, sorted. Transformations without
     /// an `id:` are not tracked, so this can be empty even though `rule`
@@ -488,6 +488,10 @@ pub struct TransformedRule {
 /// keeps only the compiled form, so a caller that needs the rewritten Sigma AST
 /// (injected conditions, renamed fields, a `change_logsource` rewrite) asks for
 /// it here.
+///
+/// Pipelines run in slice order, like [`apply_pipelines`]. Sort with
+/// [`merge_pipelines`] first to match what an [`Engine`](crate::Engine) does,
+/// since it keeps its own pipelines sorted by `priority`.
 ///
 /// Call this once per rule set load, not per event: it clones and re-transforms
 /// the rule, exactly like the load path does. When only the rewritten logsource

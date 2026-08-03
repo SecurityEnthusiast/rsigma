@@ -144,6 +144,8 @@ engine.add_collection(&collection)?;
 
 Both functions clone and re-run the pipelines, the same work `add_collection` does, so they belong on the load or reload path and not on the per-event path. If only the logsource matters, `Engine::rules()` after loading is cheaper: each `CompiledRule` retains its post-pipeline `logsource`.
 
+They also apply pipelines in slice order rather than by `priority`, matching `apply_pipelines`. Pass the slice through `merge_pipelines` when chaining several, or use `Engine::transform_collection`, which uses the engine's already-sorted pipelines.
+
 ## Rule tuning
 
 `tune_rule(rule, false_positives, true_positives, config)` accepts one parsed, optionally pipeline-transformed `SigmaRule` plus JSON event values. It verifies that every label fires before filtering, profiles reusable value forms from the FP set, rejects candidates that match a TP, emits a standard filter rule, and verifies the final artifact through `Engine::add_collection`.

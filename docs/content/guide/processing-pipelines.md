@@ -218,10 +218,11 @@ This is how a collector avoids keeping a second copy of the pipeline's mapping. 
 
 The builtin `sysmon` pipeline already ends with exactly that transformation.
 
-Two notes on cost and correctness:
+Three notes on cost and correctness:
 
 - These functions clone and re-transform, the same work the load path does. Call them once per rule set load or reload, never per event.
 - They do not consume the rules. Pass the original, untransformed collection to `add_collection`, or apply pipelines once and load the result into an engine with no pipelines configured. Doing both to the same rules applies the pipelines twice.
+- The free functions apply pipelines in the order of the slice you hand them, not by `priority`. Sort with `merge_pipelines` first if you are chaining several, which is what an engine does internally. The `Engine::` methods already use the engine's sorted pipelines.
 
 When all you need is the rewritten logsource, skip the transform entirely and read it from the loaded rules: `Engine::rules()` exposes each `CompiledRule`, whose `logsource` already reflects `change_logsource`.
 
