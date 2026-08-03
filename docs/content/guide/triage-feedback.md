@@ -14,18 +14,18 @@ The false-positive ratio for a rule is `false_positive / total_dispositioned` ov
 
 ## Disposition format
 
-A disposition is one JSON object. The `POST` body accepts a single object or an array; a pull-source payload is NDJSON or a JSON array.
+A disposition is one JSON object. The `POST` body accepts a single object, a JSON array, or NDJSON; a pull-source payload is NDJSON or a JSON array.
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `rule_id` | yes (for `detection` scope) | The rule the analyst is dispositioning, with the title as the fallback the per-rule metrics use. |
 | `verdict` | yes | `true_positive`, `false_positive`, or `benign_true_positive`. |
 | `scope` | no (default `detection`) | `detection` or `incident`. |
-| `fingerprint` | no | The alert-pipeline `dedup_fingerprint`, when the dedup layer is enabled. |
-| `incident_id` | no | The alert-pipeline `incident_id`; required when `scope` is `incident`. |
+| `fingerprint` | no | The alert-pipeline `dedup_fingerprint`, when carried (present on dedup `repeat`/`resolved` re-emits). |
+| `incident_id` | no | The alert-pipeline `incident_id`; required when `scope` is `incident`. Present on pass-through results when grouping is enabled. |
 | `timestamp` | no | RFC 3339; defaults to ingest time. Used for rolling-window placement. |
 | `analyst` | no | Recorded for traceability; does not affect the ratio. |
-| `note` | no | Bounded free text, recorded for traceability. |
+| `note` | no | Bounded free text (max 2048 bytes), recorded for traceability. |
 
 An `incident`-scoped verdict with no `rule_id` resolves to the incident's contributing rules through the live alert-pipeline incident map (the same state behind `GET /api/v1/incidents`). When the incident is unknown or the alert pipeline is not enabled, supply an explicit `rule_id` or the record is rejected with a pointed error.
 
@@ -51,7 +51,7 @@ There are two ways in, and both are idempotent:
 - **The endpoint.** `POST /api/v1/dispositions` for push-style ingest from whatever delivered the alert.
 - **A pull source.** `--disposition-source <PATH>` (or `daemon.dispositions.source`) points at a dynamic-source file (the same format as `--source`) whose payload is the disposition records. File, HTTP, and NATS transports are supported, refreshed per the source's policy. See [Disposition Source Recipes](disposition-recipes.md) for copy-paste, tested configs that pull verdicts from TheHive, Jira, and GitHub Issues.
 
-Redelivery is safe: dispositions deduplicate on `(fingerprint or incident_id, verdict)`, falling back to `(rule_id, timestamp, analyst)` when no alert identity is carried, so a file re-read, a NATS redelivery, or an HTTP re-poll never double counts.
+Redelivery is safe: dispositions deduplicate on `(fingerprint or incident_id, verdict, rule_id)`, falling back to `(rule_id, timestamp, analyst)` when no alert identity is carried, so a file re-read, a NATS redelivery, or an HTTP re-poll never double counts. The `rule_id` is part of the identity key so an incident-scoped verdict that fans out to contributing rules does not collapse those per-rule records into one.
 
 ## The numerator knob
 
@@ -59,7 +59,7 @@ By default the numerator counts false positives only. A benign-but-correct fire 
 
 ## Closing the loop with delivery
 
-The alert delivered by the [webhook sink](webhooks.md) (or a NATS sink) is the carrier an analyst dispositions. Include `rule_id` and the alert-pipeline `incident_id` in the delivered payload (a webhook template field) so the returned verdict keys cleanly; `incident_id` is the identity present on the first-fire pass-through alert.
+The alert delivered by the [webhook sink](webhooks.md) (or a NATS sink) is the carrier an analyst dispositions. Always include `rule_id` in the delivered payload (a webhook template field). When [alert-pipeline grouping](alert-pipeline.md) is enabled, pass-through survivors also carry `enrichments.incident_id`, which keys an `incident`-scoped verdict. Dedup alone does not stamp `dedup_fingerprint` on the first-fire pass-through; that key appears on `repeat`/`resolved` re-emits, so prefer `rule_id` (and `incident_id` when grouping) for the round-trip.
 
 ## Feeding the scorecard
 
@@ -72,7 +72,7 @@ rsigma rule scorecard --backtest backtest.json --coverage coverage.json --triage
 
 ## Persistence
 
-When the daemon runs with `--state-db`, the disposition store persists across restarts: a versioned snapshot is saved to its own table in the SQLite state store on the periodic and shutdown hooks beside the correlation and alert-pipeline snapshots, and restored on boot with window-aware pruning (buckets past the window are dropped). `--clear-state` skips the restore; a version mismatch starts fresh with a warning.
+When the daemon runs with `--state-db`, the disposition store persists across restarts: a versioned snapshot is saved to the `rsigma_disposition_state` table in the SQLite state store on the periodic and shutdown hooks beside the correlation and alert-pipeline snapshots, and restored on boot with window-aware pruning (buckets past the window are dropped). `--clear-state` skips the restore; a version mismatch starts fresh with a warning.
 
 ## Configuration
 
