@@ -21,6 +21,8 @@ The capture is **lossy by design**: it can never apply backpressure to detection
 
 Like [`engine status`](status.md) it is a read-only client over the admin API. It uses a synchronous HTTP client and does not need the `daemon` build feature, and it follows the same address convention as [`config reload`](../config/reload.md): `--addr` defaults to `daemon.api.addr`, and wildcard binds (`0.0.0.0`, `[::]`) map to loopback.
 
+The client does not send an `Authorization` header. Against a daemon with [API authentication](../../reference/http-api.md#authentication) enabled, grant anonymous `tap:read` (or a broader read role such as `reader`), or open the stream with `curl` and a bearer token. HTTP 401/403 still exit `3`.
+
 The tap is **disabled by default** because it exfiltrates raw events. Enable it on the daemon with the `--enable-tap` flag or `daemon.tap.enabled: true` in the config, ideally only behind mTLS; otherwise the endpoint returns `503`.
 
 ### Capture stages
@@ -28,11 +30,11 @@ The tap is **disabled by default** because it exfiltrates raw events. Enable it 
 The `--stage` flag selects where on the decode path the capture happens:
 
 - `decoded` (default): post-parse, post-event-filter. The capture is exactly what the engine evaluated, so it is always valid NDJSON and replays with a plain `engine eval -e @fixture.ndjson`, with no need to repeat the daemon's `--input-format` / `--jq` / `--jsonpath` flags. This is the right default for reproducing a missed detection.
-- `raw`: the input line as received, before parsing. Use it to debug the parse/filter step itself (syslog timezone issues, jq extraction bugs). The raw stage records every non-empty line, including ones that fail to parse, except on a daemon started with `--dlq`, which routes unparseable lines to the dead-letter queue before the tap sees them. Replay requires the same input-selection flags the daemon runs with, which the client prints as a hint after capture (with `-o`).
+- `raw`: the input line as received, before parsing. Use it to debug the parse/filter step itself (syslog timezone issues, jq extraction bugs). The raw stage records every non-empty line, including ones that fail to parse, except on a daemon started with `--dlq`, which routes unparseable lines to the dead-letter queue before the tap sees them. Replay requires the same input-selection flags the daemon runs with, which the client prints as a hint after capture when `-o` is set.
 
 ### Redaction
 
-`--redact-fields` takes comma-separated dotted paths (e.g. `user.email,src_ip`). Redaction is **server-side**: the raw values for redacted fields never cross the wire, not even to the tapping operator's machine. Each value is replaced with a deterministic per-session token (`rsigma:redacted:<hex>`), so equal values still match across the fixture (correlation group keys and joins line up on replay) while the per-session salt prevents dictionary reversal and cross-fixture linkage.
+`--redact-fields` takes comma-separated dotted paths (e.g. `user.email,src_ip`). Redaction is **server-side**: the raw values for redacted fields never cross the wire, not even to the tapping operator's machine. Each value is replaced with a deterministic per-session token (`rsigma:redacted:<16 hex>`), so equal values still match across the fixture (correlation group keys and joins line up on replay) while the per-session salt prevents dictionary reversal and cross-fixture linkage.
 
 Paths are navigated like the [enrichment template engine](../../guide/enrichers.md): object keys descend into objects, numeric segments index arrays. One safety divergence: when a non-numeric segment meets an array, redaction fans out to every element (a fixture that leaks one array element is a leak). On the `raw` stage, redaction applies only to JSON-parseable lines; a line that fails to parse is dropped from a redacting raw capture and counted.
 
@@ -45,14 +47,14 @@ Anyone with admin API access can read live traffic through the tap. It is disabl
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--addr <HOST:PORT or URL>` | from `daemon.api.addr` | Daemon API address as `host:port` or a full URL. `https://` URLs work for TLS deployments. |
-| `--duration <D>` | `30s` | Capture window (humantime). The server caps this at `daemon.tap.max_duration`. |
+| `--duration <D>` | `30s` | Capture window (humantime). The server rejects values above `daemon.tap.max_duration` (default `5m`) with `400`. |
 | `--limit <N>` | unset | Stop after N events, before the duration if reached first. |
 | `-o, --output <PATH>` | stdout | Fixture destination. |
-| `--redact-fields <a,b,...>` | unset | Comma-separated dotted paths, redacted server-side. |
+| `--redact-fields <a,b,...>` | unset | Comma-separated dotted paths, redacted server-side (sent as the `redact` query param). |
 | `--stage <decoded\|raw>` | `decoded` | Capture stage (see above). |
 | `-c, --config <PATH>` | discovery chain | Explicit config file used to resolve the daemon address. |
 
-The global `--quiet` / `--no-stats` flags suppress the stderr stats line; see [Output Formats](../../reference/output.md).
+The fixture is always NDJSON. An explicit `--output-format` other than `ndjson` prints a warning and is otherwise ignored. The global `--quiet` / `--no-stats` flags suppress the stderr stats line and replay hint; see [Output Formats](../../reference/output.md).
 
 ## Examples
 
@@ -95,18 +97,22 @@ The stream is NDJSON: one event per line, followed by a final summary record the
 {"rsigma_tap_summary":{"captured":842,"dropped":3,"duration_ms":30000,"stage":"decoded"}}
 ```
 
-A non-zero `dropped` means the session buffer filled under load (or a redacting raw line failed to parse); the fixture has gaps.
+A non-zero `dropped` means the session buffer filled under load (or a redacting raw line failed to parse); the fixture has gaps. With `-o` and `--no-stats` unset, stderr also prints a one-line capture summary and a replay hint (`engine eval -e @<path>`, plus a reminder to match `--input-format` / `--jq` / `--jsonpath` for `--stage raw`).
 
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | The capture completed (even with zero events). |
-| `3` | The daemon could not be reached, returned a non-2xx status (e.g. `503` when the tap is disabled, `409` at the session cap, `400` for bad params), or sent an unreadable stream. |
+| `3` | The daemon could not be reached, returned a non-2xx status (`401`/`403` auth, `503` when the tap is disabled, `409` at the session cap, `400` for bad params), the stream was unreadable, or the fixture file could not be written. |
 
 ## See also
 
 - [`engine daemon`](daemon.md) for the long-running service and the `daemon.tap.*` limits.
 - [`engine eval`](eval.md) for replaying a captured fixture.
+- [`engine tail`](tail.md) for the detections-out counterpart.
+- [`engine status`](status.md) for the sibling daemon-client `--addr` convention.
 - [HTTP API: `GET /api/v1/tap`](../../reference/http-api.md#live-event-tap) for the raw endpoint, query params, and error semantics.
+- [HTTP API: Authentication](../../reference/http-api.md#authentication) when the daemon requires bearer tokens (`tap:read`).
 - [Security](../../reference/security.md#live-event-tap) for the exfiltration warning and mTLS guidance.
+- [Prometheus Metrics](../../reference/metrics.md) for `rsigma_tap_*` counters and gauges.
