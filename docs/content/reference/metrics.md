@@ -10,27 +10,27 @@ These always show up. They cover ingest, matches, queue depth, back-pressure, re
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `rsigma_events_processed_total` | counter | — | Total events processed by the engine. |
-| `rsigma_events_parse_errors_total` | counter | — | JSON or log-format parse errors at the source. |
-| `rsigma_detection_matches_total` | counter | — | Total detection matches emitted. |
-| `rsigma_correlation_matches_total` | counter | — | Total correlation matches emitted. |
-| `rsigma_detection_rules_loaded` | gauge | — | Number of detection rules currently loaded. |
-| `rsigma_correlation_rules_loaded` | gauge | — | Number of correlation rules currently loaded. |
-| `rsigma_correlation_state_entries` | gauge | — | Active entries in the correlation state. Watch versus the `max_state_entries` cap (default 100000). |
-| `rsigma_reloads_total` | counter | — | Total reload attempts (file watcher, SIGHUP, `POST /api/v1/reload`). |
-| `rsigma_reloads_failed_total` | counter | — | Reload attempts that produced parse or compile errors. |
+| `rsigma_events_processed_total` | counter | none | Total events processed by the engine. |
+| `rsigma_events_parse_errors_total` | counter | none | JSON or log-format parse errors at the source. |
+| `rsigma_detection_matches_total` | counter | none | Total detection matches emitted. |
+| `rsigma_correlation_matches_total` | counter | none | Total correlation matches emitted. |
+| `rsigma_detection_rules_loaded` | gauge | none | Number of detection rules currently loaded. |
+| `rsigma_correlation_rules_loaded` | gauge | none | Number of correlation rules currently loaded. |
+| `rsigma_correlation_state_entries` | gauge | none | Active entries in the correlation state. Watch versus the `max_state_entries` cap (default 100000). |
+| `rsigma_reloads_total` | counter | none | Total reload attempts (file watcher, SIGHUP, `POST /api/v1/reload`). |
+| `rsigma_reloads_failed_total` | counter | none | Reload attempts that produced parse or compile errors. |
 | `rsigma_api_auth_failures_total` | counter | `reason` (`unauthorized`, `forbidden`) | API requests rejected by [bearer-token authentication](http-api.md#authentication): `unauthorized` is a missing or unrecognized token, `forbidden` a recognized token without the required permission. Each label value surfaces after its first rejection. Stays absent while authentication is disabled. |
-| `rsigma_audit_records_total` | counter | — | Control-plane API calls recorded in the [audit trail](http-api.md#audit-trail). Stays absent when audit is disabled (no `--state-db`). |
-| `rsigma_audit_write_errors_total` | counter | — | Audit trail SQLite insert or optional sink emission failures. |
-| `rsigma_uptime_seconds` | gauge | — | Daemon uptime in seconds. |
-| `rsigma_input_queue_depth` | gauge | — | Events currently buffered in the source→engine channel. Tracked for every input, including the HTTP and OTLP push receivers. |
-| `rsigma_output_queue_depth` | gauge | — | Results currently buffered in the engine→sink channel. |
-| `rsigma_back_pressure_events_total` | counter | — | Times a source was blocked on a full event channel. |
-| `rsigma_event_processing_seconds` | histogram | — | Per-event processing latency. |
+| `rsigma_audit_records_total` | counter | none | Control-plane API calls recorded in the [audit trail](http-api.md#audit-trail). Stays absent when audit is disabled (no `--state-db`). |
+| `rsigma_audit_write_errors_total` | counter | none | Audit trail SQLite insert or optional sink emission failures. |
+| `rsigma_uptime_seconds` | gauge | none | Daemon uptime in seconds. |
+| `rsigma_input_queue_depth` | gauge | none | Events currently buffered in the source→engine channel. Tracked for every input, including the HTTP and OTLP push receivers. |
+| `rsigma_output_queue_depth` | gauge | none | Results currently buffered in the engine→sink channel. |
+| `rsigma_back_pressure_events_total` | counter | none | Times a source was blocked on a full event channel. |
+| `rsigma_event_processing_seconds` | histogram | none | Per-event processing latency. |
 | `rsigma_batch_phase_duration_seconds` | histogram | `phase` (`parse`, `decode_merge`, `observe`, `evaluate`, `result_merge`, `dispatch`) | Wall-clock duration of each batch-processing phase. `parse` is the parallel format parse; `decode_merge` is the ordered post-parse merge and optional event filter; `observe` covers field/schema observers and decoded taps; `evaluate` is engine detection/correlation; `result_merge` is per-line result assembly and counters; `dispatch` is the daemon's post-batch ack/sink enqueue loop. Compare `_sum` deltas over the same interval to rank serial share without inferring it from throughput. |
-| `rsigma_pipeline_latency_seconds` | histogram | — | End-to-end latency from event dequeue to sink send. |
-| `rsigma_batch_size` | histogram | — | Number of events processed per batch. |
-| `rsigma_dlq_events_total` | counter | — | Events routed to the dead-letter queue. |
+| `rsigma_pipeline_latency_seconds` | histogram | none | End-to-end latency from event dequeue to sink send. |
+| `rsigma_batch_size` | histogram | none | Number of events processed per batch. |
+| `rsigma_dlq_events_total` | counter | none | Events routed to the dead-letter queue. |
 | `rsigma_sink_queue_depth` | gauge | `sink` | Results buffered in each sink's delivery queue. |
 | `rsigma_sink_retries_total` | counter | `sink` | Sink delivery retries after a retryable failure. |
 | `rsigma_sink_dropped_total` | counter | `sink` | Results dropped because a lossy sink's queue was full (`?on_full=drop`). |
@@ -59,8 +59,8 @@ Exposed when one or more pipelines declare dynamic sources. The labelled counter
 |--------|------|--------|-------------|
 | `rsigma_source_resolves_total` | counter | `source_id`, `source_type` (`file`, `http`, `command`, `nats`) | Total dynamic source resolution attempts. Counts every attempt, successful or not. |
 | `rsigma_source_resolve_errors_total` | counter | `source_id`, `error_kind` (`Fetch`, `Parse`, `Extract`, `Timeout`, `ResourceLimit`) | Failed dynamic source resolutions. |
-| `rsigma_source_resolve_seconds` | histogram | — | Dynamic source resolution latency. Aggregated across all sources. |
-| `rsigma_source_cache_hits_total` | counter | — | Times cached source data was served on resolution failure. Aggregated across all sources. |
+| `rsigma_source_resolve_seconds` | histogram | none | Dynamic source resolution latency. Aggregated across all sources. |
+| `rsigma_source_cache_hits_total` | counter | none | Times cached source data was served on resolution failure. Aggregated across all sources. |
 | `rsigma_source_last_resolved_timestamp` | gauge | `source_id` | Unix timestamp of the last successful resolution per source. Alert on staleness. |
 
 The `error_kind` values come from `rsigma_runtime::sources::SourceErrorKind`. `Fetch` covers HTTP / file / command / NATS connect-or-read failures (per-protocol details land in the `error_message` log field, not the label). `ResourceLimit` covers the 10 MiB body cap, 30 s command exec cap, and similar.
@@ -73,7 +73,7 @@ Exposed when the daemon is built with `daemon` and `--enrichers` is passed. Ever
 |--------|------|--------|-------------|
 | `rsigma_enrichment_total` | counter | `enricher_id`, `kind` (`detection`, `correlation`), `status` (`success`, `skip`, `error`, `timeout`, `drop`) | Per-call outcome counter. `kind` is the enricher's declared kind (the YAML `kind:` field), not a per-result discriminator. |
 | `rsigma_enrichment_duration_seconds` | histogram | `enricher_id`, `kind` | Per-enricher latency. Buckets target both fast `template` calls and slower `http`/`command` invocations. |
-| `rsigma_enrichment_queue_depth` | gauge | — | Pending enrichment calls (sum across both kinds). Watch this versus `max_concurrent_enrichments`. |
+| `rsigma_enrichment_queue_depth` | gauge | none | Pending enrichment calls (sum across both kinds). Watch this versus `max_concurrent_enrichments`. |
 | `rsigma_enrichment_http_cache_hits_total` | counter | `enricher_id` | HTTP enricher response-cache hits. Mandatory signal for any rate-limited API recipe. |
 | `rsigma_enrichment_http_cache_misses_total` | counter | `enricher_id` | HTTP enricher response-cache misses. |
 | `rsigma_enrichment_http_cache_expirations_total` | counter | `enricher_id` | HTTP enricher response-cache entries evicted on expiry. |
@@ -87,18 +87,18 @@ Exposed when the daemon is built with `daemon`. The fixed label sets on `rsigma_
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `rsigma_dedup_results_total` | counter | `action` (`emitted`, `folded`, `repeat`, `resolved`) | Dedup outcomes: first fires emitted, duplicates folded, repeat re-emits, and resolved records. |
-| `rsigma_dedup_store_entries` | gauge | — | Active dedup alerts currently tracked. |
-| `rsigma_dedup_evictions_total` | counter | — | Active alerts evicted after resolving. |
-| `rsigma_dedup_summaries_emitted_total` | counter | — | Dedup summary records emitted (repeat re-emits plus resolved records). |
-| `rsigma_incidents_open` | gauge | — | Open incidents currently tracked by the grouping stage. |
+| `rsigma_dedup_store_entries` | gauge | none | Active dedup alerts currently tracked. |
+| `rsigma_dedup_evictions_total` | counter | none | Active alerts evicted after resolving. |
+| `rsigma_dedup_summaries_emitted_total` | counter | none | Dedup summary records emitted (repeat re-emits plus resolved records). |
+| `rsigma_incidents_open` | gauge | none | Open incidents currently tracked by the grouping stage. |
 | `rsigma_incidents_emitted_total` | counter | `trigger` (`group_wait`, `group_interval`, `repeat`, `resolved`) | Incident emissions by trigger. |
-| `rsigma_incident_results_total` | counter | — | Total incident records emitted. |
+| `rsigma_incident_results_total` | counter | none | Total incident records emitted. |
 | `rsigma_incident_overmerge_total` | counter | `guard` (`stop_value`, `cardinality_ceiling`) | Entity-graph guard hits that suppressed a join. |
-| `rsigma_silenced_total` | counter | — | Results muted by an active silence. |
-| `rsigma_silences_active` | gauge | — | Currently-active silences. |
+| `rsigma_silenced_total` | counter | none | Results muted by an active silence. |
+| `rsigma_silences_active` | gauge | none | Currently-active silences. |
 | `rsigma_inhibited_total` | counter | `rule` | Results muted by an inhibition rule, by rule name. |
-| `rsigma_inhibit_sources_active` | gauge | — | Currently-active inhibition sources. |
-| `rsigma_alert_pipeline_duration_seconds` | histogram | — | Alert-pipeline stage duration in seconds. |
+| `rsigma_inhibit_sources_active` | gauge | none | Currently-active inhibition sources. |
+| `rsigma_alert_pipeline_duration_seconds` | histogram | none | Alert-pipeline stage duration in seconds. |
 
 ## Risk-based alerting (9 metrics)
 
@@ -107,14 +107,14 @@ Exposed when the daemon is built with `daemon`. The fixed label set on `rsigma_r
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `rsigma_risk_annotations_total` | counter | `action` (`scored`, `no_entity`, `skipped`) | Risk-annotation outcomes: scored with entities, scored with no entity, or skipped (out of scope). |
-| `rsigma_risk_annotation_score` | histogram | — | Distribution of the per-detection resolved risk score. |
-| `rsigma_risk_objects_total` | counter | — | Risk objects extracted from firing detections. |
-| `rsigma_risk_entities_open` | gauge | — | Entities currently tracked by the risk accumulator. |
-| `rsigma_risk_state_entries` | gauge | — | Risk contributions currently retained across all entities. |
-| `rsigma_risk_evictions_total` | counter | — | Entities dropped from the accumulator (store full or aged out). |
+| `rsigma_risk_annotation_score` | histogram | none | Distribution of the per-detection resolved risk score. |
+| `rsigma_risk_objects_total` | counter | none | Risk objects extracted from firing detections. |
+| `rsigma_risk_entities_open` | gauge | none | Entities currently tracked by the risk accumulator. |
+| `rsigma_risk_state_entries` | gauge | none | Risk contributions currently retained across all entities. |
+| `rsigma_risk_evictions_total` | counter | none | Entities dropped from the accumulator (store full or aged out). |
 | `rsigma_risk_incidents_emitted_total` | counter | `trigger` (`score`, `tactic_count`) | Risk incidents emitted by trigger. |
-| `rsigma_risk_incident_results_total` | counter | — | Total risk incident records emitted. |
-| `rsigma_risk_layer_duration_seconds` | histogram | — | Risk-layer stage duration in seconds. |
+| `rsigma_risk_incident_results_total` | counter | none | Total risk incident records emitted. |
+| `rsigma_risk_layer_duration_seconds` | histogram | none | Risk-layer stage duration in seconds. |
 
 ## OTLP (3 metrics)
 
@@ -123,7 +123,7 @@ Exposed when the daemon is built with `daemon-otlp` and an OTLP receiver is acti
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `rsigma_otlp_requests_total` | counter | `transport` (`http`, `grpc`), `encoding` (`json`, `protobuf`) | OTLP export requests received. Gzip is decompressed before the encoding label is recorded. |
-| `rsigma_otlp_log_records_total` | counter | — | Log records ingested via OTLP. |
+| `rsigma_otlp_log_records_total` | counter | none | Log records ingested via OTLP. |
 | `rsigma_otlp_errors_total` | counter | `transport`, `reason` (`unsupported_content_type`, `decompression`, `decode`, `channel_closed`) | OTLP request errors. |
 
 ## TLS (2 metrics)
@@ -132,8 +132,8 @@ Exposed when the daemon is built with `daemon-tls`. Both metrics render with the
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `rsigma_tls_certificate_expiry_seconds` | gauge | — | Seconds until the active TLS server certificate's `not_after`. Signed: negative once expired. Updated at startup and after every successful SIGHUP-triggered reload. |
-| `rsigma_tls_active_connections` | gauge | — | Currently active TLS-terminated connections on the API listener. Decrements on connection close (including handshake failure). |
+| `rsigma_tls_certificate_expiry_seconds` | gauge | none | Seconds until the active TLS server certificate's `not_after`. Signed: negative once expired. Updated at startup and after every successful SIGHUP-triggered reload. |
+| `rsigma_tls_active_connections` | gauge | none | Currently active TLS-terminated connections on the API listener. Decrements on connection close (including handshake failure). |
 
 ## Field observability (3 metrics)
 
@@ -141,9 +141,9 @@ Exposed unconditionally; values stay at zero unless the daemon was started with 
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `rsigma_fields_observed_total` | counter | — | Total events scanned by the opt-in field observer. Advances regardless of whether the event had structured fields. |
-| `rsigma_fields_observer_unique_keys` | gauge | — | Distinct field names currently tracked. Saturates at `--observe-fields-max-keys` (default `10000`). |
-| `rsigma_fields_observer_overflow_dropped_total` | counter | — | New-key insert attempts dropped because the observer was at capacity. A persistent positive rate signals that `--observe-fields-max-keys` is too low for the deployment. |
+| `rsigma_fields_observed_total` | counter | none | Total events scanned by the opt-in field observer. Advances regardless of whether the event had structured fields. |
+| `rsigma_fields_observer_unique_keys` | gauge | none | Distinct field names currently tracked. Saturates at `--observe-fields-max-keys` (default `10000`). |
+| `rsigma_fields_observer_overflow_dropped_total` | counter | none | New-key insert attempts dropped because the observer was at capacity. A persistent positive rate signals that `--observe-fields-max-keys` is too low for the deployment. |
 
 ## Schema observability (4 metrics)
 
@@ -152,9 +152,9 @@ Exposed unconditionally; values stay at zero unless the daemon was started with 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `rsigma_events_by_schema_total` | counter | `schema` | Events classified into each recognized schema (`ecs`, `sysmon`, `windows_eventlog`, `cef`, `ocsf`, `generic_json`, or a user-defined name). |
-| `rsigma_events_unknown_schema_total` | counter | — | Events that matched no schema signature. A rising rate signals a source whose schema RSigma does not recognize; add a signature with `--schema-config`. |
-| `rsigma_events_ambiguous_schema_total` | counter | — | Events where two different-name signatures tied at the winning specificity, so the name tie-break decided routing. Resolve by giving one signature a distinguishing predicate or a higher specificity. |
-| `rsigma_unknown_schema_clusters` | gauge | — | Distinct clusters of unrecognized event shapes that schema discovery would propose a signature for. Zero unless the daemon was started with `--discover-schemas`; drives the [`GET /api/v1/schemas/suggestions`](http-api.md#get-apiv1schemassuggestions) endpoint. |
+| `rsigma_events_unknown_schema_total` | counter | none | Events that matched no schema signature. A rising rate signals a source whose schema RSigma does not recognize; add a signature with `--schema-config`. |
+| `rsigma_events_ambiguous_schema_total` | counter | none | Events where two different-name signatures tied at the winning specificity, so the name tie-break decided routing. Resolve by giving one signature a distinguishing predicate or a higher specificity. |
+| `rsigma_unknown_schema_clusters` | gauge | none | Distinct clusters of unrecognized event shapes that schema discovery would propose a signature for. Zero unless the daemon was started with `--discover-schemas`; drives the [`GET /api/v1/schemas/suggestions`](http-api.md#get-apiv1schemassuggestions) endpoint. |
 
 ## Logsource-aware evaluation (4 metrics)
 
@@ -162,8 +162,8 @@ Exposed unconditionally; values stay at zero unless the daemon was started with 
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `rsigma_rules_pruned_by_logsource_total` | counter | — | Rules skipped because their product conflicts with the event's logsource, counting both the always-evaluated rules the index's product partitioning omits and the candidate rules the residual check drops during evaluation. The scaling signal: it rises with the conflicting fraction of a mixed-product ruleset. |
-| `rsigma_events_without_logsource_total` | counter | — | Events with no extractable logsource, evaluated against every rule (fail-open). A high rate means events are not carrying a logsource tag and no static override or field map is set. |
+| `rsigma_rules_pruned_by_logsource_total` | counter | none | Rules skipped because their product conflicts with the event's logsource, counting both the always-evaluated rules the index's product partitioning omits and the candidate rules the residual check drops during evaluation. The scaling signal: it rises with the conflicting fraction of a mixed-product ruleset. |
+| `rsigma_events_without_logsource_total` | counter | none | Events with no extractable logsource, evaluated against every rule (fail-open). A high rate means events are not carrying a logsource tag and no static override or field map is set. |
 | `rsigma_schema_rules_eligible` | gauge | `schema` | Rules a schema's events evaluate after logsource pruning. Set when both schema routing and logsource routing are active; refreshed on scrape and reload. |
 | `rsigma_schema_rules_pruned` | gauge | `schema` | Rules pruned for a schema by its implied logsource. The higher this is relative to eligible, the less of the ruleset that schema exercises. |
 
@@ -173,10 +173,10 @@ Exposed unconditionally; values stay at zero unless the tap is enabled (`daemon.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `rsigma_tap_sessions_total` | counter | — | Total tap sessions opened over the daemon's lifetime. |
-| `rsigma_tap_active_sessions` | gauge | — | Currently active tap sessions. Bounded by `daemon.tap.max_sessions`. |
-| `rsigma_tap_events_streamed_total` | counter | — | Events streamed to tap clients. |
-| `rsigma_tap_events_dropped_total` | counter | — | Events dropped from a tap (a full per-session buffer, or an unparseable line in a redacting raw capture). A positive rate means captured fixtures have gaps. |
+| `rsigma_tap_sessions_total` | counter | none | Total tap sessions opened over the daemon's lifetime. |
+| `rsigma_tap_active_sessions` | gauge | none | Currently active tap sessions. Bounded by `daemon.tap.max_sessions`. |
+| `rsigma_tap_events_streamed_total` | counter | none | Events streamed to tap clients. |
+| `rsigma_tap_events_dropped_total` | counter | none | Events dropped from a tap (a full per-session buffer, or an unparseable line in a redacting raw capture). A positive rate means captured fixtures have gaps. |
 
 ## Live detection tail (2 metrics)
 
@@ -184,8 +184,8 @@ Exposed unconditionally; values stay at zero unless the tail is enabled (`daemon
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `rsigma_tail_active_sessions` | gauge | — | Currently active tail sessions. Bounded by `daemon.tail.max_sessions`. |
-| `rsigma_tail_detections_dropped_total` | counter | — | Detections dropped from a tail because a session buffer was full. A positive rate means a tail client could not keep up. |
+| `rsigma_tail_active_sessions` | gauge | none | Currently active tail sessions. Bounded by `daemon.tail.max_sessions`. |
+| `rsigma_tail_detections_dropped_total` | counter | none | Detections dropped from a tail because a session buffer was full. A positive rate means a tail client could not keep up. |
 
 ## Triage feedback loop (4 metrics)
 

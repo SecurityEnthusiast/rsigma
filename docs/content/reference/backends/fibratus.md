@@ -24,7 +24,7 @@ Pass with `-O key=value` (repeatable). Unknown keys are silently ignored so forw
 | `min_engine` | `3.0.0` | Value written to the `min-engine-version:` field of every emitted rule. |
 | `version` | `1.0.0` | Value written to the required `version:` field (the rule content version) of every emitted rule. Sigma has no equivalent attribute; the Fibratus loader rejects a rule that omits it. |
 | `use_macros` | `true` | When `true`, rewrites recognized condition clause runs into idiomatic Fibratus macro calls (`spawn_process`, `create_thread`, `write_file`, `read_file`, `open_file`, `create_file`, `set_value`, `open_process`, `open_thread`, ...). The recognizer walks top-level `and` clauses and greedy-longest-match-replaces contiguous runs that match a macro's clause sequence (single-clause forms like `evt.name = 'CreateProcess'` and multi-clause runs like `evt.name = 'CreateFile' and file.operation ~= 'OPEN' and file.status ~= 'Success'`). Each clause is matched against both the exact (`=`) and case-insensitive (`~=`) operator forms, so it recognizes the same macros regardless of `-O case_sensitive`. Set to `false` to keep the raw `evt.name = '...'` forms. |
-| `default_logsource` | `windows` | Default `product:` to assume when a Sigma rule lacks an explicit logsource. Used by the matching pipeline transformations. |
+| `default_logsource` | `windows` | Accepted backend option with default `windows`. Not consulted during conversion today; pipeline matching uses the rule's own logsource and the pipeline YAML. |
 | `emit_metadata` | `true` | When `false`, omit the `description:` and `labels:` blocks. Useful when the target Fibratus install already enriches rule metadata from another source. |
 | `max_repeated_slots` | `5` | Maximum number of repeated/distinct sequence stages the backend generates when emulating `event_count` / `value_count` correlation. Thresholds above the cap return `UnsupportedCorrelation`. |
 | `temporal_permute` | `false` | When `true`, expands a `temporal` (any-order) correlation into one ordered sequence document per permutation of the referenced rules (so any matching order alerts), capped at N <= 3 (1/2/6 documents). Larger correlations return `UnsupportedCorrelation`. Each document gets a distinct title and id suffix so Fibratus treats them as separate rules. |
@@ -51,7 +51,7 @@ Verified against the Fibratus backend's unit tests at [`crates/rsigma-convert/sr
 | `null` value | `field = ''` (Fibratus has no `null` token, so a null comparison is an empty-string comparison). |
 | Field reference (`fieldref` modifier) | `field1 = field2` (Fibratus supports field-to-field comparison natively). |
 | Boolean `AND`, `OR`, `NOT` | Lowercase tokens; OR groups inside AND are explicitly parenthesized so the standard Sigma precedence is preserved. |
-| Keywords (unbound full-text search) | `UnsupportedKeyword` — Sigma keywords have no field, and Fibratus operators require a bound field, so there is no faithful lowering. Bind the search to a field via a pipeline if you need it. |
+| Keywords (unbound full-text search) | `UnsupportedKeyword`. Sigma keywords have no field, and Fibratus operators require a bound field, so there is no faithful lowering. Bind the search to a field via a pipeline if you need it. |
 
 Integer, float, and boolean values keep their literal form (`evt.pid = 4`, `ps.is_protected = true`). Strings are single-quoted; literal `\`, `'`, `*`, and `?` characters are backslash-escaped so the filter engine treats them as literals everywhere outside `matches`/`imatches` wildcards.
 
@@ -213,6 +213,6 @@ min-engine-version: 3.0.0
 
 ## Related material
 
-- [Fibratus documentation](https://www.fibratus.io/) — runtime, rule language, alerting.
-- [Fibratus rules library](https://github.com/rabbitstack/fibratus/tree/master/rules) — upstream-hand-authored detection corpus the converter mimics stylistically.
-- [Rule Conversion guide](../../guide/rule-conversion.md) — broader workflow including pipeline composition, output handling, and multi-backend strategies.
+- [Fibratus documentation](https://www.fibratus.io/): runtime, rule language, alerting.
+- [Fibratus rules library](https://github.com/rabbitstack/fibratus/tree/master/rules): upstream-hand-authored detection corpus the converter mimics stylistically.
+- [Rule Conversion guide](../../guide/rule-conversion.md): broader workflow including pipeline composition, output handling, and multi-backend strategies.

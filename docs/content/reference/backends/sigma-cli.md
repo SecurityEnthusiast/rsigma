@@ -10,7 +10,7 @@ rsigma converts a handful of targets natively (`postgres`, `lynxdb`, `fibratus`)
 2. **Delegated to sigma-cli.** Otherwise, if a `sigma` executable is discoverable, rsigma runs `sigma convert` with the original rule files and a mapped flag set, and relays its output. The result is identical to running sigma-cli directly.
 3. **Error.** If neither is available, the command exits with code `3` and prints guidance to install sigma-cli (or fix the discovery override).
 
-Because native always wins, a target that is delegated today is transparently taken over by a native backend if one ships later, with no change to how you invoke it.
+Native backends always take precedence over sigma-cli for the same target name.
 
 ## Discovery
 
@@ -54,7 +54,7 @@ rsigma backend targets           # lists native targets plus sigma-cli's
 
 ## Output
 
-sigma-cli's stdout is captured and routed through rsigma's normal output handling, so `-o <file>` and `--output-format json` behave as they do for native backends. With `--output-format json`, the delegated queries are wrapped as `{ "target", "format", "engine": "sigma-cli", "queries": [ { "query": ... } ] }`, one object per output line.
+sigma-cli's stdout is captured and routed through rsigma's normal output handling, so `-o <file>` and `--output-format json`/`ndjson` behave as they do for native backends. With an explicit `--output-format json`, delegated queries are wrapped as a single object `{ "target", "format", "engine": "sigma-cli", "queries": [ { "query": ... }, ... ] }`. With `--output-format ndjson`, each query is one line `{ "target", "format", "engine": "sigma-cli", "query": ... }`.
 
 ## Limitations
 

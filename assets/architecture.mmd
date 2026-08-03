@@ -65,7 +65,7 @@ flowchart TD
 
     subgraph rsigma-mcp
         direction TB
-        MCPSERVE["rsigma mcp serve\nstdio · Streamable HTTP (bearer auth · TLS)"]
+        MCPSERVE["rsigma mcp serve\nstdio · Streamable HTTP (bearer auth · TLS*)"]
         MCPSERVE --> MCPH["RsigmaMcp handler\n14 tools: parse_rule · parse_condition · lint_rules\nvalidate_rules · evaluate_events · convert_rules\nlist_backends · list_fields · resolve_pipeline\nlist_builtin_pipelines · fix_rules · author_ads\nreverse_convert · tune_rules\n4 resources: lint catalogue · ADS schema · modifiers · MITRE tactics"]
     end
 
