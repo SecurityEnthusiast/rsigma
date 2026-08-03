@@ -2,7 +2,7 @@
 
 How fast RSigma evaluates depends on how much of your corpus the candidate index can prune. The index works from rule witnesses: necessary conditions, at least one of which must hold on any event the rule can match. Exact field values, substring needles, keywords, mandatory regex literals, and bare field presence all yield witnesses, so most of a real corpus is prunable and an event is only evaluated against the rules it could plausibly match. Rules whose conditions admit no witness, in practice the ones whose only required branch is negated, are evaluated against every event and cost time linear in their count. For each surviving rule, condition evaluation first computes only the boolean verdict, allowing `any` and threshold selectors to stop once decided; matched-selection details are collected only when the rule matches.
 
-On the full SigmaHQ ruleset (~3,100 rules) expect roughly 19-66k events/s per core for offline `engine eval`, rising to 30-106k with `--logsource-routing`, and 88-287k end-to-end through the daemon (342-401k with routing) on a 12-core machine. Where a workload lands in those ranges depends on event shape: wide structured events are the slow end, narrowly tagged syslog the fast end. The [SigmaHQ corpus baseline](../benchmarks.md#sigmahq-corpus-baseline-representative) in Benchmarks documents the full matrix with before-and-after numbers. Small or exact-match-heavy rulesets are considerably faster still.
+On the full SigmaHQ ruleset (~3,100 rules) expect roughly 19-66k events/s per core for offline `engine eval`, rising to 30-106k with `--logsource-routing`, and 88-287k end-to-end through the daemon (114-401k with routing) on a 12-core machine. Where a workload lands in those ranges depends on event shape: wide structured events are the slow end, narrowly tagged syslog the fast end. The [SigmaHQ corpus baseline](../benchmarks.md#sigmahq-corpus-baseline-representative) in Benchmarks documents the full matrix with before-and-after numbers. Small or exact-match-heavy rulesets are considerably faster still.
 
 This page covers the cases where the defaults stop being optimal: very large rule sets, substring-heavy threat-intel feeds, high-throughput daemon ingestion, and memory-constrained deployments. For SigmaHQ-scale corpora the single biggest lever is `--logsource-routing`, which is also a correctness filter because it stops cross-product keyword false positives. `--cross-rule-ac` is no longer worth enabling alongside it: the candidate index already does that substring work over a smaller rule population, and layering the cross-rule automaton on top of routing costs 20-35% on every measured lane, offline and end-to-end. The daemon now batches up to 128 events by default, which gives `Engine::evaluate_batch` enough work to fan detection across rayon without requiring manual tuning. The bloom pre-filter (`--bloom-prefilter`) is off by default for a reason and should be benchmarked before flipping it on.
 
@@ -36,11 +36,11 @@ Concrete numbers from the `rule_load` Criterion group on an Apple M4 Pro (releas
 
 | Rules   | `add_collection` | `add_rules` | `add_rule` loop |
 |--------:|-----------------:|------------:|----------------:|
-| 1,000   |          1.15 ms |     1.17 ms |         1.64 ms |
-| 10,000  |         11.82 ms |    11.85 ms |        17.23 ms |
-| 100,000 |        121.65 ms |   122.13 ms |       166.07 ms |
+| 1,000   |          1.21 ms |     1.18 ms |         1.63 ms |
+| 10,000  |         11.94 ms |    12.04 ms |        17.99 ms |
+| 100,000 |        131.44 ms |   131.17 ms |       176.26 ms |
 
-Reproduce with `cargo bench -p rsigma-eval --bench eval -- rule_load`. The full SigmaHQ corpus (~3,120 rules) loads in ~120 ms.
+Reproduce with `cargo bench -p rsigma-eval --bench eval -- rule_load`. Loading the pinned SigmaHQ corpus (~3,132 rules) costs about 0.3 s in the representative harness.
 
 **How the bloom rebuild is amortized.** The per-field bloom uses a doubling watermark with a 64-rule floor. A full bloom rebuild only fires when the rule count has at least doubled past the last rebuild, capping false-positive-rate drift while keeping the amortized per-rule cost flat. Rules that introduce a brand-new indexed field get a fresh bloom on the fly. The differential test `append_rule_matches_build_verdicts` pins the property that incremental and batched indexes accept the same haystacks (with the documented MaybeMatch tolerance between rebuilds).
 
@@ -105,9 +105,9 @@ The published benchmark (`eval_cross_rule_ac` group, 200 non-matching events aga
 
 | Rules | Off (default) | On (`--cross-rule-ac`) | Speedup |
 |-------|---------------|-------------------------|---------|
-| 1,000 | 17.34 ms | 253 µs | ~68× |
-| 5,000 | 85.51 ms | 883 µs | ~97× |
-| 10,000 | 173.37 ms | 1.71 ms | ~101× |
+| 1,000 | 17.50 ms | 288.8 µs | ~61× |
+| 5,000 | 87.63 ms | 1.05 ms | ~84× |
+| 10,000 | 186.92 ms | 2.05 ms | ~91× |
 
 Those numbers predate witness-based candidate indexing, which closed most of the gap the AC pass existed to close. On the measured SigmaHQ lanes, `--cross-rule-ac` now loses to `--logsource-routing` alone on every lane, and adding it on top of routing costs 27-35%. Treat it as a knob to benchmark on pure-substring corpora at 5,000+ rules rather than one to enable by default, and measure it against routing rather than against the bare default.
 
@@ -115,7 +115,7 @@ The pattern-count cap per field is 100,000; rules referencing fields above that 
 
 ## Daemon throughput knobs
 
-These two only matter for the streaming daemon, not for `engine eval`.
+These knobs only matter for the streaming daemon, not for `engine eval`.
 
 | Flag | Default | Effect |
 |------|---------|--------|
@@ -178,7 +178,7 @@ The improvements below are separate same-build comparisons on the pinned SigmaHQ
 - Raising the daemon batch size from 1 to 128 moved sustained throughput from 28.6k to 157.4k events/s, a 5.5x gain.
 - Allowing four correlation-free batches in flight moved the eight-worker routed lane from about 520k to 654k events/s, a 26% gain over one batch in flight while preserving sink and acknowledgment order.
 - Retuning four in-flight batches to five moved the same-host median from about 665k to 708k events/s, a 6.5% gain. Native Linux artifact validation measured depth-five/depth-four ratios of 1.0201 on amd64 glibc, 0.9985 on amd64 musl, 1.0166 on arm64 glibc, and 1.0095 on arm64 musl, with lower backpressure in every row.
-- The final routed operating point measured 152.8k events/s at one worker and 754.8k at eight workers, or 61.7% multicore efficiency. This is a substantial throughput improvement, but it did not meet the 70% target.
+- The final routed operating point measured 152.8k events/s at one worker and 754.8k at eight workers, or 61.7% multicore efficiency.
 
 ## Memory pressure and correlation state
 
@@ -242,7 +242,7 @@ For an end-to-end measurement on a real corpus rather than synthetic inputs, `sc
 | Eval latency too high on a SigmaHQ-scale corpus | `--logsource-routing`, provided your events carry `product`/`category`/`service` hints. |
 | Eval latency still too high at 5k+ pure-substring rules | Benchmark `--cross-rule-ac` (needs the `daachorse-index` build) against routing alone; it usually loses. |
 | Eval latency too high on substring-heavy rules with mostly-non-matching events | `--bloom-prefilter`. |
-| Daemon queue depth (`rsigma_input_queue_depth`) climbing under load | Raise `--batch-size` to 64 or 128, then `--buffer-size` to absorb bursts. |
+| Daemon queue depth (`rsigma_input_queue_depth`) climbing under load | Raise `--batch-size` toward 512 for sustained load (default is already 128), then raise `--buffer-size` to absorb bursts. |
 | `rsigma_correlation_state_entries` near 100k and growing | Shorter `timespan`, `--max-group-entries`, lower `max_correlation_events`, or `--correlation-event-mode refs`. Raise `--max-state-entries` if the traffic is legitimately high-cardinality. |
 | `rsigma_back_pressure_events_total` increasing rapidly | Upstream input is faster than the engine. Raise `--batch-size`, scale horizontally with NATS consumer groups (see [NATS Streaming](nats-streaming.md#consumer-groups)), or shed load upstream. |
 | Tail latency too high after raising `--batch-size` | Lower the batch size; the trade-off has reached the wrong side of the curve. |
@@ -251,6 +251,7 @@ For an end-to-end measurement on a real corpus rather than synthetic inputs, `sc
 
 - [Observability](observability.md) for the Prometheus metrics that surface every knob above (`rsigma_input_queue_depth`, `rsigma_back_pressure_events_total`, `rsigma_correlation_state_entries`, `rsigma_event_processing_seconds`).
 - [Streaming Detection](streaming-detection.md) for daemon-level configuration around hot-reload, state, and back-pressure.
+- [Logsource-Aware Evaluation](logsource-routing.md) for `--logsource-routing` as both a performance and correctness filter.
 - [Evaluating Rules](evaluating-rules.md) for the corresponding `engine eval` flags.
 - [Feature Flags reference](../reference/feature-flags.md) for `daachorse-index`, `evtx`, `logfmt`, `cef`, and `daemon-*` features.
 - [Benchmarks](../benchmarks.md) for the full Criterion results across parser, evaluator, correlation engine, runtime, and dynamic pipelines.
