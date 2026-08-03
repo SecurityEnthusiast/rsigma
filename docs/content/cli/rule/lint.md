@@ -37,7 +37,7 @@ The human-friendly table renderer is the default when `--output-format` is unset
 
 | Format | What it emits |
 |--------|--------------|
-| `json` | A JSON envelope with `summary` (`files_checked`, `files_failed`, `errors`, `warnings`, `infos`) and a flat `findings` array. Pretty-printed on a TTY. |
+| `json` | A JSON envelope with `summary` (`files_checked`, `files_failed`, `errors`, `warnings`, `infos`) and a flat `findings` array. Pretty-printed. |
 | `ndjson` | One `{"path", "severity", "rule", "message", "line"}` object per finding, no envelope. Stream-friendly for `jq`. |
 | `csv`, `tsv` | One header row plus one row per finding (`PATH,SEVERITY,RULE,LINE,MESSAGE`). Stream-friendly for spreadsheet tools. |
 
@@ -131,8 +131,8 @@ Checked 1 file(s): 1 passed, 0 failed (0 error(s), 0 warning(s), 2 info(s))
 |------|---------|
 | `0` | No findings at or above `--fail-level`. |
 | `1` | At least one finding at or above `--fail-level`. |
-| `2` | The rules path or a schema file could not be read. |
-| `3` | Bad `--schema` argument or other CLI configuration error. |
+| `2` | The rules path could not be read. |
+| `3` | Schema file read/download/parse/compile error, bad config, or other CLI configuration error. |
 
 ## See also
 

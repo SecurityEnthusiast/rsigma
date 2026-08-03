@@ -5,7 +5,7 @@ Convert a SIEM query into a draft Sigma rule (reverse conversion).
 ## Synopsis
 
 ```text
-rsigma rule reverse [QUERY] --from <DIALECT> [OPTIONS]
+rsigma rule reverse [QUERY] [--from <DIALECT>] [OPTIONS]
 ```
 
 ## Description
@@ -18,12 +18,14 @@ Field predicates map to idiomatic Sigma: surrounding `*` wildcards become `|cont
 
 A query carries no rule metadata, so the title, id, level, status, and logsource come from flags; the result is a best-effort skeleton to review, not a finished rule. Constructs with no Sigma equivalent are rejected with a clear error rather than emitted as silently-wrong Sigma: term boosting (`^`), fuzzy and proximity (`~`), and non-numeric ranges. The emitted rule is parsed back before it is printed, so a rule that would not round-trip never reaches you.
 
+Explicit `--output-format` is unsupported and warns: output is always Sigma YAML.
+
 ## Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `[QUERY]` | stdin | An inline query. Omit to read from `--file` or stdin. |
-| `--from <DIALECT>` | `lucene` | Source query dialect. `lucene` (Elastic Lucene / Elasticsearch `query_string`) is the only dialect today. |
+| `--from <DIALECT>` | `lucene` | Source query dialect. Supported value: `lucene` (Elastic Lucene / Elasticsearch `query_string`). |
 | `-f, --file <PATH>` | unset | Read queries from files or directories (repeatable). Each file is one query; a directory contributes every query file it holds. |
 | `--title <TITLE>` | file name | Rule title. Single query only; multi-query runs title each rule from its file name. |
 | `--id <UUID>` | unset | Rule id. Single query only. |
@@ -71,6 +73,14 @@ rsigma rule reverse --file queries/ --logsource-product windows -o rules/
 ```
 
 Each query file (for example `queries/whoami.lucene`) becomes `rules/whoami.yml`, titled from the file name.
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | All requested queries converted and written. |
+| `2` | At least one query could not be converted or did not round-trip. |
+| `3` | Bad input source, invalid metadata flag, invalid multi-query metadata combination, stdin read failure, or output write failure. |
 
 ## See also
 

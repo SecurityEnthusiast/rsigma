@@ -14,7 +14,7 @@ rsigma rule coverage [OPTIONS] --rules <PATH>
 
 It produces two kinds of output:
 
-- An [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/) layer (format 4.5) written with `--navigator`, scored the same way SigmaHQ scores its published heatmap (`score` = rule count), so a rsigma-generated layer overlays cleanly on the SigmaHQ baseline.
+- An [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/) layer (format 4.5) written with `--navigator`, scored the same way SigmaHQ scores its published heatmap (`score` = rule count), so a RSigma-generated layer overlays cleanly on the SigmaHQ baseline.
 - A coverage report on stdout, optionally cross-referenced three ways:
     - `--atomics` against the [Atomic Red Team](https://github.com/redcanaryco/atomic-red-team) index: techniques that have atomics but no rule (a detection gap) and rules whose technique has no atomic (a validation gap).
     - `--baseline` against a baseline Navigator layer (the SigmaHQ heatmap by default): baseline techniques you do not cover, and techniques you cover that the baseline does not.

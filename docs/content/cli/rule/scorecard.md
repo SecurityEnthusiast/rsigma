@@ -96,8 +96,8 @@ The JSON document (`--output-format json`) has a stable shape:
 |------|---------|
 | `0` | Success, or verdicts were produced but none tripped `--fail-on`. |
 | `1` | `--fail-on` was set and at least one rule's verdict is at or worse than the policy. |
-| `2` | A required or optional input is missing or unfetchable. |
-| `3` | A bad flag, or a malformed or version-mismatched report. |
+| `2` | An input file or metrics source was unreadable or unfetchable. |
+| `3` | A missing required input (`--backtest`/`--coverage`), bad flag, bad report format, malformed report, or version-mismatched report. |
 
 ## Examples
 

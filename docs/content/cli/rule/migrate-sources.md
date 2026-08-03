@@ -1,10 +1,10 @@
-# migrate-sources
+# `rsigma rule migrate-sources`
 
 Extract pipeline-embedded `sources:` blocks into standalone source files.
 
 ## Synopsis
 
-```bash
+```text
 rsigma rule migrate-sources -p <PIPELINE> -o <OUTPUT> [--strategy <STRATEGY>] [--dry-run]
 ```
 
@@ -12,7 +12,9 @@ rsigma rule migrate-sources -p <PIPELINE> -o <OUTPUT> [--strategy <STRATEGY>] [-
 
 Scans one or more pipeline files for inline `sources:` blocks, extracts them into standalone source file(s), and rewrites the original pipeline files with the `sources:` block removed. This is the migration path off pipeline-embedded `sources:`, which was removed in v1.0 in favor of the `--source` daemon flag: a pipeline that still declares an inline `sources:` block is now rejected everywhere else, so run this tool to move the declarations into a standalone `--source` file.
 
-The tool detects source ID collisions across pipelines and exits with an error if two pipelines declare the same ID with different configurations.
+The tool detects source ID collisions across pipelines and exits with an error if two pipelines declare the same source ID.
+
+Explicit `--output-format` is unsupported and warns: this command emits source YAML or writes files.
 
 ## Flags
 
@@ -48,3 +50,17 @@ Write one output file per pipeline:
 ```bash
 rsigma rule migrate-sources -p pipelines/ -o sources.d/ --strategy per-pipeline
 ```
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Extraction completed, dry-run printed, or no inline sources were found. |
+| `2` | A pipeline file or inline `sources:` block could not be read or parsed. |
+| `3` | Missing pipeline files, duplicate source IDs, output write/create failure, or other configuration error. |
+
+## See also
+
+- [Dynamic Sources reference](../../reference/dynamic-sources.md) for the standalone `sources:` schema.
+- [`pipeline resolve`](../pipeline/resolve.md) to exercise the extracted sources offline.
+- [`engine daemon`](../engine/daemon.md) `--source` for loading them at runtime.

@@ -10,7 +10,7 @@ rsigma rule parse [OPTIONS] <PATH>
 
 ## Description
 
-Reads one Sigma rule file, parses it through `rsigma-parser`, and writes the resulting AST to stdout as JSON. Useful for inspecting how rsigma sees a rule, building tooling on top of the parsed shape, or diffing two parse results to spot subtle YAML changes.
+Reads one Sigma rule file, parses it through `rsigma-parser`, and writes the resulting AST to stdout as JSON. Useful for inspecting how RSigma sees a rule, building tooling on top of the parsed shape, or diffing two parse results to spot subtle YAML changes.
 
 Multi-document YAML files (action-global/action-reset/action-repeat fragments) parse into a single JSON object listing each document. Parse errors are written to stderr and the process exits with code `2`.
 

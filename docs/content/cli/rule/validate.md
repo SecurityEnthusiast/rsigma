@@ -22,8 +22,9 @@ For narrative coverage see [Linting Rules](../../guide/linting-rules.md) and [CI
 |------|-------------|
 | `<PATH>` | Path to a directory containing Sigma YAML files (recursive). |
 | `-v, --verbose` | Show details for each file, not just the summary. |
-| `-p, --pipeline <PIPELINES>` | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `sysmon`) or YAML file paths. Repeatable. |
-| `--resolve-sources` | For dynamic pipelines, also fetch every declared source during validation. Sources must be reachable for validation to pass. |
+| `-p, --pipeline <PIPELINES>` | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `fibratus_windows`, `sysmon`) or YAML file paths. Repeatable. |
+| `--source <FILE_OR_DIR>` | External source file(s) or directory of source files. Repeatable. Same standalone `sources:` YAML shape as the daemon's `--source`. Required for meaningful `--resolve-sources` runs after the v1.0 removal of pipeline-embedded `sources:`. |
+| `--resolve-sources` | Resolve and fetch every loaded dynamic source during validation. Sources must be reachable for validation to pass. |
 
 ## Examples
 
@@ -57,7 +58,7 @@ Catches rules that reference fields the pipeline drops or renames in an incompat
 ### Strict CI: also exercise dynamic sources
 
 ```bash
-rsigma rule validate rules/ -p pipelines/dynamic.yml --resolve-sources
+rsigma rule validate rules/ -p pipelines/dynamic.yml --source sources.yml --resolve-sources
 ```
 
 The job fails with exit `3` if any HTTP, file, or command source is unreachable. Use this on PR builds for repos that ship dynamic pipelines.
@@ -76,7 +77,7 @@ Shows one line per file with its parse/compile status.
 |------|---------|
 | `0` | Every rule parsed and compiled cleanly. |
 | `2` | At least one parse or compile error. |
-| `3` | Pipeline file could not be loaded, or `--resolve-sources` failed on a dynamic source. |
+| `3` | Pipeline file could not be loaded, `--source` load failure, `--resolve-sources` failed on a dynamic source, or the binary lacks the `daemon` feature needed for source resolution. |
 
 ## See also
 

@@ -14,7 +14,7 @@ rsigma rule backtest [OPTIONS] --rules <RULES> --corpus <PATH>
 
 Unlike `engine eval --fail-on-detection`, which is corpus-global and inverts on any rule firing, backtest asserts per rule. A positive fixture can require a specific rule to fire at least once, a negative fixture can require a specific rule to fire exactly zero times, and any rule that fires without a covering expectation is surfaced as a potential false positive on a known-benign corpus.
 
-Backtest reuses the same input parsing as `engine eval`, so NDJSON, syslog, plain, logfmt, CEF, and EVTX corpora all work the same way. Correlation rules are first-class; correlation state is reset for each corpus file, so each file is an independent time slice (carrying window state across files would produce phantom correlations).
+Backtest reuses the same input parsing as `engine eval`, so NDJSON, syslog, plain, logfmt, and CEF corpora work the same way. EVTX corpora require a build with the `evtx` feature; builds without it skip `.evtx` corpus files with a warning. Correlation rules are first-class; correlation state is reset for each corpus file, so each file is an independent time slice (carrying window state across files would produce phantom correlations).
 
 Without an `--expectations` file, backtest still runs and prints per-rule statistics; it just has nothing to diff.
 
@@ -26,7 +26,7 @@ Without an `--expectations` file, backtest still runs and prints per-rule statis
 | `--corpus <PATH>` | required | Event corpus: a file or a directory walked recursively. Repeatable. Extension dispatch: `.ndjson`/`.jsonl` as NDJSON, `.evtx` via the feature-gated adapter, everything else through `--input-format`. May also be supplied via `backtest.corpus`. |
 | `--expectations <PATH>` | unset | Expectations YAML (per-rule fire-count assertions). |
 | `--unexpected <POLICY>` | `warn` | What a rule firing with no covering expectation means: `fail`, `warn`, or `ignore`. Overrides the expectations-file default. |
-| `-p, --pipeline <P>` | unset | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `sysmon`) or YAML file paths. Repeatable. |
+| `-p, --pipeline <P>` | unset | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `fibratus_windows`, `sysmon`) or YAML file paths. Repeatable. |
 | `--input-format <FMT>` | `auto` | Input log format for non-NDJSON corpus files: `auto`, `json`, `syslog`, `plain`, `logfmt`, `cef`. |
 | `--syslog-tz <TZ>` | `+00:00` | Default timezone offset for RFC 3164 syslog. |
 | `--syslog-strip-bom <BOOL>` | `true` | Strip a leading UTF-8 BOM from RFC 5424 syslog messages. |
