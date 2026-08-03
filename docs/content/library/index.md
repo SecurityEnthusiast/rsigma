@@ -2,19 +2,20 @@
 
 Every crate in the workspace publishes to crates.io and can be embedded in another Rust program. This section is the entry point for embedders, alternative-frontend authors, and contributors who need to understand the public Rust surface area.
 
-For the canonical, line-by-line API reference, follow [docs.rs/rsigma](https://docs.rs/rsigma). The pages here are operator-facing overviews and pick a few representative examples per crate.
+For the canonical, line-by-line API reference, follow [docs.rs/rsigma](https://docs.rs/rsigma) and the per-crate docs.rs pages linked below. The pages here are operator-facing overviews and pick a few representative examples per crate.
 
 ## Crate matrix
 
 | Crate | Depends on | Use it when you want to... |
 |-------|------------|----------------------------|
-| [`rsigma-parser`](parser.md) | (nothing else from rsigma) | Parse a Sigma YAML file into a typed AST. |
+| [`rsigma-parser`](parser.md) | (nothing else from RSigma) | Parse a Sigma YAML file into a typed AST; lint and auto-fix. |
 | [`rsigma-ir`](ir.md) | `rsigma-parser` | Lower the AST into a modifier-resolved, selector-free HIR shared by eval and convert. |
-| [`rsigma-eval`](eval.md) | `rsigma-parser`, `rsigma-ir` | Compile that AST (via HIR) and evaluate events against it; run correlations; apply pipelines. |
-| [`rsigma-convert`](convert.md) | `rsigma-parser` | Emit backend-native query strings (PostgreSQL, LynxDB, or a custom backend you implement). |
-| [`rsigma-runtime`](runtime.md) | `rsigma-parser`, `rsigma-eval` | Wrap the engine in a streaming runtime: input adapters, sinks, hot-reload, dynamic source resolution. |
-| `rsigma-lsp` | `rsigma-parser`, `rsigma-eval` | Run the Sigma language server in your own editor integration. |
-| [`rstix`](rstix.md) | (standalone STIX 2.1 library) | Parse STIX 2.1 bundles, run T1 advisory validation and optional T2 Validation Pipeline, evaluate STIX patterns (§9 Levels 1–3), build property graphs, resolve markings, store objects, register custom types, and stream large corpora (for example MITRE ATT&CK). |
+| [`rsigma-eval`](eval.md) | `rsigma-parser`, `rsigma-ir` | Compile that AST (via HIR) and evaluate events against it; run correlations; apply pipelines; draft and tune rules. |
+| [`rsigma-convert`](convert.md) | `rsigma-parser`, `rsigma-ir`, `rsigma-eval` | Emit backend-native query strings (PostgreSQL, LynxDB, Fibratus, or a custom `Backend`). |
+| [`rsigma-runtime`](runtime.md) | `rsigma-parser`, `rsigma-eval` | Wrap the engine in a streaming runtime: input adapters, sinks, hot-reload, dynamic source resolution, enrichment, alert/risk layers. |
+| [`rsigma-mcp`](mcp.md) | parser, eval, convert, runtime | Embed the Model Context Protocol tool surface in your own agent host. |
+| `rsigma-lsp` | `rsigma-parser`, `rsigma-eval` | Run the Sigma language server in your own editor integration (no dedicated library page; see the [VS Code](../editors/vscode.md) and [Neovim](../editors/neovim.md) guides). |
+| [`rstix`](rstix.md) | (standalone STIX 2.1 library) | Parse STIX 2.1 bundles, run T1 advisory validation and optional T2 Validation Pipeline, evaluate STIX patterns, build property graphs, resolve markings, store objects, and talk to TAXII. |
 
 `rsigma-cli` (the binary) ties everything together but is not a library and is not published to crates.io.
 
@@ -22,11 +23,12 @@ For the canonical, line-by-line API reference, follow [docs.rs/rsigma](https://d
 
 | You want to... | Reach for |
 |----------------|-----------|
-| Parse and validate a STIX 2.1 bundle (including ATT&CK-scale JSON) | `rstix` — `Bundle::parse` / `parse_reader`, then advisory `Bundle::validate` (see the [crate source](https://github.com/timescale/rsigma/tree/main/crates/rstix)). For untrusted ingest with named profiles and structured diagnostics, enable `validate` and use `Validator::validate_json_str` (see [Validation Pipeline](rstix.md#rstix-validation-pipeline)). |
-| Lint or parse rules in a CI step | `rsigma-parser` only. |
-| Run a one-shot evaluation against an in-memory event | `rsigma-parser` + `rsigma-eval`. |
-| Generate SQL or SPL queries from rules | `rsigma-parser` + `rsigma-convert`. |
-| Build a streaming detection pipeline (NATS in, NATS out, hot-reload, metrics) | `rsigma-parser` + `rsigma-eval` + `rsigma-runtime`. |
+| Parse and validate a STIX 2.1 bundle (including ATT&CK-scale JSON) | [`rstix`](rstix.md): `Bundle::parse` / `parse_reader`, then advisory `Bundle::validate`. For untrusted ingest with named profiles, enable `validate` and use `Validator::validate_json_str`. |
+| Lint or parse Sigma rules in a CI step | [`rsigma-parser`](parser.md) only. |
+| Run a one-shot evaluation against an in-memory event | [`rsigma-parser`](parser.md) + [`rsigma-eval`](eval.md). |
+| Generate SQL, SPL2, or Fibratus rules from Sigma | [`rsigma-parser`](parser.md) + [`rsigma-convert`](convert.md). |
+| Build a streaming detection pipeline (NATS in, NATS out, hot-reload, metrics) | [`rsigma-parser`](parser.md) + [`rsigma-eval`](eval.md) + [`rsigma-runtime`](runtime.md). |
+| Expose parse/lint/eval/convert tools to an MCP client | [`rsigma-mcp`](mcp.md) or [`rsigma mcp serve`](../cli/mcp/serve.md). |
 | Embed Sigma diagnostics into an editor | `rsigma-lsp` (consumes parser + eval internally). |
 
 ## Minimum working example
@@ -69,7 +71,7 @@ level: medium
     let event = JsonEvent::borrow(&event_json);
 
     for m in engine.evaluate(&event) {
-        println!("matched: {}", m.rule_title);
+        println!("matched: {}", m.header.rule_title);
     }
     Ok(())
 }
@@ -85,17 +87,20 @@ Add `rsigma-convert` to emit SQL, or `rsigma-runtime` to wrap this in a daemon-l
 
 ## Versioning
 
-The workspace ships every crate under a single shared version number. A v0.x release bumps every crate; you cannot mix `rsigma-parser` v0.10 with `rsigma-eval` v0.11. Pin all rsigma deps to the same version in your `Cargo.toml`. The [release-notes](../release-notes.md) (a mirror of `CHANGELOG.md`) document every public-API change.
+The workspace ships every crate under a single shared version number (currently {{ rsigma.version }}). Pin all RSigma deps to the same version in your `Cargo.toml`. The [release notes](../release-notes.md) (a mirror of `CHANGELOG.md`) document every public-API change.
 
-Until v1.0 ships, minor versions can break public APIs. Lock dependencies in `Cargo.lock` and read the CHANGELOG before bumping.
+On the shared 0.x line, minor versions can break public APIs. Lock dependencies in `Cargo.lock` and read the CHANGELOG before bumping.
 
 ## Feature flags
 
 Every crate exposes a few opt-in features. The most useful for embedders:
 
+- `rsigma-parser` -> `fix` (default on; YAML source auto-fixes).
 - `rsigma-eval` -> `parallel`, `daachorse-index`.
-- `rsigma-runtime` -> `nats`, `otlp`, `logfmt`, `cef`, `evtx`, `daachorse-index`.
-- `rsigma-cli` -> `daemon`, `daemon-nats`, `daemon-otlp`, plus the leaf-crate features above.
+- `rsigma-runtime` -> `nats`, `otlp`, `logfmt`, `cef`, `evtx`, `uds`, `daachorse-index`.
+- `rsigma-mcp` -> `http` (Streamable HTTP transport).
+- `rstix` -> `serde` (default), `pattern`, `validate`, `graph`, `marking`, `store`, `store-fs`, `taxii`, `taxii-store`.
+- `rsigma-cli` -> `daemon`, `daemon-nats`, `daemon-otlp`, `daemon-tls`, `mcp`, plus the leaf-crate features above.
 
 Full inventory: [Feature flags reference](../reference/feature-flags.md).
 
