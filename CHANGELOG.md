@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Documentation accuracy overhaul (#435)
+
+Aligns the published docmd site with current CLI flags, daemon auth and HTTP behavior, backends, feature flags, crate surfaces, and contributor workflows. Guides, CLI, library, reference, deployment, editors, ecosystem, and developers pages drop roadmap wording, correct dynamic-source `--source` / `--source-file` wiring, builtin pipelines, exit codes, NATS/OTLP/Helr examples, and WASM ABI status, and refresh testing and fuzzing inventories against CI.
+
 ### rstix: OASIS §3.2 Campaign interop use-case tests (#433)
 
 - Adds `tests/interop/use_cases/campaign/` covering §3.2.1–§3.2.6 against normative §3.2.3 fixtures and non-gating `examples/campaign/` data.

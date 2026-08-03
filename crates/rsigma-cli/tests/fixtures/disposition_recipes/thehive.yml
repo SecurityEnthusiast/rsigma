@@ -6,7 +6,7 @@
 #      has no native benign-true-positive status, so teams that track BTP add a
 #      case tag and map it here.)
 #   tag rsigma-rule:<rule_id>       the rule the alert came from
-#   tag rsigma-incident:<id>        the rsigma incident_id stamped in at creation
+#   tag rsigma-incident:<id>        the RSigma incident_id stamped in at creation
 #
 # Auth: a read-only API key in $THEHIVE_API_KEY.
 # API: TheHive 5 case search is POST /api/v1/query with a JSON body (there is no

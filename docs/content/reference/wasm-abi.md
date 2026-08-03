@@ -1,16 +1,26 @@
 # WASM ABI
 
-RSigma reserves ABI version 1 for embedding `rsigma-parser` and `rsigma-eval` in hosts that load `wasm32-unknown-unknown` modules directly. This page is the normative contract for a future first-party `rsigma-wasm` guest crate. The guest crate and a published `.wasm` artifact do not ship yet.
+RSigma continuously builds `rsigma-parser` and `rsigma-eval` for `wasm32-unknown-unknown` with default features disabled, and CI instantiates a linked smoke module in a JavaScript-free runtime (Wasmtime). That verifies the crates remain host-neutral and free of JavaScript imports. There is no first-party published `.wasm` artifact and no shipped raw host/guest export surface today.
 
-The current crates are continuously compiled for `wasm32-unknown-unknown` with default features disabled, and CI additionally instantiates a module that links them in a JavaScript-free runtime (Wasmtime). This guarantees that the parser and evaluator remain usable by downstream WASM wrappers, and that the module carries no JavaScript imports, while the first-party guest is pending.
+This page reserves ABI version 1 as the design contract for a possible first-party guest. Downstream wrappers (for example [detection.studio](https://github.com/northsh/detection.studio/tree/main/rsigma-wasm) via `wasm-bindgen`) may use the crates today without implementing this ABI.
 
-## Compatibility
+## What CI guarantees
 
-`version() -> u32` returns the ABI major version. ABI 1 returns `1`, also exposed by the future guest crate as `RSIGMA_WASM_ABI_VERSION`.
+- `rsigma-parser` and `rsigma-eval` compile for `wasm32-unknown-unknown` with `--no-default-features`.
+- A smoke fixture under `ci/wasm-smoke/` links those crates and exports `run_selftest`, which Wasmtime instantiates in CI.
+- The smoke path does not export `alloc`, `parse_rule`, `compile_rule`, `evaluate`, or `version`.
+
+## Reserved ABI 1 design
+
+The following is the reserved ABI 1 contract. It is not implemented by the smoke fixture and must not be treated as a shipped interface.
+
+### Compatibility
+
+`version() -> u32` would return the ABI major version. ABI 1 returns `1`.
 
 Changes within ABI 1 are additive. Existing exports keep their signatures and semantics, existing status codes keep their meanings, and existing JSON fields are never removed or retyped. Hosts must ignore unknown JSON fields and may probe for new exports. A breaking change increments the value returned by `version()`.
 
-## Module and memory model
+### Module and memory model
 
 The module exports one WebAssembly linear memory and uses 32-bit offsets into that memory. Hosts request input storage through `alloc`, copy UTF-8 bytes into the returned range, call an operation, and release the input range through `dealloc`.
 
@@ -18,7 +28,7 @@ Guest-owned result buffers stay valid until the host calls `free_result`. Compil
 
 All sizes and offsets are unsigned 32-bit values. Zero is the null pointer and an invalid handle.
 
-## Exports
+### Exports
 
 | Export | Signature | Contract |
 |--------|-----------|----------|
@@ -31,9 +41,9 @@ All sizes and offsets are unsigned 32-bit values. Zero is the null pointer and a
 | `free_result` | `(handle: u32)` | Releases a result descriptor and its payload. A handle must be freed exactly once. Zero is ignored. |
 | `version` | `() -> u32` | Returns the ABI major version. ABI 1 returns `1`. |
 
-ABI 1 intentionally ties compiled-rule lifetime to module-instance lifetime. A later additive export may allow early release, but hosts must not depend on one until it is documented here.
+ABI 1 intentionally ties compiled-rule lifetime to module-instance lifetime.
 
-## Packed return value
+### Packed return value
 
 Operations returning `u64` encode the status in the high 32 bits and the result handle in the low 32 bits:
 
@@ -52,7 +62,7 @@ The result handle is the address of an eight-byte descriptor in linear memory:
 
 The descriptor fields use WebAssembly's little-endian byte order. The host reads the descriptor, copies or consumes the payload, and calls `free_result(handle)`. The descriptor and payload become invalid immediately after that call.
 
-## Status codes
+### Status codes
 
 | Status | Name | Meaning |
 |--------|------|---------|
@@ -67,7 +77,7 @@ The descriptor fields use WebAssembly's little-endian byte order. The host reads
 
 Status values are stable within ABI 1. New status codes may be added. Hosts must treat unknown nonzero values as failures and still free any nonzero result handle.
 
-## JSON payloads
+### JSON payloads
 
 Every result payload is a UTF-8 JSON object. Successful payloads use `{"ok":true,"data":...}`. Error payloads use this minimum shape:
 
@@ -84,7 +94,7 @@ Every result payload is a UTF-8 JSON object. Successful payloads use `{"ok":true
 
 `code` is a stable machine-readable string, `message` is intended for display, and `details` is an array of structured diagnostics. Operations may add fields. Hosts must ignore fields they do not understand.
 
-## Host call sequence
+### Host call sequence
 
 1. Call `version` and reject unsupported major versions.
 2. Call `alloc` for the input, check for zero, and copy the UTF-8 bytes into guest memory.
@@ -92,7 +102,7 @@ Every result payload is a UTF-8 JSON object. Successful payloads use `{"ok":true
 4. Decode the packed status/result value.
 5. If the result handle is nonzero, read its descriptor and JSON payload, then call `free_result` even when the status is nonzero.
 
-## Security requirements
+### Security requirements
 
 Hosts must bounds-check every guest pointer and length against the current linear-memory size before reading. Hosts must cap input and output sizes, reject integer overflow in `ptr + len`, and instantiate untrusted guests with execution and memory limits. A module instance must not be shared concurrently unless the guest implementation explicitly documents synchronization.
 

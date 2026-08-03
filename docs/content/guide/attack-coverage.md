@@ -48,7 +48,7 @@ Each cross-reference is optional and additive. Combine as many as you like in on
 rsigma rule coverage -r rules/ --atomics
 ```
 
-A bare `--atomics` fetches the upstream [Atomic Red Team](https://github.com/redcanaryco/atomic-red-team) `atomics/Indexes/index.yaml` (cached for 7 days). Pass a local `index.yaml`, an atomic-red-team `atomics/` checkout, or a URL to use your own copy. The report splits the gap two ways:
+A bare `--atomics` fetches the upstream [Atomic Red Team](https://github.com/redcanaryco/atomic-red-team) `atomics/Indexes/index.yaml` (cached for 7 days under the user cache directory). Pass a local `index.yaml`, an atomic-red-team `atomics/` checkout, or a URL to use your own copy. The report splits the gap two ways:
 
 - `atomics_without_rule`: techniques that have an atomic test but no detection rule. These are your **detection gaps**, the highest-value place to write a new rule, because there is a known way to exercise the technique that nothing would catch.
 - `rules_without_atomic`: techniques you detect that have no atomic test. These are **validation gaps**, where you cannot easily prove the rule works.
@@ -59,7 +59,7 @@ A bare `--atomics` fetches the upstream [Atomic Red Team](https://github.com/red
 rsigma rule coverage -r rules/ --baseline --output-format json | jq '.baseline'
 ```
 
-A bare `--baseline` fetches the [SigmaHQ coverage heatmap](https://github.com/SigmaHQ/sigma/blob/master/other/sigma_attack_nav_coverage.json) (itself a Navigator layer), so the diff is layer-to-layer. The report shows `baseline_not_covered` (techniques the public corpus covers that you do not) and `ahead_of_baseline` (techniques you cover that the baseline does not, often your environment-specific detections).
+A bare `--baseline` fetches the [SigmaHQ coverage heatmap](https://github.com/SigmaHQ/sigma/blob/master/other/sigma_attack_nav_coverage.json) (itself a Navigator layer), so the diff is layer-to-layer. Like `--atomics`, the default upstream fetch is cached for 7 days. The report shows `baseline_not_covered` (techniques the public corpus covers that you do not) and `ahead_of_baseline` (techniques you cover that the baseline does not, often your environment-specific detections).
 
 ### Target technique list
 
@@ -92,20 +92,24 @@ See [CI/CD](ci-cd.md) for the full detection-as-code pipeline that runs lint, va
 
 ## Configuration
 
-The cross-reference inputs can be set as project defaults in a [config file](../reference/configuration.md) so CI invocations stay short:
+The rules path and cross-reference inputs can be set as project defaults in a [config file](../reference/configuration.md) so CI invocations stay short:
 
 ```yaml
 coverage:
+  rules: [./rules]
   atomics: https://raw.githubusercontent.com/redcanaryco/atomic-red-team/master/atomics/Indexes/index.yaml
   targets: ./threat-model-techniques.txt
   fail_on_gaps: true
 ```
 
-CLI flags always win over the config file. `rules` is intentionally not a config key: it is the one required, invocation-specific argument.
+CLI flags always win over the config file. When `-r` / `--rules` is omitted, `coverage.rules` fills it.
 
 ## See also
 
 - [`rule coverage`](../cli/rule/coverage.md) for the full flag reference.
+- [`rule scorecard`](../cli/rule/scorecard.md) to feed this JSON report (with the backtest report) into per-rule keep/tune/retire verdicts.
 - [Visibility and Data Sources](visibility-and-data-sources.md) for the complementary visibility axis: which telemetry your rules depend on, scored against ATT&CK data sources.
 - [`rule backtest`](../cli/rule/backtest.md) for the corpus-replay test harness.
 - [Linting Rules](linting-rules.md) for tag-format validation that keeps `attack.*` tags well-formed.
+- [CI/CD](ci-cd.md) for wiring coverage into a pipeline.
+- [Configuration](../reference/configuration.md) for the `coverage` config section.

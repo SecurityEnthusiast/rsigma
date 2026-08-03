@@ -1,6 +1,6 @@
 # `rsigma config schema`
 
-Emit a [JSON Schema](https://json-schema.org/) describing the rsigma config file.
+Emit a [JSON Schema](https://json-schema.org/) describing the RSigma config file.
 
 ## Synopsis
 
@@ -19,7 +19,7 @@ Two main consumers:
 
 ## Output
 
-The schema is printed to stdout as pretty-printed JSON.
+The schema is printed to stdout as pretty-printed JSON. The global [`--output-format`](../../reference/output.md) selector is accepted but the payload is always the schema JSON (other formats warn).
 
 ```bash
 rsigma config schema | jq '.title'
@@ -51,5 +51,5 @@ rsigma config schema > rsigma.schema.json
 
 ## See also
 
-- [`config init`](init.md) — emits a template with the `$schema` header.
-- [`config validate`](validate.md) — the canonical loader-side check.
+- [`config init`](init.md) emits a template with the `$schema` header.
+- [`config validate`](validate.md) is the canonical loader-side check.

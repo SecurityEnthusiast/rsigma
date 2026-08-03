@@ -19,10 +19,10 @@ This is the rule-side companion to [`pipeline resolve`](resolve.md) (which inspe
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-r, --rules <PATH>...` | required | Sigma rule file(s) or director(ies) to diff. Repeatable. |
-| `-p, --pipeline <PATH\|NAME>...` | required | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `sysmon`) or YAML file paths. Repeatable, applied in priority order. |
+| `-p, --pipeline <PATH\|NAME>...` | required | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `fibratus_windows`, `sysmon`) or YAML file paths. Repeatable, applied in priority order. |
 | `--rule-id <ID>` | unset | Only diff the rule with this id (falling back to an exact title). |
 
-The global [`--output-format`](../../reference/output.md) flag selects the renderer: the default is a human unified diff; `json` and `ndjson` emit `{ before, after, applied_items, changed }` per rule. The `csv` and `tsv` formats fall back to the human diff, since the change is structural rather than tabular.
+The global [`--output-format`](../../reference/output.md) flag selects the renderer: the default (and `table`) is a human unified diff; `json` and `ndjson` emit `{ rule_title, rule_id, changed, applied_items, before, after }` per rule; `csv` and `tsv` emit one delimited row per rule with the same columns (AST columns are compact JSON strings).
 
 ## Output
 
@@ -58,8 +58,8 @@ rsigma pipeline diff -r rule.yml -p pipeline.yml --rule-id ps-1 --output-format 
 
 | Code | Meaning |
 |------|---------|
-| `0` | Success |
-| `2` | Bad rule input, bad pipeline, or unknown `--rule-id` |
-| `3` | Bad config |
+| `0` | Success. |
+| `2` | No rules found, unknown `--rule-id`, or a pipeline transformation error while rewriting a rule. |
+| `3` | Pipeline path could not be loaded (unknown builtin name or unreadable YAML). |
 
 See [Exit Codes](../../reference/exit-codes.md) for the full scheme.

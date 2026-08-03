@@ -14,7 +14,7 @@ The workspace ships 25 [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuz
 | `fuzz_regex_compile` | The hardened regex compilation path (size and complexity caps). | 1024 |
 | `fuzz_pipeline_yaml` | Pipeline YAML parser. | 4096 |
 | `fuzz_pipeline_sources_yaml` | Dynamic-pipeline source spec parser. | 8192 |
-| `fuzz_alert_pipeline_config` | Alert-pipeline configuration parser. | 8192 |
+| `fuzz_alert_pipeline_config` | Alert-pipeline configuration parser. | 4096 |
 | `fuzz_input_formats` | The line-format parser (auto-detect, JSON, syslog, logfmt, CEF, plain). | 4096 |
 | `fuzz_rule_tune` | False-positive-driven rule tuning over JSON FP and TP corpora. | 65536 |
 | `fuzz_extract_jq` | jq extract language. | 4096 |
@@ -28,25 +28,25 @@ The workspace ships 25 [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuz
 | `fuzz_disposition_record` | Disposition record parsing. Not in the weekly matrix; run manually. | (default) |
 | `fuzz_risk_config` | Risk configuration parsing. Not in the weekly matrix; run manually. | (default) |
 | `fuzz_lucene_frontend` | Lucene reverse-conversion frontend. Not in the weekly matrix; run manually. | (default) |
-| `fuzz_stix_pattern` | STIX pattern parsing. | 65536 |
-| `fuzz_rstix_parse_bundle` | The `rstix::parse_bundle` STIX bundle parse entrypoint. Seed locally from `tests/fixtures/spec/` or a downloaded ATT&CK bundle (see [rstix — Local MITRE ATT&CK corpus test](../library/rstix.md#rstix-testing-local-mitre-attck-corpus)). | 65536 |
+| `fuzz_stix_pattern` | STIX pattern parsing. | 4096 |
+| `fuzz_rstix_parse_bundle` | The `rstix::parse_bundle` STIX bundle parse entrypoint. Seed locally from `tests/fixtures/spec/` or a downloaded ATT&CK bundle (see [rstix: Local MITRE ATT&CK corpus test](../library/rstix.md#rstix-testing-local-mitre-attck-corpus)). | 65536 |
 | `fuzz_rstix_validate_json` | The `rstix::Validator::validate_json_str` Validation Pipeline raw JSON entry (`validate` feature). Seeds in `fuzz/seeds/fuzz_rstix_validate_json/`. | 65536 |
 
-All targets live under [`fuzz/fuzz_targets/`](https://github.com/timescale/rsigma/tree/main/fuzz/fuzz_targets). The shared `Cargo.toml` is `fuzz/Cargo.toml`; it depends on `rsigma-parser`, `rsigma-eval`, and `rsigma-runtime` (with `logfmt` and `cef` features).
+All targets live under [`fuzz/fuzz_targets/`](https://github.com/timescale/rsigma/tree/main/fuzz/fuzz_targets). The shared `Cargo.toml` is `fuzz/Cargo.toml`; it depends on `rsigma-parser`, `rsigma-eval`, `rsigma-convert`, `rsigma-runtime` (with `logfmt` and `cef` features), and `rstix` (with `serde`, `pattern`, and `validate` features).
 
 ## Run one target locally
 
-You need a nightly toolchain (libFuzzer is unstable):
+Prefer the pinned nightly from CI (`FUZZ_TOOLCHAIN` in `.github/workflows/fuzz.yml`, currently `nightly-2026-07-23`). Floating `nightly` can fail under ASan:
 
 ```bash
-rustup install nightly
-cargo install cargo-fuzz
+rustup toolchain install nightly-2026-07-23 --profile minimal --component llvm-tools-preview
+cargo +nightly-2026-07-23 install cargo-fuzz --locked
 ```
 
 Then from the workspace root:
 
 ```bash
-cargo +nightly fuzz run fuzz_parse_yaml -- -max_len=8192 -max_total_time=60
+cargo +nightly-2026-07-23 fuzz run fuzz_parse_yaml -- -max_len=8192 -max_total_time=60
 ```
 
 `-max_total_time=60` runs for one minute; drop it for an open-ended loop. Run output prints `cov:` increments as new branches are discovered; a crash dumps the offending corpus entry under `fuzz/artifacts/<target>/crash-<hash>`.
@@ -54,7 +54,7 @@ cargo +nightly fuzz run fuzz_parse_yaml -- -max_len=8192 -max_total_time=60
 ## Reproducing a crash
 
 ```bash
-cargo +nightly fuzz run fuzz_parse_yaml fuzz/artifacts/fuzz_parse_yaml/crash-deadbeef...
+cargo +nightly-2026-07-23 fuzz run fuzz_parse_yaml fuzz/artifacts/fuzz_parse_yaml/crash-deadbeef...
 ```
 
 You can also point a regular test at the offending bytes. Reducing the input via `cargo fuzz tmin <target> <crash-path>` before filing an issue is appreciated.
@@ -79,9 +79,7 @@ You can also point a regular test at the offending bytes. Reducing the input via
    [[bin]]
    name = "fuzz_<name>"
    path = "fuzz_targets/fuzz_<name>.rs"
-   test = false
    doc = false
-   bench = false
    ```
 
 3. Add an entry to the matrix in `.github/workflows/fuzz.yml`:
@@ -106,7 +104,7 @@ Differential fuzz harnesses (`fuzz_eval_matcher_diff`) are the canonical guard a
 
 ## Corpus
 
-Seed corpora are not committed (they're large and quickly stale). The CI artifact for each weekly run is uploaded as a workflow artifact named `corpus-<target>`; download it to bootstrap a local run with `cargo fuzz run <target> path/to/corpus`.
+Seed corpora are committed under `fuzz/seeds/<target>/`. CI restores and saves `fuzz/corpus/<target>` between runs (cache key `fuzz-corpus-<target>-…`). On failure, crashes upload as a workflow artifact named `fuzz-crashes-<target>` (not the corpus). Download a crash artifact to reproduce locally with `cargo fuzz run <target> path/to/crash`.
 
 ## See also
 

@@ -1,10 +1,10 @@
 # Cloud Collection Recipes
 
-This page shows how common log shippers, such as Vector, OpenTelemetry (OTel), and Grafana Alloy, deliver CloudTrail, Azure, GCP, M365, GitHub, Okta, OneLogin, Kubernetes audit, Docker, and osquery events in a structured JSON shape that [schema classification](../reference/schema-signatures.md) recognizes automatically, and which routing binding to use.
+This page shows how common log shippers, such as Vector, OpenTelemetry (OTel), and Grafana Alloy, deliver CloudTrail, Azure, GCP, M365, GitHub, Okta, OneLogin, Kubernetes audit, Docker, and osquery events in a structured JSON shape that [schema classification](../reference/schema-signatures.md) recognizes automatically, and which routing binding to use when a schema needs a field-mapping pipeline.
 
-All examples target `rsigma engine daemon` with `--schema-routing` and `--schema-config`. Each recipe maps to one of the built-in schemas defined in [Schema Signatures](../reference/schema-signatures.md); no user-defined `schemas:` block is needed because every source ships as a built-in.
+All examples target `rsigma engine daemon` with `--schema-routing`. Each recipe maps to one of the built-in schemas defined in [Schema Signatures](../reference/schema-signatures.md); no user-defined `schemas:` block is needed because every source ships as a built-in. Use `--schema-config` when you need a `routing:` section (per-schema pipeline bindings, `on_unknown`, or `default_pipelines`).
 
-Vector and OpenTelemetry examples POST JSON to `/api/v1/events` (`--input http`). Grafana Alloy examples use OTLP HTTP (`/v1/logs`); build the daemon with `daemon-otlp`. See [OTLP Integration](otlp-integration.md) for the LogRecord mapping and TLS variants.
+Vector examples POST JSON to `/api/v1/events` (`--input http`). OpenTelemetry Collector and Grafana Alloy examples use OTLP HTTP (`/v1/logs`); build or install the daemon with `daemon-otlp` (release archives already include it). OTLP is active whenever that feature is compiled in, regardless of `--input`. See [OTLP Integration](otlp-integration.md) for the LogRecord mapping and TLS variants.
 
 ## Built-in schemas (quick reference)
 
@@ -169,11 +169,15 @@ otelcol.receiver.filelog "azure" {
 
 GCP Cloud Audit logs are `LogEntry` objects whose `protoPayload.@type` equals `type.googleapis.com/google.cloud.audit.AuditLog`. The built-in signature matches on the `@type` value alone (specificity 95).
 
-SigmaHQ's `gcp.audit` rules reference fields under a `data.` prefix (for example `data.protoPayload.serviceName`), while a native Cloud Logging event carries them without it (`protoPayload.serviceName`). Use the `gcp_audit` pipeline to strip the `data.` prefix from rule field names so those rules match native events:
+SigmaHQ's `gcp.audit` rules reference fields under a `data.` prefix (for example `data.protoPayload.serviceName`), while a native Cloud Logging event carries them without it (`protoPayload.serviceName`). Use the builtin `gcp_audit` pipeline to strip the `data.` prefix from rule field names so those rules match native events.
+
+For a GCP-only feed, apply the pipeline globally (schema routing is optional):
 
 ```bash
-rsigma engine daemon -r rules/ -p gcp_audit --input http --schema-routing
+rsigma engine daemon -r rules/ -p gcp_audit --input http --api-addr 0.0.0.0:8952
 ```
+
+On a mixed stream with `--schema-routing`, bind the pipeline to the `gcp_audit` schema in `--schema-config` instead of relying on `-p` alone (see [A combined example](#a-combined-example)). With schema routing enabled and no bindings, every event falls through to `default_pipelines`, and a bare `-p` is not applied per schema.
 
 ::: tabs
 
@@ -243,7 +247,7 @@ otelcol.receiver.filelog "gcp_audit" {
 
 The Office 365 Management Activity API emits unified audit log events with the common-schema fields `RecordType`, `Operation`, `CreationTime`, `Workload`, and `OrganizationId`. The classifier recognizes this raw shape (any `Workload`) as `m365_audit` and maps it to `product: m365, service: audit`, where SigmaHQ's native-field rules live.
 
-SigmaHQ's `exchange`, `threat_detection`, and `threat_management` services are written against a separately normalized shape (`eventSource`, `eventName`, `status`), which are not Management Activity common-schema fields. Routing those services requires a normalization pipeline that rsigma does not yet ship, so raw Management Activity events are not classified into them.
+SigmaHQ's `exchange`, `threat_detection`, and `threat_management` services are written against a separately normalized shape (`eventSource`, `eventName`, `status`), which are not Management Activity common-schema fields. RSigma does not ship a normalization pipeline for that shape, so raw Management Activity events are not classified into those services.
 
 ::: tabs
 
@@ -732,37 +736,48 @@ otelcol.receiver.filelog "osquery" {
 
 ## A combined example
 
-One daemon that ingests from all sources:
+One daemon that accepts Vector on `/api/v1/events` and OTLP agents on `/v1/logs`, with schema routing and the GCP pipeline binding:
 
-```toml
-[daemon]
-address = "0.0.0.0:8952"
+```yaml
+# /etc/rsigma/rsigma.yaml
+version: 1
 
-input = { type = "http" }
+daemon:
+  rules: /etc/rsigma/rules
+  api:
+    addr: "0.0.0.0:8952"
+  input:
+    source: http
+  output:
+    sinks: [stdout]
+  schema:
+    routing: true
+    config: /etc/rsigma/schema-routing.yml
+```
 
-schema_routing = true
-schema_config = "/etc/rsigma/schema-routing.yml"
-
-[sinks]
-# Or use a file-based output for further processing.
-engine_rules = "/etc/rsigma/rules/"
-engine_pipelines = ["gcp_audit"]
+```bash
+rsigma engine daemon --config /etc/rsigma/rsigma.yaml
 ```
 
 `schema-routing.yml`:
 
 ```yaml
-schemas: []
 routing:
   on_unknown: warn
   default_pipelines: []
   bindings:
-    # GCP AuditLog needs the field-mapping pipeline.
+    # GCP AuditLog needs the field-mapping pipeline; other cloud schemas match native fields with an empty pipeline-set.
     - schema: gcp_audit
       pipelines: [gcp_audit]
-      logsource:
-        product: gcp
-        service: gcp.audit
 ```
 
-No `schemas:` entries are needed. Every Cloud, SaaS, and Container source in this guide ships as a built-in. The only binding required is the `gcp_audit` pipeline mapping (since Sigma rules expect `gcp.audit.*` fields, not native `protoPayload.*`).
+No `schemas:` entries are needed. Every Cloud, SaaS, and Container source in this guide ships as a built-in. The only binding required is the `gcp_audit` pipeline mapping (since SigmaHQ rules expect `data.*` field names, not native `protoPayload.*`). Built-in implied logsources already supply the SigmaHQ `product`/`service` tokens for pruning when [logsource routing](logsource-routing.md) is also enabled.
+
+## See also
+
+- [Schema Routing](schema-routing.md) for bindings, aliases, and schema-derived logsource pruning.
+- [Schema Signatures](../reference/schema-signatures.md) for the built-in catalog and signature grammar.
+- [OTLP Integration](otlp-integration.md) for `/v1/logs`, LogRecord flattening, and agent recipes.
+- [HTTP API](../reference/http-api.md) for `POST /api/v1/events`.
+- [Configuration](../reference/configuration.md) for the `daemon.schema` config block.
+- [Streaming Detection](streaming-detection.md) for daemon lifecycle and inputs.

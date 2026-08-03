@@ -56,11 +56,11 @@ Plain `SELECT * FROM <table> WHERE ...`, one per rule:
 SELECT * FROM security_events WHERE "CommandLine" ILIKE '%whoami%'
 ```
 
-Use for ad-hoc execution in `psql`, embedding into application code, or as the source for materialised views built elsewhere.
+Use for ad-hoc execution in `psql`, embedding into application code, or as the source for materialized views built elsewhere.
 
 ### `view`
 
-Wraps each rule's query in `CREATE OR REPLACE VIEW sigma_<sanitised-id> AS SELECT ...`:
+Wraps each rule's query in `CREATE OR REPLACE VIEW sigma_<sanitized-id> AS SELECT ...`:
 
 ```sql
 CREATE OR REPLACE VIEW sigma_8b1d8c97_5b3a_4d77_9b48_7c5f7c8b1a2a AS
@@ -90,7 +90,7 @@ CREATE MATERIALIZED VIEW sigma_9d2e7c48_4a3b_4f99_93c9_1c5f7c8b1a2a
     WITH NO DATA
 ```
 
-TimescaleDB refreshes the aggregate in the background; your dashboards query the materialised result instead of the raw hypertable.
+TimescaleDB refreshes the aggregate in the background; your dashboards query the materialized result instead of the raw hypertable.
 
 The format applies to base detection rules. Correlation rules are not the right shape for continuous aggregates; convert them separately with `default` or `sliding_window`.
 
@@ -199,7 +199,7 @@ The backend handles every aggregation type:
 | `value_percentile` | `GROUP BY ... HAVING PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY <field>) >= N`. |
 | `value_median` | Same as `value_percentile` with `p = 0.5`. |
 | `temporal` | CTE: base detections matched in one `WITH combined_events AS (...)`, then a `SELECT <group-by>, COUNT(DISTINCT rule_name) AS distinct_rules FROM combined HAVING ... >= N`. |
-| `temporal_ordered` | Roadmap: `LAG()`/`LEAD()` based ordering. Not yet implemented. |
+| `temporal_ordered` | Same CTE shape as `temporal`. Order among referenced rules is not enforced. |
 
 Non-temporal correlations that reference detection rules in the same collection auto-wrap the detection logic in `WITH combined_events AS (q1 UNION ALL q2 ...)`. Multi-table temporal correlations (where referenced detection rules target different tables via pipeline routing) generate `UNION ALL` CTEs with a `rule_name` discriminator column.
 
@@ -242,17 +242,9 @@ Two pipelines ship with `rsigma-convert` for Open Cybersecurity Schema Framework
 | [`pipelines/ocsf_postgres.yml`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-convert/pipelines/ocsf_postgres.yml) | Single-table: every event class routes to `security_events`. |
 | [`pipelines/ocsf_postgres_multi_table.yml`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-convert/pipelines/ocsf_postgres_multi_table.yml) | Per-logsource routing: `process_events`, `network_events`, `dns_events`, etc. |
 
-Both are starting points; copy and customise for your schema.
+Both are starting points; copy and customize for your schema.
 
-## Roadmap
-
-Tracked items not yet implemented:
-
-- `temporal_ordered` correlation via `LAG()`/`LEAD()`.
-- `prepared` output format that emits PL/pgSQL-friendly placeholders for parameter binding.
-- Value modifier transforms (`base64`, `base64offset`, `wide`, `utf16le`) — currently fail with `Unsupported`. Most workloads do not need these because they can be preprocessed at ingest by the agent.
-
-These are tracked on the project roadmap and are not blocking any current user.
+Value-transformation modifiers (`base64`, `base64offset`, `wide`, `utf16`, `utf16le`, `utf16be`, `windash`) fail conversion with `UnsupportedModifier`. Preprocess those values at ingest when needed. There is no `prepared` output format today.
 
 ## See also
 

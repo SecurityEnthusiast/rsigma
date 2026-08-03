@@ -1,6 +1,6 @@
 # Testing
 
-The workspace runs six tiers of tests, all gated in CI. PRs are expected to pass every tier.
+The workspace runs several test tiers. Most are gated in CI on every PR; coverage is advisory, and representative performance is path-selective on PRs with a fuller weekly matrix.
 
 ## At a glance
 
@@ -9,10 +9,10 @@ The workspace runs six tiers of tests, all gated in CI. PRs are expected to pass
 | Unit | `src/` modules with `#[cfg(test)] mod tests` | `cargo test --workspace --all-features --locked` | `test` job on Linux, macOS, Windows. |
 | Integration (in-process) | `crates/{rsigma-parser,rsigma-eval,rsigma-convert,rsigma-runtime}/tests/*.rs` | Same. | Same. |
 | End-to-end (binary + containers) | `crates/rsigma-cli/tests/cli_*.rs`, `crates/rsigma-runtime/tests/nats_e2e.rs`, `crates/rsigma-convert/tests/postgres_integration.rs` | Same; testcontainers-based tests skip when Docker is unavailable. | Same. |
-| Snapshot / golden | `crates/rsigma-{parser,eval,convert}/tests/snapshots/`, `tests/fixtures/dynamic-pipelines/golden/` | `cargo test` plus the SigmaHQ-corpus job for the dynamic-pipelines goldens. | `test` and `sigma-corpus` jobs. |
-| SigmaHQ corpus | `.github/workflows/ci.yml` -> `sigma-corpus` | `cargo build --release --all-features --locked -p rsigma` then `target/release/rsigma rule validate /tmp/sigma/rules/ --verbose` | `sigma-corpus` job, on every PR. |
-| Coverage | `cargo-llvm-cov` (Linux) | `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info` | `coverage` job (advisory, not gating). |
-| Representative performance | `.github/workflows/performance.yml`, `scripts/perf/` | `scripts/perf/fetch-fixtures.sh` then the offline and daemon harnesses | Coarse same-runner base/PR gate; weekly full matrix plus native glibc/static musl scaling on dedicated eight-core amd64/arm64 runners. |
+| Snapshot / golden | insta snapshots mainly under `crates/rsigma-parser/tests/snapshots/`; convert/runtime/cli goldens under each crate's `tests/golden/` (or fixtures); dynamic-pipeline goldens in `tests/fixtures/dynamic-pipelines/golden/` | `cargo test` plus the SigmaHQ-corpus job for the dynamic-pipelines goldens. | `test` and `sigma-corpus` jobs. |
+| SigmaHQ corpus | `.github/workflows/ci.yml` -> `sigma-corpus` | `cargo build --release --all-features --locked -p rsigma` then `target/release/rsigma rule validate …` against the pinned corpus SHA | `sigma-corpus` job, on every PR. |
+| Coverage | `cargo-llvm-cov` (Linux) | CI: `cargo llvm-cov --workspace --all-features --locked --no-report` then `cargo llvm-cov report --lcov …`. Locally a one-shot form is fine; prefer `--locked`. | `coverage` job (advisory, not gating). |
+| Representative performance | `.github/workflows/performance.yml`, `scripts/perf/` | `scripts/perf/fetch-fixtures.sh` then the offline and daemon harnesses | Coarse same-runner base/PR gate (path-selective); weekly full matrix plus native glibc/static musl scaling on dedicated eight-core amd64/arm64 runners. |
 
 ## Unit tests
 
@@ -37,12 +37,12 @@ Bias toward unit tests for pure-functional logic (parsers, matchers, formatters)
 
 These tests link directly against the crate as a library and exercise multi-component flows without spawning the compiled binary.
 
-| Crate | Files | Tests | What they cover |
-|-------|-------|------:|-----------------|
-| `rsigma-parser` | `ast_snapshots.rs`, `parse_errors.rs` (+ `snapshots/` for `insta`) | ~30 | Multi-document parsing, malformed YAML, directory parsing; insta-locked AST snapshots. |
-| `rsigma-eval` | `integration.rs`, `correlation_edge.rs`, `error_paths.rs`, `pipeline_errors.rs`, `regression_eval.rs`, `state_snapshot.rs` (+ shared `helpers/`) | ~56 | Full rule-eval pipelines, correlation edge cases, snapshot replay, pipeline error semantics. |
-| `rsigma-convert` | `golden_postgres.rs`, `golden_lynxdb.rs` (+ `golden/` for committed expected outputs) | (golden) | Backend query generation for every `--format` (`default`, `view`, `timescaledb`, `continuous_aggregate`, `sliding_window`, `minimal`). |
-| `rsigma-runtime` | `integration.rs`, `evtx_integration.rs`, `sources_integration.rs` (the `nats_*.rs` files live in the E2E section below) | ~40 | Streaming runtime; EVTX file parsing against the committed `security.evtx` fixture; dynamic source resolution (HTTP, file, command, in-process mocks) with TTL, refresh, and template expansion. |
+| Crate | Files | What they cover |
+|-------|-------|-----------------|
+| `rsigma-parser` | `ast_snapshots.rs`, `parse_errors.rs` (+ `snapshots/` for `insta`) | Multi-document parsing, malformed YAML, directory parsing; insta-locked AST snapshots. |
+| `rsigma-eval` | `integration.rs`, `correlation_edge.rs`, `error_paths.rs`, `pipeline_errors.rs`, `regression_eval.rs`, `state_snapshot.rs`, `hir_cache.rs`, `optimize_diff.rs`, `schema_classification_golden.rs`, `gcp_audit_pipeline.rs`, `wire_shape_golden.rs`, `match_detail.rs` (+ shared `helpers/`) | Full rule-eval pipelines, correlation edge cases, snapshot replay, pipeline error semantics, HIR cache, matcher optimizer differentials, schema classification and wire-shape goldens, match detail. |
+| `rsigma-convert` | `golden_postgres.rs`, `golden_lynxdb.rs`, `golden_fibratus.rs`, `golden_lucene.rs` (+ `golden/` for committed expected outputs); live SQL via `postgres_integration.rs` in the E2E section | Backend query generation for every `--format` (`default`, `view`, `timescaledb`, `continuous_aggregate`, `sliding_window`, `minimal`, Fibratus/Lucene formats as applicable). |
+| `rsigma-runtime` | `integration.rs`, `evtx_integration.rs`, `sources_integration.rs`, `ocsf_golden.rs`, `alert_pipeline_golden.rs`, `enrichment_lookup.rs`, `enrichment_integration.rs` (the `nats_*.rs` files live in the E2E section below) | Streaming runtime; EVTX file parsing against the committed `security.evtx` fixture; dynamic source resolution (HTTP, file, command, in-process mocks) with TTL, refresh, and template expansion; OCSF and alert-pipeline goldens; enrichment lookup and integration. |
 
 Helpers (test rule fixtures, common test pipelines) live in `crates/<crate>/tests/helpers/mod.rs` or `crates/<crate>/tests/common/mod.rs`. Reuse them; do not duplicate.
 
@@ -54,28 +54,16 @@ E2E tests cross the binary boundary or stand up real external services through c
 
 ### CLI E2E (`crates/rsigma-cli/tests/cli_*.rs`)
 
-The 19 `cli_*.rs` files contain roughly 250 tests that invoke the freshly built `rsigma` binary via [`assert_cmd`](https://docs.rs/assert_cmd). They exercise stdin, stdout, stderr, exit codes, and (for the daemon tests) the full HTTP, NATS, and OTLP wire surface. Run `cargo test -p rsigma --tests -- --list | wc -l` for the exact discovered count against your tree; the per-file table below is for orientation rather than as a contract.
+There are 51 `cli_*.rs` files under [`crates/rsigma-cli/tests/`](https://github.com/timescale/rsigma/tree/main/crates/rsigma-cli/tests). They invoke the freshly built `rsigma` binary via [`assert_cmd`](https://docs.rs/assert_cmd) and exercise stdin, stdout, stderr, exit codes, and (for the daemon tests) the HTTP, NATS, and OTLP wire surface.
 
-| File | Tests | What it covers |
-|------|------:|----------------|
-| `cli_config.rs` | 15 | `config init`, `validate`, `show`, `schema`, `path`, `reload`; layered file / env / flag precedence. |
-| `cli_convert.rs` | 14 | `backend convert` against every shipped backend and output format. |
-| `cli_daemon.rs` | 21 | Long-running daemon (stdin input), hot-reload, health, shutdown. |
-| `cli_daemon_dynamic.rs` | 16 | Dynamic-pipeline source resolution end-to-end via the daemon's `POST /api/v1/sources/resolve`. |
-| `cli_daemon_enrichment.rs` | 2 | Smoke for the in-process enricher chain wired to the daemon. |
-| `cli_daemon_fields_observer.rs` | 8 | `--observe-fields` gap / broken-coverage reports across `/api/v1/fields*`. |
-| `cli_daemon_http.rs` | 10 | HTTP input mode, `POST /api/v1/events`, OTLP HTTP. |
-| `cli_daemon_nats.rs` | 8 | NATS input + sink over an in-process NATS server. |
-| `cli_daemon_otlp.rs` | 9 | OTLP HTTP and gRPC ingest, with the metric-label assertions added in PR #115. |
-| `cli_daemon_tls.rs` | 12 | `daemon-tls` flag surface, mTLS, SIGHUP-triggered cert hot-reload. |
-| `cli_eval.rs` | 40 | `engine eval`: inline events, `@file`, stdin, `jq` / JSONPath, fail-on-detection, exit codes. |
-| `cli_fields.rs` | 16 | `rule fields` extraction across detection items, correlation, filters; `--no-filters`, `--json`. |
-| `cli_lint.rs` | 24 | `rule lint`, `.rsigma-lint.yml`, `# rsigma-disable` suppressions, `--fix`, `--output-format json/ndjson/csv/tsv`. |
-| `cli_migrate_sources.rs` | 4 | `rule migrate-sources` strategies and the post-extraction pipeline rewrite. |
-| `cli_output_format.rs` | 19 | Cross-command global `--output-format`, `--color`, `--quiet`, `--no-stats` resolution. |
-| `cli_parse.rs` | 8 | `rule parse` exit-code and structured-error contract. |
-| `cli_sources_deprecation.rs` | 6 | Hard parse error (pointing at `rule migrate-sources`) when a pipeline still declares inline `sources:`. |
-| `cli_validate.rs` | 4 | `rule validate` against good and bad rule sets. |
+Categories for orientation (not a contract on per-file counts):
+
+- **Core CLI**: config, convert, eval, lint, validate, parse, fields, output format.
+- **Daemon**: core daemon plus auth, TLS, tap, tail, schemas/schema routing, risk, alert pipeline, webhook, UDS, HTTP, NATS, OTLP, enrichment, fields observer, delivery, status, correlations, audit trail, sink format, incident bundle, logsource routing.
+- **Detection quality / authoring**: scorecard, backtest, coverage, tune, hygiene, visibility, doc, draft, discover, classify, explain, disposition recipes.
+- **Pipeline / sources**: pipeline diff, migrate-sources, sources deprecation, dump correlation state, logsource/schema routing.
+
+List discovered tests with `cargo test -p rsigma --tests -- --list`. Prefer that over memorizing counts.
 
 The shared harness in `crates/rsigma-cli/tests/common/mod.rs` is the canonical reference for spawning a long-running daemon under test: it drains stdout in a background thread to prevent pipe stalls, forwards stderr lines via `mpsc`, probes the actual TCP socket with `TcpStream::connect_timeout` before returning a handle, and wraps the `Child` in a `ChildGuard` RAII type that kills it on drop. PR #115 hardened this against macOS-under-load flakes by replacing every `std::thread::sleep` wait with a `poll_until` retry loop that polls the actual observable condition (HTTP status, metric counter) every 50 ms up to a 5 s deadline. Use it for any new daemon-level test; do not roll your own.
 
@@ -109,7 +97,7 @@ Use the same `skip_without_docker!()` pattern for any new test that requires an 
 
 - **Goal**: cross every internal boundary the binary has, so a regression in the dispatch / IO / metric / exit-code surface fails CI rather than escaping to a user.
 - **Scope**: the compiled binary; the HTTP API; NATS JetStream wiring (via testcontainers, 21 tests across three files); the OTLP HTTP and gRPC handlers; and the PostgreSQL backend's generated SQL (via testcontainers, 8 tests).
-- **Out of scope (today)**: LynxDB, Splunk, Elastic, and KQL backends only have golden-text coverage, not live-query e2e. The Kubernetes deployment path has no e2e coverage yet (covered by the [Helm Chart roadmap item](https://github.com/timescale/rsigma/issues) when it lands).
+- **Out of scope (today)**: LynxDB, Splunk, Elastic, and KQL backends only have golden-text coverage, not live-query e2e. Kubernetes deployment has no e2e coverage in this repo.
 
 ## Golden tests
 
@@ -118,26 +106,31 @@ The dynamic-pipelines suite under `tests/fixtures/dynamic-pipelines/` is the can
 ```text
 tests/fixtures/dynamic-pipelines/
 ├── pipelines/                  # inputs (one *.yml per scenario)
+├── source-files/               # per-scenario `--source-file` YAML (top-level sources:)
 ├── sources/                    # mock source bodies (HTTP, file, command output)
 └── golden/                     # expected `rsigma pipeline resolve --pretty` output
 ```
 
-The CI loop in the `sigma-corpus` job iterates `pipelines/*.yml`, runs `rsigma pipeline resolve --pretty`, and diffs against `golden/${name}.json`. To run the same check locally:
+The CI loop in the `sigma-corpus` job iterates `pipelines/*.yml`, runs `rsigma pipeline resolve --pipeline … --source-file … --pretty`, and diffs against `golden/${name}.json`. To run the same check locally:
 
 ```bash
 cargo build --release --all-features --locked -p rsigma
 for pipeline in tests/fixtures/dynamic-pipelines/pipelines/*.yml; do
   name=$(basename "$pipeline" .yml)
   golden="tests/fixtures/dynamic-pipelines/golden/${name}.json"
-  diff -u "$golden" <(./target/release/rsigma pipeline resolve --pipeline "$pipeline" --pretty) \
+  source_file="tests/fixtures/dynamic-pipelines/source-files/${name}.yml"
+  diff -u "$golden" <(./target/release/rsigma pipeline resolve --pipeline "$pipeline" --source-file "$source_file" --pretty) \
     || echo "FAIL: $name"
 done
 ```
 
-To regenerate a golden after an intentional behaviour change:
+To regenerate a golden after an intentional behavior change:
 
 ```bash
-./target/release/rsigma pipeline resolve --pipeline tests/fixtures/dynamic-pipelines/pipelines/<name>.yml --pretty \
+./target/release/rsigma pipeline resolve \
+    --pipeline tests/fixtures/dynamic-pipelines/pipelines/<name>.yml \
+    --source-file tests/fixtures/dynamic-pipelines/source-files/<name>.yml \
+    --pretty \
     > tests/fixtures/dynamic-pipelines/golden/<name>.json
 ```
 
@@ -145,7 +138,7 @@ Then `git diff` the resulting golden file; if the diff matches your intent, comm
 
 ## SigmaHQ corpus regression
 
-CI clones [`SigmaHQ/sigma`](https://github.com/SigmaHQ/sigma) at `main` and runs three checks (see `.github/workflows/ci.yml`, job `sigma-corpus`):
+CI clones [`SigmaHQ/sigma`](https://github.com/SigmaHQ/sigma) at the pinned SHA `994da16651194500b607a3007186c29779e1f961` (`SIGMA_CORPUS_SHA` in `.github/workflows/ci.yml`) and runs three checks (job `sigma-corpus`):
 
 ```bash
 # 1. Every rule must parse and compile.
@@ -160,6 +153,7 @@ CI clones [`SigmaHQ/sigma`](https://github.com/SigmaHQ/sigma) at `main` and runs
     --pipeline tests/fixtures/dynamic-pipelines/pipelines/multi_format.yml \
     --pipeline tests/fixtures/dynamic-pipelines/pipelines/extract_languages.yml \
     --pipeline tests/fixtures/dynamic-pipelines/pipelines/include_expansion.yml \
+    --source tests/fixtures/dynamic-pipelines/source-files/ \
     --resolve-sources --verbose
 
 # 3. The dynamic-pipelines goldens must match (the diff loop shown above).
@@ -169,7 +163,12 @@ A regression in any of those steps fails the PR. Locally:
 
 ```bash
 cargo build --release --all-features --locked -p rsigma
-git clone --depth 1 https://github.com/SigmaHQ/sigma /tmp/sigma
+mkdir -p /tmp/sigma && cd /tmp/sigma
+git init -q
+git remote add origin https://github.com/SigmaHQ/sigma.git
+git fetch --depth 1 origin 994da16651194500b607a3007186c29779e1f961
+git checkout -q FETCH_HEAD
+cd - >/dev/null
 ./target/release/rsigma rule validate /tmp/sigma/rules/ --verbose
 ```
 
@@ -177,7 +176,15 @@ The Performance workflow also uses this pinned corpus for representative through
 
 ## Coverage
 
-The `coverage` job runs `cargo llvm-cov --workspace --all-features --lcov` on Linux and uploads `lcov.info`. It is advisory, not gating; there are no per-crate thresholds enforced today. Drops of more than a couple of percentage points warrant a comment on the PR.
+The `coverage` job runs `cargo llvm-cov --workspace --all-features --locked --no-report`, then `cargo llvm-cov report --lcov --output-path lcov.info`, on Linux and uploads `lcov.info`. It is advisory, not gating; there are no per-crate thresholds enforced today. Drops of more than a couple of percentage points warrant a comment on the PR.
+
+Locally a simpler one-shot form is fine:
+
+```bash
+cargo llvm-cov --workspace --all-features --locked --lcov --output-path lcov.info
+```
+
+Prefer `--locked` so the resolve matches CI.
 
 ## Performance regressions
 

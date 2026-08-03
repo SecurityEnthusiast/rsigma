@@ -2,22 +2,22 @@
 
 RSigma can read events in seven formats, with auto-detection as the default. This page covers when to choose each format, the parser specifics, the timestamps extracted, and the format-specific flags.
 
-The same set of formats works in both `engine eval` and `engine daemon`. The `--input-format` flag selects one; without it, auto-detect tries JSON, then syslog, then plain text on every line.
+Line-oriented formats (`json`, `syslog`, `plain`, and the feature-gated `logfmt` / `cef`) work in both `engine eval` and `engine daemon` via `--input-format`. EVTX is eval-only (`-e @file.evtx`). OTLP is daemon-only (`POST /v1/logs` / gRPC). Without `--input-format`, auto-detect tries JSON, then syslog (when the line starts with `<`), then plain text on every line.
 
 ## Format summary
 
 | Format | Flag value | Feature flag | Typical source |
 |--------|-----------|--------------|----------------|
-| JSON/NDJSON | `json` | default | Application logs, Sysmon-as-JSON, OTLP stripped of envelope, anything via Helr |
-| Syslog (RFC 3164/5424) | `syslog` | default | Network appliances, traditional Unix logs |
+| JSON/NDJSON | `json` | always on | Application logs, Sysmon-as-JSON, OTLP stripped of envelope, anything via Helr |
+| Syslog (RFC 3164/5424) | `syslog` | always on | Network appliances, traditional Unix logs |
 | logfmt | `logfmt` | `logfmt` | Go services (HashiCorp, Grafana, kubelet logs) |
 | CEF | `cef` | `cef` | ArcSight, McAfee, vendor SIEM-friendly format |
-| EVTX | (auto-detected by `.evtx` extension) | `evtx` | Windows Event Log binary files |
-| OTLP | (separate `/v1/logs` endpoint) | `daemon-otlp` | OpenTelemetry-compatible agents (Alloy, Vector, Fluent Bit, OTel Collector) |
-| Plain text | `plain` | default | Unstructured lines, fallback for keyword-only rules |
-| Auto-detect | `auto` (default) | default | When you do not know what you will get |
+| EVTX | (auto-detected by `.evtx` extension) | `evtx` | Windows Event Log binary files (`engine eval` only) |
+| OTLP | (separate `/v1/logs` endpoint) | `daemon-otlp` | OpenTelemetry-compatible agents (Alloy, Vector, Fluent Bit, OTel Collector; daemon only) |
+| Plain text | `plain` | always on | Unstructured lines, fallback for keyword-only rules |
+| Auto-detect | `auto` (default) | always on | When you do not know what you will get |
 
-Default features include JSON, syslog, EVTX, and plain text. logfmt, CEF, and OTLP are feature-gated to keep the dependency surface small.
+Default `cargo install` builds include JSON, syslog, and plain text (`daemon` only among optional features). logfmt, CEF, EVTX, and OTLP are feature-gated. Prebuilt release archives and the GHCR Docker image are built with `--all-features`, so those formats are available out of the box there.
 
 ## JSON/NDJSON
 
@@ -25,7 +25,7 @@ JSON is the universal default. Each line is parsed as a single JSON object and e
 
 ```bash
 cat events.ndjson | rsigma engine eval -r rules/ --input-format json
-hel run | rsigma engine daemon -r rules/ --input-format json
+rsigma engine daemon -r rules/ --input http --input-format json
 ```
 
 Fields are accessed both as flat keys (`"process.command_line"`) and as dot-notation paths (`process.command_line` -> `process.command_line` literal, then fallback to nested `{"process": {"command_line": "..."}}`). The flat key takes priority when both are present.
@@ -55,7 +55,7 @@ RFC 3164 syslog does not carry a timezone. RSigma assumes UTC by default. Overri
 tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --syslog-tz +05:30
 ```
 
-The value is a fixed offset (`+0530`, `-0800`). For ambiguity-free parsing, prefer RFC 5424 sources that carry the offset inline.
+The value is a fixed offset in `+HH:MM` / `-HH:MM` form (`+05:30`, `-08:00`). Compact forms like `+0530` are rejected. For ambiguity-free parsing, prefer RFC 5424 sources that carry the offset inline.
 
 ### UTF-8 BOM handling
 
@@ -69,7 +69,7 @@ tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --s
 
 ### Auto-detect validation
 
-When `--input-format auto`, RSigma's syslog detection requires the line to parse cleanly with a facility, severity, and hostname before accepting. Random text that happens to begin with a number does not get misparsed.
+When `--input-format auto`, RSigma only attempts syslog on lines that start with `<` (a priority field). The parse must then yield structured fields beyond `_raw` before the line is accepted as syslog. Random text that happens to begin with a number does not get misparsed.
 
 ## logfmt (feature-gated)
 
@@ -148,7 +148,14 @@ detection:
 
 If you would rather write rules against the conventional flat names (`EventID`, `Channel`, `TargetUserName`, etc.), supply a pipeline that maps the nested paths to the flat ones with `field_name_mapping`. The builtin `sysmon` and `ecs_windows` pipelines do **not** do this flattening; they map the flat schema to either Sysmon's `EventID` routing or to Elastic Common Schema. They are useful once you have already-flat events (for example, when an agent ingests EVTX and emits ECS), not for raw `.evtx` files.
 
-Build with the `evtx` feature (on by default):
+For correlation on raw EVTX, the default timestamp field list looks for a flat `TimeCreated` key. Nested EVTX puts the value at `Event.System.TimeCreated.#attributes.SystemTime`, so prepend that path (or flatten first):
+
+```bash
+rsigma engine eval -r rules/ -e @security.evtx \
+    --timestamp-field 'Event.System.TimeCreated.#attributes.SystemTime'
+```
+
+Build with the `evtx` feature (not on by default for `cargo install`; included in release binaries and the Docker image via `--all-features`):
 
 ```bash
 cargo install --locked rsigma --features evtx
@@ -185,8 +192,8 @@ LogRecord fields are flattened into a JSON event:
 - `severity_text`, `severity_number` preserved as-is.
 - `body` from the LogRecord body (string, map, or array).
 - `trace_id`, `span_id` as hex strings.
-- `attributes.*` dot-flattened from `LogRecord.attributes`.
-- `resource.*` dot-flattened from `Resource.attributes`.
+- LogRecord attributes flattened to top-level keys (unprefixed; primary detection target).
+- `resource.*` from `Resource.attributes`.
 - `scope.name`, `scope.version` from `InstrumentationScope`.
 
 Key-value map bodies are flattened to top-level fields so a Sigma rule against `EventID` works against an OTLP log whose `body` is `{"EventID": 4625, ...}`.
@@ -211,11 +218,11 @@ Plain text is the fastest format because there is no structured parsing. Lines a
 
 ## Auto-detect
 
-The default. Each line is tried as JSON, then as syslog, then falls back to plain text:
+The default. Each line is tried as JSON (when it starts with `{` or `[`), then as syslog (when it starts with `<` and yields structured fields), then falls back to plain text:
 
 ```bash
 rsigma engine eval -r rules/ < mixed.log
-rsigma engine daemon -r rules/ --input-format auto
+rsigma engine daemon -r rules/ --input http --input-format auto
 ```
 
 Auto-detect adds roughly 1 microsecond of overhead per line for the format probe. For homogeneous high-volume streams, explicitly specifying `--input-format json` (or whatever your source produces) avoids that overhead and prevents ambiguous lines from being misclassified.
@@ -271,7 +278,7 @@ When an event has no parseable timestamp, the correlation engine falls back to t
 | ArcSight, McAfee export | CEF (`--features cef`) |
 | Go service writing `key=value` logs | logfmt (`--features logfmt`) |
 | OTel-instrumented service | OTLP via `/v1/logs` |
-| Don't know yet | `auto` |
+| Do not know yet | `auto` |
 | Highest throughput, fields are guaranteed | `json` explicitly (no auto-detect overhead) |
 | Keyword search on free-form text | `plain` |
 
@@ -282,3 +289,4 @@ When an event has no parseable timestamp, the correlation engine falls back to t
 - [OTLP Integration](otlp-integration.md) for the agent configurations on the producer side.
 - [Feature Flags reference](../reference/feature-flags.md) for the `logfmt`, `cef`, `evtx`, `daemon-otlp` feature gates.
 - [Custom Attributes reference](../reference/custom-attributes.md) for the timestamp-field override.
+- [Adding input formats](../developers/adding-input-formats.md) for shipping a new line parser behind a Cargo feature.

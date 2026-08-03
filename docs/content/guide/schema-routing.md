@@ -64,20 +64,23 @@ The flags map to a `schema:` block in the [config file](../reference/configurati
 daemon:
   schema:
     observe: true            # daemon only; counts events per schema
+    discover: false          # daemon only; samples unrecognized shapes for suggestions
     routing: true
+    partition_rules: false   # gated; see Per-schema rule partitioning below
     config: /etc/rsigma/schema.yml
     on_unknown: warn
 
 eval:
   schema:
     routing: true
+    partition_rules: false
     config: ./schema.yml
     on_unknown: drop
 ```
 
 ## Schema-derived logsource
 
-When schema routing is combined with [logsource routing](logsource-routing.md), the schema rsigma recognizes supplies the event's logsource for [conflict-based pruning](logsource-routing.md#conflict-based-not-subset), even when the event carries no explicit `product`/`service`/`category` field. So an event recognized as `sysmon` implies `product: windows, service: sysmon`, and a Cisco or Linux rule is pruned instead of false-positive matching on a mapped field.
+When schema routing is combined with [logsource routing](logsource-routing.md), the schema RSigma recognizes supplies the event's logsource for [conflict-based pruning](logsource-routing.md#conflict-based-not-subset), even when the event carries no explicit `product`/`service`/`category` field. So an event recognized as `sysmon` implies `product: windows, service: sysmon`, and a Cisco or Linux rule is pruned instead of false-positive matching on a mapped field.
 
 Built-in implied logsources cover the platform-locked schemas:
 
@@ -147,7 +150,7 @@ routing:
           tenant: acme
 ```
 
-Resolution per event is explicit event field, then the static `--event-logsource`, then the schema-derived logsource, then any format default, then unset (fail-open). This prunes only at product/service granularity; category-level pruning inside one product (for example `process_creation` versus `ps_script`) still needs the event to assert a category or a pipeline to derive it.
+Resolution per event is explicit event field, then the static `--event-logsource` (or the EVTX-only format default when no product is set), then the schema-derived logsource for any dimension still unset, then unset (fail-open). This prunes only at product/service granularity; category-level pruning inside one product (for example `process_creation` versus `ps_script`) still needs the event to assert a category or a pipeline to derive it.
 
 ## Per-schema rule partitioning
 
@@ -169,7 +172,7 @@ Correlation works across schemas. Detections from each per-schema engine feed on
 
 An event that matches no signature is "unknown". The `on_unknown` policy decides its fate: `warn` and `passthrough` evaluate it against the default pipeline-set (the difference is a logged warning), `drop` skips it, and `error` skips it and flags an error. Pair routing with [`--observe-schemas`](../cli/engine/daemon.md) (daemon) or [`engine classify`](../cli/engine/classify.md) to find sources whose schema is not yet recognized, then add a signature and a binding.
 
-With `--observe-schemas`, the daemon's `GET /api/v1/schemas` endpoint reports a bounded, redacted sample of the field-key shapes of unknown events (`unknown_shapes`), so you can see exactly which key sets are unrecognized and author a signature for them without inspecting raw event values. The same endpoint reports a per-schema routing pruning summary (`routing_pruning`, eligible versus pruned rules) and an `ambiguous` count for events where two different-name signatures tied at the winning specificity. `engine classify` surfaces the same ambiguity per event; resolve it by giving one signature a distinguishing predicate or a higher `specificity`.
+With `--observe-schemas`, the daemon's `GET /api/v1/schemas` endpoint reports a bounded, redacted sample of the field-key shapes of unknown events (`unknown_shapes`), so you can see exactly which key sets are unrecognized and author a signature for them without inspecting raw event values. The same endpoint reports an `ambiguous` count for events where two different-name signatures tied at the winning specificity. When schema routing and [logsource routing](logsource-routing.md) are both active, it also reports a per-schema pruning summary (`routing_pruning`, eligible versus pruned rules). `engine classify` surfaces the same ambiguity per event; resolve it by giving one signature a distinguishing predicate or a higher `specificity`.
 
 ## Discovering signatures
 
@@ -182,4 +185,14 @@ rsigma engine discover-schemas -e @events.ndjson --emit yaml >> schemas.yml
 
 The workflow is a loop: `engine classify` shows you have unknowns, `discover-schemas` proposes signatures, and classifying again with the pasted config verifies them (`--dry-run` previews the before/after classification counts in one step). Proposals are always declarative signatures a human reviews and renames; nothing is applied automatically.
 
-On a running daemon, `--discover-schemas` (which implies `--observe-schemas`) samples the shapes of unrecognized events live, and [`GET /api/v1/schemas/suggestions`](../cli/engine/discover-schemas.md) mines them into candidates. The daemon sample is keys-only, so its proposals use presence predicates; run the offline command over a corpus when you want `equals`/`in` value markers.
+On a running daemon, `--discover-schemas` (which implies `--observe-schemas`) samples the shapes of unrecognized events live, and [`GET /api/v1/schemas/suggestions`](../reference/http-api.md#get-apiv1schemassuggestions) mines them into candidates. The daemon sample is keys-only, so its proposals use presence predicates; run the offline command over a corpus when you want `equals`/`in` value markers.
+
+## See also
+
+- [Schema Signatures reference](../reference/schema-signatures.md) for the signature grammar and built-in catalog.
+- [Logsource Routing](logsource-routing.md) for conflict-based pruning that composes with schema routing.
+- [CLI: `engine classify`](../cli/engine/classify.md) for one-shot classification and user signature authoring.
+- [CLI: `engine discover-schemas`](../cli/engine/discover-schemas.md) for offline signature mining.
+- [HTTP API: Schema observability](../reference/http-api.md#schema-observability) for `/api/v1/schemas` and `/api/v1/schemas/suggestions`.
+- [Configuration reference](../reference/configuration.md) for the `daemon.schema` / `eval.schema` keys.
+- [Cloud Collection Recipes](cloud-collection-recipes.md) for schema-routing deployments of built-in cloud schemas.

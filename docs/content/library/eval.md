@@ -25,7 +25,7 @@ serde_json = "1"   # only if you use the JsonEvent shim
 
 | Feature | Default | Effect |
 |---------|---------|--------|
-| `parallel` | off (rsigma-cli turns it on) | `rayon`-based parallel batch evaluation via `Engine::evaluate_batch_parallel`. |
+| `parallel` | off (rsigma-cli turns it on) | `rayon`-based parallel batch evaluation inside `Engine::evaluate_batch`. |
 | `daachorse-index` | off | Cross-rule Aho-Corasick pre-filter. See [Performance Tuning](../guide/performance-tuning.md#cross-rule-aho-corasick-pre-filter). |
 
 ## Public surface

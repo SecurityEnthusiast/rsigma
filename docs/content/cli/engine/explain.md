@@ -10,7 +10,7 @@ rsigma engine explain --rules <PATH>... [OPTIONS]
 
 ## Description
 
-Validation, linting, and the LSP answer "is this rule well-formed?" They cannot answer "given this event, why did the rule not match?" because they have no event data. `engine explain` fills that gap: it runs a non-short-circuiting, bloom-free recording evaluator over one rule and one event and reports, for every condition node and field, whether it matched and why not (field absent, value mismatch with the actual value, case mismatch, existence, no keyword match).
+Validation, linting, and the LSP answer "is this rule well-formed?" They cannot answer "given this event, why did the rule not match?" because they have no event data. `engine explain` fills that gap: it runs a non-short-circuiting, bloom-free recording evaluator over one rule and one event and reports, for every condition node and field, whether it matched and why not (field absent, value mismatch with the actual value, case mismatch, existence check failed, no keyword match).
 
 The verdict can never disagree with the production engine: every per-node result is computed from the same eval primitives the engine uses, so `matched` equals what `engine eval` would decide for the same rule and event.
 
@@ -22,9 +22,9 @@ It consumes event data, so it lives under `engine` (the `rule` group stays stati
 |------|---------|-------------|
 | `-r, --rules <PATH>...` | required | Sigma rule file(s) or director(ies) to explain. Repeatable. |
 | `-e, --event <JSON\|@FILE\|->` | stdin | The event to explain against: inline JSON, `@path` to a JSON file, or `-` (or omitted) to read a single JSON object from stdin. |
-| `-p, --pipeline <PATH\|NAME>` | none | Processing pipeline(s) to apply before evaluation. Builtin names (`ecs_windows`, `sysmon`) or YAML file paths. Repeatable, applied in priority order. |
+| `-p, --pipeline <PATH\|NAME>` | none | Processing pipeline(s) to apply before evaluation. Builtin names (`ecs_windows`, `fibratus_windows`, `sysmon`) or YAML file paths. Repeatable, applied in priority order. |
 | `--rule-id <ID>` | unset | Only explain the rule with this id (falling back to an exact title). |
-| `--show-pipeline` | off | Print the pipeline transformation summary before each trace. No effect without `-p`. |
+| `--show-pipeline` | off | Print the pipeline transformation summary before each human-tree trace. No effect without `-p`, and ignored for `json`/`ndjson`/`csv`/`tsv` output. |
 
 The global [`--output-format`](../../reference/output.md) flag selects the renderer: the default is a human tree; `json` and `ndjson` serialize the full trace; `csv` and `tsv` emit a flat per-leaf table.
 
@@ -43,7 +43,7 @@ Suspicious PowerShell (ps-1): NO MATCH
         PASS User|exact "system" (matched)
 ```
 
-`--output-format json` serializes `RuleExplanation` (one array entry per rule): a tree of condition nodes (`selection`, `and`, `or`, `not`, `quantified`), each detection's items, and per-item `matcher`, `pattern`, `actual`, `matched`, and `reason`. The reasons are `matched`, `field_absent`, `value_mismatch`, `case_mismatch`, `existence`, and `no_keyword_match`.
+`--output-format json` serializes `RuleExplanation` (one array entry per rule): a tree of condition nodes (`selection`, `and`, `or`, `not`, `quantified`), each detection's items, and per-item `matcher`, `pattern`, `actual`, `matched`, and `reason`. JSON `reason` values are snake_case: `matched`, `field_absent`, `value_mismatch`, `case_mismatch`, `existence`, and `no_keyword_match`. The human tree prints the same reasons as spaced phrases (`field absent`, `value mismatch`, `existence check failed`, …).
 
 ## Examples
 
@@ -76,7 +76,14 @@ rsigma engine explain -r rule.yml -e @event.json --output-format json
 | Code | Meaning |
 |------|---------|
 | `0` | Success (regardless of match) |
-| `2` | Bad rule input (parse/compile error, unknown `--rule-id`) |
-| `3` | Bad event input (invalid JSON, unreadable file) |
+| `2` | Bad rule input (empty ruleset, parse/compile or pipeline error, unknown `--rule-id`) |
+| `3` | Bad event input (invalid JSON, unreadable file, empty stdin) |
 
 See [Exit Codes](../../reference/exit-codes.md) for the full scheme.
+
+## See also
+
+- [Evaluating Rules](../../guide/evaluating-rules.md) for the miss-debugging workflow that uses `engine explain`.
+- [`engine eval`](eval.md) for one-shot evaluation of many events.
+- [`pipeline diff`](../pipeline/diff.md) for the rewrite summary `--show-pipeline` prints.
+- [Processing Pipelines](../../guide/processing-pipelines.md) for `-p` semantics.

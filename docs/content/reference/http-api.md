@@ -101,7 +101,7 @@ curl -sS http://127.0.0.1:9090/readyz
 503 body:
 
 ```json
-{"status":"starting","rules_loaded":false}
+{"status":"not_ready","rules_loaded":false}
 ```
 
 ## Status and counters
@@ -409,7 +409,7 @@ The triage feedback loop. Disabled by default; both routes return `503` unless t
 
 ### `POST /api/v1/dispositions`
 
-Ingest one or more analyst dispositions. The body is a single JSON object, a JSON array of objects, or NDJSON. Each object carries `rule_id` (required for `detection` scope, with a title fallback), `verdict` (`true_positive` / `false_positive` / `benign_true_positive`), an optional `scope` (`detection` default, or `incident` with an `incident_id`), optional `fingerprint` / `incident_id` alert identities, an optional RFC 3339 `timestamp`, and optional `analyst` / `note`. Returns `200` with an ingest summary; a whole-body parse failure returns `400`.
+Ingest one or more analyst dispositions. The body is a single JSON object, a JSON array of objects, or NDJSON. Each object carries `rule_id` (required for `detection` scope, with a title fallback), `verdict` (`true_positive` / `false_positive` / `benign_true_positive`), an optional `scope` (`detection` default, or `incident` with an `incident_id`), optional `fingerprint` / `incident_id` alert identities, an optional RFC 3339 `timestamp`, and optional `analyst` / `note` (`note` max 2048 bytes). Returns `200` with an ingest summary; a whole-body parse failure returns `400`. Requires `dispositions:write` when API authentication is enabled.
 
 ```bash
 curl -sS -X POST http://127.0.0.1:9090/api/v1/dispositions \
@@ -420,11 +420,11 @@ curl -sS -X POST http://127.0.0.1:9090/api/v1/dispositions \
 { "accepted": 1, "duplicate": 0, "rejected": 0 }
 ```
 
-Redelivery is idempotent: records deduplicate on `(fingerprint or incident_id, verdict)`, falling back to `(rule_id, timestamp, analyst)`. An `incident`-scoped record with no `rule_id` resolves to the incident's contributing rules through the live incident map; an unknown incident is reported in the summary's `errors` and counted as `rejected`.
+Redelivery is idempotent: records deduplicate on `(fingerprint or incident_id, verdict, rule_id)`, falling back to `(rule_id, timestamp, analyst)`. The `rule_id` is part of the identity key so an incident-scoped fan-out does not collapse per-rule records. An `incident`-scoped record with no `rule_id` resolves to the incident's contributing rules through the live incident map; an unknown incident is reported in the summary's `errors` and counted as `rejected`.
 
 ### `GET /api/v1/dispositions`
 
-The per-rule false-positive ratio view: the active `window_seconds`, `numerator`, and `min_sample`, plus a `rules` array (each with `rule_id`, the verdict counts, `total`, and `fp_ratio`, which is `null` until the rule reaches `min_sample`). This document deserializes directly as the `rule scorecard --triage` input.
+The per-rule false-positive ratio view: the active `window_seconds`, `numerator`, and `min_sample`, plus a `rules` array (each with `rule_id`, the verdict counts, `total`, and `fp_ratio`, which is `null` until the rule reaches `min_sample`). This document deserializes directly as the `rule scorecard --triage` input. Requires `dispositions:read` when API authentication is enabled.
 
 ```bash
 curl -sS http://127.0.0.1:9090/api/v1/dispositions

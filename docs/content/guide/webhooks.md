@@ -6,9 +6,9 @@ Webhooks compose with the other `--output` sinks. The daemon fans each result in
 
 ## Reliability model: best-effort, at-most-once
 
-A webhook is a notification channel, not a durable record. It runs in the lossy `on_full=drop` mode of the [async delivery layer](../cli/engine/daemon.md): its acknowledgment fires when the result is enqueued (or dropped, or routed to the DLQ), never when the third-party endpoint actually responds. This is by design: blocking event acknowledgment on a chat or paging service would be the worse failure mode. Keep your durable record on NATS or a file; anything the webhook cannot deliver lands in the `--dlq`.
+A webhook is a notification channel, not a durable record. It runs in the lossy `on_full=drop` mode of the [async delivery layer](../cli/engine/daemon.md): a full webhook queue drops the result for that sink (counted on `rsigma_sink_dropped_total`) instead of backpressuring the dispatcher, and undeliverable results after retries land in the `--dlq`. Keep your durable record on NATS or a file.
 
-Because each sink runs its own bounded queue and worker, a slow or flaky webhook endpoint cannot stall the NATS or file sink behind it.
+Source acknowledgment still joins every sink. An accepted webhook item holds its share of the ack-join until the worker finishes (HTTP success, permanent failure, or retry exhaustion to the DLQ); only a full-queue drop releases that share immediately. Independent per-sink queues mean a slow webhook does not stall the NATS or file worker's own progress, but it can still delay the source ack until that HTTP attempt completes.
 
 ## Enabling webhooks
 
@@ -30,7 +30,7 @@ daemon:
       - /etc/rsigma/webhooks/
 ```
 
-Webhook configs are loaded and validated once at startup. A config that references the wrong template namespace, declares an unknown `kind`, omits `url`, or sets a malformed retry or rate-limit value rejects the daemon with a clear, field-scoped error. Hot reload is not supported in v1: webhook changes take effect on restart.
+Webhook configs are loaded and validated once at startup. A config that references the wrong template namespace, declares an unknown `kind`, omits `url`, or sets a malformed retry or rate-limit value rejects the daemon with a clear, field-scoped error. Hot reload is not supported: webhook changes take effect on restart.
 
 ## Config reference
 
@@ -68,7 +68,7 @@ webhooks:
 | Field | Required | Default | Notes |
 |-------|----------|---------|-------|
 | `id` | yes | — | Stable identifier; the `webhook_id` metric label and the per-sink delivery label. Must be unique across all webhook files. |
-| `kind` | yes | — | `detection` or `correlation`. Filters which result-body variant the webhook fires on. `incident` is reserved for a later release. |
+| `kind` | yes | — | `detection` or `correlation`. Filters which result-body variant the webhook fires on. |
 | `url` | yes | — | Target URL template. |
 | `method` | no | `POST` | Any valid HTTP method. |
 | `headers` | no | — | Header templates. Values are rendered per result. |
@@ -108,8 +108,9 @@ Each webhook is driven by one bounded queue and worker. The worker owns the queu
 
 - **Classification.** Connection and timeout errors, HTTP `429` (honoring a numeric `Retry-After`, capped), and `5xx` are retryable. Other `4xx` are permanent: a misrendered payload will not heal on retry, so it routes straight to the DLQ without spending the retry budget.
 - **Backoff.** Retryable failures use capped exponential backoff (`backoff * 2^attempt`, up to `max_backoff`). Retries delay only this webhook's own queue.
-- **Rate limiting.** When a per-entry token bucket is configured, the worker waits for a token before each request, so traffic is delayed rather than dropped; the wait shows up as the `rate_limited_wait` outcome.
-- **DLQ.** Both retry exhaustion and a full queue route to the daemon's `--dlq`, reusing the same record shape as parse errors and other sink failures, with an error prefixed `webhook <id>:`.
+- **Rate limiting.** When a per-entry token bucket is configured, the worker waits for a token before each request, so traffic is delayed rather than dropped. A wait increments `rate_limited_wait` and the subsequent POST still records `success` or `permanent_failure`, so those labels are not mutually exclusive on one attempt.
+- **Full queue.** When the bounded queue is full, the result is dropped for this webhook (`rsigma_sink_dropped_total`) and never reaches HTTP or the DLQ.
+- **DLQ.** Permanent failures and retry exhaustion route to the daemon's `--dlq`, reusing the same record shape as parse errors and other sink failures. The underlying error string is prefixed `webhook <id>:`.
 
 ## Egress policy and secrets
 
@@ -140,7 +141,7 @@ Webhook TLS uses rustls and verifies the endpoint against the URL host. PEM file
 
 ## Signing requests
 
-A webhook can HMAC-sign every request so a receiving endpoint can confirm it came from rsigma (authenticity), that the body was not altered in transit (integrity), and, for the timestamped default, that it is not a replay. The signature covers the exact rendered body bytes, which the template engine cannot produce on its own, so signing is a first-class `signing:` block rather than a header recipe.
+A webhook can HMAC-sign every request so a receiving endpoint can confirm it came from RSigma (authenticity), that the body was not altered in transit (integrity), and, for the timestamped default, that it is not a replay. The signature covers the exact rendered body bytes, which the template engine cannot produce on its own, so signing is a first-class `signing:` block rather than a header recipe.
 
 Signing only helps endpoints you control and write the verifier for, such as an internal relay or a custom receiver. The public services (Slack, Microsoft Teams, Discord, PagerDuty) do not verify a sender HMAC, so it adds nothing there. It complements the `tls:` and `Authorization`-header mechanisms rather than replacing them.
 
@@ -154,7 +155,7 @@ The key always comes from the environment via `signing.secret_env`, resolved onc
 - **`github`**: `X-Hub-Signature-256: sha256=<hex HMAC-SHA256 of body>`, the widely recognized GitHub convention. It signs the body only, so it has no replay protection, and rotation is not supported.
 - **`custom`**: an operator-defined header name, algorithm (`sha256` or `sha512`), encoding (`hex` or `base64`), value format, and signed-payload template, for receivers like Stripe.
 
-A retry reproduces an identical id, timestamp, and signature, so a receiver can dedupe redeliveries on `webhook-id` and enforce a replay window on `webhook-timestamp`. rsigma only generates signatures; the verifier on the receiving side must compare them in constant time.
+A retry reproduces an identical id, timestamp, and signature, so a receiver can dedupe redeliveries on `webhook-id` and enforce a replay window on `webhook-timestamp`. RSigma only generates signatures; the verifier on the receiving side must compare them in constant time.
 
 ### Standard Webhooks (default)
 
@@ -170,7 +171,7 @@ webhooks:
       secret_env: RSIGMA_WEBHOOK_SECRET
 ```
 
-The key is the raw value of `$RSIGMA_WEBHOOK_SECRET`. If you generated it with a Standard Webhooks library (a `whsec_`-prefixed base64 secret), set `secret_encoding: base64` and rsigma strips the prefix and decodes it before signing. A receiver verifies with any Standard Webhooks library, or directly:
+The key is the raw value of `$RSIGMA_WEBHOOK_SECRET`. If you generated it with a Standard Webhooks library (a `whsec_`-prefixed base64 secret), set `secret_encoding: base64` and RSigma strips the prefix and decodes it before signing. A receiver verifies with any Standard Webhooks library, or directly:
 
 ```python
 import base64, hashlib, hmac
@@ -223,16 +224,16 @@ webhooks:
 
 ### Key rotation
 
-To rotate a secret without dropping deliveries, set `rotate_secret_env` to the previous key's variable. rsigma emits a signature for each key (space-separated for the `standard` and `custom` schemes), so a receiver that accepts either verifies throughout the rollover. Drop `rotate_secret_env` once every receiver trusts the new key. Rotation is not available for `github`, which carries a single signature value.
+To rotate a secret without dropping deliveries, set `rotate_secret_env` to the previous key's variable. RSigma emits a signature for each key (space-separated for the `standard` and `custom` schemes), so a receiver that accepts either verifies throughout the rollover. Drop `rotate_secret_env` once every receiver trusts the new key. Rotation is not available for `github`, which carries a single signature value.
 
 ## Observability
 
 Per-webhook request metrics:
 
-- `rsigma_webhook_requests_total{webhook_id,outcome}` with outcomes `success`, `permanent_failure`, and `rate_limited_wait`.
+- `rsigma_webhook_requests_total{webhook_id,outcome}` with outcomes `success`, `permanent_failure`, and `rate_limited_wait` (`rate_limited_wait` counts token waits and can co-occur with a later `success` or `permanent_failure` on the same attempt).
 - `rsigma_webhook_request_duration_seconds{webhook_id}`.
 
-Queue depth, retries, drops, and DLQ routing are read from the shared per-sink series (`rsigma_sink_queue_depth`, `rsigma_sink_retries_total`, ...), keyed by `sink=<webhook id>` so the two series join one-to-one. Labels are pre-seeded from config at startup, so panels render before any traffic.
+Queue depth, retries, drops, and DLQ routing are read from the shared per-sink series (`rsigma_sink_queue_depth`, `rsigma_sink_retries_total`, `rsigma_sink_dropped_total`, ...), keyed by `sink=<webhook id>` so the two series join one-to-one. Labels are pre-seeded from config at startup, so panels render before any traffic.
 
 ## Recipe catalog
 
@@ -304,7 +305,7 @@ webhooks:
 
 ### PagerDuty
 
-PagerDuty Events API v2. The `routing_key` is the integration key for an Events API v2 service; `dedup_key` groups alerts (using the rule id here, which improves once incident grouping supplies stable incident ids):
+PagerDuty Events API v2. The `routing_key` is the integration key for an Events API v2 service; `dedup_key` groups alerts (the rule id here):
 
 ```yaml
 webhooks:
@@ -326,6 +327,10 @@ webhooks:
       }
 ```
 
-## Looking ahead
+## See also
 
-`kind` is a closed set today (`detection`, `correlation`). A later release adds `kind: incident` and an `${incident.*}` template namespace so one webhook can fire per grouped incident instead of per raw detection. That will be an additive change: no existing config key changes meaning, and switching a webhook to incident-level alerting becomes a one-line `kind` swap.
+- [Daemon CLI](../cli/engine/daemon.md): `--webhook`, `--dlq`, `--egress-policy`, and sink delivery flags
+- [Enrichers](enrichers.md): shared template engine and scope axes
+- [NATS Streaming](nats-streaming.md): durable at-least-once output alongside webhooks
+- [Alert Pipeline](alert-pipeline.md): silence, inhibit, dedup, and grouping before sinks
+- [Metrics](../reference/metrics.md): `rsigma_webhook_*` and shared `rsigma_sink_*` series

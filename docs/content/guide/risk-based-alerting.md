@@ -35,7 +35,7 @@ The score and objects are injected into `header.enrichments` under the reserved 
 
 ## Stage two: the risk-incident layer
 
-When an `incident:` block is configured, a per-entity sliding-window accumulator keyed by `(entity_type, entity_value)` sums risk over the window and tracks two modifiers: the **distinct ATT&CK tactic count** (read from each firing's `attack.<tactic>` tags) and the **distinct contributing-source count** (distinct rule identities). A `RiskIncidentResult` fires when an entity crosses `score_threshold` (the window risk sum) or `tactic_count_threshold` (distinct tactics over the window), subject to a per-entity `cooldown` so one entity does not re-fire on every subsequent event. At least one of the two thresholds is required.
+When an `incident:` block is configured, a per-entity sliding-window accumulator keyed by `(entity_type, entity_value)` sums risk over the window and tracks two modifiers: the **distinct ATT&CK tactic count** (read from each firing's `attack.<tactic>` tags; only known tactic short names count, with hyphen and underscore spellings normalized; technique tags like `attack.t1059` do not) and the **distinct contributing-source count** (distinct rule identities). A `RiskIncidentResult` fires when an entity crosses `score_threshold` (the window risk sum) or `tactic_count_threshold` (distinct tactics over the window), subject to a per-entity `cooldown` so one entity does not re-fire on every subsequent event. At least one of the two thresholds is required.
 
 The incident is one flat NDJSON object disambiguated by a `risk_incident_id` (UUIDv4). It carries the entity, the window score, the contributing tactics and sources, the window bounds, the `trigger` (`score` or `tactic_count`), and the top contributing detections (`include: refs` for lightweight references, the default, or `include: results` for full event-stripped results), bounded by the caps. It is delivered through the same sink path as the alert pipeline's incidents, optionally to a dedicated NATS subject.
 
@@ -53,6 +53,7 @@ scope:
 strip_event: false
 
 # Score sourcing (precedence: attribute, tag_scores, level_scores, default).
+# Omitting default_score leaves it at 0.
 score:
   # attribute: rsigma.risk_score   # custom-attribute key (this is the default)
   tag_scores:
@@ -89,16 +90,24 @@ incident:
     max_results_per_incident: 1000
 ```
 
-Point the daemon at it with `--risk /etc/rsigma/risk.yml` or `daemon.risk: /etc/rsigma/risk.yml`. The config hot-reloads on `SIGHUP`, file-watcher changes, and `POST /api/v1/reload`; a failed reload keeps the previous config active, and in-flight accumulators survive the swap.
+Point the daemon at it with `--risk /etc/rsigma/risk.yml` or `daemon.risk: /etc/rsigma/risk.yml`. The config hot-reloads on `SIGHUP`, file-watcher changes, and `POST /api/v1/reload`; a failed reload keeps the previous config active, and in-flight accumulators survive the swap. Unlike the alert pipeline config, unknown YAML fields are not rejected, so a misspelled key is silently ignored.
 
 ## Persistence
 
-When `--state-db` is set, a versioned risk snapshot is saved to the SQLite store on the periodic and shutdown hooks beside the correlation and alert-pipeline snapshots, and restored on boot with window-aware pruning (contributions already past the window are dropped, entities left empty are skipped). `--clear-state` skips the restore and `--keep-state` forces it, matching the other state domains; a snapshot-version mismatch starts fresh with a warning.
+When `--state-db` is set, a versioned risk snapshot is saved to the SQLite store in its own `rsigma_risk_state` table on the periodic and shutdown hooks beside the correlation and alert-pipeline snapshots, and restored on boot with window-aware pruning (contributions already past the window are dropped, entities left empty are skipped). `--clear-state` skips the restore and `--keep-state` forces it, matching the other state domains; a snapshot-version mismatch starts fresh with a warning.
 
 ## Observability
 
-The open entities, each with its current window score, distinct tactic count, source count, and window bounds, are readable at `GET /api/v1/risk`. The layer exposes nine Prometheus metrics: `rsigma_risk_annotations_total{action}`, `rsigma_risk_annotation_score`, `rsigma_risk_objects_total`, `rsigma_risk_entities_open`, `rsigma_risk_state_entries`, `rsigma_risk_evictions_total`, `rsigma_risk_incidents_emitted_total{trigger}`, `rsigma_risk_incident_results_total`, and `rsigma_risk_layer_duration_seconds`.
+The open entities, each with its current window score, distinct tactic count, source count, and window bounds, are readable at `GET /api/v1/risk` when an `incident:` block is configured (annotation-only configs return an empty list). The layer exposes nine Prometheus metrics: `rsigma_risk_annotations_total{action}`, `rsigma_risk_annotation_score`, `rsigma_risk_objects_total`, `rsigma_risk_entities_open`, `rsigma_risk_state_entries`, `rsigma_risk_evictions_total`, `rsigma_risk_incidents_emitted_total{trigger}`, `rsigma_risk_incident_results_total`, and `rsigma_risk_layer_duration_seconds`.
 
 ## Relationship to the alert pipeline
 
 The risk layer and the [alert pipeline](alert-pipeline.md) are siblings built on the same post-engine plumbing: the same field-selector namespace, the same scope filter, the same incident delivery path, and the same SQLite snapshot store under a separate table. Where the alert pipeline collapses noisy duplicates into incidents, the risk layer accumulates the risk those firings represent onto the entities they touch. They compose: when both run, the order is enrichment, risk, alert pipeline, sinks.
+
+## See also
+
+- [CLI reference: `engine daemon`](../cli/engine/daemon.md) for `--risk` and state flags.
+- [Enrichers](enrichers.md) for the stage that runs immediately before risk.
+- [Alert Pipeline](alert-pipeline.md) for the stage that runs after risk.
+- [Prometheus metrics reference](../reference/metrics.md) for the full risk metric set.
+- [HTTP API reference](../reference/http-api.md) for `GET /api/v1/risk`.

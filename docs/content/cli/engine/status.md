@@ -12,7 +12,9 @@ rsigma engine status [OPTIONS]
 
 Fetches a one-shot snapshot of engine counters (rules loaded, events processed, detections fired, correlation state entries, uptime, and the dynamic-source summary when configured) from a running [`engine daemon`](daemon.md) and prints it. It is the read-only client counterpart to the daemon: the same information served at `GET /api/v1/status`, formatted for a human instead of `curl`.
 
-The command uses a synchronous HTTP client and does not need the `daemon` build feature, so a lightweight build can still inspect a remote daemon. It follows the same address convention as [`config reload`](../config/reload.md): `--addr` defaults to `daemon.api.addr` from the resolved config, and wildcard bind addresses (`0.0.0.0`, `[::]`) are mapped to loopback so the client can connect to a daemon that advertised every interface.
+The command uses a synchronous HTTP client and does not need the `daemon` build feature, so a lightweight build can still inspect a remote daemon. It follows the same address convention as [`config reload`](../config/reload.md): `--addr` defaults to `daemon.api.addr` from the resolved config (compiled default `0.0.0.0:9090`), and wildcard bind addresses (`0.0.0.0`, `[::]`) are mapped to loopback so the client can connect to a daemon that advertised every interface.
+
+The client does not send an `Authorization` header. Against a daemon with [API authentication](../../reference/http-api.md#authentication) enabled, either leave the API open, grant anonymous `status:read` (or a broader read role), or query the endpoint with `curl` and a bearer token. HTTP 401/403 still exit `3`.
 
 For continuous monitoring, scrape [`/metrics`](../../reference/metrics.md) instead; `engine status` is for a quick interactive check.
 
@@ -24,6 +26,8 @@ For continuous monitoring, scrape [`/metrics`](../../reference/metrics.md) inste
 | `-c, --config <PATH>` | discovery chain | Explicit config file used to resolve the daemon address. |
 
 The global `--output-format` / `--color` / `--quiet` / `--no-stats` flags apply; see [Output Formats](../../reference/output.md). The default is TTY-aware: pretty `json` on a terminal, `ndjson` when piped. `table`, `csv`, and `tsv` render a `METRIC | VALUE` view.
+
+`json` / `ndjson` echo the raw API body (including `uptime_seconds` and any future fields). The tabular views flatten known counters and humanize uptime as `uptime` (for example `5m 12s`); when `dynamic_sources` is present they append `dynamic_sources.total`, `dynamic_sources.resolves_total`, `dynamic_sources.errors_total`, and `dynamic_sources.cache_hits`.
 
 ## Examples
 
@@ -69,11 +73,12 @@ rsigma engine status --output-format json | jq '.events_processed'
 | Code | Meaning |
 |------|---------|
 | `0` | The daemon responded and the snapshot was printed. |
-| `3` | The daemon could not be reached, returned a non-2xx status, or sent an unparseable response. |
+| `3` | The daemon could not be reached, returned a non-2xx status (including auth failure), or sent an unparseable response. |
 
 ## See also
 
 - [`engine daemon`](daemon.md) for the long-running service this command queries.
 - [HTTP API: `GET /api/v1/status`](../../reference/http-api.md#status-and-counters) for the raw endpoint and response shape.
+- [HTTP API: Authentication](../../reference/http-api.md#authentication) when the daemon requires bearer tokens.
 - [`config reload`](../config/reload.md) for the sibling daemon-client command that shares the `--addr` convention.
 - [Prometheus Metrics](../../reference/metrics.md) for continuous monitoring of the same counters.

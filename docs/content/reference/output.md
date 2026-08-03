@@ -76,7 +76,7 @@ warning: `--output-format csv` is not supported by `rule reverse`; falling back 
 
 `--quiet` suppresses that warning. The command never silently pretends the requested format was produced.
 
-## Per-command behaviour
+## Per-command behavior
 
 ### Structured (all five formats)
 

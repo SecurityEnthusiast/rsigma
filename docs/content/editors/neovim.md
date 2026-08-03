@@ -9,10 +9,10 @@ The capability matrix is the same as the [VS Code](vscode.md) extension: diagnos
 Install the server. Either:
 
 ```bash
-cargo install rsigma-lsp
+cargo install --locked rsigma-lsp
 ```
 
-or pick `rsigma-lsp` out of the [release archive](../getting-started/installation.md) (it ships alongside the `rsigma` CLI). Confirm it is on your `$PATH`:
+or unpack `rsigma-lsp` from the [release archive](../getting-started/installation.md) (it ships alongside the `rsigma` CLI). Confirm it is on your `$PATH`:
 
 ```bash
 rsigma-lsp --version
@@ -39,7 +39,7 @@ Restart Neovim, open a `.yml` Sigma rule, and `:LspInfo` should show `rsigma-lsp
 
 ### With `nvim-lspconfig`
 
-If you use [`nvim-lspconfig`](https://github.com/neovim/nvim-lspconfig), there is no upstream config yet; add one inline:
+If you use [`nvim-lspconfig`](https://github.com/neovim/nvim-lspconfig), register the server inline:
 
 ```lua
 local configs = require('lspconfig.configs')
@@ -88,7 +88,7 @@ require('lspconfig').yamlls.setup({
 
 ### Code actions and quick-fixes
 
-Default bindings differ per distro; the canonical mapping is `vim.lsp.buf.code_action()`. In Lazyvim / Astrovim, `<leader>ca` is the standard. The 13 fixable rules from the [Lint Rules reference](../reference/lint-rules.md) all surface as `quickfix`-kind actions marked `isPreferred`.
+Default bindings differ per distro; the canonical mapping is `vim.lsp.buf.code_action()`. In Lazyvim / Astrovim, `<leader>ca` is the standard. The {{ rsigma.lint.autofix }} fixable rules from the [Lint Rules reference](../reference/lint-rules.md) all surface as `quickfix`-kind actions marked `isPreferred`.
 
 ## Helix
 
@@ -128,7 +128,7 @@ Zed supports configuring a language server directly from `settings.json` (see [C
 }
 ```
 
-There is no Zed extension package yet; the inline config above is the supported path. If you build one, point it at this page and we will link back.
+There is no Zed extension package; the inline config above is the supported path.
 
 ## Emacs (`eglot`)
 
@@ -168,5 +168,5 @@ In `Preferences -> Package Settings -> LSP -> Settings`:
 ## See also
 
 - [`rsigma-lsp` README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-lsp/README.md) for the full protocol-level capability list (sync mode, debounce, completion contexts, hover sources, document-symbol shape).
-- [Lint Rules reference](../reference/lint-rules.md) for the catalogue of {{ rsigma.lint.rules }} lint rules and which ones have safe auto-fixes.
+- [Lint Rules reference](../reference/lint-rules.md) for the catalog of {{ rsigma.lint.rules }} lint rules and which ones have safe auto-fixes.
 - [VS Code and Cursor](vscode.md) for the equivalent setup with the wrapping extension.

@@ -10,7 +10,7 @@ rsigma rule fields [OPTIONS] --rules <RULES>
 
 ## Description
 
-Walks every rule under `--rules`, optionally applies one or more processing pipelines, then prints a table (or JSON) of every distinct field name those rules touch along with the count of rules that reference each field.
+Walks every rule under `--rules`, optionally applies one or more processing pipelines, then prints a table by default (or uses `--output-format json|ndjson|csv|tsv` when set) of every distinct field name those rules touch along with the count of rules that reference each field. `--json` is a deprecated alias for `--output-format json`.
 
 Useful for two operational tasks: confirming your event schema covers every field a ruleset depends on (so you know which fields a pipeline must produce or map to), and auditing rule sets before deploying them against a specific log source.
 
@@ -19,9 +19,9 @@ Useful for two operational tasks: confirming your event schema covers every fiel
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-r, --rules <RULES>` | required | Path to a Sigma rule file or directory of rules. |
-| `-p, --pipeline <PIPELINES>` | unset | Processing pipeline(s) to apply before extracting fields. Builtin names (`ecs_windows`, `sysmon`) or YAML file paths. Repeatable. When set, fields are reported after the pipeline rewrite (so an `ecs_windows` pipeline against Sysmon rules will show `process.command_line`, not `CommandLine`). |
+| `-p, --pipeline <PIPELINES>` | unset | Processing pipeline(s) to apply before extracting fields. Builtin names (`ecs_windows`, `fibratus_windows`, `sysmon`) or YAML file paths. Repeatable. When set, fields are reported after the pipeline rewrite (so an `ecs_windows` pipeline against Sysmon rules will show `process.command_line`, not `CommandLine`). |
 | `--no-filters` | off | Exclude fields that only appear in filter rules. |
-| `--json` | off | Output as JSON instead of a table. |
+| `--json` | off | Deprecated alias for `--output-format json`. |
 
 ## Examples
 
@@ -53,14 +53,14 @@ Outputs ECS-mapped field names (`process.command_line`, `process.executable`, `u
 ### Machine-readable output for tooling
 
 ```bash
-rsigma rule fields -r rules/ --json | jq 'keys'
+rsigma rule fields -r rules/ --output-format json | jq '.fields[].field'
 ```
 
 ### Cross-check against an event schema
 
 ```bash
-rsigma rule fields -r rules/ --json --no-filters \
-    | jq -r 'keys[]' > rule-fields.txt
+rsigma rule fields -r rules/ --output-format json --no-filters \
+    | jq -r '.fields[].field' > rule-fields.txt
 diff <(sort rule-fields.txt) <(sort schema-fields.txt)
 ```
 

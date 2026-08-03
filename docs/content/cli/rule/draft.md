@@ -96,7 +96,7 @@ The command already runs this loop internally (the draft is guaranteed to parse,
 | Code | Meaning |
 |------|---------|
 | `0` | A verified draft was emitted. |
-| `2` | Exemplars could not be read, no rule could honestly cover them (all fields volatile, a forced `--include-field` absent from some exemplars, or the exemplars are too heterogeneous to match at the minimum-field floor), or a flag failed to parse (clap). |
+| `2` | Exemplars could not be read, or no rule could honestly cover them (all fields volatile, a forced `--include-field` absent from some exemplars, or the exemplars are too heterogeneous to match at the minimum-field floor). |
 | `3` | A `--baseline` value without the `@path` prefix. |
 
 ## See also

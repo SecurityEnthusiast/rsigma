@@ -29,19 +29,13 @@ rsigma rule condition 'selection'
 ### Combined selections
 
 ```bash
-rsigma rule condition 'selection and not filter'
+rsigma rule condition '(selection_a or selection_b) and not filter'
 ```
 
 ### Quantified expressions
 
 ```bash
 rsigma rule condition '1 of selection_* and not filter_*'
-```
-
-### Aggregate (correlation) syntax
-
-```bash
-rsigma rule condition 'selection | count() by User > 5'
 ```
 
 ## Exit codes

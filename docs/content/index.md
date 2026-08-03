@@ -1,27 +1,25 @@
 # Welcome to RSigma's documentation!
 
-RSigma is a complete [Sigma](https://sigmahq.io/) detection engineering toolkit: parser, linter, evaluator, correlation engine, conversion framework, streaming daemon, MCP and LSP servers. Or, as Zack Allen put it in [Detection Engineering Weekly #149](https://www.detectionengineering.net/i/191079258/detection-engineering-gem), "RSigma is essentially a SIEM."
-
-RSigma builds on open industry standards throughout: [Sigma](https://sigmahq.io/) for detection rules, [OpenTelemetry](https://opentelemetry.io/) for log ingestion and detection export, and [STIX](https://oasis-open.github.io/cti-documentation/stix/intro) and [TAXII](https://oasis-open.github.io/cti-documentation/taxii/intro) for threat intelligence.
+RSigma is a [Sigma](https://sigmahq.io/) detection engineering toolkit: parser, linter, evaluator, correlation engine, conversion framework, streaming daemon, and MCP and LSP servers. It builds on open industry standards throughout: Sigma for detection rules, [OpenTelemetry](https://opentelemetry.io/) for log ingestion and detection export, and [STIX](https://oasis-open.github.io/cti-documentation/stix/intro) and [TAXII](https://oasis-open.github.io/cti-documentation/taxii/intro) for threat intelligence.
 
 ::: grids
 ::: grid
 ::: card "Install RSigma" icon:download
-Install RSigma with Cargo, Docker, or a signed binary archive.
+Install with a signed binary archive, Docker, or Cargo.
 
 [Installation steps](./getting-started/installation.md)
 :::
 :::
 ::: grid
 ::: card "Quickstart" icon:clock
-Write a rule, evaluate it, run the daemon, and convert to SQL in five minutes.
+Write a rule, evaluate it, run the daemon, and convert to SQL.
 
 [Getting started](./getting-started/quick-start.md)
 :::
 :::
 ::: grid
 ::: card "Core concepts" icon:book-open
-Sigma rules, processing pipelines, the eval/daemon split, and the noun-led CLI groups.
+Sigma rules, processing pipelines, the eval/daemon split, and the noun-led CLI.
 
 [Core concepts](./getting-started/concepts.md)
 :::
@@ -64,7 +62,7 @@ Run the daemon with NATS, HTTP, or OTLP input. Hot-reload, metrics, state.
 | **Runtime evaluation** | Yes (streaming + stateful) | No (converter only) | Yes (stateless) | Yes (stateless) |
 | **Correlation rules** | All 8 types | Partial | No | No |
 | **Filter rules** | Yes | Yes | No | No |
-| **Conversion backends** | PostgreSQL, LynxDB, ... | 20+ | No | No |
+| **Conversion backends** | PostgreSQL, LynxDB, Fibratus | 20+ | No | No |
 | **Streaming daemon** | Yes (NATS, HTTP, OTLP) | No | No | No |
 | **Dynamic pipelines** | Yes (HTTP, file, command, NATS) | Yes (HTTP, file, command) | No | No |
 | **Built-in linter** | {{ rsigma.lint.rules }} rules, auto-fix | Limited | No | No |
@@ -72,39 +70,17 @@ Run the daemon with NATS, HTTP, or OTLP input. Hot-reload, metrics, state.
 | **Single binary** | Yes (multi-arch, signed) | No (requires Python) | Library only | Library only |
 | **License** | MIT | LGPL-3.0 | AGPL-3.0 | MIT |
 
-RSigma is the only Sigma toolkit that combines pySigma-style conversion with a real streaming evaluator, all in a single self-contained binary.
+RSigma combines pySigma-style conversion with a streaming evaluator in one self-contained binary.
 
 ## Featured in
 
-::: callout info "Detection Engineering Weekly #149 (March 2026)"
-"RSigma is essentially a SIEM. Building a tool like RSigma is challenging because the Sigma specification has evolved into a robust domain-specific language over the years."
-
-[DEW #149](https://www.detectionengineering.net/i/191079258/detection-engineering-gem)
-:::
-
-::: callout info "tl;dr sec #320 (March 2026)"
-"Accurately evaluating the full spectrum of what Sigma rules can express is quite complex. It's pretty neat to read about how RSigma handles all of these conditional expressions, correlating across rules, etc."
-
-[tl;dr sec #320](https://tldrsec.com/p/tldr-sec-320#blue-team)
-:::
-
-::: callout info "BlackNoise: The Deep Purple Sec, March 2026"
-"Defensive teams can pipe logs through CLI commands, apply field-mapping pipelines, and chain correlations for multi-stage attack detection."
-
-[BlackNoise](https://www.blacknoise.co/the-deep-purple-sec-march-2026/)
-:::
-
-::: callout info "Detection Engineering Weekly #154 (April 2026)"
-"RSigma is not a SIEM, but it's an impressive feat to build a self-contained Rust binary that operates much like one. For teams doing pre-SIEM rule validation or forensics, it's a solid plug-and-play option."
-
-[DEW #154](https://www.detectionengineering.net/i/195467950/state-of-the-art)
-:::
-
-::: callout info "Detection Engineering Weekly #157 (May 2026)"
-"Instead of hardcoding IOC values in rule YAML, you declare external sources in the pipeline config, and RSigma fetches and injects them at evaluation time. This works very similarly to how I've seen SIEMs implement threat intelligence pipelines, but since it's RSigma, it's self-contained within its ecosystem."
-
-[DEW #157](https://www.detectionengineering.net/p/dew-157-shai-hulud-goes-open-source)
-:::
+| Outlet | Quote |
+|--------|-------|
+| [DEW #149](https://www.detectionengineering.net/i/191079258/detection-engineering-gem) (March 2026) | "RSigma is essentially a SIEM. Building a tool like RSigma is challenging because the Sigma specification has evolved into a robust domain-specific language over the years." |
+| [tl;dr sec #320](https://tldrsec.com/p/tldr-sec-320#blue-team) (March 2026) | "Accurately evaluating the full spectrum of what Sigma rules can express is quite complex. It's pretty neat to read about how RSigma handles all of these conditional expressions, correlating across rules, etc." |
+| [BlackNoise](https://www.blacknoise.co/the-deep-purple-sec-march-2026/) (March 2026) | "Defensive teams can pipe logs through CLI commands, apply field-mapping pipelines, and chain correlations for multi-stage attack detection." |
+| [DEW #154](https://www.detectionengineering.net/i/195467950/state-of-the-art) (April 2026) | "RSigma is not a SIEM, but it's an impressive feat to build a self-contained Rust binary that operates much like one. For teams doing pre-SIEM rule validation or forensics, it's a solid plug-and-play option." |
+| [DEW #157](https://www.detectionengineering.net/p/dew-157-shai-hulud-goes-open-source) (May 2026) | "Instead of hardcoding IOC values in rule YAML, you declare external sources in the pipeline config, and RSigma fetches and injects them at evaluation time." |
 
 ## Built with RSigma
 
@@ -137,4 +113,4 @@ An article series on building RSigma and using it in production:
 - **MSRV:** Rust `{{ rsigma.msrv }}`, edition `{{ rsigma.edition }}`.
 - **Cross-platform binaries:** Linux, macOS, Windows on amd64 and arm64.
 - **Container image:** `{{ rsigma.docker_image }}:latest` (multi-arch, cosign-signed, SBOM, SLSA Build L3 provenance).
-- **Throughput:** ~1.06M events/sec detection, ~569K events/sec correlation on an Apple M4 Pro. See [benchmarks](benchmarks.md).
+- **Benchmarks:** detection and correlation throughput numbers live on the [benchmarks](benchmarks.md) page.

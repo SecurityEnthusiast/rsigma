@@ -6,24 +6,63 @@
 
 ```bash
 # Collect events that fired the same target rule and classify them.
-rsigma rule tune -r rules/ --rule <RULE_ID> --fp @false-positives.ndjson --tp @true-positives.ndjson > tuning-filter.yml
+rsigma rule tune \
+  -r rules/ \
+  --rule 929a690e-bef0-4204-a928-ef5e620d6fcc \
+  --fp @false-positives.ndjson \
+  --tp @true-positives.ndjson \
+  > tuning-filter.yml
 
 # Review the rationale and machine-readable verification.
-rsigma rule tune -r rules/ --rule <RULE_ID> --fp @false-positives.ndjson --tp @true-positives.ndjson --expectations expectations.yml --emit report --output-format json
+rsigma rule tune \
+  -r rules/ \
+  --rule 929a690e-bef0-4204-a928-ef5e620d6fcc \
+  --fp @false-positives.ndjson \
+  --tp @true-positives.ndjson \
+  --expectations expectations.yml \
+  --emit report \
+  --output-format json
 
 # Confirm the artifact after any manual edits.
 rsigma rule lint tuning-filter.yml
 rsigma rule backtest -r rules-with-filter/ --corpus regression-events/
 ```
 
-The true-positive set is mandatory. A suppression proposal without a do-not-break corpus can reduce noise by silently deleting useful coverage, so the command treats an empty TP set as an error.
+`--rule` accepts a rule id or an exact title. It is required when the ruleset contains more than one detection rule. The true-positive set is mandatory: a suppression proposal without a do-not-break corpus can reduce noise by silently deleting useful coverage, so an empty TP set is an error.
+
+On success, stderr reports both sides of the contract, for example `suppressed 2/2 false positives; protected 1/1 true positives`. If an FP or TP does not fire the unfiltered target, the command exits `2` with a labeling error such as:
+
+```text
+error tuning rule: labeled exemplars do not fire the target rule before filtering (false-positive indexes: [], true-positive indexes: [0])
+```
+
+Fix the labels or the target selection before asking for a filter.
+
+A verified filter looks like this:
+
+```yaml
+title: Tuning filter for Suspicious Backup Tool
+id: 31117a32-fe5c-4c4c-b0e7-7c149925c596
+description: 'Suppresses 2 observed false-positive exemplars; verified against 1 true-positive exemplars.'
+author: 'rsigma rule tune'
+logsource:
+    category: process_creation
+    product: windows
+filter:
+    rules:
+        - 929a690e-bef0-4204-a928-ef5e620d6fcc
+    selection:
+        Image: 'C:\Program Files\Veeam\backup.exe'
+        User: svc_backup
+    condition: not selection
+```
 
 ## Closed verification
 
 Tuning runs the target through the real evaluator twice:
 
 1. The target rule is compiled without a filter. Every supplied FP and TP must fire, otherwise the command returns the non-firing exemplar indexes as a labeling error.
-2. The target and proposed filter are added to one `SigmaCollection`. `Engine::add_collection` applies the filter exactly as production loading does. Every TP must still fire and every covered FP must stop firing.
+2. The target and proposed filter are added to one collection. `Engine::add_collection` applies the filter exactly as production loading does. Every TP must still fire and every covered FP must stop firing.
 
 This catches polarity errors, Sigma wildcard escaping, modifier semantics, pipeline field mappings, filter targeting, and logsource compatibility through the production code path rather than a second approximation.
 
@@ -36,7 +75,7 @@ The Sigma filter parser stores the condition under the `filter:` section, and RS
 ```yaml
 filter:
     rules:
-        - <RULE_ID>
+        - 929a690e-bef0-4204-a928-ef5e620d6fcc
     selection:
         User: svc_backup
     condition: not selection
@@ -57,7 +96,7 @@ When one conjunction cannot separate the entire FP set, tuning may partition it 
 ```yaml
 filter:
     rules:
-        - <RULE_ID>
+        - 929a690e-bef0-4204-a928-ef5e620d6fcc
     selection:
         User: svc_backup
         Image|startswith: 'C:\Program Files\Veeam\'
@@ -67,11 +106,13 @@ filter:
     condition: not (selection or selection_2)
 ```
 
-Each emitted selection, including a single-selection proposal, must represent at least two FP exemplars by default, which prevents a unique event from being memorized as a tuning pattern. One filter contains at most five clusters by default so the proposal remains reviewable. `--allow-partial` may emit the verified clusters and identify uncovered FP indexes, but no option permits suppressing a TP.
+Each emitted selection, including a single-selection proposal, must represent at least two FP exemplars by default, which prevents a unique event from being memorized as a tuning pattern. One filter contains at most five clusters by default so the proposal remains reviewable.
+
+If some FPs do not share a clean pattern with the rest, `--allow-partial` may emit the verified clusters and name the uncovered FP indexes. No option permits suppressing a TP.
 
 ## Pipelines and logsource
 
-Pass the same `-p/--pipeline` values used by evaluation or deployment. The target rule is transformed before tuning, so emitted field names and the copied logsource match the compiled detection. Copying the target's post-pipeline logsource keeps the filter lint-clean and guarantees `filter_logsource_contains` cannot skip it.
+Pass the same `-p` / `--pipeline` values used by evaluation or deployment. The target rule is transformed before tuning, so emitted field names and the copied logsource match the compiled detection. Copying the target's post-pipeline logsource keeps the filter lint-clean and guarantees `filter_logsource_contains` cannot skip it.
 
 ## Human review boundary
 

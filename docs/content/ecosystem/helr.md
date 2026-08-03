@@ -56,20 +56,18 @@ Run the rsigma daemon as a consumer:
 
 ```bash
 rsigma engine daemon \
-  --input nats \
-  --nats-url nats://localhost:4222 \
-  --nats-stream audit-events \
-  --nats-subject 'helr.audit' \
+  --input nats://localhost:4222/helr.audit \
   --rules /etc/rsigma/rules \
   --pipeline /etc/rsigma/pipelines/okta.yml \
-  --output stdout
+  --output stdout \
+  --api-addr 127.0.0.1:9090
 ```
 
-You now have an end-to-end pipeline: Okta -> NATS -> Sigma rule evaluation -> stdout (or whatever sink you wire next).
+You now have an end-to-end pipeline: Okta -> NATS -> Sigma rule evaluation -> stdout (or whatever sink you wire next). See [NATS streaming](../guide/nats-streaming.md) for consumer groups, replay, and authentication.
 
 ## Docker Compose
 
-A complete reference stack — NATS, Helr, rsigma daemon, plus a Prometheus and Grafana pair for the metrics — fits in one file:
+A complete reference stack (NATS, Helr, rsigma daemon) fits in one file. Add Prometheus and Grafana separately if you want dashboards for the metrics endpoints:
 
 ```yaml
 services:
@@ -100,30 +98,28 @@ services:
     image: ghcr.io/timescale/rsigma:latest
     read_only: true
     cap_drop: [ALL]
-    user: "65532:65532"
+    user: "65534:65534"
     volumes:
       - ./rules:/etc/rsigma/rules:ro
       - ./pipelines:/etc/rsigma/pipelines:ro
     command:
       - engine
       - daemon
-      - --input=nats
-      - --nats-url=nats://nats:4222
-      - --nats-stream=audit-events
-      - --nats-subject=helr.audit
+      - --input=nats://nats:4222/helr.audit
       - --rules=/etc/rsigma/rules
       - --pipeline=/etc/rsigma/pipelines/okta.yml
       - --output=stdout
-      - --http-listen=0.0.0.0:8090
+      - --api-addr=0.0.0.0:9090
+      - --allow-plaintext
     ports:
-      - "8090:8090"
+      - "9090:9090"
     depends_on: [nats]
 
 volumes:
   helr-state:
 ```
 
-`POST` events flow Okta -> Helr -> NATS -> rsigma daemon -> stdout (or whatever next sink). Both services expose Prometheus metrics; both ship signed multi-arch images. The Docker hardening flags (`read_only`, `cap_drop: [ALL]`, non-root user) match the [Docker deployment guidance](../deployment/docker.md) for rsigma.
+Events flow Okta -> Helr -> NATS -> rsigma daemon -> stdout (or whatever next sink). Both services expose Prometheus metrics; both ship signed multi-arch images. The Docker hardening flags (`read_only`, `cap_drop: [ALL]`, non-root user `65534`) match the [Docker deployment guidance](../deployment/docker.md) for rsigma. `--allow-plaintext` is required because the compose example binds a non-loopback `--api-addr` without TLS.
 
 ## Alternatives to NATS as the glue
 
@@ -131,15 +127,15 @@ NATS JetStream is the recommended transport because it provides at-least-once de
 
 | Transport | Helr side | rsigma side | Trade-off |
 |-----------|-----------|-------------|-----------|
-| File | `--output /var/log/helr/events.ndjson --output-rotate daily` | `--input file --input-path /var/log/helr/events.ndjson` | Disk-buffered, simple, but a restart of either service can drop in-flight events without external journaling. |
 | stdout pipe | `helr run` (default) | `rsigma engine daemon --input stdin` | Lowest overhead, but requires both processes to be co-supervised (one died -> the other dies). |
-| HTTP POST | `--output http://rsigma:8090/api/v1/events` | `--input http --http-listen 0.0.0.0:8090` | Decoupled lifecycle, but no built-in back-pressure or replay. |
+| File + pipe | `--output /var/log/helr/events.ndjson` | `tail -F /var/log/helr/events.ndjson \| rsigma engine daemon --input stdin` | Disk-buffered and simple. The daemon has no native file-tail input, so a follow-pipe is required. A restart of either side can still drop in-flight lines without external journaling. |
+| HTTP POST | `--output http://rsigma:9090/api/v1/events` | `--input http --api-addr 0.0.0.0:9090 --allow-plaintext` | Decoupled lifecycle. RSigma applies channel back-pressure on HTTP ingest; there is no durable replay without NATS. |
 
 Pick NATS for production, stdout for testing, HTTP for "I cannot run NATS but I want loose coupling".
 
 ## Field mapping
 
-Helr emits NDJSON with the SaaS provider's native field names. Most Sigma rules in the SigmaHQ corpus assume ECS or a normalised schema. Use an rsigma processing pipeline to translate. A small Okta example:
+Helr emits NDJSON with the SaaS provider's native field names. Most Sigma rules in the SigmaHQ corpus assume ECS or a normalized schema. Use an rsigma processing pipeline to translate. A small Okta example:
 
 ```yaml
 name: helr_okta
@@ -180,3 +176,4 @@ The two are deliberately orthogonal. Pair them when you need both ends; use eith
 - [NATS streaming guide](../guide/nats-streaming.md) for the rsigma side of the NATS transport.
 - [Streaming detection guide](../guide/streaming-detection.md) for the daemon shape that consumes Helr's output.
 - [Processing pipelines guide](../guide/processing-pipelines.md) for the field-mapping pattern shown above.
+- [Docker deployment](../deployment/docker.md) for hardened container flags and image tags.

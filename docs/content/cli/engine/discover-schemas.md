@@ -20,15 +20,15 @@ For the live equivalent on a running daemon, see [`GET /api/v1/schemas/suggestio
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-e, --event <EVENT>` | stdin | A single event as a JSON string, or `@path` to read NDJSON from a file. Without this flag, reads NDJSON from stdin. |
-| `--schema-config <PATH>` | unset | YAML file of user-defined schema signatures. Events these already recognize are excluded from mining (alias-aware), so a defined schema is never re-proposed. |
+| `-e, --event <EVENT>` | stdin | A single event as a JSON string, or `@path` to read NDJSON from a file. Without this flag, reads NDJSON from stdin. Binary `.evtx` paths are rejected with guidance to decode via [`engine eval`](eval.md) or convert to NDJSON first. |
+| `--schema-config <PATH>` | unset | YAML file of user-defined schema signatures, merged over the built-ins. Events those signatures already recognize are excluded from mining, so a defined schema is never re-proposed. A `routing:` section in the file is ignored here. |
 | `--min-support <N>` | `3` | Minimum events a cluster must contain to yield a candidate. Filters out one-off shapes. |
 | `--similarity <F>` | `0.6` | Jaccard similarity (0.0-1.0) at or above which shapes merge into one cluster. Higher is stricter (more, tighter clusters). |
 | `--max-candidates <N>` | `20` | Maximum candidates to emit, highest support first. |
 | `--max-predicates <N>` | `3` | Maximum predicates per candidate signature. |
 | `--no-value-markers` | off | Propose presence predicates only; never emit `equals`/`in` value markers. |
-| `--dry-run` | off | Reclassify the corpus with the proposed signatures loaded and report the before/after per-schema counts. |
-| `--emit <report\|yaml>` | `report` | `report` prints candidates with stats in the global output format; `yaml` prints only the paste-ready `schemas:` block. |
+| `--dry-run` | off | Reclassify the corpus with the proposed signatures loaded and report the before/after per-schema counts. Applies to `--emit report` only; ignored when `--emit yaml` short-circuits to the paste block. |
+| `--emit <report\|yaml>` | `report` | `report` prints candidates with stats in the global output format; `yaml` prints only the paste-ready `schemas:` block (and skips `--dry-run` and `--output-format`). |
 
 The global [`--output-format`](../../reference/output.md) flag selects `json`, `ndjson`, `table`, `csv`, or `tsv` for the report.
 
@@ -41,7 +41,7 @@ The global [`--output-format`](../../reference/output.md) flag selects `json`, `
 
 ## Redaction
 
-The offline command reads a corpus you already hold and derives low-cardinality value markers in-process, emitting them only into the candidate YAML for your review. The online [suggestions endpoint](../../reference/http-api.md#get-apiv1schemassuggestions) instead mines a keys-only sample (values are never retained), so its proposals are presence-only.
+The offline command reads a corpus you already hold and derives low-cardinality value markers in-process, emitting them only into the candidate YAML for your review. The online [suggestions endpoint](../../reference/http-api.md#get-apiv1schemassuggestions) instead mines a keys-only sample (values are never retained), so its proposals are presence-only and carry `source: keys-only`.
 
 ## Examples
 
@@ -71,14 +71,21 @@ rsigma engine discover-schemas -e @events.ndjson --schema-config schemas.yml
 
 ## Output
 
-The structured report carries a `summary` (`events_mined`, `shapes`, `clusters`, `candidates`, `parse_errors`), a `candidates` array (each with `name`, `specificity`, `source` of `corpus` or `keys-only`, `support`, `coverage_of_unknown`, `predicates`, `sample_field_sets`, and any `overlap_warnings`), and a `signatures_yaml` string identical to `--emit yaml`. With `--dry-run` a `dry_run` object carries the before/after per-schema counts. In `table` format the paste-ready block prints below the table.
+The structured report carries a `summary` (`events_mined`, `shapes`, `clusters`, `candidates`, `parse_errors`), a `candidates` array (each with `name`, `specificity`, `source` of `corpus` or `keys-only`, `support`, `coverage_of_unknown`, `predicates`, `sample_field_sets`, and any `overlap_warnings`), and a `signatures_yaml` string identical to `--emit yaml`. With `--dry-run` a `dry_run` object carries the before/after per-schema counts. In `table` format the paste-ready block prints below the table (when at least one candidate exists); summary and overlap warnings go to stderr unless `--no-stats` / quiet progress hides them.
 
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `2` | Bad input (invalid inline JSON, unreadable file) |
-| `3` | Bad schema config |
+| `2` | Bad event input (invalid inline JSON, unreadable `@path`, or a `.evtx` path) |
+| `3` | Bad schema config (unreadable/invalid `--schema-config`) |
 
 See [Exit Codes](../../reference/exit-codes.md) for the full scheme.
+
+## See also
+
+- [`engine classify`](classify.md) to inspect unknowns and verify pasted signatures.
+- [Schema Routing](../../guide/schema-routing.md) for the discover → review → bind loop.
+- [Schema Signatures](../../reference/schema-signatures.md) for the predicate grammar proposals must satisfy.
+- [`engine daemon`](daemon.md) for `--discover-schemas` and `GET /api/v1/schemas/suggestions`.

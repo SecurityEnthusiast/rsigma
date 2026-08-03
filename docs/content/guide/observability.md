@@ -21,7 +21,7 @@ rsigma --log-format text engine eval -r rules/ -e @events.ndjson
 | `json` | Structured JSON, one object per line. Same shape the daemon always emits. |
 | `text` | Human-readable text with ANSI colors when stderr is a TTY. |
 
-`--log-format` adds the diagnostic-log stream alongside the existing stdout/stderr output; it never replaces them. So `rsigma --log-format json engine eval ...` still prints the `MatchResult` lines to stdout exactly as before; the JSON log lines arrive on stderr.
+`--log-format` adds the diagnostic-log stream alongside the existing stdout/stderr output; it never replaces them. So `rsigma --log-format json engine eval ...` still prints the `EvaluationResult` lines to stdout exactly as before; the JSON log lines arrive on stderr.
 
 Verbosity is controlled by the standard `RUST_LOG` environment variable (`tracing_subscriber::EnvFilter`). The default is `info`. The flag has no effect on `engine daemon`, which is always JSON.
 
@@ -84,8 +84,9 @@ The `span` and `spans` fields tell you the call stack that produced the event wi
 | Span | Where | Useful for |
 |------|-------|------------|
 | `load_rules` | Engine swap path during startup and hot-reload. | Correlating per-source fetches with the engine reload that triggered them. |
-| `evaluate_batch` (debug only) | Per-batch processing in `LogProcessor`. Includes `batch_size`, `matches`, `elapsed_ms`. | Profiling batch latency vs throughput. Off at `info`. |
-| `otlp_logs_request` | One per OTLP `/v1/logs` POST or gRPC `Export`. Includes content encoding and record count. | Detecting agents that send malformed OTLP or overly-large batches. Off at `info`. |
+| `otlp_ingest` (debug only) | One per OTLP `/v1/logs` POST or gRPC `Export`. Includes `transport`, content encoding, and (after decode) record count. | Detecting agents that send malformed OTLP or overly-large batches. Off at `info`. |
+
+Batch latency is not a tracing span; use `rsigma_batch_phase_duration_seconds` (`parse`, `decode_merge`, `observe`, `evaluate`, `result_merge`, `dispatch`) on `/metrics` to rank where batch time goes.
 
 Spans are emitted alongside events. To capture them in a structured aggregator (Loki, Datadog Logs, ClickHouse, etc.), index on the `span.name` field as well as `target` and `level`.
 
@@ -98,13 +99,19 @@ The daemon binds `/metrics` on the same `--api-addr` as the REST API. It exposes
 | **Engine throughput** | `rsigma_events_processed_total`, `rsigma_events_parse_errors_total`, `rsigma_detection_matches_total`, `rsigma_correlation_matches_total`, `rsigma_event_processing_seconds`, `rsigma_batch_phase_duration_seconds`, `rsigma_pipeline_latency_seconds`, `rsigma_batch_size`, `rsigma_uptime_seconds` | How fast are we ingesting, how often are rules firing, and how does batch time split across parse, decode merge, observe, evaluate, result merge, and dispatch? |
 | **Queue and back-pressure** | `rsigma_input_queue_depth`, `rsigma_output_queue_depth`, `rsigma_back_pressure_events_total` | Is the engine keeping up with the source? Is the source faster than the sink? |
 | **Rule and state load** | `rsigma_detection_rules_loaded`, `rsigma_correlation_rules_loaded`, `rsigma_correlation_state_entries`, `rsigma_reloads_total`, `rsigma_reloads_failed_total`, `rsigma_dlq_events_total` | How many rules are loaded, how full is the correlation state, are reloads succeeding? |
-| **Per-rule labels** (appear after first match) | `rsigma_detection_matches_by_rule_total{rule_id="..."}`, `rsigma_correlation_matches_by_rule_total{rule_id="..."}` | Which specific rules are firing? |
+| **Per-rule labels** (appear after first match) | `rsigma_detection_matches_by_rule_total{rule_title,level}`, `rsigma_correlation_matches_by_rule_total{rule_title,level,correlation_type}` | Which specific rules are firing? Titles are not guaranteed unique; join NDJSON by `rule_id` for collision-free analytics. |
+| **Sinks and webhooks** | `rsigma_sink_queue_depth`, `rsigma_sink_retries_total`, `rsigma_sink_dropped_total`, `rsigma_sink_delivery_failures_total`, `rsigma_webhook_requests_total`, `rsigma_webhook_request_duration_seconds` | Is delivery keeping up, retrying, dropping, or failing permanently? |
+| **Alert pipeline** | `rsigma_dedup_results_total`, `rsigma_incidents_open`, `rsigma_incidents_emitted_total`, `rsigma_silenced_total`, `rsigma_inhibited_total` | How are dedup, grouping, silences, and inhibition behaving? |
+| **Risk** | `rsigma_risk_annotations_total`, `rsigma_risk_entities_open`, `rsigma_risk_incidents_emitted_total` | How is entity risk accumulating and when do risk incidents fire? |
+| **Triage dispositions** | `rsigma_dispositions_total`, `rsigma_disposition_ingest_total`, `rsigma_rule_false_positive_ratio` | Are analyst verdicts landing, and what is each rule's live FP ratio? |
 | **Dynamic sources** (with `-p` pipelines that declare sources) | `rsigma_source_resolves_total`, `rsigma_source_resolve_errors_total`, `rsigma_source_resolve_seconds`, `rsigma_source_cache_hits_total`, `rsigma_source_last_resolved_timestamp` | Are HTTP/file/command sources reachable and timely? |
 | **Enrichment** | `rsigma_enrichment_total`, `rsigma_enrichment_duration_seconds`, `rsigma_enrichment_queue_depth`, `rsigma_enrichment_http_cache_hits_total`, `rsigma_enrichment_http_cache_misses_total`, `rsigma_enrichment_http_cache_expirations_total` | How is the enricher chain performing and how often does the HTTP cache pay off? |
+| **Schema and logsource** | `rsigma_events_by_schema_total`, `rsigma_events_unknown_schema_total`, `rsigma_rules_pruned_by_logsource_total`, `rsigma_events_without_logsource_total` | Is routing recognizing events, and how much does logsource pruning save? |
+| **Field observation** (with `--observe-fields`) | `rsigma_fields_observed_total`, `rsigma_fields_observer_unique_keys`, `rsigma_fields_observer_overflow_dropped_total` | Is the observer tracking keys, and is the max-keys cap dropping long-tail fields? |
 | **OTLP** (with `daemon-otlp` feature) | `rsigma_otlp_requests_total`, `rsigma_otlp_log_records_total`, `rsigma_otlp_errors_total` | How are upstream OTLP agents behaving? |
 | **TLS** (with `daemon-tls` feature) | `rsigma_tls_certificate_expiry_seconds`, `rsigma_tls_active_connections` | When does the server cert expire (alert on `< 7d`) and how many TLS clients are connected? |
 
-Some metrics only appear after their first relevant event (per-rule labels, enrichment counters, OTLP counters, TLS handshake failures). A startup `/metrics` scrape shows a subset of the catalogue; the full {{ rsigma.metrics.names }} emerge as the daemon does real work and as the feature-gated surfaces are exercised.
+Some metrics only appear after their first relevant event (per-rule labels, some enrichment/OTLP counters, disposition FP ratios). A startup `/metrics` scrape shows a subset of the catalog; the full {{ rsigma.metrics.names }} emerge as the daemon does real work and as the feature-gated surfaces are exercised.
 
 Scrape `/metrics` at 15-30 s intervals. The histograms (`event_processing_seconds`, `batch_phase_duration_seconds`, `pipeline_latency_seconds`, `batch_size`) use fixed Prometheus bucket boundaries; alert on the `_bucket{le="..."}` quantiles you care about rather than on the raw average. For performance diagnosis, compare the `rsigma_batch_phase_duration_seconds_sum` deltas by `phase` over the same interval.
 
@@ -234,7 +241,7 @@ curl -s http://127.0.0.1:9090/metrics | head -20
 rsigma engine daemon -r rules/ 2>&1 | head -3
 ```
 
-The first lines of `/metrics` should be `# HELP rsigma_...` blocks (Prometheus text format; family order is not stable across builds). The first daemon log line should be a `Rules loaded` event with `target=rsigma::daemon::server`. If either is missing, the build is probably without the `daemon` feature or with a broken `--api-addr`.
+The first lines of `/metrics` should be `# HELP rsigma_...` blocks (Prometheus text format; family order is not stable across builds). Look for a `Rules loaded` event with `target=rsigma::daemon::server` in the daemon's JSON stderr stream (other lifecycle lines may precede it). If either is missing, the build is probably without the `daemon` feature or with a broken `--api-addr`.
 
 ## See also
 
@@ -243,6 +250,7 @@ The first lines of `/metrics` should be `# HELP rsigma_...` blocks (Prometheus t
 - [NATS Streaming](nats-streaming.md) for the NATS-specific log targets (`async_nats::connector`).
 - [Visibility and Data Sources](visibility-and-data-sources.md) for turning the `--observe-fields` signal into DeTT&CT and Navigator visibility artifacts.
 - [Rule Hygiene](rule-hygiene.md) for the report that consumes this broken-coverage snapshot (`--fields`) to flag rules whose referenced fields are never seen.
+- [Triage Feedback Loop](triage-feedback.md) for disposition ingest and the live false-positive ratio metrics.
 - [Prometheus metrics reference](../reference/metrics.md) for the full {{ rsigma.metrics.names }}-metric catalog.
 - [HTTP API reference](../reference/http-api.md) for every endpoint exposed alongside `/metrics`.
 - [`tracing` filter syntax](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) for the exact `RUST_LOG` directive grammar.

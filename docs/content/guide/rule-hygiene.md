@@ -1,6 +1,6 @@
 # Rule Hygiene
 
-Detection programs accumulate rules faster than they retire them. The 2026 detection-engineering maturity guidance makes retirement a first-class discipline: every detection needs an owner, a last-fired date, and a deletion bar, and without a forcing function the rule catalog grows until the team drowns in unowned, untuned, never-firing rules. `rsigma rule hygiene` is that forcing function. It assembles the signals rsigma already produces into one report of retirement and clean-up candidates, then lets CI gate on them.
+Detection programs accumulate rules faster than they retire them. Elastic's [Detection Engineering Behavior Maturity Model (DEBMM)](https://www.elastic.co/security-labs/elastic-releases-debmm) puts structured rule management, continuous review, and low-noise maintenance at the center of a mature detection program, and published lifecycles such as the [SANS detection engineering lifecycle](https://www.sans.org/blog/logs-alerts-introducing-detection-engineering-poster) treat deployment and maintenance (including tuning and retirement) as an ongoing phase rather than a one-time ship. Without a forcing function the catalog fills with unowned, untagged, never-firing, and stale rules. `rsigma rule hygiene` is that forcing function. It assembles the signals RSigma already produces into one report of retirement and clean-up candidates, then lets CI gate on them.
 
 This guide covers which input feeds which signal, how to read the report, and how to wire `--fail-on` into CI.
 
@@ -8,13 +8,13 @@ This guide covers which input feeds which signal, how to read the report, and ho
 
 The report carries seven signals in one pass:
 
-- **silent**: a rule with no matches over the metrics window, or one whose last-fired is older than the silence threshold. A rule that has not fired in a year is a deletion candidate.
-- **noisy**: a fire-count outlier. A rule that fires far more than its peers is either too broad or firing only on false positives.
+- **silent**: a rule with no matches over the metrics window, or one whose last-fired is older than `--silent-threshold` (default `365d`). A rule that has not fired in a year is a deletion candidate.
+- **noisy**: a fire-count outlier. By default a robust median-plus-MAD test over peers that have fired; set `--noisy-threshold` for an absolute per-window ceiling instead. A rule that fires far more than its peers is either too broad or firing only on false positives.
 - **untagged**: a rule with no `attack.*` ATT&CK tag. This is the same untagged set [`rule coverage`](../cli/rule/coverage.md) reports, rolled into the hygiene verdict rather than recomputed.
-- **no-owner**: a rule with no owner, so no one is accountable for tuning or retiring it.
-- **incomplete-ads**: a `stable` detection rule missing required [ADS](detection-strategy.md) sections, so it ships to production without a documented strategy.
-- **broken-fields**: a rule whose referenced fields are never seen in the data, so it cannot fire no matter what.
-- **deprecated**: a rule already marked `deprecated`/`unsupported`, or one whose `modified` date is older than the staleness threshold.
+- **no-owner**: a rule with neither an `author:` field nor a custom-attribute `owner` key, so no one is accountable for tuning or retiring it.
+- **incomplete-ads**: a `stable` detection rule (not ADS-exempt) missing required [ADS](detection-strategy.md) sections, so it ships to production without a documented strategy.
+- **broken-fields**: a rule whose referenced fields are all in the field-observability snapshot's never-seen set, so it cannot fire no matter what.
+- **deprecated**: a rule already marked `deprecated`/`unsupported`, or one whose `modified:` (falling back to `date:`) is older than `--stale-threshold` (default `365d`).
 
 ## Which input feeds which signal
 
@@ -25,7 +25,7 @@ The report carries seven signals in one pass:
 | An event corpus (offline) | `--corpus <PATH>` | silent, noisy |
 | A field-observability snapshot | `--fields <FILE>` | broken-fields |
 
-The static signals need only `--rules`, so the cheapest useful run is one that flags untagged, unowned, undocumented, and deprecated rules with no infrastructure at all. Layering in `--metrics` (or `--corpus`) and `--fields` adds the data-driven signals.
+The static signals need only `--rules`, so the cheapest useful run is one that flags untagged, unowned, undocumented, and deprecated rules with no infrastructure at all. Layering in `--metrics` (or `--corpus`) and `--fields` adds the data-driven signals. For non-NDJSON corpus files, pass `--input-format` (`json`, `syslog`, `plain`, `logfmt`, `cef`, or `auto`).
 
 ### Production fire volume
 
@@ -55,14 +55,25 @@ rsigma rule hygiene --rules ./rules --corpus ./corpus
 
 ## Reading the report
 
-On a TTY the default `table` view prints a per-signal summary and the flagged rules:
+On a TTY the default `table` view prints a per-signal summary on stderr and the flagged rules on stdout:
 
 ```text
-Rules: 200 (180 detection, 20 correlation) | Flagged: 37 | Sources: rules + metrics + fields
-  12 silent  3 noisy  6 untagged  9 no-owner  4 incomplete-ads  1 broken-fields  2 deprecated
+Rules: 7 (7 detection, 0 correlation) | Flagged: 6 | Sources: rules + metrics + fields
+  1 silent  1 noisy  1 untagged  1 no-owner  1 incomplete-ads  1 broken-fields  1 deprecated
+
+RULE                   KIND       SIGNALS            FIRES  LAST_FIRED  OWNER  STATUS
+---------------------  ---------  -----------------  -----  ----------  -----  ----------
+Bravo Noisy            detection  noisy                500  -           Bob    test
+Charlie Quiet          detection  silent                 0  -           Carol  test
+Delta Untagged Orphan  detection  untagged,no-owner      3  -           -      test
+Echo Incomplete ADS    detection  incomplete-ads         2  -           Eve    stable
+Foxtrot Deprecated     detection  deprecated             4  -           Frank  deprecated
+Golf Broken Fields     detection  broken-fields          6  -           Grace  test
 ```
 
-For machine consumption, `--output-format json` emits the full document (a `summary`, a `rules[]` array of flagged verdicts, and a per-signal list for each signal), and `ndjson`/`csv`/`tsv` emit one row per flagged rule. `--report <FILE>` always writes the full JSON document regardless of the chosen output format, so a CI job can both print a table and archive the JSON.
+Without `--metrics`/`--corpus` or `--fields`, the sources line reads `rules only`.
+
+For machine consumption, `--output-format json` emits the full document (a `summary`, a `rules[]` array of flagged verdicts, and a per-signal list for each signal), and `ndjson`/`csv`/`tsv` emit one row per flagged rule. The JSON list keys use snake_case names that differ from the signal labels: `never_fired` (silent), `broken_coverage` (broken-fields), and `stale_status` (deprecated); the other lists match (`noisy`, `untagged`, `no_owner`, `incomplete_ads`). `--report <FILE>` always writes the full JSON document regardless of the chosen output format, so a CI job can both print a table and archive the JSON.
 
 ## Gating CI
 
@@ -84,6 +95,9 @@ Hygiene is the static, coverage-structural half of the retirement story: it surf
 ## See also
 
 - [`rule hygiene` reference](../cli/rule/hygiene.md) for the full flag and exit-code tables.
+- [Configuration](../reference/configuration.md) for the `hygiene.*` config section.
 - [Detection Scorecard](detection-scorecard.md) for the quantitative verdict.
 - [Observability](observability.md) for generating the field-observability snapshot.
 - [CI/CD](ci-cd.md) for wiring hygiene into a pipeline alongside lint, validate, and backtest.
+- [DEBMM](https://www.elastic.co/security-labs/elastic-releases-debmm) and the [SANS detection engineering lifecycle](https://www.sans.org/blog/logs-alerts-introducing-detection-engineering-poster) for the maturity and maintenance framing this command operationalizes.
+- [Detection Engineering Loop](detection-engineering-loop.md) for how hygiene sits in the Measure station.

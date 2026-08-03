@@ -184,18 +184,6 @@ function linkifyIssueRefs(md, repoUrl) {
 }
 
 /**
- * @param {string} text
- * @returns {string}
- */
-function escapeHtml(text) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/**
  * Render inline-code spans (`` `code` ``) in an already-HTML-escaped string as
  * `<code>` elements. Used where HTML renders (the visible header title).
  *
@@ -245,24 +233,6 @@ function renderMarkdownTitles(html) {
       content.includes("`") ? `${open}${stripInlineCode(content)}${close}` : match,
   );
   return out;
-}
-
-/**
- * Append a plain-text site label beside the sidebar logo image.
- *
- * @param {string} html
- * @param {string | undefined} text
- * @returns {string}
- */
-function injectSidebarLogoText(html, text) {
-  if (!text || html.includes('class="logo-text"')) {
-    return html;
-  }
-  const label = `<span class="logo-text">${escapeHtml(text)}</span>`;
-  return html.replace(
-    /(<div class="sidebar-header">\s*<a\b[^>]*\bclass="logo-link"[^>]*>)([\s\S]*?)(<\/a>)/,
-    (_match, open, inner, close) => `${open}${inner}${label}${close}`,
-  );
 }
 
 /**
@@ -326,26 +296,34 @@ const STALE_BRAND_FILES = [
   "rsigma-logotype.png",
 ];
 
+/** @type {{ svg: string, images: Record<string, Buffer> } | null} */
+let brandImageCache = null;
+
 /**
  * Render the brand image set from the logo SVG: the sidebar logo (one image
  * serves both themes; the mark's orange facets carry it on any background, and
  * the dark theme adds a darker backing in CSS) plus a square PNG favicon.
+ * Memoised on the SVG source so repeated builds in one `docmd dev` session
+ * rasterise once.
  *
- * @param {string} destDir
  * @param {string} logoSvgPath
+ * @returns {Promise<Record<string, Buffer>>}
  */
-async function writeBrandImages(destDir, logoSvgPath) {
-  fs.mkdirSync(destDir, { recursive: true });
+async function renderBrandImages(logoSvgPath) {
   const svg = fs.readFileSync(logoSvgPath, "utf8");
+  if (brandImageCache && brandImageCache.svg === svg) {
+    return brandImageCache.images;
+  }
+
   const mark = await sharp(Buffer.from(svg), { density: 192 })
     .trim()
     .png()
     .toBuffer({ resolveWithObject: true });
 
-  await sharp(mark.data)
+  const logo = await sharp(mark.data)
     .resize({ height: 512, withoutEnlargement: true })
     .png()
-    .toFile(path.join(destDir, "logo.png"));
+    .toBuffer();
 
   // Pad to a square in one pipeline, then resize in another: sharp applies
   // resize before extend within a single pipeline, so they must be separate.
@@ -360,10 +338,43 @@ async function writeBrandImages(destDir, logoSvgPath) {
     })
     .png()
     .toBuffer();
-  await sharp(squareBuf)
-    .resize(256, 256)
-    .png()
-    .toFile(path.join(destDir, "favicon.png"));
+  const favicon = await sharp(squareBuf).resize(256, 256).png().toBuffer();
+
+  const images = { "logo.png": logo, "favicon.png": favicon };
+  brandImageCache = { svg, images };
+  return images;
+}
+
+/**
+ * Write a file only when its bytes differ from what is already on disk.
+ * `docmd dev` watches `docs/assets/` and keys its change detection on
+ * mtime, so an unconditional rewrite of an identical file starts a build
+ * loop that never settles.
+ *
+ * @param {string} filePath
+ * @param {Buffer} data
+ */
+function writeIfChanged(filePath, data) {
+  try {
+    if (fs.readFileSync(filePath).equals(data)) {
+      return;
+    }
+  } catch {
+    // Missing or unreadable: fall through and write.
+  }
+  fs.writeFileSync(filePath, data);
+}
+
+/**
+ * @param {string} destDir
+ * @param {string} logoSvgPath
+ */
+async function writeBrandImages(destDir, logoSvgPath) {
+  fs.mkdirSync(destDir, { recursive: true });
+  const images = await renderBrandImages(logoSvgPath);
+  for (const [name, data] of Object.entries(images)) {
+    writeIfChanged(path.join(destDir, name), data);
+  }
 
   for (const stale of STALE_BRAND_FILES) {
     const stalePath = path.join(destDir, stale);
@@ -458,24 +469,12 @@ export default {
     await writeBrandImages(path.join(outputDir, "assets", "images"), logoSvg);
     await writeBrandImages(path.join(docsRoot, "assets", "images"), logoSvg);
     let stripped = 0;
-    let logoTextInjected = 0;
     let titlesRendered = 0;
-    const logoText =
-      typeof ctx?.config?.logo === "object" && ctx.config.logo.text
-        ? String(ctx.config.logo.text)
-        : undefined;
     for (const file of collectHtmlFiles(outputDir)) {
       const html = fs.readFileSync(file, "utf8");
       let next = html.replace(/[ \t]*<base\b[^>]*>\n?/i, "");
       if (next !== html) {
         stripped += 1;
-      }
-      if (logoText) {
-        const withLogoText = injectSidebarLogoText(next, logoText);
-        if (withLogoText !== next) {
-          logoTextInjected += 1;
-          next = withLogoText;
-        }
       }
       next = injectAnalyticsConsentMode(next);
       const withTitles = renderMarkdownTitles(next);
@@ -488,9 +487,7 @@ export default {
       }
     }
     log(
-      `docmd-plugin-rsigma: stripped <base> tag from ${stripped} pages` +
-        (logoText ? `, added logo text to ${logoTextInjected} pages` : "") +
-        `, rendered Markdown in ${titlesRendered} page titles`,
+      `docmd-plugin-rsigma: stripped <base> tag from ${stripped} pages, rendered Markdown in ${titlesRendered} page titles`,
     );
   },
 };

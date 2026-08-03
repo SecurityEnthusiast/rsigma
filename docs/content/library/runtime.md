@@ -21,7 +21,7 @@ For a one-shot evaluation against in-memory events, you do not need this crate; 
 rsigma-parser = "{{ rsigma.version }}"
 rsigma-eval = "{{ rsigma.version }}"
 rsigma-runtime = "{{ rsigma.version }}"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "io-util", "io-std", "process", "fs"] }
 ```
 
 | Feature | Effect |
@@ -31,6 +31,7 @@ tokio = { version = "1", features = ["full"] }
 | `logfmt` | logfmt input parser. |
 | `cef` | CEF input parser. |
 | `evtx` | `.evtx` (Windows Event Log) file reader. |
+| `uds` | Unix-domain socket source and sink (Unix only). |
 | `daachorse-index` | Pass-through to `rsigma-eval/daachorse-index` for the cross-rule AC pre-filter. |
 
 ## Public surface
@@ -38,12 +39,12 @@ tokio = { version = "1", features = ["full"] }
 | Type | Purpose |
 |------|---------|
 | `RuntimeEngine` | Wraps an `Engine` or `CorrelationEngine` plus the on-disk rule path, pipelines, and the dynamic source resolver. Supports hot-reload via `load_rules`. |
-| `LogProcessor` | An ordered batch processor that parses formatted inputs in parallel before locking its `ArcSwap<Mutex<RuntimeEngine>>`. `process_batch_with_format_detailed` returns `BatchProcessOutcome`, including input indices that failed parsing for single-parse DLQ routing. The daemon glues this to its bounded mpsc plumbing. |
+| `LogProcessor` | An ordered batch processor that parses formatted inputs in parallel before locking its live `RuntimeEngine`. `process_batch_with_format_detailed` returns `BatchProcessOutcome`, including input indices that failed parsing for single-parse DLQ routing. The daemon glues this to its bounded mpsc plumbing. |
 | `EventSource` trait, `Sink` trait | The plug-in surfaces for inputs and outputs. Built-in: `StdinSource`, `StdoutSink`, `FileSink`, and `NatsSource`/`NatsSink` under the `nats` feature. |
 | `spawn_source(source) -> mpsc::Receiver<RawEvent>` | Convenience helper that runs an `EventSource` on its own task. |
-| `EventFilter` trait | Optional jq/JSONPath pre-extraction applied to each input line. |
+| `EventFilter` | Type alias for `dyn Fn(&Value) -> Vec<Value>`: optional jq/JSONPath-style pre-extraction applied to each input line. |
 | `MetricsHook` trait + `NoopMetrics` | The plug-in surface that the daemon uses to wire `prometheus` counters. Reimplement to ship metrics elsewhere (Datadog, OpenTelemetry, custom registry). |
-| `input::parse_line(...)` | Format-aware line parser. Auto-detects JSON, syslog, plain text; honours format hints. |
+| `input::parse_line(...)` | Format-aware line parser. Auto-detects JSON, syslog, plain text; honors format hints. |
 | `EvtxFileReader` (feature `evtx`) | Streaming `.evtx` reader. |
 | `SourceResolver` trait + `DefaultSourceResolver` | Dynamic-pipeline source resolution: HTTP, command, file, NATS. |
 | `SourceCache` | TTL-aware cache for resolved source values. Optional SQLite backing for cross-restart persistence. |
@@ -68,7 +69,7 @@ The full pipeline architecture, source resolution flow, and dynamic-pipeline con
 
 ```rust
 use rsigma_runtime::{LogProcessor, NoopMetrics, RuntimeEngine};
-use rsigma_eval::CorrelationConfig;
+use rsigma_eval::{CorrelationConfig, ProcessResultExt};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -88,9 +89,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         r#"{"CommandLine":"powershell -enc ..."}"#.to_string(),
     ];
 
-    let outcomes = processor.process_batch_lines(&lines, None);
-    for r in outcomes {
-        for m in r.matches { println!("matched: {}", m.rule_title.unwrap_or_default()); }
+    let identity = |v: &serde_json::Value| vec![v.clone()];
+    let outcomes = processor.process_batch_lines(&lines, &identity);
+    for result in outcomes {
+        for m in result.detections() {
+            println!("matched: {}", m.header.rule_title);
+        }
     }
     Ok(())
 }
@@ -100,7 +104,7 @@ For a streaming daemon shape, wire an `EventSource` (`StdinSource`, `NatsSource`
 
 ## Hot-reload
 
-`LogProcessor` holds the live `RuntimeEngine` in an `ArcSwap<Mutex<…>>`. `processor.reload_rules()` rebuilds it from disk and atomically swaps it in; in-flight batches finish against the old engine, the next batch sees the new one. Wire a file watcher (`notify`), a `SIGHUP` handler, or an HTTP endpoint to call it:
+`LogProcessor` holds the live `RuntimeEngine` in an `ArcSwap`. `processor.reload_rules()` rebuilds it from disk and atomically swaps it in; in-flight batches finish against the old engine, the next batch sees the new one. Wire a file watcher (`notify`), a `SIGHUP` handler, or an HTTP endpoint to call it:
 
 ```rust
 use rsigma_runtime::LogProcessor;
@@ -179,9 +183,11 @@ The `SourceResolver` + `TemplateExpander` pair is exposed so you can drive it st
 
 ```rust
 use rsigma_runtime::{DefaultSourceResolver, SourceResolver};
+use rsigma_eval::pipeline::sources::DynamicSource;
 
 let resolver = DefaultSourceResolver::new();
-let value = resolver.resolve(&pipeline.sources[0]).await?;
+// `source` is a DynamicSource loaded from a standalone sources YAML file.
+let value = resolver.resolve(&source).await?;
 ```
 
 The full spec (source types, data formats, extract languages, refresh policies) lives in [Dynamic Pipeline Sources](../reference/dynamic-sources.md). `RefreshScheduler` runs the periodic refresh policies; `TemplateExpander` substitutes `${source.X}` references into the pipeline.

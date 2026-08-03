@@ -57,7 +57,7 @@ For narrative coverage see [Streaming Detection](../../guide/streaming-detection
 | `--sink-batch-max <N>` | `64` | Max results drained into one sink delivery batch. |
 | `--sink-batch-flush-ms <MS>` | `50` | Max time a partial sink batch waits before flushing. |
 
-Each sink serializes in its own wire format. The default is rsigma's native NDJSON; `?format=ocsf` emits [OCSF Detection Finding](../../guide/ocsf-findings.md) (class 2004) JSON instead, one finding per line. The parameter is accepted on `stdout`, `file://`, `nats://`, and `unix://` sinks only, and `format=` on an OTLP spec, the `--dlq`, or the audit sink fails startup, as does an unknown value.
+Each sink serializes in its own wire format. The default is RSigma's native NDJSON; `?format=ocsf` emits [OCSF Detection Finding](../../guide/ocsf-findings.md) (class 2004) JSON instead, one finding per line. The parameter is accepted on `stdout`, `file://`, `nats://`, and `unix://` sinks only, and `format=` on an OTLP spec, the `--dlq`, or the `daemon.api.audit.sink` fails startup, as does an unknown value.
 
 Each `--output` sink runs its own bounded queue and worker: results are delivered with bounded exponential-backoff retry, and a result is sent to the DLQ only after retries are exhausted. Fan-out is isolated up to each sink's queue depth, so a slow sink does not immediately stall the others; a slow durable sink eventually applies backpressure, the cost of preserving at-least-once delivery. An acknowledgment is released to the source only once every sink has committed the result, and `?on_full=drop` opts a sink out of that contract in favor of never stalling.
 
@@ -67,7 +67,7 @@ Acknowledgment guarantees differ by transport. NATS is durable at-least-once: re
 
 | Flag | Description |
 |------|-------------|
-| `-p, --pipeline <PIPELINES>` | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `sysmon`) or YAML file paths. Repeatable. |
+| `-p, --pipeline <PIPELINES>` | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `fibratus_windows`, `sysmon`) or YAML file paths. Repeatable. |
 | `--source <FILE_OR_DIR>` | External source file(s) or directory of source files. Repeatable. Loads dynamic source declarations independently of any pipeline file. A file path loads one YAML file with a top-level `sources:` block; a directory path loads all `*.yml`/`*.yaml` files in it, alphabetically. Source IDs must be unique across every `--source` file (pipeline-embedded `sources:` blocks were removed in v1.0; see [Dynamic Pipeline Sources](../../reference/dynamic-sources.md)). |
 | `--allow-remote-include` | Allow `include:` directives in pipelines to reference remote (HTTP/NATS) sources. Off by default for security. |
 | `--egress-policy <default\|strict\|permissive>` | HTTP egress policy applied to dynamic-source and enrichment HTTP clients. `default` (the default) blocks link-local (`169.254.0.0/16`, `fe80::/10`, includes cloud-metadata `169.254.169.254`) and known cloud-metadata IPv6 (`fd00:ec2::254`). `strict` additionally blocks loopback and RFC1918 private. `permissive` allows everything. Enforced at DNS resolution time so DNS rebinding cannot defeat host-string checks. See [Security](../../reference/security.md#http-egress-policy-ssrf-defense). |
@@ -113,6 +113,12 @@ daemon:
 ```
 
 On a non-loopback TCP listener, pair authentication with TLS (below) or a TLS-terminating proxy so tokens are never sent in cleartext.
+
+Companion CLIs that talk to a running daemon differ in whether they send a bearer token: [`engine incidents export`](incidents-export.md) does (`RSIGMA_API_TOKEN` / `--auth-token-env`); [`engine status`](status.md), [`engine tap`](tap.md), and [`engine tail`](tail.md) do not. When authentication is enabled, grant those surfaces via `anonymous_permissions` or call the HTTP endpoints with an explicit `Authorization` header.
+
+### Audit trail (config-file-only)
+
+When `--state-db` is set, the daemon records control-plane mutations (reload, silences, dispositions, observer resets, and similar) and serves them at `GET /api/v1/audit`. Data-plane ingest is never recorded. Tune or disable with the `daemon.api.audit` block (`enabled`, `max_entries`, `max_age`, `max_body_bytes`, optional `sink`); enabling audit without a state database fails startup. The optional `sink` is a detection-style sink URL that receives audit JSON lines with `on_full=drop` appended when absent; `?format=` is rejected on it. See [HTTP API: Audit trail](../../reference/http-api.md#audit-trail).
 
 ### TLS (requires the `daemon-tls` build feature)
 
@@ -204,7 +210,7 @@ The auth methods are mutually exclusive. See [NATS Streaming](../../guide/nats-s
 | `--schema-partition-rules` | off | Gated: compile each platform-locked per-schema engine with only the rules whose product can apply, cutting the N-copies memory cost. Off by default. See [Per-schema rule partitioning](../../guide/schema-routing.md#per-schema-rule-partitioning). |
 | `--on-unknown <POLICY>` | `warn` | Policy for events that match no schema: `warn`, `drop`, `passthrough`, or `error`. Overrides the config value. Used with `--schema-routing`. |
 
-These schema flags may also be supplied via the `daemon.schema` block in a [config file](../../reference/configuration.md) (`observe`, `routing`, `config`, `on_unknown`); a flag always wins over the file.
+These schema flags may also be supplied via the `daemon.schema` block in a [config file](../../reference/configuration.md) (`observe`, `discover`, `routing`, `config`, `partition_rules`, `on_unknown`); a flag always wins over the file.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -274,13 +280,20 @@ See the [Triage Feedback Loop](../../guide/triage-feedback.md) guide.
 
 ## Examples
 
-### Minimal daemon: stdin → stdout
+### Minimal daemon: HTTP ingest + curl
 
 ```bash
-rsigma engine daemon -r rules/
+rsigma engine daemon -r rules/ --input http --api-addr 127.0.0.1:9090
 ```
 
-Reads NDJSON from stdin, writes detections to stdout. Default API on `0.0.0.0:9090`.
+```bash
+curl -sS http://127.0.0.1:9090/readyz
+curl -sS -X POST http://127.0.0.1:9090/api/v1/events \
+  -H 'Content-Type: application/x-ndjson' \
+  --data '{"CommandLine":"whoami /priv"}'
+```
+
+Accepts `POST /api/v1/events`; detections write to stdout. Default `--input stdin` is for a long-lived writer; closing stdin drains and exits the daemon. Prefer [`engine eval`](eval.md) for one-shot pipes. See [Streaming Detection: Start the daemon](../../guide/streaming-detection.md#start-the-daemon).
 
 ### HTTP ingest with persistent state
 
@@ -291,7 +304,7 @@ rsigma engine daemon -r rules/ \
     --pipeline ecs_windows
 ```
 
-Accepts `POST /api/v1/events` for ingest; correlation state survives restarts.
+Correlation state survives restarts.
 
 ### NATS source + sink + DLQ
 
@@ -379,7 +392,7 @@ rsigma engine daemon -r rules/ \
 |----------|---------|--------------|
 | `/healthz` | 200 once the listener is up. | Liveness probe. |
 | `/readyz` | 200 once rules + pipelines are loaded; 503 during startup or after a failed reload. | Readiness probe. Drain traffic when 503. |
-| `/metrics` | Prometheus text format. ~20 metrics at startup; up to 27 once dynamic sources and OTLP fire. | Scrape every 15-30 s. |
+| `/metrics` | Prometheus text format. {{ rsigma.metrics.names }} metric names under `--all-features` ({{ rsigma.metrics.always }} always-present + {{ rsigma.metrics.otlp }} OTLP + {{ rsigma.metrics.tls }} TLS gated on the matching build features). A startup scrape shows a subset; the rest appear as their surfaces are exercised. | Scrape every 15-30 s. |
 
 Full HTTP API reference: [HTTP API](../../reference/http-api.md). All metric definitions: [Prometheus metrics](../../reference/metrics.md).
 
@@ -391,15 +404,18 @@ Full HTTP API reference: [HTTP API](../../reference/http-api.md). All metric def
 
 | Code | Meaning |
 |------|---------|
-| `0` | Normal shutdown. |
-| `2` | Rules path could not be read at startup. |
-| `3` | Configuration error: bad `-p`, malformed `--suppress`, invalid `--input` URL, etc. |
+| `0` | Normal shutdown (including `--dry-run`). |
+| `2` | Initial rules could not be loaded or compiled. |
+| `3` | Configuration error: missing `--rules`/`daemon.rules`, bad `-p`, malformed `--suppress`, invalid `--input` URL, TLS/auth/audit misconfiguration, and similar startup failures. |
 
 ## See also
 
 - [Streaming Detection](../../guide/streaming-detection.md) for the daemon walkthrough.
 - [NATS Streaming](../../guide/nats-streaming.md) for auth, replay, consumer groups, and DLQ details.
 - [OTLP Integration](../../guide/otlp-integration.md) for the OTLP receiver and agent recipes.
+- [HTTP API](../../reference/http-api.md) for the REST surface served on `--api-addr`.
+- [Prometheus Metrics](../../reference/metrics.md) for the full metric catalog.
 - [Performance Tuning](../../guide/performance-tuning.md) for `--bloom-prefilter`, `--cross-rule-ac`, `--batch-size`, and `--buffer-size`.
 - [Observability](../../guide/observability.md) for the RUST_LOG targets, tracing spans, and metric alerting recipes.
 - [`engine eval`](eval.md) for the one-shot evaluation counterpart.
+- [`engine status`](status.md), [`engine tap`](tap.md), [`engine tail`](tail.md), and [`engine incidents export`](incidents-export.md) for client commands against a running daemon.

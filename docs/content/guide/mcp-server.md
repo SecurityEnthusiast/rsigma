@@ -1,6 +1,6 @@
 # MCP Server
 
-`rsigma mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server that gives any MCP-aware agent (Cursor, Claude Code, and others) a structured tool surface over the rsigma Sigma toolchain. Instead of shelling out to the CLI and scraping text, an agent calls typed tools and gets back machine-readable JSON: ASTs, lint findings with spans and fix availability, evaluation matches, backend queries, and field inventories.
+`rsigma mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server that gives any MCP-aware agent (Cursor, Claude Code, and others) a structured tool surface over the RSigma Sigma toolchain. Instead of shelling out to the CLI and scraping text, an agent calls typed tools and gets back machine-readable JSON: ASTs, lint findings with spans and fix availability, evaluation matches, backend queries, reverse-converted drafts, and field inventories.
 
 The server is gated behind the opt-in `mcp` Cargo feature. Build from source with `--features mcp`; the prebuilt binaries and Docker image (built with `--all-features`) include it.
 
@@ -45,7 +45,7 @@ Either way the client launches `rsigma mcp serve` as a subprocess and talks to i
 
 ## Tool reference
 
-Every tool accepts **either** inline content (`yaml`, `condition`, `events`) **or** a file `path`, never both. Path arguments resolve against `--rules-dir` when relative. Outputs are JSON with an `ok` flag plus tool-specific fields. Content errors (a rule that fails to parse, a backend that cannot represent a rule) come back inside a successful response as `{ "ok": false, ... }` so the agent can read and act on them; only malformed requests return MCP errors.
+Fourteen tools. Content-bearing tools accept **either** inline content (`yaml`, `condition`, `events`, `query`) **or** a file `path`, never both. Path arguments resolve against `--rules-dir` when relative (and `tune_rules` path inputs stay confined to that root when it is set). Outputs are JSON with an `ok` flag plus tool-specific fields. Content errors (a rule that fails to parse, a backend that cannot represent a rule) come back inside a successful response as `{ "ok": false, ... }` so the agent can read and act on them; only malformed requests return MCP errors.
 
 | Tool | Input | Output |
 |------|-------|--------|
@@ -55,6 +55,7 @@ Every tool accepts **either** inline content (`yaml`, `condition`, `events`) **o
 | `validate_rules` | `yaml` or file/dir `path`, `pipelines`, `resolve_sources` | Parse + compile + correlation-reference results, with per-rule compile errors. |
 | `evaluate_events` | rules (`yaml`/`path`), events (`events` array or `events_path` NDJSON), `pipelines`, `match_detail`, `enrichers`/`enrichers_path` | Matches with `event_index`, a summary of detection/correlation counts. With `enrichers` the matches are run through an enrichment pipeline first. |
 | `convert_rules` | rules, `target`, `format`, `pipelines`, `options`, `skip_unsupported` | Backend queries per rule, plus errors and warnings. Native targets (`postgres`/`lynxdb`/`fibratus`) convert in-process; with `--allow-sigma-cli`, any other target is delegated to an installed [sigma-cli](../reference/backends/sigma-cli.md) and the result carries `engine: "sigma-cli"`, a per-line `queries` split, the verbatim `raw` output (authoritative for multi-line formats), and sigma-cli's diagnostics as `warnings`. |
+| `reverse_convert` | `query`, optional `dialect` (`lucene`), plus metadata the query cannot carry (`title`, `id`, `level`, `status`, `logsource_product`/`category`/`service`) | Draft Sigma YAML (or `{ "ok": false, ... }` for constructs with no Sigma equivalent). Same surface as [`rsigma rule reverse`](../cli/rule/reverse.md). |
 | `list_backends` | (none) | Conversion targets with their formats and correlation methods; with `--allow-sigma-cli`, installed sigma-cli targets are appended with `engine: "sigma-cli"`. |
 | `list_fields` | rules, `pipelines`, `include_filters` | Each referenced field with the rules and source kinds that use it. |
 | `resolve_pipeline` | `pipeline` (builtin name or path), `resolve_sources` | Pipeline name, priority, transformation count, dynamic sources. |
@@ -105,6 +106,21 @@ Convert it to PostgreSQL:
 { "name": "convert_rules", "arguments": { "path": "windows/proc.yml", "target": "postgres", "format": "view" } }
 ```
 
+Draft a rule from a Lucene query:
+
+```json
+{
+  "name": "reverse_convert",
+  "arguments": {
+    "query": "CommandLine:*whoami* AND NOT User:SYSTEM",
+    "dialect": "lucene",
+    "title": "Whoami",
+    "logsource_product": "windows",
+    "logsource_category": "process_creation"
+  }
+}
+```
+
 Propose a filter while protecting a known true positive:
 
 ```json
@@ -135,13 +151,13 @@ By default the server is pure in-process Rust and `convert_rules` only accepts t
 
 The delegated result carries `engine: "sigma-cli"`, a per-line `queries` split, the verbatim `raw` output (read this for multi-line formats like Loki `ruler`), and sigma-cli's diagnostics as `warnings`. When sigma-cli is not installed, the result is `{ "ok": false, ... }` with install guidance.
 
-Delegation is off by default because it spawns a subprocess, a category change from the server's in-process posture. When enabled it stays bounded: `path` and file-based `pipelines` arguments are confined to `--rules-dir` when one is configured (a path that escapes it is refused), inline `yaml` is staged through a private temporary file, each invocation is killed after 60 seconds, and at most two delegations run concurrently. rsigma builtin pipeline names (`ecs_windows`, `sysmon`) are not translated for delegated targets; pass sigma-cli pipeline names or YAML paths. Discovery honors the `RSIGMA_SIGMA_CLI` override and otherwise resolves `sigma` on `PATH`; note that the prebuilt Docker image bundles no Python, so delegation is effectively a local-stdio feature.
+Delegation is off by default because it spawns a subprocess, a category change from the server's in-process posture. When enabled it stays bounded: `path` and file-based `pipelines` arguments are confined to `--rules-dir` when one is configured (a path that escapes it is refused), inline `yaml` is staged through a private temporary file, each invocation is killed after 60 seconds, and at most two delegations run concurrently. RSigma builtin pipeline names (`ecs_windows`, `fibratus_windows`, `sysmon`) are not translated for delegated targets; pass sigma-cli pipeline names or YAML paths. Discovery honors the `RSIGMA_SIGMA_CLI` override and otherwise resolves `sigma` on `PATH`; note that the prebuilt Docker image bundles no Python, so delegation is effectively a local-stdio feature.
 
 ## The agentic loop
 
 A productive pattern an agent can run end to end:
 
-1. **Draft** a rule and call `parse_rule` to confirm it is structurally valid.
+1. **Draft** a rule (hand-authored YAML, or `reverse_convert` from a Lucene query) and call `parse_rule` to confirm it is structurally valid.
 2. **Lint** with `lint_rules`; for each finding, the `rule` id and `fixable` flag tell the agent whether to apply a known-safe correction or rewrite by hand.
 3. **Evaluate** with `evaluate_events` against a handful of positive and negative sample events to confirm the rule fires where expected and stays quiet otherwise. `match_detail: "summary"` (or `"full"`) explains *why* each event matched.
 4. **Tune** a noisy rule with `tune_rules`, supplying classified false positives and a protected true-positive set, then review the returned filter and evidence.
@@ -168,4 +184,5 @@ The `--http`, `--lint-config`, and `--rules-dir` settings also resolve from the 
 - [Configuration](../reference/configuration.md) for the `mcp.*` config keys.
 - [Linting Rules](linting-rules.md) for the lint vocabulary the `lint_rules` tool reports.
 - [Rule Conversion](rule-conversion.md) for what `convert_rules` produces.
+- [`rsigma rule reverse`](../cli/rule/reverse.md) for the CLI sibling of `reverse_convert`.
 - [Feature Flags](../reference/feature-flags.md) for the `mcp` feature.

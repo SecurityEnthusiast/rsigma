@@ -8,7 +8,10 @@
 # 1. Collect exemplars (here: the malicious process creations from an incident)
 jq -c 'select(.CommandLine | test("whoami"))' incident.json > exemplars.ndjson
 
-# 2. Draft against a baseline of normal traffic
+# 2a. Draft from exemplars alone
+rsigma rule draft -e @exemplars.ndjson > draft.yml
+
+# 2b. Or contrast against a day of normal traffic (preferred when you have it)
 rsigma rule draft -e @exemplars.ndjson --baseline @normal-day.ndjson > draft.yml
 
 # 3. Edit the metadata (title, description, tags, level), then confirm
@@ -16,7 +19,63 @@ rsigma rule lint draft.yml
 rsigma engine eval --rules draft.yml -e @more-telemetry.ndjson
 ```
 
-The command verifies the draft before printing it: the YAML is parsed and compiled through the real evaluation engine, every exemplar must match, and the baseline hit count is reported as the estimated false-positive rate. A draft that cannot honestly cover the exemplars is an error, not a weaker rule.
+Before printing the YAML, the command verifies the draft through the real evaluation engine: every exemplar must match. Without a baseline, stderr ends with a line like `matches 3/3 exemplars`. With a baseline, it also reports the false-positive estimate, for example `matches 3/3 exemplars, 0/86400 baseline events (0.0%)`. A draft that cannot honestly cover the exemplars is an error, not a weaker rule.
+
+You can also draft from a Windows Event Log file (`-e @Security.evtx`) when the `evtx` feature is compiled in; the prebuilt binaries include it.
+
+### Without a baseline
+
+Exemplars alone favor constants shared by every event (`Channel`, `EventID`) plus patterned markers (`CommandLine`, `Image`):
+
+```yaml
+title: 'Draft: Microsoft-Windows-Sysmon/Operational (Channel)'
+id: 3e95027f-f04b-4ed1-ba88-60118ead5b6d
+status: experimental
+description: 'TODO: describe what this rule detects and why it matters.'
+author: 'TODO: your name'
+date: 2026-07-03
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        Channel: 'Microsoft-Windows-Sysmon/Operational'
+        EventID: 1
+        CommandLine|startswith: whoami
+        Image|endswith: '\whoami.exe'
+    condition: selection
+falsepositives:
+    - 'TODO: list known benign triggers.'
+level: medium
+```
+
+### With a baseline
+
+The same exemplars against normal Sysmon process-creation traffic demote fields that are also common in the baseline (`EventID: 1` drops out) and promote rare patterned fields (`User|startswith: 'CORP\\'`). The title follows the strongest marker:
+
+```yaml
+title: 'Draft: whoami (CommandLine)'
+id: 7ff5f141-2430-4ae0-a43e-6cb0fe97a093
+status: experimental
+description: 'TODO: describe what this rule detects and why it matters.'
+author: 'TODO: your name'
+date: 2026-08-02
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        CommandLine|startswith: whoami
+        Image|endswith: '\whoami.exe'
+        User|startswith: 'CORP\\'
+        Channel: 'Microsoft-Windows-Sysmon/Operational'
+    condition: selection
+falsepositives:
+    - 'TODO: list known benign triggers.'
+level: medium
+```
+
+Metadata placeholders stay yours to fill in either case. Use `--include-field` / `--exclude-field` when the scorer's pick is close but not quite right for your environment.
 
 ## How fields are chosen
 
@@ -34,6 +93,18 @@ Volatile fields are dropped up front: timestamp-shaped names and values (`UtcTim
 The survivors are scored. With a baseline, the score is exemplar stability times baseline rarity, so a `field: value` pair present in every exemplar and absent from normal traffic ranks first, and a field that is ubiquitous in the baseline (`proto: tcp`) sinks even when constant in the exemplars. Without a baseline, constant beats enumerable beats patterned, and envelope fields (`hostname`, `severity`) are demoted. The top fields (default 4, `--max-fields`) form the selection.
 
 Two guards keep pattern inference honest: shared tokens shorter than 4 characters are never used for `|contains`, and with a baseline, tokens matching more than 5% of baseline values for that field are rejected as too generic (`powershell` will not become the detection just because every exemplar contains it). Literal `*` and `?` in observed values are escaped, so a logged `SELECT * FROM` cannot silently become a wildcard match.
+
+### Pin or drop fields
+
+Force a field into the selection with `--include-field`, or ban one with `--exclude-field` (both are repeatable). Use these when the scorer is right on average but wrong for your case: keep a rare but critical marker, or drop a noisy host-specific key such as `Event.System.Computer` when drafting from EVTX.
+
+### Inspect the analysis
+
+By default stderr carries a field report (class, chosen modifier, baseline prevalence) alongside the YAML on stdout. For a machine-readable view of the same analysis, use `--emit report` and the global output format:
+
+```bash
+rsigma rule draft -e @exemplars.ndjson --baseline @normal-day.ndjson --emit report --output-format json | jq '.fields'
+```
 
 ## Variant grouping
 
@@ -54,11 +125,11 @@ The split only happens when it is earned: each group needs at least two exemplar
 
 ## Logsource inference
 
-The exemplars are classified with the built-in schema classifier ([schema routing](schema-routing.md) uses the same signatures). Sysmon exemplars yield `product: windows`, and a shared EventID maps to its Sigma category (EventID 1 gives `category: process_creation`); rendered Windows Event Log yields `product: windows`; ECS platform specializations yield their platform. Anything else gets a `product: todo` placeholder plus a warning. `--logsource-category/--logsource-product/--logsource-service` override any inference per dimension.
+The exemplars are classified with the built-in schema classifier ([schema routing](schema-routing.md) uses the same signatures). Sysmon exemplars yield `product: windows`, and a shared EventID maps to its Sigma category (EventID 1 gives `category: process_creation`); rendered Windows Event Log yields `product: windows`; ECS platform specializations yield their platform. Anything else gets a `product: todo` placeholder plus a warning. `--logsource-category` / `--logsource-product` / `--logsource-service` override any inference per dimension.
 
 ## The draft is schema-native
 
-The rule uses the exemplars' field names as they appear in the events. ECS exemplars produce `process.command_line`, Sysmon exemplars produce `CommandLine`. Evaluate the draft against the same telemetry shape it was mined from, without a mapping pipeline; if you need the generic SigmaHQ field vocabulary, rename the fields as part of your review.
+The rule uses the exemplars' field names as they appear in the events. ECS exemplars produce `process.command_line`, Sysmon exemplars produce `CommandLine`. Evaluate the draft against the same telemetry shape it was mined from, without a mapping pipeline; if you need the generic SigmaHQ field vocabulary, rename the fields as part of your review. Pipelines are out of scope at draft time: map or rename after you accept the draft.
 
 ## What it will not do
 

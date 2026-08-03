@@ -1,6 +1,6 @@
 # Rule Conversion
 
-`rsigma backend convert` translates Sigma rules into queries for a specific log analytics backend. Instead of evaluating rules against live events, conversion produces query strings that you can run against an existing log store: PostgreSQL/TimescaleDB, LynxDB, Fibratus, and any future backend that implements the `Backend` trait. This is the right path for historical threat hunting and for retroactive coverage testing against months of already-collected logs.
+`rsigma backend convert` translates Sigma rules into queries for a specific log analytics backend. Instead of evaluating rules against live events, conversion produces query strings that you can run against an existing log store: PostgreSQL/TimescaleDB, LynxDB, and Fibratus natively, plus the broader pySigma ecosystem via [sigma-cli delegation](../reference/backends/sigma-cli.md). This is the right path for historical threat hunting and for retroactive coverage testing against months of already-collected logs.
 
 This page covers the production backends, their output formats and backend options, multi-table correlation, and the workflow for integrating converted queries into Grafana, dashboards, or SOAR playbooks.
 
@@ -48,6 +48,11 @@ Available formats for 'postgres':
   timescaledb  - TimescaleDB-optimized queries with time_bucket()
   continuous_aggregate  - CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)
   sliding_window  - Correlation queries using window functions for per-row sliding detection
+
+Correlation methods for 'postgres' (select with -O correlation_method=NAME, default: sliding):
+  sliding  - Trailing per-event window (default; preserves existing SQL)
+  tumbling  - Fixed boundary-aligned buckets (time_bucket/date_bin)
+  session  - Gaps-and-islands sessionization (requires a gap)
 ```
 
 ## Delegated targets (sigma-cli)
@@ -158,7 +163,7 @@ CREATE MATERIALIZED VIEW sigma_9d2e7c48_4a3b_4f99_93c9_1c5f7c8b1a2b
     WITH NO DATA
 ```
 
-TimescaleDB then refreshes the aggregate in the background and your dashboards query the materialised result instead of the raw hypertable. Convert the base detection rules separately (or pass `--skip-unsupported`) and skip the `event_count`/`value_count` correlation rules; the materialised view above is the queryable surface you want.
+TimescaleDB then refreshes the aggregate in the background and your dashboards query the materialized result instead of the raw hypertable. Convert the base detection rules separately (or pass `--skip-unsupported`) and skip the `event_count`/`value_count` correlation rules; the materialized view above is the queryable surface you want.
 
 #### `sliding_window`
 
@@ -270,7 +275,7 @@ rsigma backend convert rules/ -t postgres -p pipelines/ocsf_postgres.yml
 rsigma backend convert rules/ -t postgres -p pipelines/ocsf_postgres_multi_table.yml
 ```
 
-Both are bundled in the repository at `crates/rsigma-convert/pipelines/`. They are good starting points; copy and customise them for your schema.
+Both are bundled in the repository at `crates/rsigma-convert/pipelines/`. They are good starting points; copy and customize them for your schema.
 
 ### Custom table per rule
 
@@ -298,7 +303,7 @@ custom_attributes:
 
 ## LynxDB
 
-The LynxDB backend produces SPL2-compatible queries. Translation favours the native search syntax and falls back to `| where` pipeline stages for features that LynxDB's parser does not support directly (regex, CIDR, single-character wildcards).
+The LynxDB backend produces SPL2-compatible queries. Translation favors the native search syntax and falls back to `| where` pipeline stages for features that LynxDB's parser does not support directly (regex, CIDR, single-character wildcards).
 
 ::: callout tip "LynxDB's own Sigma guide"
 LynxDB maintains the canonical operator-facing guide for running Sigma rules on a LynxDB cluster, including the REST API path, saved queries, and end-to-end tutorials (whoami, bulk conversion, EVTX, CloudTrail, scheduled detection). See [Sigma rules on LynxDB](https://docs.lynxdb.org/docs/sigma/) and the linked subpages (compatibility, SPL2 mapping, pipelines, cookbook, troubleshooting, limitations, drift runbook). RSigma is the engine that emits the SPL2 in that flow.
@@ -312,7 +317,7 @@ LynxDB maintains the canonical operator-facing guide for running Sigma rules on 
 | Regex (`re` modifier) | Deferred to a `where field=~"pattern"` pipeline stage. |
 | CIDR (`cidr` modifier) | Deferred to a `where cidrmatch("cidr", field)` pipeline stage. |
 | Case-sensitive (`cased` modifier) | `field=CASE(value)` |
-| Boolean AND/OR/NOT | Explicit parenthesisation for LynxDB's non-standard precedence (`NOT > OR > AND`) |
+| Boolean AND/OR/NOT | Explicit parenthesization for LynxDB's non-standard precedence (`NOT > OR > AND`) |
 | IN-list | `field IN (val1, val2, ...)` |
 
 "Deferred" means the feature does not translate to a native LynxDB search term and is instead emitted as an SPL2 pipeline stage downstream of `search`.
@@ -385,7 +390,7 @@ Correlation rules lower to Fibratus's inline `sequence` DSL: `temporal_ordered` 
 
 ## Selecting columns with `fields:`
 
-When a Sigma rule lists `fields:`, the backend emits `SELECT field1, field2, ...` instead of `SELECT *`. Function calls (e.g. `count(*)`) and `field as alias` are preserved. This gives you control over what each generated query returns without writing the SELECT clause by hand.
+When a Sigma rule lists `fields:`, the PostgreSQL backend emits `SELECT field1, field2, ...` instead of `SELECT *`. Function calls (e.g. `count(*)`) and `field as alias` are preserved. Mixed-case identifiers are double-quoted; lowercase ones are not. This gives you control over what each generated query returns without writing the SELECT clause by hand.
 
 ```yaml
 title: Sad Puppy in Dog Supply Line
@@ -400,9 +405,9 @@ fields:
 ```
 
 ```sql
-SELECT "dog_name", "dog_breed", "status" AS "current_state"
+SELECT dog_name, dog_breed, status AS current_state
 FROM security_events
-WHERE "status" ILIKE 'sad'
+WHERE status = 'sad'
 ```
 
 ## Skipping unsupported rules
@@ -451,6 +456,8 @@ This avoids the impedance mismatch of running Sigma rules through pySigma at eve
 - [CLI reference: `backend convert`](../cli/backend/convert.md) for the full flag table.
 - [Backends reference: PostgreSQL/TimescaleDB](../reference/backends/postgres.md) for every option, modifier mapping, and edge case.
 - [Backends reference: LynxDB](../reference/backends/lynxdb.md) for SPL2 specifics.
+- [Backends reference: Fibratus](../reference/backends/fibratus.md) for the coverage matrix and correlation lowering.
 - [Sigma rules on LynxDB](https://docs.lynxdb.org/docs/sigma/) for LynxDB-side guides covering compatibility, pipelines, the SPL2 mapping, and operational tutorials.
+- [sigma-cli delegation](../reference/backends/sigma-cli.md) for non-native targets (`splunk`, `elasticsearch`, `kusto`, and more).
 - [Processing Pipelines](processing-pipelines.md) for field mapping (essential for any non-default schema).
 - [Linting Rules](linting-rules.md) for catching authoring mistakes before conversion.

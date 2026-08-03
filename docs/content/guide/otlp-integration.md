@@ -10,7 +10,7 @@ OTLP is the right input format when:
 
 - Your fleet is already running OTel-instrumented services or an OTel-compatible collector.
 - You want a vendor-neutral wire format that survives migrations between log backends.
-- You want gRPC streaming or HTTP/2 multiplexing on the same port that serves the management API.
+- You want gRPC or HTTP/2 multiplexing on the same port that serves the management API.
 
 Pick something else when:
 
@@ -19,7 +19,7 @@ Pick something else when:
 
 ## Enabling OTLP
 
-OTLP is feature-gated. Build the daemon with `daemon-otlp`:
+OTLP is feature-gated. Prebuilt release archives and the GHCR Docker image are built with `--all-features`, so they include OTLP. From source or `cargo install`, enable `daemon-otlp`:
 
 ```bash
 cargo install --locked rsigma --features daemon-otlp
@@ -33,15 +33,15 @@ rsigma engine daemon -r rules/ --input http --api-addr 0.0.0.0:9090
 
 ## Endpoints
 
-OTLP is exposed on the same `--api-addr` port as the rest of the daemon's HTTP API. The same TCP listener serves HTTP/1.1 REST, HTTP/2 gRPC, and OTLP/HTTP. The daemon multiplexes them via `tonic::transport::Server::accept_http1(true)`.
+OTLP is exposed on the same `--api-addr` port as the rest of the daemon's HTTP API. The same TCP listener serves HTTP/1.1 REST, HTTP/2 gRPC, and OTLP/HTTP. With `daemon-otlp`, the gRPC `LogsService` is folded into the axum router so one listener handles all three.
 
 | Endpoint | Method | Content-Type | Purpose |
 |----------|--------|--------------|---------|
 | `/v1/logs` | POST | `application/x-protobuf` | OTLP/HTTP protobuf. The standard. |
 | `/v1/logs` | POST | `application/json` | OTLP/HTTP JSON. Useful for debugging. |
-| gRPC `LogsService/Export` | (HTTP/2) | (protobuf framed) | OTLP/gRPC. Bidirectional streaming. |
+| gRPC `LogsService/Export` | (HTTP/2) | (protobuf framed) | OTLP/gRPC unary export. |
 
-Both transports support `Content-Encoding: gzip` for compressed payloads.
+Both transports support `Content-Encoding: gzip` (HTTP) or gRPC gzip compression for compressed payloads.
 
 When no `Content-Type` is provided on a POST to `/v1/logs`, protobuf is assumed, matching the OTLP/HTTP specification default.
 
@@ -60,8 +60,8 @@ OTLP `LogRecord` carries data across several fields: timestamp, severity, body, 
 | `body` (array) | `body` | JSON array. |
 | `trace_id` | `trace_id` | Hex string. |
 | `span_id` | `span_id` | Hex string. |
-| `attributes[].key` | `attributes.<key>` | Dot-flattened. |
-| `Resource.attributes[].key` | `resource.<key>` | Dot-flattened, prefixed. |
+| `attributes[].key` | `<key>` (top-level) | Unprefixed. Primary detection target. |
+| `Resource.attributes[].key` | `resource.<key>` | Prefixed. |
 | `InstrumentationScope.name` | `scope.name` | As-is. |
 | `InstrumentationScope.version` | `scope.version` | As-is. |
 
@@ -70,8 +70,6 @@ The map-body flattening is the important part. It means a rule that selects `Eve
 ## Agent recipes
 
 Each recipe is intentionally minimal: just enough config to forward logs to RSigma. Real production setups will add labels, filters, and routing on top. Refer to each agent's own documentation for those.
-
-In every recipe, replace `rsigma.internal:9090` with the actual address you bind RSigma to.
 
 Every recipe below was verified end-to-end against a daemon built with `daemon-otlp`. Replace `rsigma.internal:9090` with the actual address you bind RSigma to.
 
@@ -101,7 +99,7 @@ otelcol.receiver.filelog "app" {
 }
 ```
 
-`otelcol.receiver.filelog` is in `public-preview` stability in Alloy 1.16, so start Alloy with `--stability.level=public-preview`:
+`otelcol.receiver.filelog` is marked `public-preview` in current Alloy docs, so start Alloy with `--stability.level=public-preview`:
 
 ```bash
 alloy run --stability.level=public-preview /etc/alloy/config.alloy
@@ -228,11 +226,13 @@ Each of the four agents documented above can be pointed at an `https://` endpoin
 - **Grafana Alloy**: add a `tls { ca_pem = file("/etc/alloy/rsigma-ca.pem") }` block to the `otelcol.exporter.otlphttp` `client` argument. For mTLS, set `cert_pem` and `key_pem` to the agent's client cert.
 - **Vector**: under the `opentelemetry` sink, add `tls { ca_file = "/etc/vector/rsigma-ca.pem", verify_certificate = true }`. For mTLS, also set `crt_file` and `key_file`.
 - **Fluent Bit**: set `tls On`, `tls.ca_file /etc/fluent-bit/rsigma-ca.pem`. For mTLS, add `tls.crt_file` and `tls.key_file`.
-- **OpenTelemetry Collector**: under the `otlphttp/rsigma` exporter, add `tls: { ca_file: /etc/otelcol/rsigma-ca.pem }`. For mTLS, add `cert_file` and `key_file`.
+- **OpenTelemetry Collector**: under the `otlp_http/rsigma` exporter, add `tls: { ca_file: /etc/otelcol/rsigma-ca.pem }`. For mTLS, add `cert_file` and `key_file`.
 
 ## Authentication
 
-OTLP/HTTP supports standard `Authorization` headers, and the agents above can all set custom headers. The daemon does not currently validate bearer or basic auth headers; the recommended authentication path is mutual TLS via `--tls-client-ca`, which pins every agent to a CA-signed identity at the handshake before any HTTP request body is parsed.
+When API auth is enabled (`--api-token-env` or a `daemon.api.auth` config block), `POST /v1/logs` and the gRPC `LogsService/Export` require the `events:ingest` permission. Agents send a bearer token via the usual `Authorization: Bearer <token>` header (or gRPC `authorization` metadata). Off by default, the listener is open and network position is the only guard.
+
+For agent-to-daemon pinning without tokens, use mutual TLS via `--tls-client-ca` so every agent presents a CA-signed client cert at the handshake. Auth and TLS complement each other: see [Daemon API authentication](../reference/security.md#daemon-api-authentication) and [TLS termination](../reference/security.md#tls-termination-for-the-api-listener).
 
 ## Observability
 
@@ -240,25 +240,24 @@ OTLP traffic surfaces in three places:
 
 | Where | What |
 |-------|------|
-| Prometheus metric `rsigma_otlp_requests_total{transport, encoding}` | Counter of OTLP export requests received. Labels: `http` or `grpc`, and `protobuf`, `json`, or `gzip-*`. |
+| Prometheus metric `rsigma_otlp_requests_total{transport, encoding}` | Counter of OTLP export requests received. Labels: `transport` (`http` or `grpc`) and `encoding` (`protobuf` or `json`). Gzip is decompressed before the encoding label is recorded. |
 | Prometheus metric `rsigma_otlp_log_records_total` | Counter of LogRecords ingested. |
-| Prometheus metric `rsigma_otlp_errors_total{transport, reason}` | Errors by transport and reason (`unsupported_content_type`, `malformed_payload`, `gzip_decode_failed`, etc.). |
-| `RUST_LOG=info,rsigma=debug` | Per-request `otlp_ingest` span on both HTTP and gRPC handlers, with `record_count` event after decoding. |
+| Prometheus metric `rsigma_otlp_errors_total{transport, reason}` | Errors by transport and reason (`unsupported_content_type`, `decompression`, `decode`, `channel_closed`). |
+| `RUST_LOG=info,rsigma=debug` | Per-request `otlp_ingest` span on both HTTP and gRPC handlers, with `record_count` after decoding. |
 
 See [Prometheus metrics reference](../reference/metrics.md) for the full set, and [Observability](observability.md) for the `RUST_LOG` filter targets.
 
 ## Mixing OTLP with another input
 
-The OTLP endpoint is always active when the feature is compiled in. The `--input` flag controls the **primary** source for events that arrive over stdin, HTTP REST (`/api/v1/events`), or NATS. OTLP logs go through a separate code path but feed into the same engine and produce the same `MatchResult` output.
+The OTLP endpoint is always active when the feature is compiled in. The `--input` flag selects one **primary** source (stdin, HTTP REST `/api/v1/events`, NATS, or unix). OTLP logs go through a separate path but feed into the same engine and produce the same `EvaluationResult` output.
 
-This means a single daemon can:
+So a daemon can accept OTLP from `/v1/logs` while also reading from one primary source, for example:
 
-- Accept OTLP from your fleet via `/v1/logs`.
-- Plus accept Helr's NDJSON output via stdin.
-- Plus accept ad-hoc events via `POST /api/v1/events`.
-- All evaluating against the same rules.
+- OTLP plus `--input http` for ad-hoc `POST /api/v1/events`.
+- OTLP plus `--input nats://...` for JetStream ingest.
+- OTLP plus stdin (the default) for a Helr NDJSON pipe.
 
-For consistency, prefer to standardise on one source per environment. Mixing is supported but makes the data flow harder to reason about.
+For consistency, prefer to standardize on one source per environment. Mixing is supported but makes the data flow harder to reason about.
 
 ## See also
 

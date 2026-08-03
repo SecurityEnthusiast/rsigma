@@ -15,12 +15,14 @@ Every variable here has a corresponding `--flag` that takes precedence.
 | `NO_COLOR` | `0`/`1` (presence-only) | unset | All subcommands that emit colored stdout/stderr | Disables ANSI colors when `--color auto`. Follows the [NO_COLOR convention](https://no-color.org/). |
 | `RSIGMA_GLOBAL__OUTPUT_FORMAT` | `json`/`ndjson`/`table`/`csv`/`tsv` | unset | All | Default value for `--output-format`. See [Output Formats](output.md). |
 | `RSIGMA_GLOBAL__COLOR` | `auto`/`always`/`never` | unset | All | Default value for `--color`. |
-| `XDG_CONFIG_HOME` | path | `~/.config` | All | Honoured when locating the user config (`$XDG_CONFIG_HOME/rsigma/config.yaml`). See [Configuration discovery](configuration.md#discovery). |
+| `XDG_CONFIG_HOME` | path | `~/.config` | All | Honored when locating the user config (`$XDG_CONFIG_HOME/rsigma/config.yaml`). See [Configuration discovery](configuration.md#discovery). |
 | `RSIGMA_<SECTION>__<KEY>` | YAML scalar | unset | `engine daemon`, `engine eval`, `mcp serve` | Uniform env layer for non-secret config keys (e.g. `RSIGMA_DAEMON__API__ADDR`, `RSIGMA_GLOBAL__LOG_FORMAT`, `RSIGMA_MCP__HTTP_ADDR`). See [Configuration: environment layer](configuration.md#environment-layer). |
 | `RSIGMA_MCP_AUTH_TOKEN` | string | unset | `mcp serve --http` | Static bearer token required on every HTTP request (`Authorization: Bearer <token>`). Equivalent to `--auth-token`. Secret: flag/env only, never read from config files. |
 | `RSIGMA_CONSUMER_GROUP` | string | unset | `engine daemon` with `--input nats://` | NATS JetStream consumer group name. Equivalent to `--consumer-group`. Multiple daemons sharing the same group name load-balance across a single durable pull consumer. |
 | `RSIGMA_DETECT_INFLIGHT` | integer 1–8 | scales with rayon (1 on one worker, up to 5 on eight or more) | `engine daemon` | Maximum detection-only batches evaluated concurrently when the loaded rule set has no correlation rules. Sink and ack order stay sequential via a sequence-numbered reducer. Ignored (forced to 1) when correlation rules are present. |
-| `RSIGMA_TLS_KEY_PASSWORD` | string | unset | `engine daemon` with `--tls-key` | Password for an encrypted TLS key. Currently rejected at startup; reserved for a future release. |
+| `RSIGMA_TLS_KEY_PASSWORD` | string | unset | `engine daemon` with `--tls-key` | Password for an encrypted TLS key. Currently rejected at startup with a clear error; decrypt the key first (`openssl rsa -in key.pem -out key-decrypted.pem`). |
+| `RSIGMA_SIGMA_CLI` | path | unset | `backend convert`, `mcp serve` (with `--allow-sigma-cli`) | Override path to the external `sigma` executable used for delegated conversion. |
+| `RSIGMA_API_TOKEN` | string | unset | `engine incidents export` | Default bearer token env var for daemon-client auth. Override the variable name with `--auth-token-env`. |
 | `NATS_CREDS` | path to `.creds` file | unset | `engine daemon` with NATS source or sink | NATS credentials file (JWT + NKey). Equivalent to `--nats-creds`. |
 | `NATS_TOKEN` | string | unset | same | NATS authentication token. Equivalent to `--nats-token`. |
 | `NATS_USER` | string | unset | same | NATS username (requires `NATS_PASSWORD`). Equivalent to `--nats-user`. |
@@ -28,6 +30,8 @@ Every variable here has a corresponding `--flag` that takes precedence.
 | `NATS_NKEY` | NKey seed | unset | same | NATS NKey seed authentication. Equivalent to `--nats-nkey`. |
 
 The five NATS auth variables are mutually exclusive. The first configured method wins, in the order listed in `--nats-*` flag definition. See [NATS Streaming: authentication](../guide/nats-streaming.md#authentication).
+
+Config-named secrets are separate: `daemon.api.auth.tokens[].token_env` and webhook `signing.secret_env` / `rotate_secret_env` name arbitrary environment variables resolved at startup. Those names are not fixed on this page.
 
 ## Precedence
 

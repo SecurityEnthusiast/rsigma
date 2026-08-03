@@ -2,7 +2,7 @@
 
 Processing pipelines are RSigma's mechanism for transforming Sigma rules before they reach the engine or a backend. They handle the impedance mismatch between how Sigma rules name fields (`CommandLine`, `EventID`, `User`) and how your events actually name fields (`process.command_line`, `winlog.event_id`, `actor.user.name`). Pipelines are pySigma-compatible, so anything you write for pySigma works in RSigma, and most pipelines from the SigmaHQ pySigma backends work as well.
 
-This page covers static pipelines (the bread and butter), builtin pipelines (`ecs_windows`, `sysmon`), and dynamic pipelines (an RSigma-only capability that pulls values from external sources at runtime).
+This page covers static pipelines (the bread and butter), builtin pipelines (`ecs_windows`, `sysmon`), and dynamic pipelines (external sources that refresh at runtime, including NATS and daemon-managed refresh).
 
 ## What pipelines do
 
@@ -47,12 +47,12 @@ transformations:
 
 ## Loading pipelines
 
-Pass `-p NAME_OR_PATH` to any subcommand that accepts pipelines (`engine eval`, `engine daemon`, `backend convert`, `rule validate`, `rule fields`, `pipeline resolve`). The flag is repeatable:
+Pass `-p NAME_OR_PATH` to any subcommand that accepts pipelines (`engine eval`, `engine daemon`, `backend convert`, `rule validate`, `rule fields`, `pipeline resolve`, `pipeline diff`). The flag is repeatable:
 
 ```bash
 rsigma engine eval -r rules/ -p ecs_windows -e @events.ndjson
 rsigma engine daemon -r rules/ -p ecs_windows -p custom-mappings.yml
-rsigma backend convert rules/ -t postgres -p pipelines/ocsf_postgres.yml
+rsigma backend convert rules/ -t postgres -p crates/rsigma-convert/pipelines/ocsf_postgres.yml
 rsigma rule validate rules/ -p sysmon
 ```
 
@@ -94,6 +94,7 @@ Pipelines compose 26 transformation types. The most common ones in practice are:
 | `set_value` | Replace detection item values. |
 | `set_state` | Store backend-relevant key/value pairs (`table`, `schema`, `index`). |
 | `set_custom_attribute` | Set per-rule attributes that engines and backends read (`rsigma.*`, `postgres.*`). |
+| `value_placeholders` | Expand Sigma `%name%` placeholders in detection values (used with pipeline `vars:` and dynamic sources). |
 | `query_expression_placeholders` | Backend query template envelope (used by `rsigma-convert`). |
 | `nest` | Apply a group of transformations conditionally. |
 
@@ -105,7 +106,7 @@ Every transformation can be gated by one or more conditions at three levels:
 
 ### Rule conditions
 
-Apply at the rule level. Common types:
+Apply at the rule level. Common types (the eval README lists every variant):
 
 | Type | Fields |
 |------|--------|
@@ -129,7 +130,7 @@ transformations:
 
 ### Detection item conditions
 
-Apply per detection item:
+Apply per detection item. Common types:
 
 | Type | Fields |
 |------|--------|
@@ -139,7 +140,7 @@ Apply per detection item:
 
 ### Field name conditions
 
-Filter by field name:
+Filter by field name. Common types:
 
 | Type | Fields |
 |------|--------|
@@ -204,10 +205,9 @@ See [Custom Attributes reference](../reference/custom-attributes.md) for the ful
 
 ## Dynamic pipelines
 
-Static pipelines hardcode every value in YAML. Dynamic pipelines let those values come from external sources at runtime: HTTP APIs, local commands, files, or NATS subjects. This is a capability unique to RSigma. Nothing in pySigma or the SigmaHQ ecosystem matches it.
+Static pipelines hardcode every value in YAML. Dynamic pipelines let those values come from external sources at runtime: HTTP APIs, local commands, files, or NATS subjects. pySigma later added similar file, HTTP, and command placeholder transformations for conversion ([SigmaHQ/pySigma#470](https://github.com/SigmaHQ/pySigma/issues/470)), inspired by this RSigma work. RSigma's model still goes further for streaming engines: detached `--source` files, refresh policies (`once`, interval, `watch`, `push`, `on_demand`), NATS, include directives, and hot-reload through the daemon HTTP API, most of which might not be relevant to rule conversion.
 
 The use cases are concrete:
-
 - A threat-intel feed publishes IOC lists. Reference them inside an `add_condition` so detection rules update without rule edits.
 - A central config service hands out field mappings per environment. Reference them inside `field_name_mapping`.
 - An on-prem catalog publishes which tables hold which event categories. Reference it inside `set_state` to route rules to the right `postgres.table` per logsource.
@@ -255,7 +255,7 @@ transformations:
 rsigma engine daemon -r rules/ -p pipeline.yml --source sources.yml
 ```
 
-::: callout warning "Pipeline-embedded `sources:` was removed in v1.0"
+::: callout warning "Pipeline-embedded `sources:` is removed"
 Declaring `sources:` inside the pipeline YAML (as opposed to a standalone file loaded with `--source`) is no longer accepted (tracked in [#137](https://github.com/timescale/rsigma/issues/137)). The parser rejects such a pipeline with a hard error. Migrate existing pipelines with `rsigma rule migrate-sources -p <dir-or-file> -o sources.yml` and load the resulting file with `--source sources.yml`.
 :::
 
@@ -280,7 +280,7 @@ detection:
 |------|---------|-------|
 | `file` | Local file content | Supports `refresh: watch` (re-reads on filesystem change). |
 | `http` | HTTP GET/POST response | Supports `method`, `headers`, custom `timeout`. |
-| `command` | Local command stdout | Killed after 30 s, stdout capped at 10 MB, stderr capped at 64 KB. |
+| `command` | Local command stdout | Killed after 30s, stdout capped at 10 MB, stderr capped at 64 KB. |
 | `nats` | NATS subject messages | Requires `daemon-nats` feature. Subscribes for push updates. |
 
 ### Data formats
@@ -321,8 +321,8 @@ See the [Dynamic Sources reference](../reference/dynamic-sources.md) for benchma
 
 ### Refresh policies
 
-| Policy | Behaviour |
-|--------|-----------|
+| Policy | Behavior |
+|--------|----------|
 | `once` | Fetch at startup only. |
 | `<duration>` (`300s`, `5m`, `1h`) | Re-fetch on a fixed interval. |
 | `watch` | File-system watch (file sources only). |
@@ -331,8 +331,8 @@ See the [Dynamic Sources reference](../reference/dynamic-sources.md) for benchma
 
 ### Error handling
 
-| Policy | Behaviour |
-|--------|-----------|
+| Policy | Behavior |
+|--------|----------|
 | `use_cached` | Serve the last successfully fetched value on failure. The default if the source has been resolved before. |
 | `fail` | For required sources: block startup. For optional sources: log and use null. |
 | `use_default` | Fall back to the `default` value declared in the source config. |
@@ -352,17 +352,17 @@ The source must resolve to a JSON array of transformation objects. Nested includ
 
 ### Testing dynamic sources offline
 
-`rsigma pipeline resolve` resolves all sources in a pipeline and prints the result without running the engine. Useful for testing config:
+`rsigma pipeline resolve` resolves sources from `--source-file` and prints the result without running the engine. Useful for testing config. Note the flag names: `--source-file` loads the standalone sources YAML (daemon/`rule validate` use `--source` for the same thing); `-s/--source` filters to one source ID.
 
 ```bash
-rsigma pipeline resolve -p pipelines/dynamic.yml --pretty
-rsigma pipeline resolve -p pipelines/dynamic.yml --source threat_intel
-rsigma pipeline resolve -p pipelines/dynamic.yml --dry-run
+rsigma pipeline resolve -p pipeline.yml --source-file sources.yml --pretty
+rsigma pipeline resolve -p pipeline.yml --source-file sources.yml -s ip_blocklist
+rsigma pipeline resolve -p pipeline.yml --source-file sources.yml --dry-run
 ```
 
 `--dry-run` lists each source's type, refresh policy, and `required` flag without performing the actual fetch. Good for catching config typos before they hit production.
 
-`rsigma rule validate --resolve-sources -p pipeline.yml` extends validation to also exercise source resolution. Sources must be reachable for validation to pass, so this is the right gate to wire into CI for dynamic pipelines.
+`rsigma rule validate --resolve-sources -p pipeline.yml --source sources.yml` extends validation to also exercise source resolution. Sources must be reachable for validation to pass, so this is the right gate to wire into CI for dynamic pipelines.
 
 ### Hot-reload and dynamic sources
 
@@ -387,9 +387,9 @@ Dynamic pipelines can run external commands and reach out over HTTP, so the daem
 | HTTP body size cap | 10 MB | Per source via `max_body_size`. |
 | Command stdout size cap | 10 MB | Per source via `max_stdout`. |
 | Command stderr size cap | 64 KB | Per source. |
-| Command execution timeout | 30 s | Per source via `timeout`. |
-| HTTP fetch timeout | 30 s | Per source via `timeout`. |
-| Refresh interval minimum | 1 s (clamped silently with a warning) | Cannot be lowered. |
+| Command execution timeout | 30s | Per source via `timeout`. |
+| HTTP fetch timeout | 30s | Per source via `timeout`. |
+| Refresh interval minimum | 1s (clamped silently with a warning) | Cannot be lowered. |
 | NATS message size cap | 10 MB | Cannot be raised. |
 | Remote `include` directives | Disabled by default | `--allow-remote-include` on the daemon. |
 
@@ -397,14 +397,14 @@ See [Security Hardening reference](../reference/security.md) for the full pictur
 
 ## OCSF pipelines
 
-Two OCSF (Open Cybersecurity Schema Framework) pipelines are included with the rsigma-convert crate and useful as starting points for PostgreSQL-backed deployments:
+Two OCSF (Open Cybersecurity Schema Framework) pipelines ship under [`crates/rsigma-convert/pipelines/`](https://github.com/timescale/rsigma/tree/main/crates/rsigma-convert/pipelines) and are useful as starting points for PostgreSQL-backed deployments:
 
 | Pipeline | What it does |
 |----------|--------------|
-| `pipelines/ocsf_postgres.yml` | Single-table: every event class routes to `security_events`. |
-| `pipelines/ocsf_postgres_multi_table.yml` | Per-logsource routing: process events to `process_events`, network events to `network_events`, etc. |
+| `crates/rsigma-convert/pipelines/ocsf_postgres.yml` | Single-table: every event class routes to `security_events`. |
+| `crates/rsigma-convert/pipelines/ocsf_postgres_multi_table.yml` | Per-logsource routing: process events to `process_events`, network events to `network_events`, etc. |
 
-Use them as templates and copy/customise for your schema. They're typical examples of `field_name_mapping` plus `set_state` plus `set_custom_attribute` working together.
+Use them as templates and copy/customize for your schema. They are typical examples of `field_name_mapping` plus `set_state` plus `set_custom_attribute` working together.
 
 ## See also
 
@@ -413,4 +413,6 @@ Use them as templates and copy/customise for your schema. They're typical exampl
 - [Custom Attributes reference](../reference/custom-attributes.md) for every `rsigma.*` and `postgres.*` knob.
 - [Security Hardening reference](../reference/security.md) for the resource limits enforced on dynamic sources.
 - [CLI reference: `pipeline resolve`](../cli/pipeline/resolve.md) for the offline source-testing command.
+- [CLI reference: `pipeline diff`](../cli/pipeline/diff.md) for inspecting how pipelines rewrite rules.
+- [CLI reference: `rule migrate-sources`](../cli/rule/migrate-sources.md) for extracting legacy inline `sources:` blocks.
 - [Library API: rsigma-eval](../library/eval.md) for embedding the pipeline engine in your own code.

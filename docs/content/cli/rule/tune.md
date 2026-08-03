@@ -20,7 +20,7 @@ The command verifies two invariants before printing anything. First, every suppl
 - `--rule <ID|TITLE>`: target rule id, with exact-title fallback. Required for a ruleset containing more than one detection rule.
 - `--fp <JSON|@PATH>`: false-positive events as one inline JSON event or an NDJSON/EVTX file. When omitted, reads NDJSON from stdin.
 - `--tp <JSON|@PATH>`: required true-positive events as one inline JSON event or an NDJSON/EVTX file.
-- `-p, --pipeline <PATH|NAME>`: repeatable processing pipeline applied before profiling and verification. Emitted fields and logsource reflect the transformed rule.
+- `-p, --pipeline <PATH|NAME>`: repeatable processing pipeline applied before profiling and verification (`ecs_windows`, `fibratus_windows`, `sysmon`, or YAML paths). Emitted fields and logsource reflect the transformed rule.
 
 ## Tuning controls
 
@@ -70,6 +70,7 @@ The `expectation_diff` object records target fires over each supplied corpus bef
 
 - `0`: a verified filter or report was emitted.
 - `2`: rules/events could not be read, labels did not fire before filtering, the target was ambiguous, a pipeline failed, or no clean separator existed.
+- `3`: the expectations file could not be loaded or resolved.
 
 ## See also
 

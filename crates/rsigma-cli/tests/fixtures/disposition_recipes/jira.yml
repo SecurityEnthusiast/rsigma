@@ -4,7 +4,7 @@
 #   resolution name "False Positive" / "True Positive" (add a "False Positive"
 #     resolution to your workflow scheme if the default one lacks it)
 #   label rsigma-rule-<rule_id>     the rule the alert came from
-#   label rsigma-incident-<id>      the rsigma incident_id stamped in at creation
+#   label rsigma-incident-<id>      the RSigma incident_id stamped in at creation
 #
 # Auth: HTTP Basic; $JIRA_BASIC_AUTH is base64("email:api_token") for a
 # read-only token. API token docs:

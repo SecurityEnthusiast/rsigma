@@ -18,7 +18,7 @@ Turn exemplar events into a new Sigma rule or a verified filter for an existing 
 
 - [`rule draft`](../cli/rule/draft.md): profile exemplars against a baseline and emit verified YAML. See [Drafting Rules from Logs](rule-drafting.md).
 - [`rule tune`](../cli/rule/tune.md): contrast confirmed false positives with protected true positives and emit a verified Sigma filter. See [Rule Tuning](rule-tuning.md).
-- [`rule lint`](../cli/rule/lint.md) and the [LSP server](../editors/vscode.md): {{ rsigma.lint.rules }}-check validation with auto-fix. See [Linting Rules](linting-rules.md).
+- [`rule lint`](../cli/rule/lint.md) and the LSP ([VS Code and Cursor](../editors/vscode.md), [Neovim, Helix, Zed](../editors/neovim.md)): the {{ rsigma.lint.rules }} lint rules with auto-fix. See [Linting Rules](linting-rules.md).
 - [`rule doc --scaffold`](../cli/rule/doc.md): stamp in ADS metadata (blind spots, validation recipe, response plan). See [Detection Strategy](detection-strategy.md).
 - [MCP server](mcp-server.md): drive the same toolchain from AI agents.
 
@@ -60,14 +60,15 @@ Turn raw matches into one incident per entity, enrich before the page, and inges
 - [Risk-based alerting](risk-based-alerting.md): entity-scored alerting with tactic and source multipliers.
 - [Alert pipeline](alert-pipeline.md): deduplication, silences, inhibition, and grouping.
 - [Webhooks](webhooks.md): HMAC-signed delivery to Slack, PagerDuty, or custom endpoints.
+- [OCSF findings](ocsf-findings.md): emit Detection Finding (class 2004) JSON on sinks with `?format=ocsf`.
 - [Triage feedback loop](triage-feedback.md) and [disposition source recipes](disposition-recipes.md): ingest verdicts via `POST /api/v1/dispositions` (see [HTTP API](../reference/http-api.md)) and fold them into per-rule false-positive ratios.
 
 ### Measure
 
 Review the portfolio on evidence instead of vibes.
 
-- [`rule scorecard`](../cli/rule/scorecard.md): fuse backtest, coverage, metrics, and triage into keep/tune/retire verdicts. See [Detection Scorecard](detection-scorecard.md).
-- [`rule hygiene`](../cli/rule/hygiene.md): flag silent, noisy, and orphaned rules. See [Rule Hygiene](rule-hygiene.md).
+- [`rule scorecard`](../cli/rule/scorecard.md): fuse a required backtest and coverage report (optional `--metrics` and `--triage`) into keep/tune/retire verdicts. See [Detection Scorecard](detection-scorecard.md).
+- [`rule hygiene`](../cli/rule/hygiene.md): flag silent, noisy, untagged, no-owner, incomplete-ads, broken-fields, and deprecated rules. See [Rule Hygiene](rule-hygiene.md).
 - [`rule coverage`](../cli/rule/coverage.md): ATT&CK Navigator layer and Atomic Red Team cross-reference. See [ATT&CK Coverage](attack-coverage.md).
 - [`rule visibility`](../cli/rule/visibility.md): DeTT&CT data-source scoring and field observability. See [Visibility and Data Sources](visibility-and-data-sources.md).
 - [Observability](observability.md): Prometheus counters and Grafana dashboards.

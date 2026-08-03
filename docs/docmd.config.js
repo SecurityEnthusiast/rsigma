@@ -13,7 +13,6 @@ export default {
     light: "/assets/images/logo.png",
     dark: "/assets/images/logo.png",
     alt: "RSigma",
-    text: "RSigma",
     height: "3rem",
   },
   favicon: "/assets/images/favicon.png",

@@ -1,6 +1,6 @@
 # `rsigma mcp serve`
 
-Run the [Model Context Protocol](https://modelcontextprotocol.io) server, exposing the rsigma Sigma toolchain (parse, lint, validate, evaluate, convert, fields, pipelines) as MCP tools to AI agents such as Cursor and Claude Code.
+Run the [Model Context Protocol](https://modelcontextprotocol.io) server, exposing the RSigma Sigma toolchain (parse, lint, validate, evaluate, convert, reverse-convert, tune, fields, pipelines) as MCP tools to AI agents such as Cursor and Claude Code.
 
 ## Synopsis
 
@@ -12,7 +12,7 @@ The server speaks JSON-RPC over stdio: stdin and stdout are the transport, so al
 
 ## Description
 
-`mcp serve` starts a stdio MCP server backed by the same crates the CLI uses. An agent connects, calls `tools/list` to discover the tool surface, and calls tools with either inline content (e.g. `yaml`) or a file `path`. Tool outputs are structured JSON: ASTs, lint findings with spans and fix availability, evaluation matches, backend queries, and field inventories.
+`mcp serve` starts a stdio MCP server backed by the same crates the CLI uses. An agent connects, calls `tools/list` to discover the tool surface, and calls tools with either inline content (e.g. `yaml` or `query`) or a file `path`. Tool outputs are structured JSON: ASTs, lint findings with spans and fix availability, evaluation matches, backend queries, reverse-converted drafts, and field inventories.
 
 For the full tool reference, client setup, and the agentic write-lint-evaluate loop, see the [MCP server guide](../../guide/mcp-server.md).
 
@@ -45,12 +45,14 @@ The global flags (`--log-format`, `--quiet`, …) are accepted but stdout stays 
 | `validate_rules` | Parse + compile + correlation checks, optional pipelines and source resolution. |
 | `evaluate_events` | Run events against rules (detections and correlations). |
 | `convert_rules` | Convert rules to a backend query (`postgres`/`lynxdb`/`fibratus` natively; other targets via sigma-cli with `--allow-sigma-cli`). |
+| `reverse_convert` | Reverse-convert a SIEM query (`dialect: lucene`) into a draft Sigma rule (YAML). |
 | `list_backends` | List conversion targets and their formats (plus installed sigma-cli targets with `--allow-sigma-cli`). |
 | `list_fields` | List the event fields rules reference, with provenance. |
 | `resolve_pipeline` | Inspect a builtin or file pipeline; optionally resolve dynamic sources. |
-| `list_builtin_pipelines` | List the builtin pipelines. |
+| `list_builtin_pipelines` | List the builtin pipelines (`ecs_windows`, `fibratus_windows`, `sysmon`). |
 | `fix_rules` | Apply safe auto-fixes; optionally persist with `write: true`. |
 | `author_ads` | Scaffold or render ADS detection metadata for a rule. |
+| `tune_rules` | Propose a verified Sigma filter from false-positive and true-positive event arrays. |
 
 Plus four read-only resources: `rsigma://lint/catalogue`, `rsigma://ads/schema`, `rsigma://reference/modifiers`, and `rsigma://reference/mitre-tactics`.
 
