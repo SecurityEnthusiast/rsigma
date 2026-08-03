@@ -1,18 +1,18 @@
 # Docker
 
-`rsigma` ships as a multi-arch container image at `ghcr.io/timescale/rsigma`. Images are built from the Alpine-based [Dockerfile](https://github.com/timescale/rsigma/blob/main/Dockerfile) in the repo root, signed with keyless cosign, and shipped with SLSA build provenance attestations. The runtime image runs `FROM scratch` with no shell and no package manager.
+`rsigma` ships as a multi-arch container image at `ghcr.io/timescale/rsigma`. Images are built from the Alpine-based builder in the repo-root [Dockerfile](https://github.com/timescale/rsigma/blob/main/Dockerfile), scanned by Grype (critical CVEs gate the push), signed with keyless cosign, and shipped with an SPDX SBOM plus SLSA Build L3 provenance attestations. The runtime image runs `FROM scratch` with no shell and no package manager.
 
 ## Image
 
 | Property | Value |
 |----------|-------|
 | Registry | `ghcr.io/timescale/rsigma` |
-| Tags | `latest`, `v{{ rsigma.version }}`, ... (every release) |
+| Tags | `latest`, `{{ rsigma.version }}`, and the minor line (for example `0.20`) on every release |
 | Architectures | `linux/amd64`, `linux/arm64` |
 | Base image | `FROM scratch` (no shell, no package manager) |
 | User | `65534:65534` (`nobody:nogroup`) |
 | Entrypoint | `/rsigma` |
-| Features | built with `--all-features` (daemon, daemon-nats, daemon-otlp, logfmt, cef, evtx, daachorse-index) |
+| Features | built with `--all-features` (see [Feature Flags](../reference/feature-flags.md)), including `daemon`, `mcp`, `daemon-nats`, `daemon-otlp`, `daemon-tls`, `logfmt`, `cef`, `evtx`, and `daachorse-index` |
 
 ## Pull and run
 
@@ -87,7 +87,7 @@ docker run --rm \
 |------|-----|
 | `--read-only` | Root filesystem is immutable. Combined with `--tmpfs /tmp` for any scratch writes. |
 | `--cap-drop=ALL` | Remove every Linux capability. rsigma never needs to bind below port 1024, modify network stacks, or trace processes. |
-| `--security-opt=no-new-privileges:true` | Refuse setuid binaries gaining new capabilities. Defence in depth on top of the cap-drop. |
+| `--security-opt=no-new-privileges:true` | Refuse setuid binaries gaining new capabilities. Defense in depth on top of the cap-drop. |
 | `--tmpfs /tmp:...` | Read/write scratch space (only needed if you bind-mount `--state-db` writes to `/tmp`). |
 | `-v ...:ro` | Mount rules and pipelines read-only. The daemon's file watcher still picks up changes. |
 
@@ -131,6 +131,8 @@ services:
       - /rules/
       - --pipeline
       - /pipelines/ecs.yml
+      - --input
+      - http
       - --state-db
       - /state/correlation.db
       - --api-addr
@@ -160,17 +162,17 @@ The healthcheck above only verifies the binary runs. For a real readiness probe,
 
 ## OTLP and NATS
 
-Both feature paths require nothing extra at the image level (the published image is built `--all-features`). For NATS, point `--input nats://...` at the broker and pass credentials via env:
+Both feature paths require nothing extra at the image level (the published image is built `--all-features`). For NATS, point `--input nats://...` at the broker and pass credentials via `--nats-creds` or `NATS_CREDS`:
 
 ```bash
 docker run --rm \
-    -e NATS_CREDS_FILE=/etc/rsigma/nats.creds \
+    -e NATS_CREDS=/etc/rsigma/nats.creds \
     -v "$PWD/rules:/rules:ro" \
     -v "$PWD/nats.creds:/etc/rsigma/nats.creds:ro" \
     ghcr.io/timescale/rsigma:{{ rsigma.version }} \
     engine daemon -r /rules/ \
     --input "nats://nats.internal:4222/events.>" \
-    --nats-creds /etc/rsigma/nats.creds
+    --api-addr 0.0.0.0:9090
 ```
 
 For OTLP, expose port 9090 (HTTP/REST + OTLP/HTTP + gRPC all share one listener) and point upstream agents at `http://<host>:9090/v1/logs`. See [OTLP Integration](../guide/otlp-integration.md) for agent-side recipes.
@@ -207,5 +209,6 @@ FROM docker/library/alpine:3.21
 
 - [Streaming Detection](../guide/streaming-detection.md) for daemon configuration that the container runs.
 - [Observability](../guide/observability.md) for the metrics endpoint exposed by the running container.
-- [Security Hardening](../reference/security.md) for the supply-chain controls (cosign, SLSA, Grype scan gate).
+- [Security Hardening](../reference/security.md) for the supply-chain controls (cosign, SLSA, SBOM, Grype scan gate).
+- [Feature Flags](../reference/feature-flags.md) for what `--all-features` includes.
 - The [Dockerfile](https://github.com/timescale/rsigma/blob/main/Dockerfile) for the build pipeline.
