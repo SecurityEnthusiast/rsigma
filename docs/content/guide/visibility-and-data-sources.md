@@ -1,6 +1,6 @@
 # Visibility and Data Sources
 
-Detection coverage answers "which techniques do my rules detect." Visibility answers a question that comes first: "which telemetry do I actually receive, and do my rules depend on data I am not collecting." A rule for a data source you do not ingest never fires, no matter how good it is. [`rsigma rule visibility`](../cli/rule/visibility.md) turns the field-observability signal rsigma already produces into the two artifacts blue teams use to track data-source maturity: a [DeTT&CT](https://github.com/rabobank-cdc/DeTTECT) administration pair and a visibility [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/) layer.
+Detection coverage answers "which techniques do my rules detect." Visibility answers a question that comes first: "which telemetry do I actually receive, and do my rules depend on data I am not collecting." A rule for a data source you do not ingest never fires, no matter how good it is. [`rsigma rule visibility`](../cli/rule/visibility.md) turns the field-observability signal RSigma already produces into the two artifacts blue teams use to track data-source maturity: a [DeTT&CT](https://github.com/rabobank-cdc/DeTTECT) administration pair and a visibility [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/) layer.
 
 ## The workflow
 
@@ -17,7 +17,7 @@ rsigma rule visibility -r rules/ --observed fields.json \
     --navigator visibility.json
 ```
 
-The observed report and the live daemon's `GET /api/v1/fields` endpoint share one JSON shape, so a long-running daemon works the same way:
+The observed report and the live daemon's `GET /api/v1/fields` endpoint share one JSON shape, so a long-running daemon works the same way. Start the daemon with `--observe-fields`; without it the endpoint returns `503`:
 
 ```bash
 rsigma rule visibility -r rules/ --addr 127.0.0.1:9090 --navigator visibility.json
@@ -32,9 +32,9 @@ Each rule logsource resolves through the mapping table to the ATT&CK data source
 | Observed fraction | Score | Level |
 |-------------------|-------|-------|
 | none observed | 0 | none |
-| up to 25% | 1 | minimal |
-| up to 50% | 2 | medium |
-| up to 100% | 3 | good |
+| greater than 0%, up to 25% | 1 | minimal |
+| greater than 25%, up to 50% | 2 | medium |
+| greater than 50%, less than 100% | 3 | good |
 | all observed | 4 | excellent |
 
 A data source whose mapped fields are all unobserved is a **blind spot**: your rules reference it but the telemetry never arrived. A data source you observe but no rule consumes is **untapped**: data you pay to collect with no detection written against it. The two are inverses, and surfacing both is the point.
@@ -43,7 +43,7 @@ The scores are deliberately conservative seeds. DeTT&CT files are meant to be an
 
 ## The mapping table
 
-The bundled table covers common process, network, file, registry, module, script, and authentication logsources and their fields, with a representative set of `data_component -> technique` edges. Override it with `--mapping <path-or-url>` to extend coverage or point at a site-specific table; a bare `--mapping` fetches the curated default over HTTP (cached for 7 days). Rule logsources the table does not recognize are surfaced as a hygiene list so you know what to add.
+The bundled table covers common process, network, file, registry, module, script, and authentication logsources and their fields, with a representative set of `data_component -> technique` edges. Override it with `--mapping <path-or-url>` to extend coverage or point at a site-specific table; a bare `--mapping` fetches the curated default over HTTP (cached for 7 days under the user cache directory). Rule logsources the table does not recognize are surfaced as a hygiene list so you know what to add.
 
 ## Visibility versus detection coverage
 
@@ -63,7 +63,19 @@ Gate a pipeline on blind spots so a rule that depends on data you do not collect
 rsigma rule visibility -r rules/ --observed fields.json --fail-on-blind-spots
 ```
 
-`--fail-on-blind-spots` exits `1` when any rule-expected data source has no observed telemetry, the actionable "you wrote rules for data you do not receive" signal.
+`--fail-on-blind-spots` exits `1` when any rule-expected data source has no observed telemetry, the actionable "you wrote rules for data you do not receive" signal. The exit codes follow the [house scheme](../reference/exit-codes.md): `0` clean, `1` blind spots under the flag, `2` unreadable rules, `3` a bad observed report or mapping table.
+
+## Configuration
+
+`mapping` and `fail_on_blind_spots` can be set as project defaults in a [config file](../reference/configuration.md):
+
+```yaml
+visibility:
+  # mapping: ./mapping.json
+  fail_on_blind_spots: true
+```
+
+CLI flags always win over the config file. `rules` and `observed` are intentionally not config keys: they are invocation-specific arguments.
 
 ## See also
 
@@ -71,3 +83,4 @@ rsigma rule visibility -r rules/ --observed fields.json --fail-on-blind-spots
 - [Observability](observability.md) for the `--observe-fields` signal.
 - [ATT&CK Coverage](attack-coverage.md) for the detection axis.
 - [CI/CD](ci-cd.md) for wiring detection-as-code checks into a pipeline.
+- [Configuration](../reference/configuration.md) for the `visibility` config section.
