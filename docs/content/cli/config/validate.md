@@ -13,7 +13,7 @@ rsigma config validate [--config <PATH>] [--format <text|json>] [--strict]
 Walks the same [discovery chain](../../reference/configuration.md#discovery) the daemon and eval commands use, deserializes every layer, and reports:
 
 - **Unknown keys** that don't match the schema (typo guard).
-- **Inactive sections** that are set but inert in this build because the gating Cargo feature is disabled (e.g. `daemon.api.tls` without `daemon-tls`).
+- **Inactive sections** that are set but inert in this build because the gating Cargo feature is disabled (`daemon` without the `daemon` feature, `daemon.nats` without `daemon-nats`, `daemon.api.tls` without `daemon-tls`).
 - **Errors** that prevent a file from loading at all.
 
 By default unknown keys are warnings; `--strict` upgrades them to hard errors so CI can gate on configuration cleanliness.

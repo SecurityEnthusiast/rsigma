@@ -1,6 +1,6 @@
 # `rsigma config path`
 
-Print the config files that would be loaded by the daemon or eval, in increasing precedence order.
+Print the config files that would be loaded by commands that use the layered config (daemon, eval, backtest, and others), in increasing precedence order.
 
 ## Synopsis
 
@@ -10,13 +10,15 @@ rsigma config path [--config <PATH>]
 
 ## Description
 
-Useful when troubleshooting "which config is actually winning?" without firing up the daemon. Walks the same discovery chain (system → user → `.rsigmarc` → `./rsigma.yaml`, or `--config`) and prints one path per line. Prints `none` when no file is found.
+Useful when troubleshooting "which config is actually winning?" without firing up the daemon. Walks the same discovery chain (system → user → nearest `.rsigmarc` → `./rsigma.yaml`/`./rsigma.yml`, or `--config`) and prints one path per line. Prints `none` when no file is found.
 
 ## Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-c, --config <PATH>` | discovery chain | Echo this path back instead of running discovery. |
+
+The global [`--output-format`](../../reference/output.md) selector is honored: the default is one path per line (or `none`); `json`/`ndjson`/`table`/`csv`/`tsv` emit `SOURCE,PATH` rows.
 
 ## Examples
 
