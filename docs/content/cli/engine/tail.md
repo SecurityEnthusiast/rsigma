@@ -22,6 +22,8 @@ The stream is **lossy by design**: it can never apply backpressure to the sink t
 
 Like [`engine status`](status.md) it is a read-only client over the admin API. It uses a synchronous HTTP client and does not need the `daemon` build feature, and it follows the same address convention as [`config reload`](../config/reload.md): `--addr` defaults to `daemon.api.addr`, and wildcard binds (`0.0.0.0`, `[::]`) map to loopback.
 
+The client does not send an `Authorization` header. Against a daemon with [API authentication](../../reference/http-api.md#authentication) enabled, grant anonymous `detections:read` (or a broader read role such as `reader`), or open the stream with `curl` and a bearer token. HTTP 401/403 still exit `3`.
+
 The tail is **disabled by default**. Enable it on the daemon with the `--enable-tail` flag or `daemon.tail.enabled: true` in the config; otherwise the endpoint returns `503`.
 
 ### Filters
@@ -31,20 +33,20 @@ Two optional server-side filters keep a noisy daemon's tail readable:
 - `--level <severity>`: minimum severity (`informational`, `low`, `medium`, `high`, `critical`). Results below it, or with no level, are excluded.
 - `--rule <substring>`: a case-insensitive substring matched against the rule title or id.
 
-Both are applied at the sink, so filtered-out results never cross the wire.
+Both are applied at the sink, so filtered-out results never cross the wire. Invalid `level` values are rejected with `400`.
 
 ## Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--addr <HOST:PORT or URL>` | from `daemon.api.addr` | Daemon API address as `host:port` or a full URL. `https://` URLs work for TLS deployments. |
-| `--duration <D>` | unset | Capture window (humantime). Unset streams until interrupted or `--limit` is reached. |
+| `--duration <D>` | unset | Capture window (humantime). Unset streams until interrupted or `--limit` is reached. There is no `max_duration` cap (unlike the event tap). |
 | `--limit <N>` | unset | Stop after N detections, before the duration if reached first. |
 | `--level <severity>` | unset | Minimum severity filter. |
-| `--rule <substring>` | unset | Case-insensitive title/id substring filter. |
+| `--rule <substring>` | unset | Case-insensitive title/id substring filter (percent-encoded in the query string). |
 | `-c, --config <PATH>` | discovery chain | Explicit config file used to resolve the daemon address. |
 
-Rendered through the global `--output-format` layer: a TTY-aware default (pretty `json` on a terminal, `ndjson` when piped) plus `csv`/`tsv` row streaming and a `table` view (buffered, so `table` suits a bounded `--duration`/`--limit` tail rather than an open-ended one). The global `--quiet` / `--no-stats` flags suppress the stderr stats line. See [Output Formats](../../reference/output.md).
+Rendered through the global `--output-format` layer: a TTY-aware default (pretty `json` on a terminal, `ndjson` when piped) plus `csv`/`tsv` row streaming and a `table` view (buffered, so `table` suits a bounded `--duration`/`--limit` tail rather than an open-ended one). The `table`/`csv`/`tsv` projection is `LEVEL | RULE | TYPE | DETAIL`, mirroring `engine eval`. The global `--quiet` / `--no-stats` flags suppress the stderr stats line. See [Output Formats](../../reference/output.md).
 
 ## Examples
 
@@ -74,24 +76,27 @@ rsigma engine tail --limit 20 --output-format table
 
 ## Output
 
-The stream is NDJSON: one result per line, followed by a final summary record the client uses for the stats line and keeps out of the rendered output:
+The stream is NDJSON on the wire: one result per line, followed by a final summary record the client uses for the stats line and keeps out of the rendered output:
 
 ```json
 {"rsigma_tail_summary":{"streamed":42,"dropped":0}}
 ```
 
-A non-zero `dropped` means a session buffer filled under load; the tail missed detections.
+A non-zero `dropped` means a session buffer filled under load; the tail missed detections. With `--no-stats` unset, stderr prints `tail: streamed N, dropped M` (and a warning when `dropped` is non-zero).
 
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | The stream ended cleanly (even with zero detections). |
-| `3` | The daemon could not be reached, returned a non-2xx status (e.g. `503` when the tail is disabled, `409` at the session cap, `400` for bad params), or sent an unreadable stream. |
+| `3` | The daemon could not be reached, returned a non-2xx status (`401`/`403` auth, `503` when the tail is disabled, `409` at the session cap, `400` for bad params), or sent an unreadable stream. |
 
 ## See also
 
 - [`engine tap`](tap.md) for the events-in counterpart.
 - [`engine daemon`](daemon.md) for the long-running service and the `daemon.tail.*` limits.
+- [`engine status`](status.md) for the sibling daemon-client `--addr` convention.
 - [HTTP API: `GET /api/v1/detections/stream`](../../reference/http-api.md#live-detection-tail) for the raw endpoint, query params, and error semantics.
+- [HTTP API: Authentication](../../reference/http-api.md#authentication) when the daemon requires bearer tokens (`detections:read`).
 - [Streaming Detection](../../guide/streaming-detection.md) for the daemon overview.
+- [Prometheus Metrics](../../reference/metrics.md) for `rsigma_tail_*` counters and gauges.
