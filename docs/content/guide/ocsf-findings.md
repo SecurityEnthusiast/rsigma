@@ -1,6 +1,6 @@
 # OCSF Findings
 
-The daemon can emit every finding as an [OCSF](https://ocsf.io) **Detection Finding** (class 2004) JSON object instead of rsigma's native NDJSON. OCSF is the finding interchange format Splunk, Elastic, CrowdStrike NG-SIEM, Amazon Security Lake, and Datadog converged on, so a `?format=ocsf` sink drops findings into those pipelines without a transform step of your own.
+The daemon can emit every finding as an [OCSF](https://ocsf.io) **Detection Finding** (class 2004) JSON object instead of RSigma's native NDJSON. OCSF is the finding interchange format Splunk, Elastic, CrowdStrike NG-SIEM, Amazon Security Lake, and Datadog converged on, so a `?format=ocsf` sink drops findings into those pipelines without a transform step of your own.
 
 It is a per-sink serialization choice, not a new sink type and not a new config section: append `?format=ocsf` to any line-oriented sink spec.
 
@@ -90,7 +90,7 @@ All four emitted shapes (detections, correlations, alert-pipeline incidents, and
 
 | OCSF field | Source |
 |------------|--------|
-| `action_id` / `action` | `0` (`Unknown`): rsigma reports the detection but does not itself take a control action. |
+| `action_id` / `action` | `0` (`Unknown`): RSigma reports the detection but does not itself take a control action. |
 | `class_uid` / `category_uid` / `class_name` / `category_name` | Constants: `2004` / `2` / `Detection Finding` / `Findings`. |
 | `activity_id` / `activity_name` | Detections, correlations, and risk incidents: `1` (`Create`). Alert-pipeline incidents by trigger: `group_wait` is `1` (`Create`), `group_interval` and `repeat` are `2` (`Update`), `resolved` is `3` (`Close`). |
 | `type_uid` / `type_name` | `class_uid * 100 + activity_id`, so `200401` / `200402` / `200403`. |
@@ -99,12 +99,12 @@ All four emitted shapes (detections, correlations, alert-pipeline incidents, and
 | `time` | Detections, correlations, and alert-pipeline incidents: the serialization/emission clock. Risk incidents: `window_end`. Always UTC milliseconds, with `timezone_offset: 0`. |
 | `start_time` / `end_time` | `first_seen` / `last_seen` on incidents, `window_start` / `window_end` on risk incidents. |
 | `message` | The same string as `finding_info.title`, so a consumer that renders only `message` still shows something readable. |
-| `metadata` | `product` names rsigma and its version, `version` is the OCSF schema version (`1.1.0`), and `uid` uniquely identifies the emitted event. Daemon delivery derives it from stable per-dispatch state, so fan-out and retries preserve it. |
-| `finding_info.title` | The rule title for detections and correlations. Incidents carry no rule name, so the title is synthesized: the busiest contributing rule plus the count of the others (`rule-1 and 2 other rules`), falling back to the group key (`incident for match.User=alice`) and then the bare id. A risk incident names what crossed and for whom (`risk threshold crossed for user alice`). |
+| `metadata` | `product` names `rsigma` and its version, `version` is the OCSF schema version (`1.1.0`), and `uid` uniquely identifies the emitted event. Daemon delivery derives it from stable per-dispatch state, so fan-out and retries preserve it. |
+| `finding_info.title` | The rule title for detections and correlations. Incidents carry no rule name, so the title is synthesized: the busiest contributing rule plus the count of the others (`rule-1 and 2 other rules`, or `rule-1 and 1 other rule` for a single peer), falling back to the group key (`incident for match.User=alice`) and then the bare id. A risk incident names what crossed and for whom (`risk threshold crossed for user alice`). |
 | `finding_info.uid` | The incident id for the two incident shapes (re-emissions of one incident share it). Per-result findings use an identifier minted once per dispatch and preserved across sinks and retries. OCSF requires this to identify the finding, and one rule produces many, so rule identity lives in `analytic.uid` instead. |
 | `finding_info.analytic` | `{type_id: 1, type: "Rule", name: <rule title>, uid: <rule id>}` for detections and correlations. Incidents name the `alert pipeline`, risk incidents the `risk accumulator`, with their contributing rules in `related_analytics`. |
 | `finding_info.attacks[]` | Parsed from the rule's tags: `attack.t1059.001` becomes `sub_technique: {uid: "T1059.001"}` and `attack.credential_access` becomes `tactic: {name: "Credential Access", uid: "TA0006"}`. A risk incident's contributing tactics map the same way. A tag cannot say which tactic a technique was used for, so techniques and tactics are separate entries rather than paired by guesswork. Tags in other taxonomies are skipped here and carried under `unmapped.tags`. |
-| `evidences[]` | One entry whose `data` holds what the result retained: the event (only when the rule sets `rsigma.include_event`) and the matched field/value pairs; for correlations, the retained `events` or `event_refs`. Absent when nothing was retained: the engine strips events by default and the serializer does not pretend otherwise. |
+| `evidences[]` | One entry whose `data` holds what the result carried into the finding: matched field/value pairs when present, plus the retained event when `--include-event` or per-rule `rsigma.include_event` kept it; for correlations, the retained `events` or `event_refs`. Omitted only when that map would be empty (no matched fields and no retained event payload). |
 | `resources[]` | The [risk](risk-based-alerting.md) layer's `risk.objects` entries as `{type, name}`, and an incident's `group_by` / `entities` values the same way. |
 | `actor.user.name` | The first `risk.objects` entry of type `user`, or a risk incident whose entity type is `user`. |
 | `risk_score` | The `risk.score` enrichment, or a risk incident's accumulated `score`. |
@@ -113,13 +113,13 @@ All four emitted shapes (detections, correlations, alert-pipeline incidents, and
 
 ### Nothing is dropped
 
-The mapping is conservative on purpose. A field moves into OCSF only where the fit is faithful; everything else rides under `unmapped` with the key it has on the native line. That is what makes `?format=ocsf` safe as a daemon's only output rather than a lossy side channel: a consumer that only understands class 2004 gets a conformant finding, and a consumer that knows rsigma finds the rest where it expects it.
+The mapping is conservative on purpose. A field moves into OCSF only where the fit is faithful; everything else rides under `unmapped` with the key it has on the native line. That is what makes `?format=ocsf` safe as a daemon's only output rather than a lossy side channel: a consumer that only understands class 2004 gets a conformant finding, and a consumer that knows RSigma finds the rest where it expects it.
 
 The risk enrichments are the one place keys move: `risk.score` and `risk.objects` are lifted to `risk_score`, `resources[]`, and `actor`, and removed from the `unmapped.enrichments` copy. A malformed value (a `risk.objects` that is not an array of `{type, value}` pairs, a non-integer `risk.score`) is left in `unmapped` untouched rather than coerced.
 
 ### Detections carry no event time
 
-An `EvaluationResult` has no event-timestamp field, which is why the native NDJSON has none either. Rather than invent one, a detection or correlation finding stamps `time` with the serialization clock. When you need event time, either enable `rsigma.include_event` and read it from `evidences[].data.event`, or consume the incident shapes, whose `start_time` and `end_time` are real observed bounds.
+An `EvaluationResult` has no event-timestamp field, which is why the native NDJSON has none either. Rather than invent one, a detection or correlation finding stamps `time` with the serialization clock. When you need event time, either retain the event (`--include-event` or `rsigma.include_event`) and read it from `evidences[].data.event`, or consume the incident shapes, whose `start_time` and `end_time` are real observed bounds.
 
 ### Sidecar lines stay native
 
@@ -130,7 +130,7 @@ Two payloads travel the incident channel as opaque native JSON and are **not** m
 - **Splunk**: ingest as `_json` and let the OCSF add-on map the class, or index the file directly. `finding_info.title` and `message` are the human-readable fields; `unmapped` survives as a nested object.
 - **Elastic**: OCSF findings ingest cleanly through Filebeat or an Elastic Agent `filestream` input with a JSON parser. Map `severity_id` if you want an ECS `event.severity`.
 - **CrowdStrike NG-SIEM**: third-party OCSF ingest expects one finding per line, which is exactly the sink's shape.
-- **Amazon Security Lake**: a custom source requires OCSF **in Parquet**, which rsigma does not write. Land the JSON in S3 and transcode with Firehose, Glue, or any collector that converts JSON to Parquet.
+- **Amazon Security Lake**: a custom source requires OCSF **in Parquet**, which RSigma does not write. Land the JSON in S3 and transcode with Firehose, Glue, or any collector that converts JSON to Parquet.
 
 ## Pinned schema version
 
@@ -138,11 +138,12 @@ The serializer targets one OCSF version, `1.1.0`, recorded in `metadata.version`
 
 ## An output dialect, not an input vocabulary
 
-This is output only. rsigma does not deserialize OCSF findings, does not bless a canonical event schema, and does not change how rules name fields. The schema classifier's ability to recognize OCSF *events* on the input side is a separate, unrelated feature.
+This is output only. RSigma does not deserialize OCSF findings, does not bless a canonical event schema, and does not change how rules name fields. The schema classifier's ability to recognize OCSF *events* on the input side is a separate, unrelated feature; see [Schema Routing](schema-routing.md).
 
 ## See also
 
 - [Alert Pipeline](alert-pipeline.md) for the incident shapes the `Create` / `Update` / `Close` activities describe.
 - [Risk-Based Alerting](risk-based-alerting.md) for the `risk.score` and `risk.objects` enrichments that become `risk_score`, `resources[]`, and `actor`.
 - [Streaming Detection](streaming-detection.md) for the sink and delivery model the format rides on.
+- [Schema Routing](schema-routing.md) for recognizing OCSF events on the input side.
 - [`rsigma engine daemon`](../cli/engine/daemon.md) for the full sink-spec grammar.
