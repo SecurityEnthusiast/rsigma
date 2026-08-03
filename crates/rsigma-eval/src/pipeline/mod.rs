@@ -461,6 +461,112 @@ pub fn apply_pipelines_with_state(
     Ok(merged)
 }
 
+/// A rule after pipeline application, with the transformations that fired.
+///
+/// Returned by [`transform_rule`] and [`transform_collection`] for callers that
+/// need to read the rewritten rule itself rather than evaluate it: a collector
+/// deriving which log channels to subscribe to from the post-pipeline
+/// `logsource`, a report showing the injected conditions, or a test asserting
+/// that a mapping applied.
+#[derive(Debug, Clone)]
+pub struct TransformedRule {
+    /// The rule after every pipeline ran, in priority order.
+    pub rule: SigmaRule,
+    /// Ids of the transformations that fired, sorted. Transformations without
+    /// an `id:` are not tracked, so this can be empty even though `rule`
+    /// changed.
+    pub applied_items: Vec<String>,
+    /// The merged state the pipelines accumulated (see
+    /// [`apply_pipelines_with_state`]).
+    pub state: PipelineState,
+}
+
+/// Apply `pipelines` to a clone of `rule` and return the rewritten rule.
+///
+/// The input rule is left untouched. This is the inspection counterpart to
+/// loading rules into an engine: the engine applies the same pipelines and then
+/// keeps only the compiled form, so a caller that needs the rewritten Sigma AST
+/// (injected conditions, renamed fields, a `change_logsource` rewrite) asks for
+/// it here.
+///
+/// Call this once per rule set load, not per event: it clones and re-transforms
+/// the rule, exactly like the load path does. When only the rewritten logsource
+/// matters, prefer reading it off the loaded compiled rules instead, which costs
+/// nothing extra.
+///
+/// # Example
+///
+/// ```rust
+/// use rsigma_eval::pipeline::{parse_pipeline, transform_rule};
+/// use rsigma_parser::parse_sigma_yaml;
+///
+/// let pipeline = parse_pipeline(
+///     r#"
+/// name: sysmon routing
+/// transformations:
+///   - id: process_creation
+///     type: add_condition
+///     conditions:
+///       EventID: 1
+///     rule_conditions:
+///       - type: logsource
+///         category: process_creation
+///   - id: sysmon_logsource
+///     type: change_logsource
+///     service: sysmon
+///     rule_conditions:
+///       - type: logsource
+///         product: windows
+/// "#,
+/// )?;
+///
+/// let collection = parse_sigma_yaml(
+///     r#"
+/// title: Whoami
+/// logsource:
+///     product: windows
+///     category: process_creation
+/// detection:
+///     selection:
+///         CommandLine|contains: whoami
+///     condition: selection
+/// "#,
+/// )?;
+///
+/// let transformed = transform_rule(&[pipeline], &collection.rules[0])?;
+///
+/// assert_eq!(transformed.rule.logsource.service.as_deref(), Some("sysmon"));
+/// assert!(transformed.applied_items.contains(&"process_creation".to_string()));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn transform_rule(pipelines: &[Pipeline], rule: &SigmaRule) -> Result<TransformedRule> {
+    let mut transformed = rule.clone();
+    let state = apply_pipelines_with_state(pipelines, &mut transformed)?;
+    let mut applied_items: Vec<String> = state.applied_items.iter().cloned().collect();
+    applied_items.sort();
+    Ok(TransformedRule {
+        rule: transformed,
+        applied_items,
+        state,
+    })
+}
+
+/// Apply `pipelines` to every detection rule in `collection`.
+///
+/// Per-rule equivalent of [`transform_rule`], in collection order. Correlation
+/// and filter rules are not included; correlation rules transform through
+/// [`apply_pipelines_to_correlation`].
+pub fn transform_collection(
+    pipelines: &[Pipeline],
+    collection: &SigmaCollection,
+) -> Result<Vec<TransformedRule>> {
+    collection
+        .rules
+        .iter()
+        .map(|rule| transform_rule(pipelines, rule))
+        .collect()
+}
+
 /// Apply multiple pipelines to a correlation rule in priority order,
 /// returning the merged pipeline state.
 pub fn apply_pipelines_to_correlation(
