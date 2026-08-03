@@ -8,22 +8,22 @@ This reference documents every subcommand with its flag table, verified examples
 
 | Group | Subcommands | What it does |
 |-------|-------------|--------------|
-| [`engine`](engine/eval.md) | `eval`, `explain`, `classify`, `discover-schemas`, `status`, `tap`, `tail`, `daemon` | Run and inspect Sigma rules against events: one-shot, explain, classify, or long-running |
-| [`rule`](rule/parse.md) | `parse`, `validate`, `lint`, `fields`, `draft`, `doc`, `backtest`, `coverage`, `scorecard`, `visibility`, `hygiene`, `condition`, `stdin`, `migrate-sources` | Inspect, draft, lint, backtest, score, and ATT&CK-map Sigma rule files |
-| [`backend`](backend/convert.md) | `convert`, `targets`, `formats` | Convert Sigma rules into backend-native queries (PostgreSQL, LynxDB, …) |
+| [`engine`](engine/eval.md) | `eval`, `explain`, `classify`, `discover-schemas`, `status`, `incidents export`, `tap`, `tail`, `daemon` | Run and inspect Sigma rules against events: one-shot, explain, classify, or long-running |
+| [`rule`](rule/parse.md) | `parse`, `validate`, `lint`, `fields`, `draft`, `tune`, `reverse`, `doc`, `backtest`, `coverage`, `scorecard`, `visibility`, `hygiene`, `condition`, `stdin`, `migrate-sources` | Inspect, draft, lint, tune, reverse-convert, backtest, score, and ATT&CK-map Sigma rule files |
+| [`backend`](backend/convert.md) | `convert`, `targets`, `formats` | Convert Sigma rules into backend-native queries (PostgreSQL, LynxDB, Fibratus, …) |
 | [`pipeline`](pipeline/diff.md) | `diff`, `resolve` | Diff pipeline rewrites and test dynamic sources |
 | [`config`](config/init.md) | `init`, `validate`, `show`, `schema`, `path`, `reload` | Scaffold, validate, introspect, and reload the YAML config file |
 | [`mcp`](mcp/serve.md) | `serve` | Run the Model Context Protocol server for agent tooling (feature-gated) |
 
 ## Global flags
 
-Every subcommand accepts five global flags. They share the same layered precedence as the rest of the configuration: **flag > `RSIGMA_GLOBAL__*` env > `global.*` in the YAML config > built-in default**. The `--output-format` and `--color` defaults are TTY-aware, so `rsigma … | jq` and `rsigma …` in a terminal both do the right thing without an explicit override.
+Every subcommand accepts five global flags. They share the same layered precedence as the rest of the configuration: **flag > `RSIGMA_GLOBAL__*` env > `global.*` in the YAML config > built-in default**. The `--output-format` and `--color` defaults are TTY-aware where a command emits structured or tabular data; see the [Output reference](../reference/output.md) for per-command defaults.
 
 | Flag | Default | Values | Effect |
 |------|---------|--------|--------|
 | `--log-format` | unset | `json`, `text` | Emit structured diagnostic logs to stderr via `tracing-subscriber`. Verbosity controlled by `RUST_LOG` (default `info`). Has no effect on `engine daemon`, which always logs JSON. |
-| `--output-format` | TTY-aware | `json`, `ndjson`, `table`, `csv`, `tsv` | Selects the wire format for any tabular data the subcommand emits. Default is pretty `json` on a TTY and `ndjson` when piped. |
-| `--color` | `auto` | `auto`, `always`, `never` | Controls ANSI color on human-readable paths (lint findings, summaries). Honours [`NO_COLOR`](https://no-color.org/) when `auto`. |
+| `--output-format` | TTY-aware | `json`, `ndjson`, `table`, `csv`, `tsv` | Selects the wire format for any tabular data the subcommand emits. Many structured commands default to pretty `json` on a TTY and `ndjson` when piped; human-oriented commands often default to `table`. |
+| `--color` | `auto` | `auto`, `always`, `never` | Controls ANSI color on human-readable paths (lint findings, summaries). Honors [`NO_COLOR`](https://no-color.org/) when `auto`. |
 | `--quiet` / `-q` | off | flag | Suppress every non-data line (progress, summary, fallback warnings). Errors still go to stderr. |
 | `--no-stats` | off | flag | Suppress only the trailing summary / stats line. Progress messages still appear. |
 
@@ -39,6 +39,8 @@ rsigma
 │   ├── classify               report which schema each event matches
 │   ├── discover-schemas       mine unrecognized events into candidate schemas
 │   ├── status                 query a running daemon's /api/v1/status snapshot
+│   ├── incidents
+│   │   └── export             export open incidents from a running daemon
 │   ├── tap                    capture a bounded window of the live event stream
 │   ├── tail                   stream a running daemon's live detections
 │   └── daemon                 long-running streaming detection
@@ -48,6 +50,8 @@ rsigma
 │   ├── lint                   run the {{ rsigma.lint.rules }} lint checks
 │   ├── fields                 list every field referenced by the rules
 │   ├── draft                  draft a rule from exemplar events (optional baseline)
+│   ├── tune                   propose a verified filter from FP/TP exemplars
+│   ├── reverse                reverse-convert a SIEM query into a draft Sigma rule
 │   ├── doc                    report or scaffold ADS detection-strategy documents
 │   ├── backtest               replay a corpus and diff per-rule fires vs expectations
 │   ├── coverage               map rules onto ATT&CK; Navigator export + gap analysis
@@ -82,18 +86,20 @@ Every subcommand uses the same four-code scheme. Full table and CI patterns are 
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `1` | Findings: `eval --fail-on-detection` matched, or `lint` produced findings at or above `--fail-level` |
+| `1` | Findings: `eval --fail-on-detection`, `lint --fail-level`, `hygiene`/`scorecard --fail-on`, or per-source failures from `pipeline resolve` |
 | `2` | Rule error: rules could not be parsed, compiled, or converted |
-| `3` | Configuration error: bad pipeline file, malformed argument |
+| `3` | Configuration error: bad pipeline file, malformed argument, unreachable daemon client call |
 
 ## Environment variables
 
 | Variable | Effect | Applies to |
 |----------|--------|------------|
 | `RUST_LOG` | `tracing-subscriber` filter directive. Default `info`. | Any subcommand running with `--log-format`, or always for `engine daemon`. |
-| `NO_COLOR` | Disable ANSI colors in human-readable output. Honoured by `rule lint` and other commands that emit colored stderr. | All. |
+| `NO_COLOR` | Disable ANSI colors in human-readable output. Honored by `rule lint` and other commands that emit colored stderr. | All. |
 | `NATS_CREDS`, `NATS_TOKEN`, `NATS_USER`, `NATS_PASSWORD`, `NATS_NKEY` | NATS authentication, mutually exclusive. | `engine daemon` with `--input nats://` or `--output nats://`. |
 | `RSIGMA_CONSUMER_GROUP` | NATS JetStream consumer group name for horizontal scaling. | `engine daemon`. |
+| `RSIGMA_API_TOKEN` | Bearer token for daemon-client calls that send auth (for example `engine incidents export`). | Selected daemon clients. |
+| `RSIGMA_MCP_AUTH_TOKEN` | Bearer token for `mcp serve --http`. | `mcp serve`. |
 
 See [Environment Variables reference](../reference/environment-variables.md) for the complete list.
 
