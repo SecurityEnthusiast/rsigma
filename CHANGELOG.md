@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Post-pipeline rule retrieval
+### Post-pipeline rule retrieval (#437)
 
 Pipelines rewrite a rule before it is compiled, and loading the rule kept only the compiled form, so the rewritten Sigma AST was reachable only by hand-rolling `apply_pipelines_with_state` around a clone. An embedder that derives runtime behavior from the rewrite, such as choosing which Windows event channels to collect from a `logsource` that `change_logsource` unified onto the sysmon service, had to duplicate the pipeline's own mapping in its code to get there.
 
