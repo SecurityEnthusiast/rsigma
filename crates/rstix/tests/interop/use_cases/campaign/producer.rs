@@ -1,8 +1,12 @@
-//! §3.1.2 Required Producer Persona Support (REQ-3.1-P-01..P-13).
+//! §3.2.2 Required Producer Persona Support (REQ-3.2-P-01..P-11).
+//!
+//! Table 4 (CSD01) lists Campaign producer properties. The published table text
+//! erroneously says `type` must be `threat-actor`; STIX §4.2 and the Campaign
+//! test cases require `campaign`. Tests enforce `campaign`.
 
 use crate::interop_test;
 use rstix::core::{SpecVersion, StixId};
-use rstix::model::sdo::AttackPattern;
+use rstix::model::sdo::Campaign;
 use rstix::model::{Bundle, ParseOptions};
 use rstix::validate::{Leniency, Validator};
 use serde_json::Value;
@@ -14,9 +18,9 @@ use crate::harness::fixture::load_fixture;
 use crate::harness::interop_gate::{
     InteropGateOptions, validate_interop_fixture, validate_interop_json,
 };
-use crate::use_cases::attack_pattern::{FIXTURE_CREATE, PRODUCER_FIXTURES};
+use crate::use_cases::campaign::{FIXTURE_CREATE, PRODUCER_FIXTURES};
 
-fn load_attack_pattern(relative: &str) -> (AttackPattern, String) {
+fn load_campaign(relative: &str) -> (Campaign, String) {
     let fixture = load_fixture(relative);
     let objects = parse_fixture_objects(&fixture.json)
         .unwrap_or_else(|err| panic!("{relative}: parse fixture: {err}"));
@@ -24,26 +28,26 @@ fn load_attack_pattern(relative: &str) -> (AttackPattern, String) {
     assert_eq!(
         use_case_ids.len(),
         1,
-        "{relative}: expected one attack-pattern use-case object"
+        "{relative}: expected one campaign use-case object"
     );
-    let object_id = use_case_ids.into_iter().next().expect("attack-pattern id");
+    let object_id = use_case_ids.into_iter().next().expect("campaign id");
     let bundle = validate_interop_fixture(relative, &fixture.json)
         .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
-    let stix_id = StixId::parse(&object_id).expect("attack-pattern id");
-    let ap = bundle
-        .get_typed::<AttackPattern>(&stix_id)
-        .unwrap_or_else(|| panic!("{relative}: typed attack-pattern {object_id}"))
+    let stix_id = StixId::parse(&object_id).expect("campaign id");
+    let campaign = bundle
+        .get_typed::<Campaign>(&stix_id)
+        .unwrap_or_else(|| panic!("{relative}: typed campaign {object_id}"))
         .clone();
-    (ap, object_id)
+    (campaign, object_id)
 }
 
-/// REQ-3.1-P-01 — Producer creates Attack Pattern content (§3.1.3.1).
-pub fn assert_create_attack_pattern() {
+/// REQ-3.2-P-01 — Producer creates Campaign content (§3.2.3.1).
+pub fn assert_create_campaign() {
     validate_interop_fixture(FIXTURE_CREATE, &load_fixture(FIXTURE_CREATE).json)
-        .expect("§3.1.3.1 must pass interop producer gate");
+        .expect("§3.2.3.1 must pass interop producer gate");
 }
 
-/// REQ-3.1-P-02 — Caller-selected object set parses and re-validates (not UI-level select/specify).
+/// REQ-3.2-P-02 — Caller-selected object set parses and re-validates (not UI-level select/specify).
 pub fn assert_select_content() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let mut root: Value = serde_json::from_str(&fixture.json).expect("parse bundle JSON");
@@ -53,14 +57,14 @@ pub fn assert_select_content() {
         .expect("objects array");
     let mut renamed = 0usize;
     for object in objects.iter_mut() {
-        if object.get("type").and_then(Value::as_str) == Some("attack-pattern") {
-            object["name"] = Value::String("Caller-selected Attack Pattern name".into());
+        if object.get("type").and_then(Value::as_str) == Some("campaign") {
+            object["name"] = Value::String("Caller-selected Campaign name".into());
             renamed += 1;
         }
     }
     assert_eq!(
         renamed, 1,
-        "expected exactly one attack-pattern object renamed by caller selection"
+        "expected exactly one campaign object renamed by caller selection"
     );
     let json = serde_json::to_string(&root).expect("serialize caller-selected bundle");
     let use_case_ids = use_case_object_ids(FIXTURE_CREATE, &parse_fixture_objects(&json).unwrap());
@@ -74,19 +78,19 @@ pub fn assert_select_content() {
     assert_eq!(
         use_case_ids.len(),
         1,
-        "caller-selected bundle must expose one attack-pattern use-case id"
+        "caller-selected bundle must expose one campaign use-case id"
     );
-    let stix_id = StixId::parse(&use_case_ids[0]).expect("attack-pattern id");
-    let ap = bundle
-        .get_typed::<AttackPattern>(&stix_id)
-        .expect("typed attack-pattern after caller selection");
+    let stix_id = StixId::parse(&use_case_ids[0]).expect("campaign id");
+    let campaign = bundle
+        .get_typed::<Campaign>(&stix_id)
+        .expect("typed campaign after caller selection");
     assert_eq!(
-        ap.name, "Caller-selected Attack Pattern name",
+        campaign.name, "Caller-selected Campaign name",
         "caller-selected name must survive parse and re-validation"
     );
 }
 
-/// REQ-3.1-P-03 — Identity in bundle complies with §2.3.4 (fixture-scoped; not a duplicate §2.3 proof).
+/// REQ-3.2-P-03 — Identity in bundle complies with §2.3.4 (fixture-scoped; not a duplicate §2.3 proof).
 pub fn assert_identity_compliance() {
     let relative = FIXTURE_CREATE;
     let fixture = load_fixture(relative);
@@ -99,36 +103,36 @@ pub fn assert_identity_compliance() {
     assert_identity_shape(relative, identities[0]);
 }
 
-/// REQ-3.1-P-04 — Attack Pattern conforms to STIX §4.1 (typed validate + strict report).
+/// REQ-3.2-P-04 — Campaign conforms to STIX §4.2 (typed validate + strict report).
 ///
 /// Distinct from P-01: does **not** call the interop gate/overlay. Parses the fixture,
-/// runs [`AttackPattern::validate`], then requires [`Validator::interop_bundle_strict`]
+/// runs [`Campaign::validate`], then requires [`Validator::interop_bundle_strict`]
 /// to report valid under Zero leniency (no MUST Error / Zero-failing Warning), including
-/// any diagnostic scoped to this Attack Pattern id.
+/// any diagnostic scoped to this Campaign id.
 pub fn assert_spec_conformance() {
     let relative = FIXTURE_CREATE;
     let fixture = load_fixture(relative);
     let bundle = Bundle::parse_with_options(&fixture.json, &ParseOptions::new().interop_bundle())
-        .unwrap_or_else(|err| panic!("{relative}: parse for §4.1 check: {err}"));
+        .unwrap_or_else(|err| panic!("{relative}: parse for §4.2 check: {err}"));
 
     let objects = parse_fixture_objects(&fixture.json).expect("parse fixture objects");
     let use_case_ids = use_case_object_ids(relative, &objects);
     assert_eq!(
         use_case_ids.len(),
         1,
-        "{relative}: expected one attack-pattern use-case id"
+        "{relative}: expected one campaign use-case id"
     );
     let object_id = &use_case_ids[0];
-    let ap_id = StixId::parse(object_id).expect("attack-pattern id");
-    let ap = bundle
-        .get_typed::<AttackPattern>(&ap_id)
-        .unwrap_or_else(|| panic!("{relative}: typed attack-pattern {object_id}"));
-    ap.validate()
-        .unwrap_or_else(|err| panic!("{relative}: AttackPattern::validate (§4.1): {err}"));
+    let campaign_id = StixId::parse(object_id).expect("campaign id");
+    let campaign = bundle
+        .get_typed::<Campaign>(&campaign_id)
+        .unwrap_or_else(|| panic!("{relative}: typed campaign {object_id}"));
+    campaign
+        .validate()
+        .unwrap_or_else(|err| panic!("{relative}: Campaign::validate (§4.2): {err}"));
 
     let report = Validator::interop_bundle_strict().validate_bundle(&bundle);
 
-    // Non-vacuous MUST channel: Error diagnostics fail regardless of object_id attachment.
     let errors: Vec<_> = report.errors().collect();
     assert!(
         errors.is_empty(),
@@ -139,12 +143,13 @@ pub fn assert_spec_conformance() {
     let scoped_zero_failures: Vec<_> = report
         .diagnostics()
         .filter(|d| {
-            d.object_id.as_ref() == Some(&ap_id) && Leniency::Zero.fails_validation(d.severity)
+            d.object_id.as_ref() == Some(&campaign_id)
+                && Leniency::Zero.fails_validation(d.severity)
         })
         .collect();
     assert!(
         scoped_zero_failures.is_empty(),
-        "{relative}: Zero-failing diagnostics on Attack Pattern {object_id}: {scoped_zero_failures:?}"
+        "{relative}: Zero-failing diagnostics on Campaign {object_id}: {scoped_zero_failures:?}"
     );
 
     assert!(
@@ -154,29 +159,29 @@ pub fn assert_spec_conformance() {
     );
 }
 
-/// REQ-3.1-P-05 — wire `type` is `attack-pattern` (typed lookup is supporting evidence).
+/// REQ-3.2-P-05 — wire `type` is `campaign` (OASIS Table 4 typo says `threat-actor`).
 pub fn assert_prop_type() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
-    let (_ap, object_id) = load_attack_pattern(FIXTURE_CREATE);
+    let (_campaign, object_id) = load_campaign(FIXTURE_CREATE);
     let wire = objects
         .iter()
         .find(|obj| obj.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
-        .expect("wire attack-pattern");
+        .expect("wire campaign");
     assert_eq!(
         wire.get("type").and_then(Value::as_str),
-        Some("attack-pattern"),
-        "wire type must be attack-pattern"
+        Some("campaign"),
+        "wire type must be campaign (STIX §4.2; Table 4 CSD01 typo ignored)"
     );
 }
 
-/// REQ-3.1-P-06 — `spec_version` is `2.1`.
+/// REQ-3.2-P-06 — `spec_version` is `2.1`.
 pub fn assert_prop_spec_version() {
-    let (ap, _) = load_attack_pattern(FIXTURE_CREATE);
-    assert_eq!(ap.common.spec_version, SpecVersion::V2_1);
+    let (campaign, _) = load_campaign(FIXTURE_CREATE);
+    assert_eq!(campaign.common.spec_version, SpecVersion::V2_1);
 }
 
-/// REQ-3.1-P-07 — `id` is a UUID with `attack-pattern--` prefix.
+/// REQ-3.2-P-07 — `id` is a UUID with `campaign--` prefix.
 pub fn assert_prop_id() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
@@ -184,20 +189,20 @@ pub fn assert_prop_id() {
     assert_eq!(
         use_case_ids.len(),
         1,
-        "{FIXTURE_CREATE}: expected one attack-pattern use-case id"
+        "{FIXTURE_CREATE}: expected one campaign use-case id"
     );
     let wire_id = &use_case_ids[0];
     assert!(
-        wire_id.starts_with("attack-pattern--"),
-        "id must use attack-pattern-- prefix: {wire_id}"
+        wire_id.starts_with("campaign--"),
+        "id must use campaign-- prefix: {wire_id}"
     );
     StixId::parse(wire_id).expect("wire id must be valid STIX id");
 }
 
-/// REQ-3.1-P-08 — `created_by_ref` points at the Producer Identity.
+/// REQ-3.2-P-08 — `created_by_ref` points at the Producer Identity.
 pub fn assert_prop_created_by_ref() {
-    let (ap, _) = load_attack_pattern(FIXTURE_CREATE);
-    let created_by = ap
+    let (campaign, _) = load_campaign(FIXTURE_CREATE);
+    let created_by = campaign
         .common
         .created_by_ref
         .as_ref()
@@ -209,33 +214,15 @@ pub fn assert_prop_created_by_ref() {
     );
 }
 
-/// REQ-3.1-P-09 — `external_references` is present and non-empty.
-pub fn assert_prop_external_references() {
-    let (ap, _) = load_attack_pattern(FIXTURE_CREATE);
-    assert!(
-        !ap.common.external_references.is_empty(),
-        "interop-mandatory external_references"
-    );
-}
-
-/// REQ-3.1-P-10 — `kill_chain_phases` is present and non-empty.
-pub fn assert_prop_kill_chain_phases() {
-    let (ap, _) = load_attack_pattern(FIXTURE_CREATE);
-    assert!(
-        !ap.kill_chain_phases.is_empty(),
-        "interop-mandatory kill_chain_phases"
-    );
-}
-
-/// REQ-3.1-P-11 — `created` timestamp is present (exactly three subsecond digits).
+/// REQ-3.2-P-09 — `created` timestamp is present (exactly three subsecond digits).
 pub fn assert_prop_created() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
-    let (_, object_id) = load_attack_pattern(FIXTURE_CREATE);
+    let (_, object_id) = load_campaign(FIXTURE_CREATE);
     let wire = objects
         .iter()
         .find(|obj| obj.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
-        .expect("wire attack-pattern");
+        .expect("wire campaign");
     let created = wire
         .get("created")
         .and_then(Value::as_str)
@@ -243,15 +230,15 @@ pub fn assert_prop_created() {
     assert_millisecond_rfc3339("created", created);
 }
 
-/// REQ-3.1-P-12 — `modified` timestamp is present (exactly three subsecond digits).
+/// REQ-3.2-P-10 — `modified` timestamp is present (exactly three subsecond digits).
 pub fn assert_prop_modified() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&fixture.json).expect("parse fixture");
-    let (_, object_id) = load_attack_pattern(FIXTURE_CREATE);
+    let (_, object_id) = load_campaign(FIXTURE_CREATE);
     let wire = objects
         .iter()
         .find(|obj| obj.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
-        .expect("wire attack-pattern");
+        .expect("wire campaign");
     let modified = wire
         .get("modified")
         .and_then(Value::as_str)
@@ -259,33 +246,33 @@ pub fn assert_prop_modified() {
     assert_millisecond_rfc3339("modified", modified);
 }
 
-/// REQ-3.1-P-13 — `name` identifies the Attack Pattern.
+/// REQ-3.2-P-11 — `name` identifies the Campaign.
 pub fn assert_prop_name() {
-    let (ap, _) = load_attack_pattern(FIXTURE_CREATE);
-    assert!(!ap.name.is_empty(), "interop-mandatory name");
+    let (campaign, _) = load_campaign(FIXTURE_CREATE);
+    assert!(!campaign.name.is_empty(), "interop-mandatory name");
 }
 
-/// REQ-CHK-SXP-3.1 / §4.2 Table 56 — Producer test case data (§3.1.3.1 and §3.1.3.2).
+/// REQ-CHK-SXP-3.2 / §4.2 Table 56 — Producer test case data (§3.2.3.1 and §3.2.3.2).
 pub fn assert_producer_testcase_data() {
     for relative in PRODUCER_FIXTURES {
         validate_interop_fixture(relative, &load_fixture(relative).json).unwrap_or_else(|err| {
-            panic!("{relative}: §3.1.3 producer test case must pass interop gate: {err}")
+            panic!("{relative}: §3.2.3 producer test case must pass interop gate: {err}")
         });
     }
 }
 
 interop_test!(
-    "REQ-3.1-P-01",
-    "use_cases::attack_pattern::producer::create_attack_pattern",
-    create_attack_pattern,
+    "REQ-3.2-P-01",
+    "use_cases::campaign::producer::create_campaign",
+    create_campaign,
     {
-        assert_create_attack_pattern();
+        assert_create_campaign();
     }
 );
 
 interop_test!(
-    "REQ-3.1-P-02",
-    "use_cases::attack_pattern::producer::select_content",
+    "REQ-3.2-P-02",
+    "use_cases::campaign::producer::select_content",
     select_content,
     {
         assert_select_content();
@@ -293,8 +280,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-3.1-P-03",
-    "use_cases::attack_pattern::producer::identity_compliance",
+    "REQ-3.2-P-03",
+    "use_cases::campaign::producer::identity_compliance",
     identity_compliance,
     {
         assert_identity_compliance();
@@ -302,8 +289,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-3.1-P-04",
-    "use_cases::attack_pattern::producer::spec_conformance",
+    "REQ-3.2-P-04",
+    "use_cases::campaign::producer::spec_conformance",
     spec_conformance,
     {
         assert_spec_conformance();
@@ -311,8 +298,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-3.1-P-05",
-    "use_cases::attack_pattern::producer::prop_type",
+    "REQ-3.2-P-05",
+    "use_cases::campaign::producer::prop_type",
     prop_type,
     {
         assert_prop_type();
@@ -320,8 +307,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-3.1-P-06",
-    "use_cases::attack_pattern::producer::prop_spec_version",
+    "REQ-3.2-P-06",
+    "use_cases::campaign::producer::prop_spec_version",
     prop_spec_version,
     {
         assert_prop_spec_version();
@@ -329,8 +316,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-3.1-P-07",
-    "use_cases::attack_pattern::producer::prop_id",
+    "REQ-3.2-P-07",
+    "use_cases::campaign::producer::prop_id",
     prop_id,
     {
         assert_prop_id();
@@ -338,8 +325,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-3.1-P-08",
-    "use_cases::attack_pattern::producer::prop_created_by_ref",
+    "REQ-3.2-P-08",
+    "use_cases::campaign::producer::prop_created_by_ref",
     prop_created_by_ref,
     {
         assert_prop_created_by_ref();
@@ -347,26 +334,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-3.1-P-09",
-    "use_cases::attack_pattern::producer::prop_external_references",
-    prop_external_references,
-    {
-        assert_prop_external_references();
-    }
-);
-
-interop_test!(
-    "REQ-3.1-P-10",
-    "use_cases::attack_pattern::producer::prop_kill_chain_phases",
-    prop_kill_chain_phases,
-    {
-        assert_prop_kill_chain_phases();
-    }
-);
-
-interop_test!(
-    "REQ-3.1-P-11",
-    "use_cases::attack_pattern::producer::prop_created",
+    "REQ-3.2-P-09",
+    "use_cases::campaign::producer::prop_created",
     prop_created,
     {
         assert_prop_created();
@@ -374,8 +343,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-3.1-P-12",
-    "use_cases::attack_pattern::producer::prop_modified",
+    "REQ-3.2-P-10",
+    "use_cases::campaign::producer::prop_modified",
     prop_modified,
     {
         assert_prop_modified();
@@ -383,8 +352,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-3.1-P-13",
-    "use_cases::attack_pattern::producer::prop_name",
+    "REQ-3.2-P-11",
+    "use_cases::campaign::producer::prop_name",
     prop_name,
     {
         assert_prop_name();
@@ -392,8 +361,8 @@ interop_test!(
 );
 
 interop_test!(
-    "REQ-CHK-SXP-3.1",
-    "use_cases::attack_pattern::producer::producer_testcase_data",
+    "REQ-CHK-SXP-3.2",
+    "use_cases::campaign::producer::producer_testcase_data",
     producer_testcase_data,
     {
         assert_producer_testcase_data();
