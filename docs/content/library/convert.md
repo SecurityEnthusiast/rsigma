@@ -32,10 +32,11 @@ No features. The crate is pure Rust + `regex`.
 | `TextQueryConfig` | ~90-field config struct that drives most text-query backends declaratively. Mirrors pySigma's `TextQueryBackend` class variables (precedence, boolean operators, wildcards, string and field quoting, regex and CIDR templates, IN-list optimization, deferred parts, query envelope). |
 | `PostgresBackend` | The PostgreSQL/TimescaleDB backend. Output formats: `default`, `view`, `timescaledb`, `continuous_aggregate`, `sliding_window`. |
 | `LynxDbBackend` | The LynxDB backend. Output formats: `default`, `minimal`. |
-| `TestBackend` | A backend-neutral text format used by the test suite and useful for debugging how a rule lowers to a generic boolean expression. |
+| `FibratusBackend` | The Fibratus backend. Output formats: `default`, `expr`, `yaml`, `rule`. |
+| `TextQueryTestBackend` | A backend-neutral text format used by the test suite and useful for debugging how a rule lowers to a generic boolean expression. |
 | `convert_collection(backend, &SigmaCollection, &[Pipeline], output_format)` | Convert a whole collection, applying pipelines per rule. Returns a `ConversionOutput` with per-rule `queries` and per-rule `errors`. |
-| `Backend::convert_rule(rule, output_format, &ConversionState)` | Lower-level single-rule entry point on the trait. |
-| `ConversionOutput`, `ConversionResult`, `ConversionState` | Output-format-specific result wrapper, per-rule result, and the per-rule pipeline state used during conversion. |
+| `Backend::convert_rule(rule, output_format, &PipelineState)` | Lower-level single-rule entry point on the trait. |
+| `ConversionOutput`, `ConversionResult`, `ConversionState`, `PipelineState` | Collection/result wrappers, the per-condition conversion state (`ConversionState`), and the per-rule pipeline state (`PipelineState` from `rsigma-eval`). |
 
 The full Backend trait method list and the per-backend modifier mapping are in [the crate README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-convert/README.md) and in the [PostgreSQL](../reference/backends/postgres.md) and [LynxDB](../reference/backends/lynxdb.md) backend references.
 
@@ -81,7 +82,7 @@ for result in &output.queries {
 | `json_field` | Treat field references as JSONB extraction paths in this column. |
 | `case_sensitive_re` | Use `~` instead of `~*` for regex. |
 
-LynxDB has no CLI options today; its only knob is the target index, controlled via pipeline `set_state` with `key: index` (default `main`).
+LynxDB has no CLI `-O` options; its only knob is the target index, controlled via pipeline `set_state` with `key: index` (default `main`).
 
 ## Writing a custom backend
 
@@ -129,7 +130,7 @@ See [Adding Backends](../developers/adding-backends.md) for the step-by-step wal
 ## See also
 
 - [Rule Conversion](../guide/rule-conversion.md) for the operator-facing workflow.
-- [PostgreSQL backend reference](../reference/backends/postgres.md) and [LynxDB backend reference](../reference/backends/lynxdb.md).
+- [PostgreSQL backend reference](../reference/backends/postgres.md), [LynxDB backend reference](../reference/backends/lynxdb.md), and [Fibratus backend reference](../reference/backends/fibratus.md).
 - [Adding Backends](../developers/adding-backends.md) for the contributor walkthrough.
 - [`rsigma-convert` README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-convert/README.md) for the full Backend trait reference.
 - [docs.rs/rsigma-convert](https://docs.rs/rsigma-convert).

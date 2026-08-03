@@ -1,6 +1,6 @@
 # `rsigma-mcp`
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the rsigma toolchain (parse, lint, validate, evaluate, convert, fields, pipelines, ADS authoring) as MCP tools for AI agents. Built on [`rmcp`](https://crates.io/crates/rmcp), the official Rust MCP SDK.
+A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the RSigma toolchain (parse, lint, validate, evaluate, convert, reverse-convert, tune, fields, pipelines, ADS authoring) as MCP tools for AI agents. Built on [`rmcp`](https://crates.io/crates/rmcp), the official Rust MCP SDK.
 
 - [docs.rs/rsigma-mcp](https://docs.rs/rsigma-mcp)
 - [README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-mcp/README.md)
@@ -8,17 +8,23 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes 
 
 ## When to use
 
-- You are wiring rsigma into an MCP client (Cursor, Claude Code) — use the [`rsigma mcp serve`](../cli/mcp/serve.md) command, which embeds this crate.
-- You are building your own agent host and want to serve the rsigma tool surface from your binary — depend on this crate and call `serve_stdio`.
+- You are wiring RSigma into an MCP client (Cursor, Claude Code): use the [`rsigma mcp serve`](../cli/mcp/serve.md) command, which embeds this crate.
+- You are building your own agent host and want to serve the RSigma tool surface from your binary: depend on this crate and call `serve_stdio` (or `serve_http` with the `http` feature).
 
-For the end-to-end workflow, client setup, and the tool reference with example calls, see the [MCP server guide](../guide/mcp-server.md).
+For the end-to-end workflow, client setup, and the 14-tool reference with example calls, see the [MCP server guide](../guide/mcp-server.md).
 
 ## Install
 
 ```toml
 [dependencies]
 rsigma-mcp = "{{ rsigma.version }}"
+# Optional Streamable HTTP transport:
+# rsigma-mcp = { version = "{{ rsigma.version }}", features = ["http"] }
 ```
+
+| Feature | Effect |
+|---------|--------|
+| `http` | Exposes `serve_http` and `http_router` for the Streamable HTTP transport. |
 
 ## Public surface
 
@@ -27,6 +33,7 @@ rsigma-mcp = "{{ rsigma.version }}"
 | `RsigmaMcp::new(root, lint_config, allow_sigma_cli)` | Build the handler with an optional default root for relative path-based tool calls, a lint configuration, and the sigma-cli delegation switch for `convert_rules` (pass `false` to keep conversion native-only). |
 | `RsigmaMcp::default()` | A handler with no root, default lint configuration, and delegation disabled. |
 | `serve_stdio(handler)` | Serve the handler over stdio, blocking until the client disconnects. The caller owns the tokio runtime. |
+| `serve_http` / `http_router` (`http` feature) | Serve over Streamable HTTP (`/mcp`), or obtain the axum router for embedding. |
 
 The handler implements `rmcp::ServerHandler`, so it can also be served over any rmcp transport.
 
