@@ -8,6 +8,15 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 Aligns the published docmd site with current CLI flags, daemon auth and HTTP behavior, backends, feature flags, crate surfaces, and contributor workflows. Guides, CLI, library, reference, deployment, editors, ecosystem, and developers pages drop roadmap wording, correct dynamic-source `--source` / `--source-file` wiring, builtin pipelines, exit codes, NATS/OTLP/Helr examples, and WASM ABI status, and refresh testing and fuzzing inventories against CI.
 
+### rstix: OASIS §3.2 Campaign interop use-case tests (#433)
+
+- Adds `tests/interop/use_cases/campaign/` covering §3.2.1–§3.2.6 against normative §3.2.3 fixtures and non-gating `examples/campaign/` data.
+- §3.2.1 description scope is **TESTED**: normative fixtures expose typed Campaign “Green Group Attacks Against Finance”.
+- Producer `REQ-3.2-P-01`..`P-11`, Consumer `REQ-3.2-C-01`..`C-05`, checklist `REQ-CHK-SXP-3.2` / `REQ-CHK-SXC-3.2`, examples `REQ-3.2-EX-4.1` / `EX-4.2`.
+- Table 4 CSD01 typo (`type` = `threat-actor`) is documented; tests enforce STIX §4.2 `campaign`.
+- Tightens the equivalent §3.1 Attack Pattern rows in the same pass: `P-02` pins that caller selection renames exactly one object and that the selected name survives parse and re-validation, and `P-07` reads the id from the wire use-case object so its parse no longer restates a parse the typed lookup already performed. The RFC 3339 millisecond check both use cases share now lives in `tests/interop/common/timestamp.rs`.
+- Not OASIS SXP/SXC certification (**2/21** use cases).
+
 ### Dependency batch (Aug 2026) (#432)
 
 Rolls up four open Dependabot PRs into a single merge. Rust (workspace `Cargo.lock`, with `ci/wasm-smoke/Cargo.lock` and `fuzz/Cargo.lock` synced for the `base64` bump): the patch group (#422) updates `pest`/`pest_derive` 2.8.7 to 2.8.8, `serde_json` 1.0.150 to 1.0.151, `jsonpath-rust` 1.0.5 to 1.0.6, `tokio-stream` 0.1.18 to 0.1.19, `time` 0.3.53 to 0.3.54, `jsonschema` 0.48.1 to 0.48.5, `clap` 4.6.2 to 4.6.4, and `rustls-pki-types` 1.15.0 to 1.15.1; standalone updates move `base64` 0.22.1 to 0.23.0 (#423) and `toml` 0.8.23 to 1.1.3+spec-1.1.0 (#424). CI (all repinned by commit SHA, batched via the `actions-updates` group, #421): `actions/checkout` v7.0.0 to v7.0.1, `taiki-e/install-action` v2.83.3 to v2.85.0, `docker/login-action` v4.4.0 to v4.5.0, `github/codeql-action/upload-sarif` v4.37.1 to v4.37.3, and `zizmorcore/zizmor-action` v0.6.0 to v0.6.1. Held back: `rusqlite` 0.40.1 (#234) requires Rust 1.89 while the workspace MSRV is Rust 1.88; `tikv-jemallocator` 0.7.0 (#425, jemalloc 5.3.1) regresses musl routed daemon throughput about 4-7% versus 0.6.1 (jemalloc 5.3.0) in same-host `scripts/perf/image-compare.sh` runs while still scaling about 4x from one to six rayon threads.

@@ -900,7 +900,7 @@ Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Spe
 | --------- | ---- | ---- |
 | Harness | `tests/interop/harness/` | Manifest, fixture loader + provenance, per-use-case overlay on `interop_strict`, bundle closure, containment, certification report |
 | Cross-cutting | `tests/interop/common/` | Automated checks for 18 §2.3 manifest rows, run suite-wide over **42** walkable normative fixtures |
-| Use-case tests | `tests/interop/use_cases/` | **§3.1 Attack Pattern** (§3.1.1–§3.1.7) Producer/Consumer/example tests (**1/21** OASIS use cases today) |
+| Use-case tests | `tests/interop/use_cases/` | **§3.1 Attack Pattern** (§3.1.1–§3.1.7) and **§3.2 Campaign** (§3.2.1–§3.2.6; no §3.2.7 in CSD01) Producer/Consumer/example tests (**2/21** OASIS use cases today) |
 | Manifest | `tests/fixtures/interop/manifest.toml` | `req_id` → `test_id` → fixture → §4.2 checklist row |
 | Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars (**44/44** inventory: **42** suite-walkable + **2** `BLOCKED` on §9.1 defects 16 and 19; synthetic helpers remain for intentional negatives) |
 | Examples | `tests/fixtures/interop/examples/` | Non-normative; must never fail the build |
@@ -913,7 +913,7 @@ Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Spe
 | `oasis_use_cases_in_spec` | The OASIS interoperability document defines 21 use cases — **not** how many are tested here. |
 | `manifest_rows_total` | Rows in `manifest.toml` (harness + placeholders + smoke). |
 | `manifest_rows_by_disposition` | Breakdown by `TESTED`, `HARNESS_SMOKE`, `REPORT_ONLY`, `BLOCKED`. |
-| `tested_rows_passed` | Executable manifest rows with `disposition = TESTED` that recorded `Pass` (**51** today: 9 harness + 18 §2.3 + **24 §3.1 Attack Pattern**) |
+| `tested_rows_passed` | Executable manifest rows with `disposition = TESTED` that recorded `Pass` (**72** today: 9 harness + 18 §2.3 + **24 §3.1 Attack Pattern** + **21 §3.2 Campaign**) |
 | `harness_smoke_executed` | Rows with `disposition = HARNESS_SMOKE` (0 today; reserved for partial checks if reintroduced) |
 | `report_only_rows` | §4.2 checklist/framework placeholders with no automated test (**7** today) |
 | `blocked_rows` | Checklist rows blocked on unrepairable published test-case data (2 today) |
