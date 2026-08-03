@@ -8,17 +8,18 @@ Each recipe is one [dynamic-source](../reference/dynamic-sources.md) file: an HT
 
 `--disposition-source <PATH>` loads a standalone dynamic-source file at daemon startup and refreshes it on the source's `refresh:` interval. For each refresh the runtime fetches the response, decodes it per `format:`, and applies the `extract:` expression **before** anything else sees the payload. The extracted value is fed straight to the disposition ingest path, which accepts a single object, a JSON array, or NDJSON. So an `extract` that builds `[{rule_id, verdict, incident_id, ...}]` from a case-system response is the whole integration.
 
-A configured source implies the loop is enabled, so `--disposition-source thehive.yml` alone is enough; you do not also need `--enable-dispositions`.
+A configured source implies the loop is enabled, so you do not also need `--enable-dispositions`. Pass it alongside a normal daemon invocation:
 
 ```bash
-rsigma engine daemon --disposition-source /etc/rsigma/thehive.yml
+rsigma engine daemon -r rules/ --input http \
+  --disposition-source /etc/rsigma/thehive.yml
 ```
 
 ## Read this first: the identity round-trip
 
 A verdict only keys back to the right rule if the case carries the alert's identity. Dispositions deduplicate on `(fingerprint or incident_id, verdict, rule_id)`, so the case must know the `incident_id` (or `fingerprint`) the alert was created with, plus the `rule_id`.
 
-That means the integration is a **round-trip**: the alert delivery that opened the case must stamp the identity into it, and the recipe reads it back out. Configure your [webhook sink](webhooks.md) (the carrier that opened the ticket) to template `rule_id` and `incident_id` into the case at creation, as shown in [Closing the loop with delivery](triage-feedback.md#closing-the-loop-with-delivery). Without that, the recipes below have no stable identity to read and the pull path silently mis-keys.
+That means the integration is a **round-trip**: the alert delivery that opened the case must stamp the identity into it, and the recipe reads it back out. Configure your [webhook sink](webhooks.md) (the carrier that opened the ticket) to template `rule_id` and `incident_id` into the case at creation, as shown in [Closing the loop with delivery](triage-feedback.md#closing-the-loop-with-delivery). Without a stable `incident_id` (or `fingerprint`), Jira and TheHive recipes omit `timestamp` and each re-poll gets a new ingest-time default, so the fallback key `(rule_id, timestamp, analyst)` can double-count the same case. Stamp the identity at creation time.
 
 The recipes carry the identity in a label or tag (`incident:<id>`, `rsigma-incident-<id>`, `rsigma-incident:<id>`) because that is the most portable field across case systems. A dedicated custom field works too where you have one.
 
@@ -34,7 +35,7 @@ GitHub has no resolution field, so the recipe defines a label convention: a `ver
 # Label convention (defined by this recipe; GitHub has no resolution field):
 #   verdict:true-positive | verdict:false-positive | verdict:benign-true-positive
 #   rule:<rule_id>      the rule the alert came from
-#   incident:<id>       the rsigma incident_id stamped into the issue at creation
+#   incident:<id>       the RSigma incident_id stamped into the issue at creation
 #
 # Auth: a read-only token in $GITHUB_TOKEN (fine-grained "Issues: read").
 # API: https://docs.github.com/en/rest/issues/issues#list-repository-issues
@@ -120,7 +121,7 @@ The legacy `/rest/api/3/search` endpoint returns `410 Gone` on Jira Cloud. Use `
 #   resolution name "False Positive" / "True Positive" (add a "False Positive"
 #     resolution to your workflow scheme if the default one lacks it)
 #   label rsigma-rule-<rule_id>     the rule the alert came from
-#   label rsigma-incident-<id>      the rsigma incident_id stamped in at creation
+#   label rsigma-incident-<id>      the RSigma incident_id stamped in at creation
 #
 # Auth: HTTP Basic; $JIRA_BASIC_AUTH is base64("email:api_token") for a
 # read-only token. API token docs:
@@ -192,7 +193,7 @@ TheHive carries the disposition in each case's `resolutionStatus`. TheHive 5 (St
 #      has no native benign-true-positive status, so teams that track BTP add a
 #      case tag and map it here.)
 #   tag rsigma-rule:<rule_id>       the rule the alert came from
-#   tag rsigma-incident:<id>        the rsigma incident_id stamped in at creation
+#   tag rsigma-incident:<id>        the RSigma incident_id stamped in at creation
 #
 # Auth: a read-only API key in $THEHIVE_API_KEY.
 # API: TheHive 5 case search is POST /api/v1/query with a JSON body (there is no
@@ -255,7 +256,7 @@ TheHive has no native benign-true-positive status. Teams that track BTP add a ca
 
 ## Limits and follow-ons
 
-- **No direct raw-webhook ingestion.** A raw TheHive/Jira/GitHub webhook cannot point at `POST /api/v1/dispositions`, because that endpoint parses its body directly as disposition records and applies no transform. Webhook-shaped integrations therefore go through the sender's own templating (the outbound-automation variants above) or a relay. A server-side `extract` option on the POST endpoint would close that gap natively; it is a possible future addition, deliberately not part of this docs-only integration.
+- **No direct raw-webhook ingestion.** A raw TheHive/Jira/GitHub webhook cannot point at `POST /api/v1/dispositions`, because that endpoint parses its body directly as disposition records and applies no transform. Webhook-shaped integrations therefore go through the sender's own templating (the outbound-automation variants above) or a relay.
 - **NATS relay for push without sender templating.** If you want push delivery but your case system cannot template JSON at the sender, publish its webhook to a NATS subject through a thin relay and point a [NATS dynamic source](../reference/dynamic-sources.md) with the same `extract` at that subject. The reshaping is identical; only the transport changes.
 - **Other case systems.** Any system with a queryable closed-case API follows the same three parts: an HTTP (or NATS) source, an auth header from `${ENV_VAR}`, and a jq `extract` that emits disposition records. ServiceNow, PagerDuty, and others drop into the same template.
 

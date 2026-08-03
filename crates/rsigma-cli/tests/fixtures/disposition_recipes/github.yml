@@ -3,7 +3,7 @@
 # Label convention (defined by this recipe; GitHub has no resolution field):
 #   verdict:true-positive | verdict:false-positive | verdict:benign-true-positive
 #   rule:<rule_id>      the rule the alert came from
-#   incident:<id>       the rsigma incident_id stamped into the issue at creation
+#   incident:<id>       the RSigma incident_id stamped into the issue at creation
 #
 # Auth: a read-only token in $GITHUB_TOKEN (fine-grained "Issues: read").
 # API: https://docs.github.com/en/rest/issues/issues#list-repository-issues
