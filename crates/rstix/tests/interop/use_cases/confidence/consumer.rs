@@ -79,7 +79,10 @@ pub fn assert_receives_triad() {
         );
     }
     assert_eq!(bundle.objects_of_type::<Indicator>().count(), 1);
-    let indicator = bundle.objects_of_type::<Indicator>().next().expect("indicator");
+    let indicator = bundle
+        .objects_of_type::<Indicator>()
+        .next()
+        .expect("indicator");
     assert!(indicator.common.confidence.is_some());
 }
 

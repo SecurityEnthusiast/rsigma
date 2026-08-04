@@ -26,7 +26,10 @@ fn load_course_of_action(relative: &str) -> (CourseOfAction, String) {
         1,
         "{relative}: expected one course-of-action use-case object"
     );
-    let object_id = use_case_ids.into_iter().next().expect("course-of-action id");
+    let object_id = use_case_ids
+        .into_iter()
+        .next()
+        .expect("course-of-action id");
     let bundle = validate_interop_fixture(relative, &fixture.json)
         .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
     let stix_id = StixId::parse(&object_id).expect("course-of-action id");
@@ -138,8 +141,7 @@ pub fn assert_spec_conformance() {
     let scoped_zero_failures: Vec<_> = report
         .diagnostics()
         .filter(|d| {
-            d.object_id.as_ref() == Some(&coa_id)
-                && Leniency::Zero.fails_validation(d.severity)
+            d.object_id.as_ref() == Some(&coa_id) && Leniency::Zero.fails_validation(d.severity)
         })
         .collect();
     assert!(

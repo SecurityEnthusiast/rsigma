@@ -132,8 +132,7 @@ pub fn assert_spec_conformance() {
     let scoped_zero_failures: Vec<_> = report
         .diagnostics()
         .filter(|d| {
-            d.object_id.as_ref() == Some(&note_id)
-                && Leniency::Zero.fails_validation(d.severity)
+            d.object_id.as_ref() == Some(&note_id) && Leniency::Zero.fails_validation(d.severity)
         })
         .collect();
     assert!(
@@ -239,7 +238,8 @@ pub fn assert_prop_modified() {
 pub fn assert_prop_content() {
     let (note, _) = load_note(FIXTURE_CREATE);
     assert!(
-        note.content.starts_with("This note indicates the various steps"),
+        note.content
+            .starts_with("This note indicates the various steps"),
         "interop-mandatory content"
     );
 }

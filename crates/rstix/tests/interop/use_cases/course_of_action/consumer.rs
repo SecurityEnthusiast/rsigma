@@ -223,9 +223,13 @@ pub fn assert_handles_producer_testcases() {
             let course_of_action = bundle
                 .get_typed::<CourseOfAction>(&stix_id)
                 .unwrap_or_else(|| panic!("{relative}: typed course-of-action {object_id}"));
-            let created_by = course_of_action.common.created_by_ref.as_ref().unwrap_or_else(|| {
-                panic!("{relative}: created_by_ref required for consumer close")
-            });
+            let created_by = course_of_action
+                .common
+                .created_by_ref
+                .as_ref()
+                .unwrap_or_else(|| {
+                    panic!("{relative}: created_by_ref required for consumer close")
+                });
             assert!(
                 bundle
                     .get_typed::<Identity>(created_by.as_stix_id())

@@ -81,7 +81,8 @@ pub fn assert_select_content() {
         .get_typed::<Sighting>(&stix_id)
         .expect("typed sighting after caller selection");
     assert_eq!(
-        sighting.count, Some(99),
+        sighting.count,
+        Some(99),
         "caller-selected name must survive parse and re-validation"
     );
 }
@@ -95,7 +96,11 @@ pub fn assert_identity_compliance() {
         .iter()
         .filter(|obj| obj.get("type").and_then(Value::as_str) == Some("identity"))
         .collect();
-    assert_eq!(identities.len(), 2, "{relative}: expected Producer + sighting Identity");
+    assert_eq!(
+        identities.len(),
+        2,
+        "{relative}: expected Producer + sighting Identity"
+    );
     for identity in &identities {
         assert_identity_shape(relative, identity);
     }
@@ -140,7 +145,8 @@ pub fn assert_spec_conformance() {
     let scoped_zero_failures: Vec<_> = report
         .diagnostics()
         .filter(|d| {
-            d.object_id.as_ref() == Some(&sighting_id) && Leniency::Zero.fails_validation(d.severity)
+            d.object_id.as_ref() == Some(&sighting_id)
+                && Leniency::Zero.fails_validation(d.severity)
         })
         .collect();
     assert!(

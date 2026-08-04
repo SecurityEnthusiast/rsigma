@@ -65,7 +65,9 @@ pub fn assert_supports_producer_props() {
             );
             assert_eq!(
                 indicator.pattern.pattern_type(),
-                wire.get("pattern_type").and_then(Value::as_str).unwrap_or(""),
+                wire.get("pattern_type")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""),
                 "{relative}: pattern_type must match wire"
             );
             assert_eq!(

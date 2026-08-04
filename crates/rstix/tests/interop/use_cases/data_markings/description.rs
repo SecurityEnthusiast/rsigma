@@ -27,7 +27,9 @@ pub fn assert_description_scope() {
     assert_eq!(indicator.name.as_deref(), Some("Bad IP1"));
     assert_eq!(indicator.common.object_marking_refs.len(), 1);
     assert_eq!(
-        indicator.common.object_marking_refs[0].as_stix_id().as_str(),
+        indicator.common.object_marking_refs[0]
+            .as_stix_id()
+            .as_str(),
         TLP1_WHITE_ID,
         "§3.5.3.1 must reference predefined TLP White marking-definition"
     );

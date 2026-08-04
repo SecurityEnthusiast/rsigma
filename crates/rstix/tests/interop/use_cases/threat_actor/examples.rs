@@ -39,5 +39,19 @@ pub fn assert_threat_actor_uses_malware() {
     assert_eq!(relationships[0].relationship_type.as_str(), "uses");
 }
 
-interop_test!("REQ-3.18-EX-4.1", "use_cases::threat_actor::examples::threat_actor_attributed_to_identity", threat_actor_attributed_to_identity, { assert_threat_actor_attributed_to_identity(); });
-interop_test!("REQ-3.18-EX-4.2", "use_cases::threat_actor::examples::threat_actor_uses_malware", threat_actor_uses_malware, { assert_threat_actor_uses_malware(); });
+interop_test!(
+    "REQ-3.18-EX-4.1",
+    "use_cases::threat_actor::examples::threat_actor_attributed_to_identity",
+    threat_actor_attributed_to_identity,
+    {
+        assert_threat_actor_attributed_to_identity();
+    }
+);
+interop_test!(
+    "REQ-3.18-EX-4.2",
+    "use_cases::threat_actor::examples::threat_actor_uses_malware",
+    threat_actor_uses_malware,
+    {
+        assert_threat_actor_uses_malware();
+    }
+);

@@ -24,8 +24,7 @@ pub fn assert_description_scope() {
         .get_typed::<CourseOfAction>(&coa_id)
         .expect("normative Course of Action must be typed");
     assert_eq!(
-        course_of_action.name,
-        "Add TCP port 80 Filter Rule to the existing Block UDP 1434 Filter",
+        course_of_action.name, "Add TCP port 80 Filter Rule to the existing Block UDP 1434 Filter",
         "§3.4.1 / §3.4.3.1 running example name must be present on normative fixture"
     );
 }

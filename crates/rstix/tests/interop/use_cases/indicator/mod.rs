@@ -7,8 +7,7 @@ pub mod examples;
 pub mod producer;
 
 /// OASIS §3.7.3.1 Producer test case (primary fixture for Table 14 property checks).
-pub const FIXTURE_CREATE: &str =
-    "testcases/indicator/tc-3.7.3.1-indicator-ipv4-address.json";
+pub const FIXTURE_CREATE: &str = "testcases/indicator/tc-3.7.3.1-indicator-ipv4-address.json";
 
 pub(crate) const PRODUCER_FIXTURES: &[&str] = &[
     FIXTURE_CREATE,

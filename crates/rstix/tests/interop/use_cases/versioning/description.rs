@@ -26,4 +26,11 @@ pub fn assert_description_scope() {
     assert_eq!(sight.objects_of_type::<Sighting>().count(), 1);
 }
 
-interop_test!("REQ-3.20-1", "use_cases::versioning::description::description_scope", description_scope, { assert_description_scope(); });
+interop_test!(
+    "REQ-3.20-1",
+    "use_cases::versioning::description::description_scope",
+    description_scope,
+    {
+        assert_description_scope();
+    }
+);

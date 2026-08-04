@@ -58,13 +58,16 @@ pub fn assert_malware_analysis_grouping() {
     let malware_id =
         StixId::parse("malware--bd839453-0334-42bb-bcde-8473be4d73fa").expect("malware id");
     assert!(bundle.get_typed::<Malware>(&malware_id).is_some());
-    let analysis_id =
-        StixId::parse("malware-analysis--8475bdef-0345-34be-3921-3847bef26a78").expect("analysis id");
+    let analysis_id = StixId::parse("malware-analysis--8475bdef-0345-34be-3921-3847bef26a78")
+        .expect("analysis id");
     assert!(bundle.get_typed::<MalwareAnalysis>(&analysis_id).is_some());
 
     let relationships: Vec<_> = bundle.objects_of_type::<Relationship>().collect();
     assert_eq!(relationships.len(), 1);
-    assert_eq!(relationships[0].relationship_type.as_str(), "static-analysis-of");
+    assert_eq!(
+        relationships[0].relationship_type.as_str(),
+        "static-analysis-of"
+    );
     assert_eq!(relationships[0].source_ref, analysis_id);
     assert_eq!(relationships[0].target_ref, malware_id);
 }

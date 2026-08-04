@@ -53,10 +53,7 @@ pub fn assert_supports_producer_props() {
                 intrusion_set.common.created_by_ref.is_some(),
                 "{relative}: created_by_ref required"
             );
-            assert!(
-                !intrusion_set.name.is_empty(),
-                "{relative}: name required"
-            );
+            assert!(!intrusion_set.name.is_empty(), "{relative}: name required");
             assert_eq!(
                 intrusion_set.resource_level.as_deref(),
                 wire.get("resource_level").and_then(Value::as_str),
@@ -230,9 +227,13 @@ pub fn assert_handles_producer_testcases() {
             let intrusion_set = bundle
                 .get_typed::<IntrusionSet>(&stix_id)
                 .unwrap_or_else(|| panic!("{relative}: typed intrusion-set {object_id}"));
-            let created_by = intrusion_set.common.created_by_ref.as_ref().unwrap_or_else(|| {
-                panic!("{relative}: created_by_ref required for consumer close")
-            });
+            let created_by = intrusion_set
+                .common
+                .created_by_ref
+                .as_ref()
+                .unwrap_or_else(|| {
+                    panic!("{relative}: created_by_ref required for consumer close")
+                });
             assert!(
                 bundle
                     .get_typed::<Identity>(created_by.as_stix_id())

@@ -51,7 +51,10 @@ pub fn assert_supports_producer_props() {
                 "{relative}: created_by_ref required"
             );
             assert!(!note.content.is_empty(), "{relative}: content required");
-            assert!(!note.object_refs.is_empty(), "{relative}: object_refs required");
+            assert!(
+                !note.object_refs.is_empty(),
+                "{relative}: object_refs required"
+            );
             assert_wire_object_preserved(relative, wire, &bundle, &object_id);
         }
     });

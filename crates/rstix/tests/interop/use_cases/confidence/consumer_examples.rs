@@ -29,7 +29,10 @@ pub fn assert_convert_confidence_scales() {
     assert_eq!(confidence, Confidence::new(70).expect("valid confidence"));
 
     let admiralty = AdmiraltyScale.from_stix(confidence);
-    assert_eq!(admiralty, "2", "70 maps to Admiralty 2 - Probably True band");
+    assert_eq!(
+        admiralty, "2",
+        "70 maps to Admiralty 2 - Probably True band"
+    );
 
     let wep = WepScale.from_stix(confidence);
     assert_eq!(wep, "Likely", "70 maps to WEP Likely / Probable band");

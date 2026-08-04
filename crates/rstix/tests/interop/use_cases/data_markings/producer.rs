@@ -84,7 +84,11 @@ pub fn assert_identity_compliance() {
         .iter()
         .filter(|obj| obj.get("type").and_then(Value::as_str) == Some("identity"))
         .collect();
-    assert_eq!(identities.len(), 2, "{relative}: expected two Identity objects");
+    assert_eq!(
+        identities.len(),
+        2,
+        "{relative}: expected two Identity objects"
+    );
     for identity in identities {
         assert_identity_shape(relative, identity);
     }
@@ -120,7 +124,9 @@ pub fn assert_spec_conformance() {
         "{relative}: exactly one TLP object_marking_refs entry required for §3.5 conformance"
     );
     assert_eq!(
-        indicator.common.object_marking_refs[0].as_stix_id().as_str(),
+        indicator.common.object_marking_refs[0]
+            .as_stix_id()
+            .as_str(),
         TLP1_WHITE_ID
     );
 

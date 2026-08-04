@@ -1,8 +1,8 @@
 //! §3.8.4 Producer Example Data (non-gating).
 
 use rstix::core::StixId;
-use rstix::model::sdo::{Infrastructure, Vulnerability};
 use rstix::model::sco::{DomainName, Ipv4Addr};
+use rstix::model::sdo::{Infrastructure, Vulnerability};
 use rstix::model::sro::Relationship;
 
 use crate::harness::fixture::load_fixture;
@@ -29,11 +29,18 @@ pub fn assert_vulnerabilities_discovered_in_scans() {
         .get_typed::<Infrastructure>(&infrastructure_id)
         .expect("93.184.216.34 Infrastructure");
     assert_eq!(infrastructure.name, "93.184.216.34");
-    assert_eq!(infrastructure.infrastructure_types, vec!["exfiltration".to_owned()]);
+    assert_eq!(
+        infrastructure.infrastructure_types,
+        vec!["exfiltration".to_owned()]
+    );
 
     let vulnerability_id =
         StixId::parse("vulnerability--fa4ca8dd-1248-5fef-8828-1bd2d935fa58").expect("vuln id");
-    assert!(bundle.get_typed::<Vulnerability>(&vulnerability_id).is_some());
+    assert!(
+        bundle
+            .get_typed::<Vulnerability>(&vulnerability_id)
+            .is_some()
+    );
 
     let ipv4_id =
         StixId::parse("ipv4-addr--a927d4b3-3396-5c01-998b-08733784ab5e").expect("ipv4 id");

@@ -58,10 +58,7 @@ pub fn assert_tms_indicator_consumer() {
         .expect("TMS example Indicator");
     assert_eq!(indicator.indicator_types, vec!["malicious-activity"]);
     assert!(
-        indicator
-            .pattern
-            .raw()
-            .contains("file:hashes.'SHA-256'"),
+        indicator.pattern.raw().contains("file:hashes.'SHA-256'"),
         "TMS example must carry SHA-256 file hash pattern"
     );
 }

@@ -33,8 +33,8 @@ pub fn assert_threat_actor_location() {
     assert_eq!(location.region.as_deref(), Some("south-eastern-asia"));
     assert_eq!(location.country.as_deref(), Some("TH"));
 
-    let actor_id =
-        StixId::parse("threat-actor--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f").expect("threat actor id");
+    let actor_id = StixId::parse("threat-actor--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f")
+        .expect("threat actor id");
     assert!(bundle.get_typed::<ThreatActor>(&actor_id).is_some());
 
     let relationships: Vec<_> = bundle.objects_of_type::<Relationship>().collect();
@@ -64,7 +64,10 @@ pub fn assert_malware_originates_from_location() {
 
     let relationships: Vec<_> = bundle.objects_of_type::<Relationship>().collect();
     assert_eq!(relationships.len(), 1);
-    assert_eq!(relationships[0].relationship_type.as_str(), "originates-from");
+    assert_eq!(
+        relationships[0].relationship_type.as_str(),
+        "originates-from"
+    );
     assert_eq!(relationships[0].source_ref, malware_id);
     assert_eq!(relationships[0].target_ref, location_id);
 }

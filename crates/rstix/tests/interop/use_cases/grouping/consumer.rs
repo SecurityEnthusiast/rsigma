@@ -50,10 +50,7 @@ pub fn assert_supports_producer_props() {
                 grouping.common.created_by_ref.is_some(),
                 "{relative}: created_by_ref required"
             );
-            assert!(
-                !grouping.context.is_empty(),
-                "{relative}: context required"
-            );
+            assert!(!grouping.context.is_empty(), "{relative}: context required");
             assert!(
                 !grouping.object_refs.is_empty(),
                 "{relative}: object_refs required"
@@ -129,7 +126,11 @@ pub fn assert_processes_fields() {
     let use_case_ids = use_case_object_ids(relative, &objects);
     let bundle = validate_interop_fixture(relative, &fixture.json).expect("interop gate");
 
-    assert_eq!(use_case_ids.len(), 1, "{relative}: one grouping use-case id");
+    assert_eq!(
+        use_case_ids.len(),
+        1,
+        "{relative}: one grouping use-case id"
+    );
     let object_id = &use_case_ids[0];
     let stix_id = StixId::parse(object_id).expect("grouping id");
     let wire = objects

@@ -23,4 +23,11 @@ pub fn assert_sighting_with_observed_data() {
     assert!(bundle.get_typed::<ObservedData>(&od_id).is_some());
 }
 
-interop_test!("REQ-3.17-EX-4.1", "use_cases::sighting::examples::sighting_with_observed_data", sighting_with_observed_data, { assert_sighting_with_observed_data(); });
+interop_test!(
+    "REQ-3.17-EX-4.1",
+    "use_cases::sighting::examples::sighting_with_observed_data",
+    sighting_with_observed_data,
+    {
+        assert_sighting_with_observed_data();
+    }
+);

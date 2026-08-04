@@ -310,8 +310,7 @@ pub fn assert_prop_pattern_type() {
         .expect("wire indicator");
     assert_eq!(
         indicator.pattern.pattern_type(),
-        wire
-            .get("pattern_type")
+        wire.get("pattern_type")
             .and_then(Value::as_str)
             .expect("pattern_type"),
         "typed pattern_type must match wire"

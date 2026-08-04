@@ -9,8 +9,7 @@ use crate::harness::interop_gate::{InteropGateOptions, validate_interop_json};
 use crate::interop_test;
 
 /// OASIS §3.19.4.1 non-normative example.
-pub const EXAMPLE_DROPS_MALWARE: &str =
-    "examples/tool/ex-3.19.4.1-tool-drops-malware.json";
+pub const EXAMPLE_DROPS_MALWARE: &str = "examples/tool/ex-3.19.4.1-tool-drops-malware.json";
 
 /// REQ-3.19-EX-4.1 — §3.19.4.1 loads and passes the interop gate; Tool `drops` Malware.
 pub fn assert_tool_drops_malware() {
@@ -19,8 +18,7 @@ pub fn assert_tool_drops_malware() {
     let bundle = validate_interop_json(&fixture.json, &InteropGateOptions::default())
         .expect("§3.19.4.1 example must parse and pass interop gate");
 
-    let tool_id =
-        StixId::parse("tool--44322d2b-ffd4-b1bf-123f-008e46b3cd12").expect("tool id");
+    let tool_id = StixId::parse("tool--44322d2b-ffd4-b1bf-123f-008e46b3cd12").expect("tool id");
     let tool = bundle
         .get_typed::<Tool>(&tool_id)
         .expect("ftp remote access Tool");

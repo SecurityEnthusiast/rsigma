@@ -1,8 +1,8 @@
 //! §3.9.4 Producer Example Data (non-gating).
 
 use rstix::core::StixId;
-use rstix::model::sdo::{Infrastructure, IntrusionSet, Location};
 use rstix::model::sco::Ipv4Addr;
+use rstix::model::sdo::{Infrastructure, IntrusionSet, Location};
 use rstix::model::sro::Relationship;
 
 use crate::harness::fixture::load_fixture;
@@ -32,7 +32,11 @@ pub fn assert_intrusion_set_owns_infrastructure() {
 
     let infrastructure_id =
         StixId::parse("infrastructure--e5268b6e-4931-42f1-b379-87f48eb41b1e").expect("infra id");
-    assert!(bundle.get_typed::<Infrastructure>(&infrastructure_id).is_some());
+    assert!(
+        bundle
+            .get_typed::<Infrastructure>(&infrastructure_id)
+            .is_some()
+    );
 
     let ipv4_id =
         StixId::parse("ipv4-addr--b4e29b62-2053-47c4-bab4-bbce39e5ed67").expect("ipv4 id");
@@ -64,7 +68,11 @@ pub fn assert_intrusion_set_originates_from_location() {
 
     let intrusion_set_id =
         StixId::parse("intrusion-set--4e78f46f-a023-4e5f-bc24-71b3ca22ec29").expect("is id");
-    assert!(bundle.get_typed::<IntrusionSet>(&intrusion_set_id).is_some());
+    assert!(
+        bundle
+            .get_typed::<IntrusionSet>(&intrusion_set_id)
+            .is_some()
+    );
 
     let location_id =
         StixId::parse("location--a6e9345f-5a15-4c29-8bb3-7dcc5d168d64").expect("location id");
@@ -72,7 +80,10 @@ pub fn assert_intrusion_set_originates_from_location() {
 
     let relationships: Vec<_> = bundle.objects_of_type::<Relationship>().collect();
     assert_eq!(relationships.len(), 1);
-    assert_eq!(relationships[0].relationship_type.as_str(), "originates-from");
+    assert_eq!(
+        relationships[0].relationship_type.as_str(),
+        "originates-from"
+    );
     assert_eq!(relationships[0].source_ref, intrusion_set_id);
     assert_eq!(relationships[0].target_ref, location_id);
 }

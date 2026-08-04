@@ -17,9 +17,18 @@ pub fn assert_observed_data_with_several_scos() {
     let bundle = validate_interop_json(&fixture.json, &InteropGateOptions::default())
         .expect("§3.14.4.1 must pass");
     let od_id = StixId::parse("observed-data--359d9ff7-1d08-4af6-92e4-e9df5b1bad88").expect("id");
-    let od = bundle.get_typed::<ObservedData>(&od_id).expect("ObservedData");
+    let od = bundle
+        .get_typed::<ObservedData>(&od_id)
+        .expect("ObservedData");
     assert_eq!(od.number_observed, 50);
     assert_eq!(bundle.objects_of_type::<Relationship>().count(), 1);
 }
 
-interop_test!("REQ-3.14-EX-4.1", "use_cases::observed_data::examples::observed_data_with_several_scos", observed_data_with_several_scos, { assert_observed_data_with_several_scos(); });
+interop_test!(
+    "REQ-3.14-EX-4.1",
+    "use_cases::observed_data::examples::observed_data_with_several_scos",
+    observed_data_with_several_scos,
+    {
+        assert_observed_data_with_several_scos();
+    }
+);

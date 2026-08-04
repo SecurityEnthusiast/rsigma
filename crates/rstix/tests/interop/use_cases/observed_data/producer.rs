@@ -21,7 +21,11 @@ fn load_observed_data(relative: &str) -> (ObservedData, String) {
     let objects = parse_fixture_objects(&fixture.json)
         .unwrap_or_else(|err| panic!("{relative}: parse fixture: {err}"));
     let use_case_ids = use_case_object_ids(relative, &objects);
-    assert_eq!(use_case_ids.len(), 1, "{relative}: expected one observed-data use-case object");
+    assert_eq!(
+        use_case_ids.len(),
+        1,
+        "{relative}: expected one observed-data use-case object"
+    );
     let object_id = use_case_ids.into_iter().next().expect("observed-data id");
     let bundle = validate_interop_fixture(relative, &fixture.json)
         .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
@@ -41,7 +45,10 @@ pub fn assert_create_observed_data() {
 pub fn assert_select_content() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let mut root: Value = serde_json::from_str(&fixture.json).expect("parse");
-    let objects = root.get_mut("objects").and_then(Value::as_array_mut).expect("objects");
+    let objects = root
+        .get_mut("objects")
+        .and_then(Value::as_array_mut)
+        .expect("objects");
     let mut mutated = 0usize;
     for object in objects.iter_mut() {
         if object.get("type").and_then(Value::as_str) == Some("observed-data") {
@@ -54,7 +61,9 @@ pub fn assert_select_content() {
     let use_case_ids = use_case_object_ids(FIXTURE_CREATE, &parse_fixture_objects(&json).unwrap());
     let bundle = validate_interop_json(
         &json,
-        &InteropGateOptions { use_case_object_ids: use_case_ids.clone() },
+        &InteropGateOptions {
+            use_case_object_ids: use_case_ids.clone(),
+        },
     )
     .expect("caller-selected bundle must pass");
     assert_eq!(use_case_ids.len(), 1);
@@ -85,12 +94,15 @@ pub fn assert_spec_conformance() {
     let object_id = &use_case_ids[0];
     let od_id = StixId::parse(object_id).expect("id");
     let od = bundle.get_typed::<ObservedData>(&od_id).expect("typed");
-    od.validate().unwrap_or_else(|err| panic!("{relative}: validate: {err}"));
+    od.validate()
+        .unwrap_or_else(|err| panic!("{relative}: validate: {err}"));
     let report = Validator::interop_bundle_strict().validate_bundle(&bundle);
     assert!(report.errors().next().is_none());
     let scoped: Vec<_> = report
         .diagnostics()
-        .filter(|d| d.object_id.as_ref() == Some(&od_id) && Leniency::Zero.fails_validation(d.severity))
+        .filter(|d| {
+            d.object_id.as_ref() == Some(&od_id) && Leniency::Zero.fails_validation(d.severity)
+        })
         .collect();
     assert!(scoped.is_empty(), "{scoped:?}");
     // Bundle-level STIX-W0002 on embedded File SCOs is outside ObservedData P-04 scope;
@@ -100,8 +112,14 @@ pub fn assert_spec_conformance() {
 pub fn assert_prop_type() {
     let (_, object_id) = load_observed_data(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&load_fixture(FIXTURE_CREATE).json).unwrap();
-    let wire = objects.iter().find(|o| o.get("id").and_then(Value::as_str) == Some(object_id.as_str())).unwrap();
-    assert_eq!(wire.get("type").and_then(Value::as_str), Some("observed-data"));
+    let wire = objects
+        .iter()
+        .find(|o| o.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
+        .unwrap();
+    assert_eq!(
+        wire.get("type").and_then(Value::as_str),
+        Some("observed-data")
+    );
 }
 
 pub fn assert_prop_spec_version() {
@@ -127,15 +145,26 @@ pub fn assert_prop_created_by_ref() {
 fn wire_ts(field: &str) {
     let (_, object_id) = load_observed_data(FIXTURE_CREATE);
     let objects = parse_fixture_objects(&load_fixture(FIXTURE_CREATE).json).unwrap();
-    let wire = objects.iter().find(|o| o.get("id").and_then(Value::as_str) == Some(object_id.as_str())).unwrap();
+    let wire = objects
+        .iter()
+        .find(|o| o.get("id").and_then(Value::as_str) == Some(object_id.as_str()))
+        .unwrap();
     let v = wire.get(field).and_then(Value::as_str).expect(field);
     assert_millisecond_rfc3339(field, v);
 }
 
-pub fn assert_prop_created() { wire_ts("created"); }
-pub fn assert_prop_modified() { wire_ts("modified"); }
-pub fn assert_prop_first_observed() { wire_ts("first_observed"); }
-pub fn assert_prop_last_observed() { wire_ts("last_observed"); }
+pub fn assert_prop_created() {
+    wire_ts("created");
+}
+pub fn assert_prop_modified() {
+    wire_ts("modified");
+}
+pub fn assert_prop_first_observed() {
+    wire_ts("first_observed");
+}
+pub fn assert_prop_last_observed() {
+    wire_ts("last_observed");
+}
 
 pub fn assert_prop_number_observed() {
     let (od, _) = load_observed_data(FIXTURE_CREATE);
@@ -162,21 +191,59 @@ pub fn assert_producer_testcase_data() {
 
 macro_rules! t {
     ($req:literal, $name:ident, $assert:ident) => {
-        interop_test!($req, concat!("use_cases::observed_data::producer::", stringify!($name)), $name, { $assert(); });
+        interop_test!(
+            $req,
+            concat!("use_cases::observed_data::producer::", stringify!($name)),
+            $name,
+            {
+                $assert();
+            }
+        );
     };
 }
-t!("REQ-3.14-P-01", create_observed_data, assert_create_observed_data);
+t!(
+    "REQ-3.14-P-01",
+    create_observed_data,
+    assert_create_observed_data
+);
 t!("REQ-3.14-P-02", select_content, assert_select_content);
-t!("REQ-3.14-P-03", identity_compliance, assert_identity_compliance);
+t!(
+    "REQ-3.14-P-03",
+    identity_compliance,
+    assert_identity_compliance
+);
 t!("REQ-3.14-P-04", spec_conformance, assert_spec_conformance);
 t!("REQ-3.14-P-05", prop_type, assert_prop_type);
 t!("REQ-3.14-P-06", prop_spec_version, assert_prop_spec_version);
 t!("REQ-3.14-P-07", prop_id, assert_prop_id);
-t!("REQ-3.14-P-08", prop_created_by_ref, assert_prop_created_by_ref);
+t!(
+    "REQ-3.14-P-08",
+    prop_created_by_ref,
+    assert_prop_created_by_ref
+);
 t!("REQ-3.14-P-09", prop_created, assert_prop_created);
 t!("REQ-3.14-P-10", prop_modified, assert_prop_modified);
-t!("REQ-3.14-P-11", prop_first_observed, assert_prop_first_observed);
-t!("REQ-3.14-P-12", prop_last_observed, assert_prop_last_observed);
-t!("REQ-3.14-P-13", prop_number_observed, assert_prop_number_observed);
+t!(
+    "REQ-3.14-P-11",
+    prop_first_observed,
+    assert_prop_first_observed
+);
+t!(
+    "REQ-3.14-P-12",
+    prop_last_observed,
+    assert_prop_last_observed
+);
+t!(
+    "REQ-3.14-P-13",
+    prop_number_observed,
+    assert_prop_number_observed
+);
 t!("REQ-3.14-P-14", prop_object_refs, assert_prop_object_refs);
-interop_test!("REQ-CHK-SXP-3.14", "use_cases::observed_data::producer::producer_testcase_data", producer_testcase_data, { assert_producer_testcase_data(); });
+interop_test!(
+    "REQ-CHK-SXP-3.14",
+    "use_cases::observed_data::producer::producer_testcase_data",
+    producer_testcase_data,
+    {
+        assert_producer_testcase_data();
+    }
+);

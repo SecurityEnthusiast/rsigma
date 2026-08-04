@@ -6,7 +6,7 @@ use rstix::model::sdo::Report;
 use crate::harness::fixture::load_fixture;
 use crate::harness::interop_gate::validate_interop_fixture;
 use crate::interop_test;
-use crate::use_cases::report::{working_json, FIXTURE_CREATE};
+use crate::use_cases::report::{FIXTURE_CREATE, working_json};
 
 pub fn assert_description_scope() {
     let fixture = load_fixture(FIXTURE_CREATE);
@@ -18,4 +18,11 @@ pub fn assert_description_scope() {
     assert_eq!(report.name, "Glass Gazelle Campaign");
 }
 
-interop_test!("REQ-3.16-1", "use_cases::report::description::description_scope", description_scope, { assert_description_scope(); });
+interop_test!(
+    "REQ-3.16-1",
+    "use_cases::report::description::description_scope",
+    description_scope,
+    {
+        assert_description_scope();
+    }
+);

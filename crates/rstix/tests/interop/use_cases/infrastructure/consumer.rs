@@ -53,10 +53,7 @@ pub fn assert_supports_producer_props() {
                 infrastructure.common.created_by_ref.is_some(),
                 "{relative}: created_by_ref required"
             );
-            assert!(
-                !infrastructure.name.is_empty(),
-                "{relative}: name required"
-            );
+            assert!(!infrastructure.name.is_empty(), "{relative}: name required");
             assert!(
                 !infrastructure.infrastructure_types.is_empty(),
                 "{relative}: infrastructure_types required"
@@ -236,9 +233,13 @@ pub fn assert_handles_producer_testcases() {
             let infrastructure = bundle
                 .get_typed::<Infrastructure>(&stix_id)
                 .unwrap_or_else(|| panic!("{relative}: typed infrastructure {object_id}"));
-            let created_by = infrastructure.common.created_by_ref.as_ref().unwrap_or_else(|| {
-                panic!("{relative}: created_by_ref required for consumer close")
-            });
+            let created_by = infrastructure
+                .common
+                .created_by_ref
+                .as_ref()
+                .unwrap_or_else(|| {
+                    panic!("{relative}: created_by_ref required for consumer close")
+                });
             assert!(
                 bundle
                     .get_typed::<Identity>(created_by.as_stix_id())

@@ -81,7 +81,10 @@ pub fn assert_receives_triad() {
         );
     }
     assert_eq!(bundle.objects_of_type::<Indicator>().count(), 1);
-    let indicator = bundle.objects_of_type::<Indicator>().next().expect("indicator");
+    let indicator = bundle
+        .objects_of_type::<Indicator>()
+        .next()
+        .expect("indicator");
     assert_eq!(indicator.common.object_marking_refs.len(), 1);
 }
 
@@ -151,14 +154,18 @@ pub fn assert_processes_fields() {
         "{relative}: typed object_marking_refs count must match wire"
     );
     assert_eq!(
-        indicator.common.object_marking_refs[0].as_stix_id().as_str(),
+        indicator.common.object_marking_refs[0]
+            .as_stix_id()
+            .as_str(),
         wire_marking_refs[0]
             .as_str()
             .expect("wire marking ref must be a string"),
         "{relative}: typed TLP marking ref must match wire"
     );
     assert_eq!(
-        indicator.common.object_marking_refs[0].as_stix_id().as_str(),
+        indicator.common.object_marking_refs[0]
+            .as_stix_id()
+            .as_str(),
         TLP1_WHITE_ID
     );
 
@@ -192,7 +199,9 @@ pub fn assert_processes_related() {
         .next()
         .expect("indicator");
     assert_eq!(
-        indicator.common.object_marking_refs[0].as_stix_id().as_str(),
+        indicator.common.object_marking_refs[0]
+            .as_stix_id()
+            .as_str(),
         TLP1_WHITE_ID
     );
 }

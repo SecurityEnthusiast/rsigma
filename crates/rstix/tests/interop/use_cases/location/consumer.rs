@@ -119,7 +119,11 @@ pub fn assert_processes_fields() {
     let use_case_ids = use_case_object_ids(relative, &objects);
     let bundle = validate_interop_fixture(relative, &fixture.json).expect("interop gate");
 
-    assert_eq!(use_case_ids.len(), 1, "{relative}: one location use-case id");
+    assert_eq!(
+        use_case_ids.len(),
+        1,
+        "{relative}: one location use-case id"
+    );
     let object_id = &use_case_ids[0];
     let stix_id = StixId::parse(object_id).expect("location id");
     let wire = objects

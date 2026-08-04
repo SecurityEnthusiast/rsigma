@@ -18,8 +18,7 @@ pub fn assert_description_scope() {
     let fixture = load_fixture(FIXTURE_CREATE);
     let bundle = validate_interop_fixture(FIXTURE_CREATE, &fixture.json)
         .expect("§3.19.3.1 must parse for description-scope check");
-    let tool_id =
-        StixId::parse("tool--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f").expect("tool id");
+    let tool_id = StixId::parse("tool--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f").expect("tool id");
     let tool = bundle
         .get_typed::<Tool>(&tool_id)
         .expect("normative Tool must be typed");

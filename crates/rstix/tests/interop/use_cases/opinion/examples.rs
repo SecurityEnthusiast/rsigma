@@ -18,7 +18,17 @@ pub fn assert_opinion_with_explanation() {
     let opinion = bundle.get_typed::<Opinion>(&id).unwrap();
     assert_eq!(opinion.opinion.as_str(), "strongly-disagree");
     assert!(opinion.explanation.as_ref().unwrap().contains("PandaCat"));
-    assert_eq!(opinion.authors, vec!["Alice".to_string(), "Bob".to_string()]);
+    assert_eq!(
+        opinion.authors,
+        vec!["Alice".to_string(), "Bob".to_string()]
+    );
 }
 
-interop_test!("REQ-3.15-EX-4.1", "use_cases::opinion::examples::opinion_with_explanation", opinion_with_explanation, { assert_opinion_with_explanation(); });
+interop_test!(
+    "REQ-3.15-EX-4.1",
+    "use_cases::opinion::examples::opinion_with_explanation",
+    opinion_with_explanation,
+    {
+        assert_opinion_with_explanation();
+    }
+);

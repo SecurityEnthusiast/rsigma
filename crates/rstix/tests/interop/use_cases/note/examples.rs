@@ -19,8 +19,7 @@ pub fn assert_note_on_sighting_of_malware() {
     let bundle = validate_interop_json(&fixture.json, &InteropGateOptions::default())
         .expect("§3.13.4.1 example must parse and pass interop gate");
 
-    let note_id =
-        StixId::parse("note--8db2245f-5a15-723d-8bb3-7dcc5d1600cc").expect("note id");
+    let note_id = StixId::parse("note--8db2245f-5a15-723d-8bb3-7dcc5d1600cc").expect("note id");
     let note = bundle
         .get_typed::<Note>(&note_id)
         .expect("Note on Sighting");

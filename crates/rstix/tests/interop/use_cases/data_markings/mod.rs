@@ -6,8 +6,7 @@ pub mod examples;
 pub mod producer;
 
 /// OASIS §3.5.3.1 Producer test case (TLP White + Indicator IPv4).
-pub const FIXTURE_CREATE: &str =
-    "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json";
+pub const FIXTURE_CREATE: &str = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json";
 
 pub(crate) const PRODUCER_FIXTURES: &[&str] = &[
     FIXTURE_CREATE,
