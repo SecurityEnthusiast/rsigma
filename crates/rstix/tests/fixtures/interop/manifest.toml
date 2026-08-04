@@ -1022,6 +1022,977 @@ checklist_row = "3.4.6"
 checklist_role = "consumer"
 verification = "Optional"
 
+# --- §3.6 Grouping Sharing (normative §3.6.3 fixtures) ---
+
+[[requirement]]
+req_id = "REQ-3.6-1"
+use_case = "grouping"
+section = "3.6.1"
+doc_page = 43
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::description::description_scope"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-01"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::create_grouping"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-02"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::select_content"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-03"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::identity_compliance"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-04"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::spec_conformance"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-05"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::prop_type"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-06"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::prop_spec_version"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-07"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::prop_id"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-08"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::prop_created_by_ref"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-09"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::prop_created"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-10"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::prop_modified"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-11"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::prop_context"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-P-12"
+use_case = "grouping"
+section = "3.6.2"
+doc_page = 44
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::prop_object_refs"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.6"
+use_case = "grouping"
+section = "3.6.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::grouping::producer::producer_testcase_data"
+checklist_row = "3.6.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.6-EX-4.1"
+use_case = "grouping"
+section = "3.6.4.1"
+doc_page = 45
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::grouping::examples::suspicious_event_grouping"
+fixture = "examples/grouping/ex-3.6.4.1-suspicious-event-grouping.json"
+
+[[requirement]]
+req_id = "REQ-3.6-EX-4.2"
+use_case = "grouping"
+section = "3.6.4.2"
+doc_page = 47
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::grouping::examples::malware_analysis_grouping"
+fixture = "examples/grouping/ex-3.6.4.2-malware-analysis-grouping.json"
+
+[[requirement]]
+req_id = "REQ-3.6-EX-4.3"
+use_case = "grouping"
+section = "3.6.4.3"
+doc_page = 49
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::grouping::examples::duplicate_sightings_grouping"
+fixture = "examples/grouping/ex-3.6.4.3-duplicate-sightings-grouping.json"
+
+[[requirement]]
+req_id = "REQ-3.6-C-01"
+use_case = "grouping"
+section = "3.6.5"
+doc_page = 52
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::consumer::supports_producer_props"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-C-02"
+use_case = "grouping"
+section = "3.6.5"
+doc_page = 52
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::consumer::receives_triad"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-C-03"
+use_case = "grouping"
+section = "3.6.5"
+doc_page = 52
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::consumer::resolves_created_by_ref"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-C-04"
+use_case = "grouping"
+section = "3.6.5"
+doc_page = 52
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::consumer::processes_fields"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.6-C-05"
+use_case = "grouping"
+section = "3.6.5"
+doc_page = 52
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::grouping::consumer::processes_related"
+fixture = "testcases/grouping/tc-3.6.3.1-grouping-test-case.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.6"
+use_case = "grouping"
+section = "3.6.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::grouping::consumer::handles_producer_testcases"
+checklist_row = "3.6.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+# --- §3.8 Infrastructure Sharing (normative §3.8.3 fixtures) ---
+
+[[requirement]]
+req_id = "REQ-3.8-1"
+use_case = "infrastructure"
+section = "3.8.1"
+doc_page = 63
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::description::description_scope"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-01"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::create_infrastructure"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-02"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::select_content"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-03"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::identity_compliance"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-04"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::spec_conformance"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-05"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::prop_type"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-06"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::prop_spec_version"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-07"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::prop_id"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-08"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::prop_created_by_ref"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-09"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::prop_created"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-10"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::prop_modified"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-11"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::prop_name"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-P-12"
+use_case = "infrastructure"
+section = "3.8.2"
+doc_page = 63
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::prop_infrastructure_types"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.8"
+use_case = "infrastructure"
+section = "3.8.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::producer::producer_testcase_data"
+checklist_row = "3.8.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.8-EX-4.1"
+use_case = "infrastructure"
+section = "3.8.4.1"
+doc_page = 64
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::examples::vulnerabilities_discovered_in_scans"
+fixture = "examples/infrastructure/ex-3.8.4.1-vulnerabilities-discovered-in-scans.json"
+
+[[requirement]]
+req_id = "REQ-3.8-EX-4.2"
+use_case = "infrastructure"
+section = "3.8.4.2"
+doc_page = 66
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::examples::botnet_infrastructure"
+fixture = "examples/infrastructure/ex-3.8.4.2-botnet-infrastructure.json"
+
+[[requirement]]
+req_id = "REQ-3.8-C-01"
+use_case = "infrastructure"
+section = "3.8.5"
+doc_page = 68
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::consumer::supports_producer_props"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-C-02"
+use_case = "infrastructure"
+section = "3.8.5"
+doc_page = 68
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::consumer::receives_triad"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-C-03"
+use_case = "infrastructure"
+section = "3.8.5"
+doc_page = 68
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::consumer::resolves_created_by_ref"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-C-04"
+use_case = "infrastructure"
+section = "3.8.5"
+doc_page = 68
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::consumer::processes_fields"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.8-C-05"
+use_case = "infrastructure"
+section = "3.8.5"
+doc_page = 68
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::consumer::processes_related"
+fixture = "testcases/infrastructure/tc-3.8.3.1-infrastructure-test-case.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.8"
+use_case = "infrastructure"
+section = "3.8.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::infrastructure::consumer::handles_producer_testcases"
+checklist_row = "3.8.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+# --- §3.9 Intrusion Set Sharing (normative §3.9.3 fixtures) ---
+
+[[requirement]]
+req_id = "REQ-3.9-1"
+use_case = "intrusion_set"
+section = "3.9.1"
+doc_page = 69
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::description::description_scope"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-01"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::create_intrusion_set"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-02"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::select_content"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-03"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::identity_compliance"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-04"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::spec_conformance"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-05"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::prop_type"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-06"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::prop_spec_version"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-07"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::prop_id"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-08"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::prop_created_by_ref"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-09"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::prop_created"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-10"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::prop_modified"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-11"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::prop_resource_level"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-12"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::prop_primary_motivation"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-P-13"
+use_case = "intrusion_set"
+section = "3.9.2"
+doc_page = 69
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::prop_name"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.9"
+use_case = "intrusion_set"
+section = "3.9.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::producer::producer_testcase_data"
+checklist_row = "3.9.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.9-EX-4.1"
+use_case = "intrusion_set"
+section = "3.9.4.1"
+doc_page = 71
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::examples::intrusion_set_owns_infrastructure"
+fixture = "examples/intrusion-set/ex-3.9.4.1-intrusion-set-owns-infrastructure.json"
+
+[[requirement]]
+req_id = "REQ-3.9-EX-4.2"
+use_case = "intrusion_set"
+section = "3.9.4.2"
+doc_page = 72
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::examples::intrusion_set_originates_from_location"
+fixture = "examples/intrusion-set/ex-3.9.4.2-intrusion-set-originates-from-location.json"
+
+[[requirement]]
+req_id = "REQ-3.9-C-01"
+use_case = "intrusion_set"
+section = "3.9.5"
+doc_page = 73
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::consumer::supports_producer_props"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-C-02"
+use_case = "intrusion_set"
+section = "3.9.5"
+doc_page = 73
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::consumer::receives_triad"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-C-03"
+use_case = "intrusion_set"
+section = "3.9.5"
+doc_page = 73
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::consumer::resolves_created_by_ref"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-C-04"
+use_case = "intrusion_set"
+section = "3.9.5"
+doc_page = 73
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::consumer::processes_fields"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.9-C-05"
+use_case = "intrusion_set"
+section = "3.9.5"
+doc_page = 73
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::consumer::processes_related"
+fixture = "testcases/intrusion-set/tc-3.9.3.1-intrusion-set-test-case.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.9"
+use_case = "intrusion_set"
+section = "3.9.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::intrusion_set::consumer::handles_producer_testcases"
+checklist_row = "3.9.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+# --- §3.5 Data Markings Sharing (normative §3.5.3 fixtures) ---
+
+[[requirement]]
+req_id = "REQ-3.5-1"
+use_case = "data_markings"
+section = "3.5.1"
+doc_page = 39
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::description::description_scope"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
+[[requirement]]
+req_id = "REQ-3.5-P-01"
+use_case = "data_markings"
+section = "3.5.2"
+doc_page = 40
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::producer::create_content"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
+[[requirement]]
+req_id = "REQ-3.5-P-02"
+use_case = "data_markings"
+section = "3.5.2"
+doc_page = 40
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::producer::select_content"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
+[[requirement]]
+req_id = "REQ-3.5-P-03"
+use_case = "data_markings"
+section = "3.5.2"
+doc_page = 40
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::producer::identity_compliance"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
+[[requirement]]
+req_id = "REQ-3.5-P-04"
+use_case = "data_markings"
+section = "3.5.2"
+doc_page = 40
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::producer::spec_conformance"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.5"
+use_case = "data_markings"
+section = "3.5.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::data_markings::producer::producer_testcase_data"
+checklist_row = "3.5.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.5-EX-4.1"
+use_case = "data_markings"
+section = "3.5.4.1"
+doc_page = 42
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::data_markings::examples::copyright_statement"
+fixture = "examples/data-markings/ex-3.5.4.1-copyright-statement.json"
+
+[[requirement]]
+req_id = "REQ-3.5-C-01"
+use_case = "data_markings"
+section = "3.5.5"
+doc_page = 43
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::consumer::supports_producer_props"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
+[[requirement]]
+req_id = "REQ-3.5-C-02"
+use_case = "data_markings"
+section = "3.5.5"
+doc_page = 43
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::consumer::receives_triad"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
+[[requirement]]
+req_id = "REQ-3.5-C-03"
+use_case = "data_markings"
+section = "3.5.5"
+doc_page = 43
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::consumer::resolves_created_by_ref"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
+[[requirement]]
+req_id = "REQ-3.5-C-04"
+use_case = "data_markings"
+section = "3.5.5"
+doc_page = 43
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::consumer::processes_fields"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
+[[requirement]]
+req_id = "REQ-3.5-C-05"
+use_case = "data_markings"
+section = "3.5.5"
+doc_page = 43
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::data_markings::consumer::processes_related"
+fixture = "testcases/data-markings/tc-3.5.3.1-tlp-white-indicator-ipv4.json"
+
 [[requirement]]
 req_id = "REQ-CHK-SXC-3.5"
 use_case = "data_markings"
@@ -1029,7 +2000,8 @@ section = "3.5.6"
 role = "consumer"
 level = "MUST"
 gating = false
-disposition = "REPORT_ONLY"
+disposition = "TESTED"
+test_id = "use_cases::data_markings::consumer::handles_producer_testcases"
 checklist_row = "3.5.6"
 checklist_role = "consumer"
 verification = "Mandatory"

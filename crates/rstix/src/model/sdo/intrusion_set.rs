@@ -183,6 +183,14 @@ impl QueryableStixObject for IntrusionSet {
     fn get_field(&self, path: &[&str]) -> Option<QueryValue<'_>> {
         match path {
             ["name"] => Some(QueryValue::Str(&self.name)),
+            ["description"] => self.description.as_deref().map(QueryValue::Str),
+            ["resource_level"] => self.resource_level.as_deref().map(QueryValue::Str),
+            ["primary_motivation"] => self.primary_motivation.as_deref().map(QueryValue::Str),
+            ["created_by_ref"] => self
+                .common
+                .created_by_ref
+                .as_ref()
+                .map(|id| QueryValue::Id(id.as_stix_id())),
             _ => None,
         }
     }

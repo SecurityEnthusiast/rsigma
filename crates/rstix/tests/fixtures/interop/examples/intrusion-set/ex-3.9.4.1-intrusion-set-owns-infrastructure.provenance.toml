@@ -1,0 +1,19 @@
+fixture = "ex-3.9.4.1-intrusion-set-owns-infrastructure.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "71"
+source_section = "3.9.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity, intrusion-set, infrastructure, ipv4-addr, and relationship objects in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "JUDGMENT"
+class = "invalid-json"
+description = "Remove trailing comma after intrusion-set description in published example."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "missing-field"
+description = "Add created_by_ref on Identity per §2.3.4 interop bundle practice."
