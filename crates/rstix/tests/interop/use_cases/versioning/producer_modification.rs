@@ -1,13 +1,17 @@
 //! §3.20.6–3.20.7 Versioning Modification producer support.
 
 use crate::interop_test;
+use rstix::core::StixId;
+use rstix::model::sdo::Indicator;
 use serde_json::Value;
 use time::OffsetDateTime;
 
 use crate::common::fixture_catalog::{parse_fixture_objects, use_case_object_ids};
 use crate::common::identity::assert_identity_shape;
 use crate::harness::fixture::load_fixture;
-use crate::harness::interop_gate::validate_interop_fixture;
+use crate::harness::interop_gate::{
+    InteropGateOptions, validate_interop_fixture, validate_interop_json,
+};
 use crate::use_cases::versioning::{
     FIXTURE_CREATE_INDICATOR, FIXTURE_MOD_INDICATOR, MODIFICATION_FIXTURES,
 };
@@ -16,12 +20,51 @@ fn parse_ts(s: &str) -> OffsetDateTime {
     OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).expect(s)
 }
 
+/// Caller-selected object set parses and re-validates (not a gate-only duplicate of SXP).
 pub fn assert_select_content() {
-    validate_interop_fixture(
+    let fixture = load_fixture(FIXTURE_MOD_INDICATOR);
+    let mut root: Value = serde_json::from_str(&fixture.json).expect("parse bundle JSON");
+    let objects = root
+        .get_mut("objects")
+        .and_then(Value::as_array_mut)
+        .expect("objects array");
+    let mut renamed = 0usize;
+    for object in objects.iter_mut() {
+        if object.get("type").and_then(Value::as_str) == Some("indicator") {
+            object["name"] = Value::String("Caller-selected modified Indicator".into());
+            renamed += 1;
+        }
+    }
+    assert_eq!(
+        renamed, 1,
+        "expected exactly one indicator object renamed by caller selection"
+    );
+    let json = serde_json::to_string(&root).expect("serialize caller-selected bundle");
+    let use_case_ids = use_case_object_ids(
         FIXTURE_MOD_INDICATOR,
-        &load_fixture(FIXTURE_MOD_INDICATOR).json,
+        &parse_fixture_objects(&json).unwrap(),
+    );
+    let bundle = validate_interop_json(
+        &json,
+        &InteropGateOptions {
+            use_case_object_ids: use_case_ids.clone(),
+        },
     )
-    .unwrap();
+    .expect("caller-selected modified bundle must pass interop gate");
+    assert_eq!(
+        use_case_ids.len(),
+        1,
+        "caller-selected bundle must expose one indicator use-case id"
+    );
+    let stix_id = StixId::parse(&use_case_ids[0]).expect("indicator id");
+    let indicator = bundle
+        .get_typed::<Indicator>(&stix_id)
+        .expect("typed indicator after caller selection");
+    assert_eq!(
+        indicator.name.as_deref(),
+        Some("Caller-selected modified Indicator"),
+        "caller-selected name must survive parse and re-validation"
+    );
 }
 
 pub fn assert_identity_compliance() {
