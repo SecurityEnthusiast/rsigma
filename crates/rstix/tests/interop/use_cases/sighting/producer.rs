@@ -83,7 +83,7 @@ pub fn assert_select_content() {
     assert_eq!(
         sighting.count,
         Some(99),
-        "caller-selected name must survive parse and re-validation"
+        "caller-selected count must survive parse and re-validation"
     );
 }
 

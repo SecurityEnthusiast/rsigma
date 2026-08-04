@@ -12,8 +12,3 @@ description = "Wrap identities, indicator, and opinion in a bundle per REQ-2.3-X
 authority = "MECHANICAL"
 class = "smart-quotes"
 description = "Straighten curly quotes on authors key."
-
-[[repair]]
-authority = "MECHANICAL"
-class = "timestamp-normalization"
-description = "Normalize indicator valid_from to millisecond RFC 3339."

@@ -22,8 +22,3 @@ description = "Correct observed-data object_refs ipv4-address-- token to ipv4-ad
 authority = "MECHANICAL"
 class = "no-container"
 description = "Wrap objects in a bundle per REQ-2.3-X-02."
-
-[[repair]]
-authority = "MECHANICAL"
-class = "timestamp-normalization"
-description = "Normalize first_observed and last_observed to millisecond RFC 3339 for load-time scan parity."

@@ -35,7 +35,7 @@
       "name": "Malicious Domain Name",
       "pattern": "[ domain-name:value = 'www.example.com']",
       "pattern_type": "stix",
-      "valid_from": "2016-01-01T00:00:00.000Z"
+      "valid_from": "2016-01-01T00:00:00Z"
     },
     {
       "type": "opinion",

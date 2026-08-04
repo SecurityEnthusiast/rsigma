@@ -12,8 +12,3 @@ description = "Wrap identity, observed-data, SCOs, and relationship in a bundle 
 authority = "MECHANICAL"
 class = "smart-quotes"
 description = "Straighten curly quotes on relationship source_ref/target_ref/relationship_type."
-
-[[repair]]
-authority = "MECHANICAL"
-class = "timestamp-normalization"
-description = "Normalize first_observed and last_observed to millisecond RFC 3339."

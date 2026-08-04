@@ -34,7 +34,7 @@
       "indicator_types": ["malicious-activity"],
       "pattern": "[ file:hashes.MD5 = '3773a88f65a5e780c8dff9cdc3a056f3' ]",
       "pattern_type": "stix",
-      "valid_from": "2015-12-21T19:59:17.000Z",
+      "valid_from": "2015-12-21T19:59:17Z",
       "created_by_ref": "identity--c78cb6e5-0c4b-4611-8297-d1b8b55e40b5"
     }
   ]

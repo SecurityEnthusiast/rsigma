@@ -8,6 +8,8 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 Completes the remaining OASIS STIX 2.1 Interoperability CSD01 use-case modules beyond §3.1 Attack Pattern and §3.2 Campaign. Adds Producer/Consumer/example tests and manifest TESTED rows for Confidence, Course of Action, Data Markings, Grouping, Indicator, Infrastructure, Intrusion Set, Location, Malware Analysis, Malware, Note, Observed Data, Opinion, Report, Sighting, Threat Actor, Tool, Versioning, and Vulnerability (**21/21** use cases; **506** TESTED rows: 9 harness + 18 §2.3 + 479 use-case). `REQ-CHK-SXP-3.12` and `REQ-CHK-SXP-3.16` stay **BLOCKED** on published defects 19 and 16. Not OASIS SXP/SXC certification.
 
+Also extends the public query surface: `QueryableStixObject::get_field` now answers `["created_by_ref"]` on Infrastructure, IntrusionSet, Location, Malware, MalwareAnalysis, Report, and Vulnerability (completing coverage across all 19 SDOs that implement the trait), and IntrusionSet additionally answers `description`, `resource_level`, and `primary_motivation`.
+
 ### Post-pipeline rule retrieval (#437)
 
 Pipelines rewrite a rule before it is compiled, and loading the rule kept only the compiled form, so the rewritten Sigma AST was reachable only by hand-rolling `apply_pipelines_with_state` around a clone. An embedder that derives runtime behavior from the rewrite, such as choosing which Windows event channels to collect from a `logsource` that `change_logsource` unified onto the sysmon service, had to duplicate the pipeline's own mapping in its code to get there.

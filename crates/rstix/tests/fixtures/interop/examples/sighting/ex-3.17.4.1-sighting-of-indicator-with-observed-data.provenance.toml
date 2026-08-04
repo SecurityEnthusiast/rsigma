@@ -16,4 +16,4 @@ description = "Insert Producer Identity, where-sighted Identity, and Indicator r
 [[repair]]
 authority = "MECHANICAL"
 class = "timestamp-normalization"
-description = "Normalize first_seen/last_seen/first_observed/last_observed/valid_from to millisecond RFC 3339."
+description = "Normalize first_seen and last_seen to millisecond RFC 3339 for load-time scan keys."

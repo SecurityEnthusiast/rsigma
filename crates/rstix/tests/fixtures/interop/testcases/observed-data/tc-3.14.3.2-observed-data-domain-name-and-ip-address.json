@@ -19,8 +19,8 @@
       "created_by_ref": "identity--987eeee1-413a-44ac-96cc-0a8acdcc2f2c",
       "created": "2016-04-06T19:58:16.000Z",
       "modified": "2016-04-06T19:58:16.000Z",
-      "first_observed": "2015-12-21T19:00:00.000Z",
-      "last_observed": "2015-12-21T19:00:00.000Z",
+      "first_observed": "2015-12-21T19:00:00Z",
+      "last_observed": "2015-12-21T19:00:00Z",
       "number_observed": 50,
       "object_refs": [
         "ipv4-addr--efcd5e80-570d-4131-b213-62cb18eaa6a8",
