@@ -1,0 +1,9 @@
+fixture = "ex-3.10.4.1-threat-actor-location.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "76"
+source_section = "3.10.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity, location, threat-actor, and relationship objects in a bundle per REQ-2.3-X-02."

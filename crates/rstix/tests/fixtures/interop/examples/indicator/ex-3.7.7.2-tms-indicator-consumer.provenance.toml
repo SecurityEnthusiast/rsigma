@@ -1,0 +1,19 @@
+fixture = "ex-3.7.7.2-tms-indicator-consumer.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "61"
+source_section = "3.7.7.2"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on indicator description."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity and indicator objects in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "closure"
+description = "Set Identity created_by_ref to bundled Identity id for reference closure."

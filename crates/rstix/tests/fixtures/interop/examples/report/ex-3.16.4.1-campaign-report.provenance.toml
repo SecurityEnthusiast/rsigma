@@ -1,0 +1,30 @@
+fixture = "ex-3.16.4.1-campaign-report.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "105"
+source_section = "3.16.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity, report, indicator, campaign, and relationship in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on created_by_ref key."
+
+[[repair]]
+authority = "JUDGMENT"
+class = "timestamp-normalization"
+description = "Normalize published from CSD01 2020-01-201T17:00:00Z to 2020-01-20T17:00:00.000Z (defect 16 day-of-month typo)."
+invents_data = false
+
+[[repair]]
+authority = "JUDGMENT"
+class = "reference-repair"
+description = "Correct relationship target_ref from campaign--26ffb872-... (indicator id reused) to campaign--83422c77-904c-4dc1-aff5-5c38f3a2c55c."
+
+[[divergence_recorded]]
+site = "§3.16.4"
+defect = 16
+description = "Published example carried published timestamp 2020-01-201T17:00:00Z; repaired to 2020-01-20T17:00:00.000Z for parseability."

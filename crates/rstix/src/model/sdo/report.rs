@@ -145,6 +145,11 @@ impl QueryableStixObject for Report {
         match path {
             ["name"] => Some(QueryValue::Str(&self.name)),
             ["published"] => Some(QueryValue::Timestamp(&self.published)),
+            ["created_by_ref"] => self
+                .common
+                .created_by_ref
+                .as_ref()
+                .map(|id| QueryValue::Id(id.as_stix_id())),
             _ => None,
         }
     }

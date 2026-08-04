@@ -232,6 +232,11 @@ impl QueryableStixObject for Location {
             ["region"] => self.region.as_deref().map(QueryValue::Str),
             ["latitude"] => self.latitude.map(QueryValue::Float),
             ["longitude"] => self.longitude.map(QueryValue::Float),
+            ["created_by_ref"] => self
+                .common
+                .created_by_ref
+                .as_ref()
+                .map(|id| QueryValue::Id(id.as_stix_id())),
             _ => None,
         }
     }

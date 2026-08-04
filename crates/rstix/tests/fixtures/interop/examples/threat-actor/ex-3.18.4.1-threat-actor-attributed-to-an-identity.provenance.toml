@@ -1,0 +1,14 @@
+fixture = "ex-3.18.4.1-threat-actor-attributed-to-an-identity.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "117"
+source_section = "3.18.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap objects in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "missing-field"
+description = "Add created_by_ref on Producer Identity per §2.3.4 interop bundle practice."

@@ -1,0 +1,9 @@
+fixture = "ex-3.7.4.1-indicator-with-description.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "59"
+source_section = "3.7.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity and indicator objects in a bundle per REQ-2.3-X-02."
