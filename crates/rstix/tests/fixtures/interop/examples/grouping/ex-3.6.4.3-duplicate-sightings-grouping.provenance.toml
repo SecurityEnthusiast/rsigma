@@ -1,0 +1,29 @@
+fixture = "ex-3.6.4.3-duplicate-sightings-grouping.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "49-51"
+source_section = "3.6.4.3"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "type-prefix"
+description = "Replace published em-dash indicator ids (indicator—) with STIX indicator-- UUID ids."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "malformed-json"
+description = "Insert missing commas after description on identity objects in the published example."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "closure"
+description = "Add Producer Identity identity--a463ffb3-1bd9-4d94-b02d-74e4f1658283 referenced by grouping created_by_ref but omitted from the published example."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap grouping, identities, indicators, and sighting objects in a bundle per REQ-2.3-X-02."
+
+[[divergence_recorded]]
+site = "§3.6.4.3 indicator ids"
+defect = 20
+description = "Published example uses em-dash (—) instead of STIX id delimiter (--) in indicator ids."

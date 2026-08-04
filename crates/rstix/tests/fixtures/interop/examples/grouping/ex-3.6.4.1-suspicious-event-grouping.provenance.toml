@@ -1,0 +1,29 @@
+fixture = "ex-3.6.4.1-suspicious-event-grouping.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "45-46"
+source_section = "3.6.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "escaped-underscore"
+description = "Unescape spec field names on identity, grouping, sighting, and observed-data objects."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on created_by_ref, sighting_of_ref, and observed_data_refs keys."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "malformed-json"
+description = "Insert missing commas after modified on observed-data objects in the published example."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "type-prefix"
+description = "Normalize published ipv4-address-- ids to STIX ipv4-addr-- in observed-data object_refs."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap nine bare objects in a bundle per REQ-2.3-X-02."
