@@ -3718,6 +3718,226 @@ checklist_row = "3.5.6"
 checklist_role = "consumer"
 verification = "Mandatory"
 
+
+
+
+# --- §3.12 Malware Sharing ---
+
+[[requirement]]
+req_id = "REQ-3.12-1"
+use_case = "malware"
+section = "3.12.1"
+doc_page = 85
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::description::description_scope"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-01"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::create_malware"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-02"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::select_content"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-03"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::identity_compliance"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-04"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::spec_conformance"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-05"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_type"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-06"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_spec_version"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-07"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_id"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-08"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_created_by_ref"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-09"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_created"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-10"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_is_family"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-11"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_name"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-12"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_malware_types"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-13"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_capabilities"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-14"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_first_seen"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-15"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_last_seen"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-16"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_implementation_languages"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-P-17"
+use_case = "malware"
+section = "3.12.2"
+doc_page = 86
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::producer::prop_architecture_execution_envs"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
 [[requirement]]
 req_id = "REQ-CHK-SXP-3.12"
 use_case = "malware"
@@ -3732,6 +3952,809 @@ checklist_role = "producer"
 verification = "Optional"
 
 [[requirement]]
+req_id = "REQ-3.12-EX-4.1"
+use_case = "malware"
+section = "3.12.4.1"
+doc_page = 87
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::malware::examples::provide_actionable_intelligence"
+fixture = "examples/malware/ex-3.12.4.1-provide-actionable-intelligence-data-via-threat-feed.json"
+
+[[requirement]]
+req_id = "REQ-3.12-C-01"
+use_case = "malware"
+section = "3.12.5"
+doc_page = 88
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::consumer::supports_producer_props"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-C-02"
+use_case = "malware"
+section = "3.12.5"
+doc_page = 88
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::consumer::receives_triad"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-C-03"
+use_case = "malware"
+section = "3.12.5"
+doc_page = 88
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::consumer::resolves_created_by_ref"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-C-04"
+use_case = "malware"
+section = "3.12.5"
+doc_page = 88
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::consumer::processes_fields"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-3.12-C-05"
+use_case = "malware"
+section = "3.12.5"
+doc_page = 88
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::malware::consumer::processes_related"
+fixture = "testcases/malware/tc-3.12.3.1-create-malware-object.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.12"
+use_case = "malware"
+section = "3.12.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::malware::consumer::handles_producer_testcases"
+checklist_row = "3.12.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+
+# --- §3.14 Observed Data Sharing ---
+
+[[requirement]]
+req_id = "REQ-3.14-1"
+use_case = "observed_data"
+section = "3.14.1"
+doc_page = 93
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::description::description_scope"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-01"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::create_observed_data"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-02"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::select_content"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-03"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::identity_compliance"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-04"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::spec_conformance"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-05"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_type"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-06"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_spec_version"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-07"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_id"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-08"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_created_by_ref"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-09"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_created"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-10"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_modified"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-11"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_first_observed"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-12"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_last_observed"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-13"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_number_observed"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-3.14-P-14"
+use_case = "observed_data"
+section = "3.14.2"
+doc_page = 94
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::prop_object_refs"
+fixture = "testcases/observed-data/tc-3.14.3.1-observed-data-of-file-hash.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.14"
+use_case = "observed_data"
+section = "3.14.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::observed_data::producer::producer_testcase_data"
+checklist_row = "3.14.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.14-EX-4.1"
+use_case = "observed_data"
+section = "3.14.4.1"
+doc_page = 96
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::observed_data::examples::observed_data_with_several_scos"
+fixture = "examples/observed-data/ex-3.14.4.1-observed-data-with-several-scos.json"
+
+[[requirement]]
+req_id = "REQ-3.14-C-01"
+use_case = "observed_data"
+section = "3.14.5"
+doc_page = 97
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::consumer::supports_producer_props"
+fixture = "testcases/observed-data/tc-3.14.3.2-observed-data-domain-name-and-ip-address.json"
+
+[[requirement]]
+req_id = "REQ-3.14-C-02"
+use_case = "observed_data"
+section = "3.14.5"
+doc_page = 97
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::consumer::receives_triad"
+fixture = "testcases/observed-data/tc-3.14.3.2-observed-data-domain-name-and-ip-address.json"
+
+[[requirement]]
+req_id = "REQ-3.14-C-03"
+use_case = "observed_data"
+section = "3.14.5"
+doc_page = 97
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::consumer::resolves_created_by_ref"
+fixture = "testcases/observed-data/tc-3.14.3.2-observed-data-domain-name-and-ip-address.json"
+
+[[requirement]]
+req_id = "REQ-3.14-C-04"
+use_case = "observed_data"
+section = "3.14.5"
+doc_page = 97
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::consumer::processes_fields"
+fixture = "testcases/observed-data/tc-3.14.3.2-observed-data-domain-name-and-ip-address.json"
+
+[[requirement]]
+req_id = "REQ-3.14-C-05"
+use_case = "observed_data"
+section = "3.14.5"
+doc_page = 97
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::observed_data::consumer::processes_related"
+fixture = "testcases/observed-data/tc-3.14.3.2-observed-data-domain-name-and-ip-address.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.14"
+use_case = "observed_data"
+section = "3.14.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::observed_data::consumer::handles_producer_testcases"
+checklist_row = "3.14.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+
+# --- §3.15 Opinion Sharing ---
+
+[[requirement]]
+req_id = "REQ-3.15-1"
+use_case = "opinion"
+section = "3.15.1"
+doc_page = 98
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::description::description_scope"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-01"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::create_opinion"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-02"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::select_content"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-03"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::identity_compliance"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-04"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::spec_conformance"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-05"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::prop_type"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-06"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::prop_spec_version"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-07"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::prop_id"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-08"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::prop_created_by_ref"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-09"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::prop_created"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-10"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::prop_modified"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-11"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::prop_opinion_value"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-P-12"
+use_case = "opinion"
+section = "3.15.2"
+doc_page = 99
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::prop_object_refs"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.15"
+use_case = "opinion"
+section = "3.15.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::opinion::producer::producer_testcase_data"
+checklist_row = "3.15.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.15-EX-4.1"
+use_case = "opinion"
+section = "3.15.4.1"
+doc_page = 100
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::opinion::examples::opinion_with_explanation"
+fixture = "examples/opinion/ex-3.15.4.1-opinion-with-explanation-and-authors.json"
+
+[[requirement]]
+req_id = "REQ-3.15-C-01"
+use_case = "opinion"
+section = "3.15.5"
+doc_page = 101
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::consumer::supports_producer_props"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-C-02"
+use_case = "opinion"
+section = "3.15.5"
+doc_page = 101
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::consumer::receives_triad"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-C-03"
+use_case = "opinion"
+section = "3.15.5"
+doc_page = 101
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::consumer::resolves_created_by_ref"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-C-04"
+use_case = "opinion"
+section = "3.15.5"
+doc_page = 101
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::consumer::processes_fields"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.15-C-05"
+use_case = "opinion"
+section = "3.15.5"
+doc_page = 101
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::opinion::consumer::processes_related"
+fixture = "testcases/opinion/tc-3.15.3.1-opinion-on-indicator-different-identity.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.15"
+use_case = "opinion"
+section = "3.15.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::opinion::consumer::handles_producer_testcases"
+checklist_row = "3.15.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+
+# --- §3.16 Report Sharing ---
+
+[[requirement]]
+req_id = "REQ-3.16-1"
+use_case = "report"
+section = "3.16.1"
+doc_page = 102
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::description::description_scope"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-01"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::create_report"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-02"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::select_content"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-03"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::identity_compliance"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-04"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::spec_conformance"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-05"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_type"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-06"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_spec_version"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-07"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_id"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-08"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_created_by_ref"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-09"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_created"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-10"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_modified"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-11"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_name"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-12"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_published"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-13"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_object_refs"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-P-14"
+use_case = "report"
+section = "3.16.2"
+doc_page = 103
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::producer::prop_report_types"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
 req_id = "REQ-CHK-SXP-3.16"
 use_case = "report"
 section = "3.16.3"
@@ -3742,6 +4765,1139 @@ disposition = "BLOCKED"
 blocked_by = 16
 checklist_row = "3.16.3"
 checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.16-EX-4.1"
+use_case = "report"
+section = "3.16.4.1"
+doc_page = 106
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::report::examples::campaign_report"
+fixture = "examples/report/ex-3.16.4.1-campaign-report.json"
+
+[[requirement]]
+req_id = "REQ-3.16-EX-4.2"
+use_case = "report"
+section = "3.16.4.2"
+doc_page = 107
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::report::examples::malware_analysis_report"
+fixture = "examples/report/ex-3.16.4.2-malware-analysis-report.json"
+
+[[requirement]]
+req_id = "REQ-3.16-C-01"
+use_case = "report"
+section = "3.16.5"
+doc_page = 108
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::consumer::supports_producer_props"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-C-02"
+use_case = "report"
+section = "3.16.5"
+doc_page = 108
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::consumer::receives_triad"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-C-03"
+use_case = "report"
+section = "3.16.5"
+doc_page = 108
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::consumer::resolves_created_by_ref"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-C-04"
+use_case = "report"
+section = "3.16.5"
+doc_page = 108
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::consumer::processes_fields"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-3.16-C-05"
+use_case = "report"
+section = "3.16.5"
+doc_page = 108
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::report::consumer::processes_related"
+fixture = "testcases/report/tc-3.16.3.1-create-report-object.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.16"
+use_case = "report"
+section = "3.16.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::report::consumer::handles_producer_testcases"
+checklist_row = "3.16.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+
+# --- §3.17 Sighting Sharing ---
+
+[[requirement]]
+req_id = "REQ-3.17-1"
+use_case = "sighting"
+section = "3.17.1"
+doc_page = 109
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::description::description_scope"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-01"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::create_sighting"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-02"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::select_content"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-03"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::identity_compliance"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-04"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::spec_conformance"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-05"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_type"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-06"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_spec_version"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-07"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_id"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-08"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_created_by_ref"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-09"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_created"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-10"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_modified"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-11"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_sighting_of_ref"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-12"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_count"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-13"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_first_seen"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-P-14"
+use_case = "sighting"
+section = "3.17.2"
+doc_page = 110
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::prop_last_seen"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.17"
+use_case = "sighting"
+section = "3.17.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::sighting::producer::producer_testcase_data"
+checklist_row = "3.17.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.17-EX-4.1"
+use_case = "sighting"
+section = "3.17.4.1"
+doc_page = 111
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::sighting::examples::sighting_with_observed_data"
+fixture = "examples/sighting/ex-3.17.4.1-sighting-of-indicator-with-observed-data.json"
+
+[[requirement]]
+req_id = "REQ-3.17-C-01"
+use_case = "sighting"
+section = "3.17.5"
+doc_page = 112
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::consumer::supports_producer_props"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-C-02"
+use_case = "sighting"
+section = "3.17.5"
+doc_page = 112
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::consumer::receives_triad"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-C-03"
+use_case = "sighting"
+section = "3.17.5"
+doc_page = 112
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::consumer::resolves_created_by_ref"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-C-04"
+use_case = "sighting"
+section = "3.17.5"
+doc_page = 112
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::consumer::processes_fields"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.17-C-05"
+use_case = "sighting"
+section = "3.17.5"
+doc_page = 112
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::sighting::consumer::processes_related"
+fixture = "testcases/sighting/tc-3.17.3.1-sighting-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.17"
+use_case = "sighting"
+section = "3.17.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::sighting::consumer::handles_producer_testcases"
+checklist_row = "3.17.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+
+# --- §3.18 Threat Actor Sharing ---
+
+[[requirement]]
+req_id = "REQ-3.18-1"
+use_case = "threat_actor"
+section = "3.18.1"
+doc_page = 113
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::description::description_scope"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-01"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::create_threat_actor"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-02"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::select_content"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-03"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::identity_compliance"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-04"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::spec_conformance"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-05"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_type"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-06"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_spec_version"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-07"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_id"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-08"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_created_by_ref"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-09"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_created"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-10"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_modified"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-11"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_threat_actor_types"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-12"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_roles"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-13"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_sophistication"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-14"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_resource_level"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-15"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_primary_motivation"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-3.18-P-16"
+use_case = "threat_actor"
+section = "3.18.2"
+doc_page = 114
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::prop_name"
+fixture = "testcases/threat-actor/tc-3.18.3.1-threat-actor-test-case.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.18"
+use_case = "threat_actor"
+section = "3.18.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::producer::producer_testcase_data"
+checklist_row = "3.18.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.18-EX-4.1"
+use_case = "threat_actor"
+section = "3.18.4.1"
+doc_page = 116
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::examples::threat_actor_attributed_to_identity"
+fixture = "examples/threat-actor/ex-3.18.4.1-threat-actor-attributed-to-an-identity.json"
+
+[[requirement]]
+req_id = "REQ-3.18-EX-4.2"
+use_case = "threat_actor"
+section = "3.18.4.2"
+doc_page = 117
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::examples::threat_actor_uses_malware"
+fixture = "examples/threat-actor/ex-3.18.4.2-threat-actor-uses-malware.json"
+
+[[requirement]]
+req_id = "REQ-3.18-C-01"
+use_case = "threat_actor"
+section = "3.18.5"
+doc_page = 118
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::consumer::supports_producer_props"
+fixture = "testcases/threat-actor/tc-3.18.3.2-campaign-attributed-to-threat-actor.json"
+
+[[requirement]]
+req_id = "REQ-3.18-C-02"
+use_case = "threat_actor"
+section = "3.18.5"
+doc_page = 118
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::consumer::receives_triad"
+fixture = "testcases/threat-actor/tc-3.18.3.2-campaign-attributed-to-threat-actor.json"
+
+[[requirement]]
+req_id = "REQ-3.18-C-03"
+use_case = "threat_actor"
+section = "3.18.5"
+doc_page = 118
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::consumer::resolves_created_by_ref"
+fixture = "testcases/threat-actor/tc-3.18.3.2-campaign-attributed-to-threat-actor.json"
+
+[[requirement]]
+req_id = "REQ-3.18-C-04"
+use_case = "threat_actor"
+section = "3.18.5"
+doc_page = 118
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::consumer::processes_fields"
+fixture = "testcases/threat-actor/tc-3.18.3.2-campaign-attributed-to-threat-actor.json"
+
+[[requirement]]
+req_id = "REQ-3.18-C-05"
+use_case = "threat_actor"
+section = "3.18.5"
+doc_page = 118
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::consumer::processes_related"
+fixture = "testcases/threat-actor/tc-3.18.3.2-campaign-attributed-to-threat-actor.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.18"
+use_case = "threat_actor"
+section = "3.18.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::threat_actor::consumer::handles_producer_testcases"
+checklist_row = "3.18.6"
+checklist_role = "consumer"
+verification = "Optional"
+
+
+# --- §3.20 Versioning (creation / modification / revocation) ---
+
+[[requirement]]
+req_id = "REQ-3.20-1"
+use_case = "versioning"
+section = "3.20.1"
+doc_page = 122
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::description::description_scope"
+fixture = "testcases/versioning/tc-3.20.3.1-creation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-C-01"
+use_case = "versioning"
+section = "3.20.2"
+doc_page = 123
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_creation::select_content"
+fixture = "testcases/versioning/tc-3.20.3.1-creation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-C-02"
+use_case = "versioning"
+section = "3.20.2"
+doc_page = 123
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_creation::identity_compliance"
+fixture = "testcases/versioning/tc-3.20.3.1-creation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-C-03"
+use_case = "versioning"
+section = "3.20.2"
+doc_page = 123
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_creation::create_indicator"
+fixture = "testcases/versioning/tc-3.20.3.1-creation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-C-04"
+use_case = "versioning"
+section = "3.20.2"
+doc_page = 123
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_creation::create_sighting"
+fixture = "testcases/versioning/tc-3.20.3.2-creation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.20-C"
+use_case = "versioning"
+section = "3.20.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_creation::producer_testcase_data"
+checklist_row = "3.20.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.20-P-M-01"
+use_case = "versioning"
+section = "3.20.6"
+doc_page = 125
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_modification::select_content"
+fixture = "testcases/versioning/tc-3.20.7.1-modification-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-M-02"
+use_case = "versioning"
+section = "3.20.6"
+doc_page = 125
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_modification::identity_compliance"
+fixture = "testcases/versioning/tc-3.20.7.1-modification-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-M-03"
+use_case = "versioning"
+section = "3.20.6"
+doc_page = 125
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_modification::modified_after_created"
+fixture = "testcases/versioning/tc-3.20.7.1-modification-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-M-04"
+use_case = "versioning"
+section = "3.20.6"
+doc_page = 125
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_modification::created_preserved"
+fixture = "testcases/versioning/tc-3.20.7.1-modification-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.20-M"
+use_case = "versioning"
+section = "3.20.7"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_modification::producer_testcase_data"
+checklist_row = "3.20.7"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.20-P-R-01"
+use_case = "versioning"
+section = "3.20.10"
+doc_page = 128
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_revocation::select_content"
+fixture = "testcases/versioning/tc-3.20.11.1-revocation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-R-02"
+use_case = "versioning"
+section = "3.20.10"
+doc_page = 128
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_revocation::identity_compliance"
+fixture = "testcases/versioning/tc-3.20.11.1-revocation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-R-03"
+use_case = "versioning"
+section = "3.20.10"
+doc_page = 128
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_revocation::revoked_true"
+fixture = "testcases/versioning/tc-3.20.11.1-revocation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-R-04"
+use_case = "versioning"
+section = "3.20.10"
+doc_page = 128
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_revocation::modified_after_created"
+fixture = "testcases/versioning/tc-3.20.11.1-revocation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-P-R-05"
+use_case = "versioning"
+section = "3.20.10"
+doc_page = 128
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_revocation::created_preserved"
+fixture = "testcases/versioning/tc-3.20.11.1-revocation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.20-REV-X-01"
+use_case = "versioning"
+section = "3.20.10"
+doc_page = 128
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_revocation::no_new_version_of_revoked_id"
+fixture = "testcases/versioning/tc-3.20.11.1-revocation-of-indicator.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.20-R"
+use_case = "versioning"
+section = "3.20.11"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::versioning::producer_revocation::producer_testcase_data"
+checklist_row = "3.20.11"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.20-C-C-01"
+use_case = "versioning"
+section = "3.20.4"
+doc_page = 124
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_creation::supports_producer_props"
+fixture = "testcases/versioning/tc-3.20.3.2-creation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-C-02"
+use_case = "versioning"
+section = "3.20.4"
+doc_page = 124
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_creation::receives_content"
+fixture = "testcases/versioning/tc-3.20.3.2-creation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-C-03"
+use_case = "versioning"
+section = "3.20.4"
+doc_page = 124
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_creation::resolves_created_by_ref"
+fixture = "testcases/versioning/tc-3.20.3.2-creation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-C-04"
+use_case = "versioning"
+section = "3.20.4"
+doc_page = 124
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_creation::processes_fields"
+fixture = "testcases/versioning/tc-3.20.3.2-creation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-C-05"
+use_case = "versioning"
+section = "3.20.4"
+doc_page = 124
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_creation::processes_related"
+fixture = "testcases/versioning/tc-3.20.3.2-creation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.20-C"
+use_case = "versioning"
+section = "3.20.5"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_creation::handles_producer_testcases"
+checklist_row = "3.20.5"
+checklist_role = "consumer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.20-C-M-01"
+use_case = "versioning"
+section = "3.20.8"
+doc_page = 126
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_modification::supports_producer_props"
+fixture = "testcases/versioning/tc-3.20.7.2-modification-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-M-02"
+use_case = "versioning"
+section = "3.20.8"
+doc_page = 126
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_modification::receives_content"
+fixture = "testcases/versioning/tc-3.20.7.2-modification-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-M-03"
+use_case = "versioning"
+section = "3.20.8"
+doc_page = 126
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_modification::resolves_created_by_ref"
+fixture = "testcases/versioning/tc-3.20.7.2-modification-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-M-04"
+use_case = "versioning"
+section = "3.20.8"
+doc_page = 126
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_modification::processes_fields"
+fixture = "testcases/versioning/tc-3.20.7.2-modification-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-M-05"
+use_case = "versioning"
+section = "3.20.8"
+doc_page = 126
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_modification::processes_related"
+fixture = "testcases/versioning/tc-3.20.7.2-modification-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.20-M"
+use_case = "versioning"
+section = "3.20.9"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_modification::handles_producer_testcases"
+checklist_row = "3.20.9"
+checklist_role = "consumer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.20-C-R-01"
+use_case = "versioning"
+section = "3.20.12"
+doc_page = 129
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_revocation::supports_producer_props"
+fixture = "testcases/versioning/tc-3.20.11.2-revocation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-R-02"
+use_case = "versioning"
+section = "3.20.12"
+doc_page = 129
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_revocation::receives_content"
+fixture = "testcases/versioning/tc-3.20.11.2-revocation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-R-03"
+use_case = "versioning"
+section = "3.20.12"
+doc_page = 129
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_revocation::resolves_created_by_ref"
+fixture = "testcases/versioning/tc-3.20.11.2-revocation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-R-04"
+use_case = "versioning"
+section = "3.20.12"
+doc_page = 129
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_revocation::processes_fields"
+fixture = "testcases/versioning/tc-3.20.11.2-revocation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-3.20-C-R-05"
+use_case = "versioning"
+section = "3.20.12"
+doc_page = 129
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_revocation::processes_related"
+fixture = "testcases/versioning/tc-3.20.11.2-revocation-of-sighting.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.20-R"
+use_case = "versioning"
+section = "3.20.13"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::versioning::consumer_revocation::handles_producer_testcases"
+checklist_row = "3.20.13"
+checklist_role = "consumer"
 verification = "Optional"
 
 # --- Harness infrastructure (manifest, fixture loader, certification report) ---

@@ -1,0 +1,19 @@
+fixture = "ex-3.17.4.1-sighting-of-indicator-with-observed-data.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "112"
+source_section = "3.17.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap objects in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "JUDGMENT"
+class = "bundle-closure"
+description = "Insert Producer Identity, where-sighted Identity, and Indicator referenced by the published Sighting example so the bundle is reference-closed."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "timestamp-normalization"
+description = "Normalize first_seen/last_seen/first_observed/last_observed/valid_from to millisecond RFC 3339."

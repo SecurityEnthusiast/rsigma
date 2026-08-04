@@ -900,7 +900,7 @@ Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Spe
 | --------- | ---- | ---- |
 | Harness | `tests/interop/harness/` | Manifest, fixture loader + provenance, per-use-case overlay on `interop_strict`, bundle closure, containment, certification report |
 | Cross-cutting | `tests/interop/common/` | Automated checks for 18 §2.3 manifest rows, run suite-wide over **42** walkable normative fixtures |
-| Use-case tests | `tests/interop/use_cases/` | **§3.1 Attack Pattern** (§3.1.1–§3.1.7) and **§3.2 Campaign** (§3.2.1–§3.2.6; no §3.2.7 in CSD01) Producer/Consumer/example tests (**2/21** OASIS use cases today) |
+| Use-case tests | `tests/interop/use_cases/` | **All 21** OASIS §3.x use cases (§3.1–§3.21) with Producer/Consumer/example modules. **Not** OASIS SXP/SXC certification. |
 | Manifest | `tests/fixtures/interop/manifest.toml` | `req_id` → `test_id` → fixture → §4.2 checklist row |
 | Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars (**44/44** inventory: **42** suite-walkable + **2** `BLOCKED` on §9.1 defects 16 and 19; synthetic helpers remain for intentional negatives) |
 | Examples | `tests/fixtures/interop/examples/` | Non-normative; must never fail the build |
@@ -913,16 +913,16 @@ Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Spe
 | `oasis_use_cases_in_spec` | The OASIS interoperability document defines 21 use cases — **not** how many are tested here. |
 | `manifest_rows_total` | Rows in `manifest.toml` (harness + placeholders + smoke). |
 | `manifest_rows_by_disposition` | Breakdown by `TESTED`, `HARNESS_SMOKE`, `REPORT_ONLY`, `BLOCKED`. |
-| `tested_rows_passed` | Executable manifest rows with `disposition = TESTED` that recorded `Pass` (**72** today: 9 harness + 18 §2.3 + **24 §3.1 Attack Pattern** + **21 §3.2 Campaign**) |
+| `tested_rows_passed` | Executable manifest rows with `disposition = TESTED` that recorded `Pass` (**506** today: 9 harness + 18 §2.3 + **479** §3.1–§3.21 use-case rows) |
 | `harness_smoke_executed` | Rows with `disposition = HARNESS_SMOKE` (0 today; reserved for partial checks if reintroduced) |
-| `report_only_rows` | §4.2 checklist/framework placeholders with no automated test (**7** today) |
-| `blocked_rows` | Checklist rows blocked on unrepairable published test-case data (2 today) |
+| `report_only_rows` | §4.2 checklist/framework placeholders with no automated test (**5** today) |
+| `blocked_rows` | Checklist rows blocked on unrepairable published test-case data (**2** today: §3.12 / §3.16 SXP) |
 
 There is **no** “100% covered” field. Do not infer OASIS conformance from manifest row counts.
 
 **§2.3 manifest rows:** 18 rows use `disposition = TESTED` and run suite-wide over walkable normative fixtures. **`TESTED` here means our harness recorded `Pass` — not OASIS §2.3 requirement verification, not the full interop manifest row inventory from the engineering plan.
 
-**§3.1 use-case rows:** §3.1.1 description scope, Producer `P-01`..`P-13`, Consumer `C-01`..`C-05`, Table 55/56 checklist rows, and non-gating examples `EX-4.1` / `EX-4.2` / `EX-7.1`. This is **not** OASIS SXP/SXC certification; **20/21** other use cases remain without dedicated modules.
+**§3.x use-case rows:** Modules cover all 21 OASIS use cases (§3.1–§3.21). Producer/Consumer persona rows, Table 55/56 checklist rows, and non-gating examples where CSD01 defines them. This is **not** OASIS SXP/SXC certification. `REQ-CHK-SXP-3.12` and `REQ-CHK-SXP-3.16` remain **BLOCKED** on published defects 19 and 16.
 
 **Run locally (required features explicit):**
 

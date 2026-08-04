@@ -1,0 +1,19 @@
+fixture = "ex-3.15.4.1-opinion-with-explanation-and-authors.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "101"
+source_section = "3.15.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identities, indicator, and opinion in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quotes on authors key."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "timestamp-normalization"
+description = "Normalize indicator valid_from to millisecond RFC 3339."

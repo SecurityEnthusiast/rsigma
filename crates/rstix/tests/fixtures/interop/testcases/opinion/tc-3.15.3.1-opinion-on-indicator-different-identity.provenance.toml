@@ -12,3 +12,8 @@ description = "Unescape spec field names on identity, indicator, and opinion obj
 authority = "MECHANICAL"
 class = "no-container"
 description = "Wrap objects in a bundle per REQ-2.3-X-02."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "timestamp-normalization"
+description = "Normalize indicator valid_from to millisecond RFC 3339 for load-time scan parity."

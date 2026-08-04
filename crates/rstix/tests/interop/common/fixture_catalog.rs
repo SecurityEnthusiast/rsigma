@@ -125,7 +125,14 @@ pub fn use_case_types_for_fixture(relative: &str) -> &'static [&'static str] {
         Some("sighting") => &["sighting"],
         Some("threat-actor") => &["threat-actor"],
         Some("tool") => &["tool"],
-        Some("versioning") => &["indicator", "sighting"],
+        Some("versioning") => {
+            // Indicator vs sighting phase fixtures share a directory; pick by filename.
+            if relative.contains("sighting") {
+                &["sighting"]
+            } else {
+                &["indicator"]
+            }
+        }
         Some("vulnerability") => &["vulnerability"],
         _ => &[],
     }

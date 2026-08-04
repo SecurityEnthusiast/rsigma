@@ -1,6 +1,6 @@
 {
   "type": "bundle",
-  "id": "bundle--3e4e4c4e-3e4e-4e4e-8e4e-3e4e4c4e3e4e",
+  "id": "bundle--31441441-3144-4414-8414-314414414314",
   "objects": [
     {
       "type": "identity",
@@ -15,7 +15,7 @@
     {
       "type": "observed-data",
       "spec_version": "2.1",
-      "id": "observed-data--b67d30ff-02ac-498a-92f9-32f845f448cf",
+      "id": "observed-data--359d9ff7-1d08-4af6-92e4-e9df5b1bad88",
       "created_by_ref": "identity--987eeee1-413a-44ac-96cc-0a8acdcc2f2c",
       "created": "2016-04-06T19:58:16.000Z",
       "modified": "2016-04-06T19:58:16.000Z",
@@ -23,33 +23,42 @@
       "last_observed": "2015-12-21T19:00:00.000Z",
       "number_observed": 50,
       "object_refs": [
-        "ipv4-addr--efcd5e80-570d-4131-b213-62cb18eaa6a8",
-        "domain-name--ecb120bf-2694-4902-a737-62b74539a41b",
-        "relationship--7ca2d678-c8c7-4947-a730-bfbc2cc5aa0a"
+        "ipv4-addr--ea9484e7-673d-4756-bcd6-844749024a27",
+        "ipv6-addr--3d4f0428-0f9c-430f-b1ab-16a795f1894e",
+        "domain-name--0c248491-69e9-43e5-8e90-23f5ce22e3e7",
+        "relationship--cb878d74-1d04-4707-88a1-e1d90eb85737"
       ]
+    },
+    {
+      "type": "ipv6-addr",
+      "spec_version": "2.1",
+      "id": "ipv6-addr--3d4f0428-0f9c-430f-b1ab-16a795f1894e",
+      "value": "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
     },
     {
       "type": "domain-name",
       "spec_version": "2.1",
-      "id": "domain-name--ecb120bf-2694-4902-a737-62b74539a41b",
-      "value": "example.com",
-      "resolves_to_refs": ["ipv4-addr--efcd5e80-570d-4131-b213-62cb18eaa6a8"]
+      "id": "domain-name--0c248491-69e9-43e5-8e90-23f5ce22e3e7",
+      "value": "forinstance.com",
+      "resolves_to_refs": [
+        "ipv4-addr--ea9484e7-673d-4756-bcd6-844749024a27"
+      ]
     },
     {
       "type": "ipv4-addr",
       "spec_version": "2.1",
-      "id": "ipv4-addr--efcd5e80-570d-4131-b213-62cb18eaa6a8",
-      "value": "198.51.100.3"
+      "id": "ipv4-addr--ea9484e7-673d-4756-bcd6-844749024a27",
+      "value": "202.1.24.9"
     },
     {
       "type": "relationship",
       "spec_version": "2.1",
-      "id": "relationship--7ca2d678-c8c7-4947-a730-bfbc2cc5aa0a",
+      "id": "relationship--cb878d74-1d04-4707-88a1-e1d90eb85737",
       "created_by_ref": "identity--987eeee1-413a-44ac-96cc-0a8acdcc2f2c",
       "created": "2016-04-06T19:58:16.000Z",
       "modified": "2016-04-06T19:58:16.000Z",
-      "source_ref": "domain-name--ecb120bf-2694-4902-a737-62b74539a41b",
-      "target_ref": "ipv4-addr--efcd5e80-570d-4131-b213-62cb18eaa6a8",
+      "source_ref": "domain-name--0c248491-69e9-43e5-8e90-23f5ce22e3e7",
+      "target_ref": "ipv4-addr--ea9484e7-673d-4756-bcd6-844749024a27",
       "relationship_type": "resolves-to"
     }
   ]
