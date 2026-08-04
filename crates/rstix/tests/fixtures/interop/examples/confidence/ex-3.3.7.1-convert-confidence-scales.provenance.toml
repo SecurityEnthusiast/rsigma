@@ -1,0 +1,9 @@
+fixture = "ex-3.3.7.1-convert-confidence-scales.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "36"
+source_section = "3.3.7.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap objects in a bundle per REQ-2.3-X-02."

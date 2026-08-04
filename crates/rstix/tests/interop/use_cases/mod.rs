@@ -2,3 +2,4 @@
 
 pub mod attack_pattern;
 pub mod campaign;
+pub mod confidence;

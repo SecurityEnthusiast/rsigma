@@ -596,6 +596,164 @@ checklist_row = "3.2.6"
 checklist_role = "consumer"
 verification = "Optional"
 
+# --- §3.3 Confidence Sharing (normative §3.3.3 fixtures) ---
+
+[[requirement]]
+req_id = "REQ-3.3-1"
+use_case = "confidence"
+section = "3.3.1"
+doc_page = 31
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::description::description_scope"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-P-01"
+use_case = "confidence"
+section = "3.3.2"
+doc_page = 32
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::producer::create_content"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-P-02"
+use_case = "confidence"
+section = "3.3.2"
+doc_page = 32
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::producer::select_content"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-P-03"
+use_case = "confidence"
+section = "3.3.2"
+doc_page = 32
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::producer::identity_compliance"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-P-04"
+use_case = "confidence"
+section = "3.3.2"
+doc_page = 32
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::producer::spec_conformance"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.3"
+use_case = "confidence"
+section = "3.3.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::confidence::producer::producer_testcase_data"
+checklist_row = "3.3.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.3-EX-4.1"
+use_case = "confidence"
+section = "3.3.4"
+doc_page = 33
+role = "producer"
+level = "SHOULD"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::confidence::examples::indicator_internal_validation"
+fixture = "examples/confidence/ex-3.3.4.1-confidence-indicator-internal-validation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-EX-4.2"
+use_case = "confidence"
+section = "3.3.4"
+doc_page = 34
+role = "producer"
+level = "SHOULD"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::confidence::examples::confidence_on_translation"
+fixture = "examples/confidence/ex-3.3.4.2-confidence-on-translation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-C-01"
+use_case = "confidence"
+section = "3.3.5"
+doc_page = 35
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::consumer::supports_producer_props"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-C-02"
+use_case = "confidence"
+section = "3.3.5"
+doc_page = 35
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::consumer::receives_triad"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-C-03"
+use_case = "confidence"
+section = "3.3.5"
+doc_page = 35
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::consumer::resolves_created_by_ref"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-C-04"
+use_case = "confidence"
+section = "3.3.5"
+doc_page = 35
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::consumer::processes_fields"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
+[[requirement]]
+req_id = "REQ-3.3-C-05"
+use_case = "confidence"
+section = "3.3.5"
+doc_page = 35
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::confidence::consumer::processes_related"
+fixture = "testcases/confidence/tc-3.3.3.1-confidence-about-indicator-external-validation.json"
+
 [[requirement]]
 req_id = "REQ-CHK-SXC-3.3"
 use_case = "confidence"
@@ -603,10 +761,23 @@ section = "3.3.6"
 role = "consumer"
 level = "MUST"
 gating = false
-disposition = "REPORT_ONLY"
+disposition = "TESTED"
+test_id = "use_cases::confidence::consumer::handles_producer_testcases"
 checklist_row = "3.3.6"
 checklist_role = "consumer"
 verification = "Mandatory"
+
+[[requirement]]
+req_id = "REQ-3.3-EX-7.1"
+use_case = "confidence"
+section = "3.3.7"
+doc_page = 36
+role = "consumer"
+level = "SHOULD"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::confidence::consumer_examples::convert_confidence_scales"
+fixture = "examples/confidence/ex-3.3.7.1-convert-confidence-scales.json"
 
 [[requirement]]
 req_id = "REQ-CHK-SXC-3.5"
