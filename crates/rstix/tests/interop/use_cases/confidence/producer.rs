@@ -4,7 +4,7 @@
 //! §2.3.4 compliance, and STIX §4.7 Indicator conformance — no per-property Table rows.
 
 use crate::interop_test;
-use rstix::core::{Confidence, StixId};
+use rstix::core::StixId;
 use rstix::model::sdo::Indicator;
 use rstix::model::{Bundle, ParseOptions};
 use rstix::validate::{Leniency, Validator};
@@ -17,27 +17,6 @@ use crate::harness::interop_gate::{
     InteropGateOptions, validate_interop_fixture, validate_interop_json,
 };
 use crate::use_cases::confidence::{FIXTURE_CREATE, PRODUCER_FIXTURES};
-
-fn load_indicator(relative: &str) -> (Indicator, String) {
-    let fixture = load_fixture(relative);
-    let objects = parse_fixture_objects(&fixture.json)
-        .unwrap_or_else(|err| panic!("{relative}: parse fixture: {err}"));
-    let use_case_ids = use_case_object_ids(relative, &objects);
-    assert_eq!(
-        use_case_ids.len(),
-        1,
-        "{relative}: expected one indicator use-case object"
-    );
-    let object_id = use_case_ids.into_iter().next().expect("indicator id");
-    let bundle = validate_interop_fixture(relative, &fixture.json)
-        .unwrap_or_else(|err| panic!("{relative}: interop gate: {err}"));
-    let stix_id = StixId::parse(&object_id).expect("indicator id");
-    let indicator = bundle
-        .get_typed::<Indicator>(&stix_id)
-        .unwrap_or_else(|| panic!("{relative}: typed indicator {object_id}"))
-        .clone();
-    (indicator, object_id)
-}
 
 /// REQ-3.3-P-01 — Producer creates STIX content with confidence (§3.3.3.1).
 pub fn assert_create_content() {
