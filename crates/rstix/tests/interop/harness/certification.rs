@@ -177,9 +177,11 @@ fn write_report_artifacts(manifest: &Manifest) {
 struct SummaryJson {
     document: &'static str,
     document_stage: &'static str,
+    /// UTC RFC 3339 timestamp written when this report was finalized (CI stale gate).
+    generated_at: String,
     /// Personas this harness is built to support (not a certification claim).
     personas_target: Vec<&'static str>,
-    /// OASIS interoperability spec defines 21 use cases; normative tests not all present yet.
+    /// OASIS interoperability spec defines 21 use cases (§3.1–§3.21).
     oasis_use_cases_in_spec: u32,
     manifest_rows_total: usize,
     manifest_rows_by_disposition: ManifestDispositionCounts,
@@ -187,7 +189,7 @@ struct SummaryJson {
     tested_rows_passed: usize,
     /// Rows with disposition `HARNESS_SMOKE` that executed (partial checks only).
     harness_smoke_executed: usize,
-    /// Checklist/framework placeholders — no automated test in this PR.
+    /// §4.2 framework / scoping placeholders with no automated test.
     report_only_rows: usize,
     /// Rows blocked because published OASIS test-case bytes cannot be repaired without inventing data.
     blocked_rows: usize,
@@ -223,10 +225,14 @@ fn build_summary(manifest: &Manifest, recorded: &HashMap<&'static str, Outcome>)
         .filter(|row| row.disposition == Disposition::HarnessSmoke)
         .filter(|row| recorded.get(row.req_id.as_str()) == Some(&Outcome::HarnessSmoke))
         .count();
+    let generated_at = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .expect("format generated_at as RFC 3339");
 
     SummaryJson {
         document: "STIX 2.1 Interoperability v1.0 CSD01 (stix-2.1-interop-v1.0-csd01)",
         document_stage: "Committee Specification Draft 01 (2021-10-23)",
+        generated_at,
         personas_target: vec!["SXP", "SXC"],
         oasis_use_cases_in_spec: 21,
         manifest_rows_total: manifest.requirements.len(),
