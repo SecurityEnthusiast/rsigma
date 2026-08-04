@@ -779,6 +779,249 @@ disposition = "TESTED"
 test_id = "use_cases::confidence::consumer_examples::convert_confidence_scales"
 fixture = "examples/confidence/ex-3.3.7.1-convert-confidence-scales.json"
 
+# --- §3.4 Course Of Action Sharing (normative §3.4.3 fixtures) ---
+
+[[requirement]]
+req_id = "REQ-3.4-1"
+use_case = "course_of_action"
+section = "3.4.1"
+doc_page = 37
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::description::description_scope"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-01"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::create_course_of_action"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-02"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::select_content"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-03"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::identity_compliance"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-04"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::spec_conformance"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-05"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::prop_type"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-06"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::prop_spec_version"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-07"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::prop_id"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-08"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::prop_created_by_ref"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-09"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::prop_created"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-10"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::prop_modified"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-P-11"
+use_case = "course_of_action"
+section = "3.4.2"
+doc_page = 37
+role = "producer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::prop_name"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXP-3.4"
+use_case = "course_of_action"
+section = "3.4.3"
+role = "producer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::producer::producer_testcase_data"
+checklist_row = "3.4.3"
+checklist_role = "producer"
+verification = "Optional"
+
+[[requirement]]
+req_id = "REQ-3.4-EX-4.1"
+use_case = "course_of_action"
+section = "3.4.4.1"
+doc_page = 38
+role = "producer"
+level = "EXAMPLE"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::examples::coa_mitigates_indicator"
+fixture = "examples/course-of-action/ex-3.4.4.1-coa-mitigates-indicator.json"
+
+[[requirement]]
+req_id = "REQ-3.4-C-01"
+use_case = "course_of_action"
+section = "3.4.5"
+doc_page = 39
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::consumer::supports_producer_props"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-C-02"
+use_case = "course_of_action"
+section = "3.4.5"
+doc_page = 39
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::consumer::receives_triad"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-C-03"
+use_case = "course_of_action"
+section = "3.4.5"
+doc_page = 39
+role = "consumer"
+level = "MUST"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::consumer::resolves_created_by_ref"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-C-04"
+use_case = "course_of_action"
+section = "3.4.5"
+doc_page = 39
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::consumer::processes_fields"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-3.4-C-05"
+use_case = "course_of_action"
+section = "3.4.5"
+doc_page = 39
+role = "consumer"
+level = "CAN"
+gating = true
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::consumer::processes_related"
+fixture = "testcases/course-of-action/tc-3.4.3.1-create-course-of-action.json"
+
+[[requirement]]
+req_id = "REQ-CHK-SXC-3.4"
+use_case = "course_of_action"
+section = "3.4.6"
+role = "consumer"
+level = "MUST"
+gating = false
+disposition = "TESTED"
+test_id = "use_cases::course_of_action::consumer::handles_producer_testcases"
+checklist_row = "3.4.6"
+checklist_role = "consumer"
+verification = "Optional"
+
 [[requirement]]
 req_id = "REQ-CHK-SXC-3.5"
 use_case = "data_markings"
