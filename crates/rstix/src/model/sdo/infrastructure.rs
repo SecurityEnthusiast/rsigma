@@ -146,6 +146,11 @@ impl QueryableStixObject for Infrastructure {
     fn get_field(&self, path: &[&str]) -> Option<QueryValue<'_>> {
         match path {
             ["name"] => Some(QueryValue::Str(&self.name)),
+            ["created_by_ref"] => self
+                .common
+                .created_by_ref
+                .as_ref()
+                .map(|id| QueryValue::Id(id.as_stix_id())),
             _ => None,
         }
     }

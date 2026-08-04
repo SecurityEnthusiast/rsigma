@@ -1,0 +1,19 @@
+fixture = "ex-3.8.4.1-vulnerabilities-discovered-in-scans.json"
+source_doc = "stix-2.1-interop-v1.0-csd01"
+source_pages = "64-65"
+source_section = "3.8.4.1"
+
+[[repair]]
+authority = "MECHANICAL"
+class = "smart-quotes"
+description = "Straighten curly quote on Identity created_by_ref key."
+
+[[repair]]
+authority = "MECHANICAL"
+class = "no-container"
+description = "Wrap identity, vulnerability, infrastructure, SCOs, and relationships in a bundle per REQ-2.3-X-02."
+
+[[divergence_recorded]]
+site = "§3.8.4.1 vulnerability external_reference url"
+defect = 24
+description = "Published example CVE name (CVE-2019-1234) and NVD url path (CVE-1019-1234) disagree; wire retains both as published."
