@@ -101,6 +101,9 @@ pub fn summarize_fixture_wire(json: &str) -> Result<FixtureWireSummary, String> 
 }
 
 /// Use-case object types for a normative fixture, inferred from its directory.
+///
+/// Unknown `testcases/<section>/` directories panic instead of returning an empty
+/// slice so C-01-style loops cannot silently pass with zero work.
 pub fn use_case_types_for_fixture(relative: &str) -> &'static [&'static str] {
     let section = relative
         .strip_prefix("testcases/")
@@ -134,14 +137,19 @@ pub fn use_case_types_for_fixture(relative: &str) -> &'static [&'static str] {
             }
         }
         Some("vulnerability") => &["vulnerability"],
-        _ => &[],
+        Some(other) => panic!(
+            "use_case_types_for_fixture: no type mapping for testcases/{other}/ (fixture `{relative}`)"
+        ),
+        None => panic!(
+            "use_case_types_for_fixture: expected testcases/<section>/… path, got `{relative}`"
+        ),
     }
 }
 
 /// Object ids that receive interop use-case rules (referenced bundle members stay spec-only).
 pub fn use_case_object_ids(relative: &str, objects: &[Value]) -> Vec<String> {
     let types = use_case_types_for_fixture(relative);
-    objects
+    let ids: Vec<String> = objects
         .iter()
         .filter_map(|object| {
             let object_type = object.get("type")?.as_str()?;
@@ -150,7 +158,12 @@ pub fn use_case_object_ids(relative: &str, objects: &[Value]) -> Vec<String> {
             }
             Some(object.get("id")?.as_str()?.to_owned())
         })
-        .collect()
+        .collect();
+    assert!(
+        !ids.is_empty(),
+        "{relative}: use_case_object_ids matched no objects for types {types:?}"
+    );
+    ids
 }
 
 /// Object ids of a given STIX type present in a fixture bundle.
