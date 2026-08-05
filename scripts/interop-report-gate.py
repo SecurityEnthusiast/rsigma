@@ -6,7 +6,7 @@ Used by CI (and locally after ``cargo test -p rstix --test interop``) to ensure
 manifest row recorded ``Pass``. That report package is the operational
 SXP/SXC self-certification evidence against Interoperability CSD01.
 
-Layer 1 (this script): parse Tables 55/56 and ``traceability.csv`` against
+Layer 3 (this script): parse Tables 55/56 and ``traceability.csv`` against
 committed ``gate-expectations.json`` (manifest-derived golden expectations).
 
 Environment:

@@ -1,8 +1,9 @@
-//! Manifest-derived expectations for self-certification report gating (Layer 3).
+//! Manifest-derived expectations for self-certification report gating (Layer 2).
 //!
 //! `gate-expectations.json` is generated from `manifest.toml` and checked into
-//! `tests/fixtures/interop/`. CI (`scripts/interop-report-gate.py`) and the interop
-//! harness both use it so table/CSV content is pinned, not only row counts.
+//! `tests/fixtures/interop/`. CI (`scripts/interop-report-gate.py`, Layer 3) and
+//! the interop harness both use it so table/CSV content is pinned, not only row
+//! counts.
 
 use std::fs;
 

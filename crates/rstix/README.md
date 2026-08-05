@@ -951,13 +951,13 @@ cargo test -p rstix --test interop_sentinel --features validate,marking,graph --
 
 **CI:** the `rstix STIX interop self-certification` job in `.github/workflows/ci.yml` runs the full interop suite (every `TESTED` row), then `scripts/interop-report-gate.py` (report present, `generated_at` not older than `INTEROP_RUN_START`, Tables 55/56 cell content and traceability CSV rows match `gate-expectations.json`, every `TESTED` row passed, required features on), and uploads `target/interop-report/` as the `interop-report` artifact. The multi-OS `Test` matrix also executes the suite under `--all-features`; the dedicated job is the gated self-certification report producer.
 
-**Three-layer gate:**
+**Three-layer gate** (run order):
 
 | Layer | Where | What it catches |
 | ----- | ----- | ---------------- |
-| 2 — export invariants | `tests/interop/harness/certification.rs` | Empty/wrong checklist `Result`, incomplete CSV, export before coverage passes |
-| 3 — manifest sync | `tests/interop/harness/gate_expectations.rs` + committed `gate-expectations.json` | Stale golden expectations after `manifest.toml` changes |
-| 1 — CI artifact gate | `scripts/interop-report-gate.py` | Stale/missing report, wrong table cells, CSV row/order/outcome drift, summary count mismatch |
+| 1 — export invariants | `tests/interop/harness/certification.rs` | Empty/wrong checklist `Result`, incomplete CSV, export before coverage passes |
+| 2 — manifest sync | `tests/interop/harness/gate_expectations.rs` + committed `gate-expectations.json` | Stale golden expectations after `manifest.toml` changes |
+| 3 — CI artifact gate | `scripts/interop-report-gate.py` | Stale/missing report, wrong table cells, CSV row/order/outcome drift, summary count mismatch |
 
 Regenerate expectations after manifest edits:
 

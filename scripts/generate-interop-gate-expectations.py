@@ -5,8 +5,8 @@ Run from the repository root when the interop manifest changes:
 
     python3 scripts/generate-interop-gate-expectations.py
 
-The committed JSON is checked by the interop harness (Layer 3) and
-``scripts/interop-report-gate.py`` (Layer 1). Semantics mirror
+The committed JSON is checked by the interop harness (Layer 2) and
+``scripts/interop-report-gate.py`` (Layer 3). Semantics mirror
 ``crates/rstix/tests/interop/harness/gate_expectations.rs``.
 """
 
