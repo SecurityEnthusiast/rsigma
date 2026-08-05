@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Dependency batch (Aug 2026 vscode)
+### Dependency batch (Aug 2026 vscode) (#444)
 
 VS Code extension transitive security updates in `editors/vscode`: `undici` 7.29.0, `brace-expansion` 5.0.9, and `fast-uri` 3.1.5, with npm overrides floors raised to match.
 
