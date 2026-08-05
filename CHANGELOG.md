@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Dependency batch (Aug 2026 vscode)
+
+VS Code extension transitive security updates in `editors/vscode`: `undici` 7.29.0, `brace-expansion` 5.0.9, and `fast-uri` 3.1.5, with npm overrides floors raised to match.
+
 ### rstix: STIX interop self-certification CI gate (#440)
 
 CI runs a dedicated `rstix STIX interop self-certification` job that executes the full interop suite (every `TESTED` manifest row), stamps `generated_at` into `summary.json`, fails on a missing/stale/incomplete report via `scripts/interop-report-gate.py`, and uploads `target/interop-report/` (CSD01 §4.2 Tables 55/56, traceability CSV, risks). The gate validates artifact **content** (checklist cell results, traceability CSV row order and outcomes) against committed `gate-expectations.json`, not only file presence and row counts. Export invariants in the harness panic before writing a hollow report. That package is the operational SXP/SXC **self-certification** evidence against Interoperability **CSD01** — not an OASIS-issued certificate, and not a §4.1 product-persona claim.
