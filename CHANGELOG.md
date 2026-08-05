@@ -6,7 +6,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ### rstix: STIX interop self-certification CI gate (#440)
 
-CI runs a dedicated `rstix STIX interop self-certification` job that executes the full interop suite (every `TESTED` manifest row), stamps `generated_at` into `summary.json`, fails on a missing/stale/incomplete report via `scripts/interop-report-gate.py`, and uploads `target/interop-report/` (CSD01 §4.2 Tables 55/56, traceability CSV, risks). That package is the operational SXP/SXC **self-certification** evidence against Interoperability **CSD01** — not an OASIS-issued certificate, and not a §4.1 product-persona claim.
+CI runs a dedicated `rstix STIX interop self-certification` job that executes the full interop suite (every `TESTED` manifest row), stamps `generated_at` into `summary.json`, fails on a missing/stale/incomplete report via `scripts/interop-report-gate.py`, and uploads `target/interop-report/` (CSD01 §4.2 Tables 55/56, traceability CSV, risks). The gate validates artifact **content** (checklist cell results, traceability CSV row order and outcomes) against committed `gate-expectations.json`, not only file presence and row counts. Export invariants in the harness panic before writing a hollow report. That package is the operational SXP/SXC **self-certification** evidence against Interoperability **CSD01** — not an OASIS-issued certificate, and not a §4.1 product-persona claim.
 
 ### rstix: OASIS §3.3–§3.21 interop use-case tests (#438)
 

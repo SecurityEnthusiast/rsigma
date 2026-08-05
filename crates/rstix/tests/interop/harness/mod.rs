@@ -2,6 +2,7 @@ pub mod certification;
 pub mod closure;
 pub mod containment;
 pub mod fixture;
+pub mod gate_expectations;
 pub mod interop_gate;
 pub mod manifest;
 pub mod profile;

@@ -906,6 +906,7 @@ Test harness for **STIX 2.1 Interoperability Version 1.0, Committee Specificatio
 | Cross-cutting | `tests/interop/common/` | Automated checks for 18 §2.3 manifest rows, run suite-wide over **42** walkable normative fixtures |
 | Use-case tests | `tests/interop/use_cases/` | All 21 OASIS §3.x use cases (§3.1–§3.21) with Producer/Consumer/example modules — the SXP/SXC self-certification evidence |
 | Manifest | `tests/fixtures/interop/manifest.toml` | `req_id` → `test_id` → fixture → §4.2 checklist row |
+| Gate expectations | `tests/fixtures/interop/gate-expectations.json` | Manifest-derived golden rows for Tables 55/56 and traceability CSV (regenerate with `scripts/generate-interop-gate-expectations.py` when the manifest changes) |
 | Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars (**44/44** inventory: **42** suite-walkable + **2** `BLOCKED` on §9.1 defects 16 and 19; synthetic helpers remain for intentional negatives) |
 | Examples | `tests/fixtures/interop/examples/` | Non-normative; must never fail the build |
 | Report artifacts | `target/interop-report/` | Self-certification package: `summary.json` (incl. `generated_at`), Tables 55/56 markdown, traceability CSV, risks (never committed; CI uploads as `interop-report`) |
@@ -948,7 +949,21 @@ cargo test -p rstix --test interop_sentinel --locked
 cargo test -p rstix --test interop_sentinel --features validate,marking,graph --locked
 ```
 
-**CI:** the `rstix STIX interop self-certification` job in `.github/workflows/ci.yml` runs the full interop suite (every `TESTED` row), then `scripts/interop-report-gate.py` (report present, `generated_at` not older than `INTEROP_RUN_START`, every `TESTED` row passed, required features on), and uploads `target/interop-report/` as the `interop-report` artifact. The multi-OS `Test` matrix also executes the suite under `--all-features`; the dedicated job is the gated self-certification report producer.
+**CI:** the `rstix STIX interop self-certification` job in `.github/workflows/ci.yml` runs the full interop suite (every `TESTED` row), then `scripts/interop-report-gate.py` (report present, `generated_at` not older than `INTEROP_RUN_START`, Tables 55/56 cell content and traceability CSV rows match `gate-expectations.json`, every `TESTED` row passed, required features on), and uploads `target/interop-report/` as the `interop-report` artifact. The multi-OS `Test` matrix also executes the suite under `--all-features`; the dedicated job is the gated self-certification report producer.
+
+**Three-layer gate:**
+
+| Layer | Where | What it catches |
+| ----- | ----- | ---------------- |
+| 2 — export invariants | `tests/interop/harness/certification.rs` | Empty/wrong checklist `Result`, incomplete CSV, export before coverage passes |
+| 3 — manifest sync | `tests/interop/harness/gate_expectations.rs` + committed `gate-expectations.json` | Stale golden expectations after `manifest.toml` changes |
+| 1 — CI artifact gate | `scripts/interop-report-gate.py` | Stale/missing report, wrong table cells, CSV row/order/outcome drift, summary count mismatch |
+
+Regenerate expectations after manifest edits:
+
+```bash
+python3 scripts/generate-interop-gate-expectations.py
+```
 
 Local gate (same script CI uses):
 

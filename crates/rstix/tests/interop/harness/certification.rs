@@ -135,6 +135,8 @@ fn write_report_artifacts(manifest: &Manifest) {
     fs::create_dir_all(&dir).expect("create interop-report directory");
 
     let recorded = outcomes().lock().expect("interop outcomes lock");
+    verify_export_invariants(manifest, &recorded);
+
     let summary = build_summary(manifest, &recorded);
     fs::write(
         dir.join("summary.json"),
@@ -306,6 +308,126 @@ fn render_traceability_csv(
     lines.join("\n")
 }
 
+/// Expected checklist `Result` cell after a fully passing interop run (export + CI gate).
+pub fn checklist_result_for_export(row: &RequirementRow) -> String {
+    if row.disposition == Disposition::Blocked {
+        return "BLOCKED (unrepairable published test data)".to_owned();
+    }
+    if row.disposition == Disposition::ReportOnly {
+        return "Pending (checklist report only)".to_owned();
+    }
+    if row.disposition == Disposition::HarnessSmoke {
+        return "Harness smoke (not normative verification)".to_owned();
+    }
+    "Pass".to_owned()
+}
+
+/// Expected traceability CSV `outcome` column after a fully passing interop run.
+pub fn expected_csv_outcome(disposition: Disposition) -> String {
+    match disposition {
+        Disposition::Tested => Outcome::Pass.as_str().to_owned(),
+        Disposition::HarnessSmoke => Outcome::HarnessSmoke.as_str().to_owned(),
+        Disposition::Blocked => Outcome::Blocked.as_str().to_owned(),
+        Disposition::ReportOnly => "REPORT_ONLY".to_owned(),
+        Disposition::ApiSurface => "API_SURFACE".to_owned(),
+    }
+}
+
+fn verify_export_invariants(manifest: &Manifest, recorded: &HashMap<&'static str, Outcome>) {
+    let expectations = super::gate_expectations::from_manifest(manifest);
+    assert_eq!(
+        expectations.checklist_row_count, 23,
+        "§4.2 checklist tables must have 23 rows per role"
+    );
+
+    let consumer_rows = manifest.checklist_rows_consumer();
+    let producer_rows = manifest.checklist_rows_producer();
+    assert_eq!(
+        consumer_rows.len(),
+        expectations.checklist_row_count,
+        "Table 55 row count mismatch"
+    );
+    assert_eq!(
+        producer_rows.len(),
+        expectations.checklist_row_count,
+        "Table 56 row count mismatch"
+    );
+
+    for row in consumer_rows.iter().chain(producer_rows.iter()).copied() {
+        let result = checklist_result(row, recorded);
+        assert_exportable_checklist_result(row, &result);
+        assert_eq!(
+            result,
+            checklist_result_for_export(row),
+            "{}: checklist Result must match export contract",
+            row.req_id
+        );
+    }
+
+    let csv_lines = render_traceability_csv(manifest, recorded).lines().count();
+    assert_eq!(
+        csv_lines,
+        manifest.requirements.len() + 1,
+        "traceability.csv must have one row per manifest requirement plus header"
+    );
+
+    for row in &manifest.requirements {
+        let expected_outcome = expected_csv_outcome(row.disposition);
+        match row.disposition {
+            Disposition::Tested => {
+                assert_eq!(
+                    recorded.get(row.req_id.as_str()),
+                    Some(&Outcome::Pass),
+                    "{}: TESTED row must record Pass before export",
+                    row.req_id
+                );
+                assert_eq!(expected_outcome, "Pass");
+            }
+            Disposition::HarnessSmoke => {
+                assert_eq!(
+                    recorded.get(row.req_id.as_str()),
+                    Some(&Outcome::HarnessSmoke),
+                    "{}: HARNESS_SMOKE row must record HarnessSmoke before export",
+                    row.req_id
+                );
+            }
+            Disposition::Blocked | Disposition::ReportOnly | Disposition::ApiSurface => {}
+        }
+    }
+}
+
+fn assert_exportable_checklist_result(row: &RequirementRow, result: &str) {
+    assert!(
+        !result.is_empty(),
+        "{}: checklist Result must not be empty",
+        row.req_id
+    );
+    match row.disposition {
+        Disposition::ReportOnly => {
+            assert_eq!(result, "Pending (checklist report only)");
+        }
+        Disposition::Blocked => {
+            assert_eq!(result, "BLOCKED (unrepairable published test data)");
+        }
+        Disposition::HarnessSmoke => {
+            assert_eq!(result, "Harness smoke (not normative verification)");
+        }
+        Disposition::Tested => {
+            assert_eq!(
+                result, "Pass",
+                "{}: TESTED row must export Pass",
+                row.req_id
+            );
+        }
+        Disposition::ApiSurface => {
+            panic!(
+                "{}: API_SURFACE must not appear in §4.2 checklist tables",
+                row.req_id
+            );
+        }
+    }
+}
+
 fn render_checklist_table(
     title: &str,
     rows: &[&RequirementRow],
@@ -316,6 +438,7 @@ fn render_checklist_table(
     out.push_str("|---|---|---|---|\n");
     for row in rows {
         let result = checklist_result(row, recorded);
+        assert_exportable_checklist_result(row, &result);
         out.push_str(&format!(
             "| {} | {} | {} | {} |\n",
             row.use_case_label(),
@@ -385,6 +508,8 @@ fn render_risks(manifest: &Manifest, recorded: &HashMap<&'static str, Outcome>) 
 
 /// Helper assertions for `harness = false` runner.
 pub fn run_helper_self_tests() {
+    super::gate_expectations::assert_gate_expectations_file_current();
+
     let row = RequirementRow {
         req_id: "REQ-TEST-BLOCKED".to_owned(),
         use_case: None,
