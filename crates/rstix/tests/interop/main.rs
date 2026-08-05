@@ -264,5 +264,6 @@ interop_test!(
 fn main() {
     harness::run_all();
     let manifest = load_manifest();
+    harness::gate_expectations::maybe_write_gate_expectations_file(&manifest);
     harness::certification::finalize(&manifest);
 }

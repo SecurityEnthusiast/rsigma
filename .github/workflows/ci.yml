@@ -167,6 +167,40 @@ jobs:
       - run: cargo clippy -p rstix --no-default-features --all-targets --locked -- -D warnings
       - run: cargo check -p rstix --no-default-features --features pattern --locked
 
+  rstix-interop:
+    # Dedicated self-certification path: runs every interop TESTED row, regenerates
+    # §4.2 Tables 55/56 + traceability, then fails the job if the report is missing,
+    # stale, or incomplete. Workspace `test` also executes the suite under
+    # --all-features; this job is the gated artifact producer.
+    name: rstix STIX interop self-certification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # read repo for checkout
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup override set stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Record interop run start
+        run: echo "INTEROP_RUN_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - name: STIX 2.1 interop self-certification suite
+        run: cargo test -p rstix --test interop --features validate,marking,graph --locked
+      - name: Gate on self-certification report
+        run: python3 scripts/interop-report-gate.py
+      - name: Upload self-certification report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: interop-report
+          path: target/interop-report/
+          if-no-files-found: error
+          retention-days: 14
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

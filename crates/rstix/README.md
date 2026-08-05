@@ -890,39 +890,46 @@ The tables above describe **implemented** behavior. Negative and rich fixtures f
 
 <a id="oasis-interop-test-suite"></a>
 
-### OASIS interop test suite
+### OASIS interop self-certification suite
 
-Test harness aligned with **STIX 2.1 Interoperability Version 1.0, Committee Specification Draft 01** (`stix-2.1-interop-v1.0-csd01`, 2021-10-23). It tracks manifest rows for all **21** use cases in that document; normative OASIS test-case JSON and per-requirement tests are added incrementally. The suite lives in `tests/interop/` (single Cargo target) with fixtures under `tests/fixtures/interop/`.
+Test harness for **STIX 2.1 Interoperability Version 1.0, Committee Specification Draft 01** (`stix-2.1-interop-v1.0-csd01`, 2021-10-23). Against that **CSD01** document, `rstix` **self-certifies** as a STIX 2.1 Producer (**SXP**) and Consumer (**SXC**) across all **21** use cases: every §4.2 Table 55/56 row is filled with a real result (`Pass`, or `BLOCKED` where a published §9.1 defect leaves no honest passing path). The suite lives in `tests/interop/` (single Cargo target) with fixtures under `tests/fixtures/interop/`.
 
-**What this suite is not:** a completed OASIS interoperability certification. The generated report is a traceability artifact — not proof that every in-scope requirement passed.
+**Claim boundaries:**
+
+- **Claimed:** SXP + SXC for the 21 CSD01 use cases, evidenced by the generated Tables 55/56, `traceability.csv`, and `summary.json` from each green interop run.
+- **Not claimed:** an OASIS-issued / third-party certificate; any of the seven §4.1 product personas (AIM, LIM, MAS, SIEM, TDS, TIP, TMS) — `rstix` is a library, not those deployed products; TAXII TXC (separate suite).
+- **Scoped degradations:** `REQ-CHK-SXP-3.12` and `REQ-CHK-SXP-3.16` render **BLOCKED** (defects 19 and 16), not `Pass`.
 
 | Component | Path | Role |
 | --------- | ---- | ---- |
-| Harness | `tests/interop/harness/` | Manifest, fixture loader + provenance, per-use-case overlay on `interop_strict`, bundle closure, containment, certification report |
+| Harness | `tests/interop/harness/` | Manifest, fixture loader + provenance, per-use-case overlay on `interop_strict`, bundle closure, containment, self-certification report |
 | Cross-cutting | `tests/interop/common/` | Automated checks for 18 §2.3 manifest rows, run suite-wide over **42** walkable normative fixtures |
-| Use-case tests | `tests/interop/use_cases/` | **All 21** OASIS §3.x use cases (§3.1–§3.21) with Producer/Consumer/example modules. **Not** OASIS SXP/SXC certification. |
+| Use-case tests | `tests/interop/use_cases/` | All 21 OASIS §3.x use cases (§3.1–§3.21) with Producer/Consumer/example modules — the SXP/SXC self-certification evidence |
 | Manifest | `tests/fixtures/interop/manifest.toml` | `req_id` → `test_id` → fixture → §4.2 checklist row |
+| Gate expectations | `tests/fixtures/interop/gate-expectations.json` | Manifest-derived golden rows for Tables 55/56 and traceability CSV (regenerate with `scripts/generate-interop-gate-expectations.py` when the manifest changes) |
 | Normative fixtures | `tests/fixtures/interop/testcases/` | Gating OASIS test-case data + `.provenance.toml` sidecars (**44/44** inventory: **42** suite-walkable + **2** `BLOCKED` on §9.1 defects 16 and 19; synthetic helpers remain for intentional negatives) |
 | Examples | `tests/fixtures/interop/examples/` | Non-normative; must never fail the build |
-| Report artifacts | `target/interop-report/` | `summary.json`, Tables 55/56 markdown, traceability CSV, risks (never committed) |
+| Report artifacts | `target/interop-report/` | Self-certification package: `summary.json` (incl. `generated_at`), Tables 55/56 markdown, traceability CSV, risks (never committed; CI uploads as `interop-report`) |
 
-**Certification report semantics (`summary.json`):**
+**Report semantics (`summary.json`):**
 
 | Field | Meaning |
 | ----- | ------- |
-| `oasis_use_cases_in_spec` | The OASIS interoperability document defines 21 use cases — **not** how many are tested here. |
-| `manifest_rows_total` | Rows in `manifest.toml` (harness + placeholders + smoke). |
+| `document` / `document_stage` | CSD01 authority string — must appear on any published self-certification claim. |
+| `generated_at` | UTC RFC 3339 timestamp written when the harness finalized the report (CI stale gate). |
+| `oasis_use_cases_in_spec` | The CSD01 document defines 21 use cases (all covered by this suite). |
+| `manifest_rows_total` | Rows in `manifest.toml`. |
 | `manifest_rows_by_disposition` | Breakdown by `TESTED`, `HARNESS_SMOKE`, `REPORT_ONLY`, `BLOCKED`. |
 | `tested_rows_passed` | Executable manifest rows with `disposition = TESTED` that recorded `Pass` (**506** today: 9 harness + 18 §2.3 + **479** §3.1–§3.21 use-case rows) |
 | `harness_smoke_executed` | Rows with `disposition = HARNESS_SMOKE` (0 today; reserved for partial checks if reintroduced) |
-| `report_only_rows` | §4.2 checklist/framework placeholders with no automated test (**5** today) |
+| `report_only_rows` | §4.2 framework / scoping placeholders outside the 46 Table 55/56 checklist cells (**5** today) |
 | `blocked_rows` | Checklist rows blocked on unrepairable published test-case data (**2** today: §3.12 / §3.16 SXP) |
 
-There is **no** “100% covered” field. Do not infer OASIS conformance from manifest row counts.
+`TESTED` / `Pass` means the harness recorded a passing assertion for that manifest row. It is the operational definition of self-certification evidence for that requirement — not an OASIS-issued stamp.
 
-**§2.3 manifest rows:** 18 rows use `disposition = TESTED` and run suite-wide over walkable normative fixtures. **`TESTED` here means our harness recorded `Pass` — not OASIS §2.3 requirement verification, not the full interop manifest row inventory from the engineering plan.
+**§2.3 manifest rows:** 18 rows use `disposition = TESTED` and run suite-wide over walkable normative fixtures.
 
-**§3.x use-case rows:** Modules cover all 21 OASIS use cases (§3.1–§3.21). Producer/Consumer persona rows, Table 55/56 checklist rows, and non-gating examples where CSD01 defines them. This is **not** OASIS SXP/SXC certification. `REQ-CHK-SXP-3.12` and `REQ-CHK-SXP-3.16` remain **BLOCKED** on published defects 19 and 16.
+**§3.x use-case rows:** Producer/Consumer persona support, Table 55/56 checklist rows, and non-gating examples where CSD01 defines them. SXP checklist rows for §3.12 and §3.16 stay **BLOCKED** on defects 19 and 16.
 
 **Run locally (required features explicit):**
 
@@ -930,7 +937,7 @@ There is **no** “100% covered” field. Do not infer OASIS conformance from ma
 cargo test -p rstix --test interop --features validate,marking,graph --locked
 ```
 
-The interop target uses a custom runner (`harness = false`): registered tests run in stable order, then the certification report is written. No `--test-threads=1` flag is required — parallel `cargo test --workspace --all-features` is safe because finalize no longer races other tests.
+The interop target uses a custom runner (`harness = false`): registered tests run in stable order, then the self-certification report is written. No `--test-threads=1` flag is required — parallel `cargo test --workspace --all-features` is safe because finalize no longer races other tests.
 
 **Silent-skip guard:** `tests/interop_sentinel.rs` is an ungated target that **must fail** when `validate`, `marking`, and `graph` are not enabled — that failure is correct, not a regression. It **passes** only when those three features are on (same as CI’s `cargo test --workspace --all-features`):
 
@@ -942,30 +949,28 @@ cargo test -p rstix --test interop_sentinel --locked
 cargo test -p rstix --test interop_sentinel --features validate,marking,graph --locked
 ```
 
-**CI job template (artifact gate):**
+**CI:** the `rstix STIX interop self-certification` job in `.github/workflows/ci.yml` runs the full interop suite (every `TESTED` row), then `scripts/interop-report-gate.py` (report present, `generated_at` not older than `INTEROP_RUN_START`, Tables 55/56 cell content and traceability CSV rows match `gate-expectations.json`, every `TESTED` row passed, required features on), and uploads `target/interop-report/` as the `interop-report` artifact. The multi-OS `Test` matrix also executes the suite under `--all-features`; the dedicated job is the gated self-certification report producer.
 
-```yaml
-- name: Record interop run start
-  run: echo "INTEROP_RUN_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
-- name: OASIS STIX 2.1 interop test suite
-  run: cargo test -p rstix --test interop --features validate,marking,graph --locked
-- name: Gate on interop report
-  run: |
-    test -f target/interop-report/summary.json
-    python3 - <<'PY'
-    import json
-    summary = json.load(open("target/interop-report/summary.json"))
-    by = summary["manifest_rows_by_disposition"]
-    infra = summary["tested_rows_passed"]
-    smoke = summary["harness_smoke_executed"]
-    assert infra == by["tested"], f"TESTED rows not passed: {infra}/{by['tested']}"
-    assert smoke == by.get("harness_smoke", 0), f"HARNESS_SMOKE mismatch: {smoke}/{by.get('harness_smoke', 0)}"
-    print(f"tested_passed={infra}, harness_smoke={smoke}, report_only={summary['report_only_rows']}, blocked={summary['blocked_rows']}")
-    PY
-- uses: actions/upload-artifact@v4
-  with:
-    name: interop-report
-    path: target/interop-report/
+**Three-layer gate** (run order):
+
+| Layer | Where | What it catches |
+| ----- | ----- | ---------------- |
+| 1 — export invariants | `tests/interop/harness/certification.rs` | Empty/wrong checklist `Result`, incomplete CSV, export before coverage passes |
+| 2 — manifest sync | `tests/interop/harness/gate_expectations.rs` + committed `gate-expectations.json` | Stale golden expectations after `manifest.toml` changes |
+| 3 — CI artifact gate | `scripts/interop-report-gate.py` | Stale/missing report, wrong table cells, CSV row/order/outcome drift, summary count mismatch |
+
+Regenerate expectations after manifest edits:
+
+```bash
+python3 scripts/generate-interop-gate-expectations.py
+```
+
+Local gate (same script CI uses):
+
+```bash
+export INTEROP_RUN_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+cargo test -p rstix --test interop --features validate,marking,graph --locked
+python3 scripts/interop-report-gate.py
 ```
 
 `validate_conformance.rs` and `tests/fixtures/conformance/` remain unchanged — they guard the validator; the interop suite consumes `Validator::interop_strict()` as a dependency.
