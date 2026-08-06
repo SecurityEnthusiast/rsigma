@@ -17,6 +17,7 @@
     <a href="https://github.com/timescale/rsigma/releases/latest"><img src="https://img.shields.io/github/v/release/timescale/rsigma" alt="GitHub Release" /></a>
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT" /></a>
     <a href="https://github.com/rust-unofficial/awesome-rust#security-tools"><img src="https://awesome.re/mentioned-badge.svg" alt="Mentioned in Awesome Rust" /></a>
+    <a href="https://glama.ai/mcp/servers/timescale/rsigma"><img src="https://glama.ai/mcp/servers/timescale/rsigma/badges/score.svg" alt="rsigma MCP server score on Glama.ai" /></a>
 </p>
 
 RSigma is a complete detection engineering toolkit for the [Sigma](https://sigmahq.io/) detection standard, including a parser, evaluation engine, rule conversion, streaming runtime, linter, CLI, MCP, and LSP.
