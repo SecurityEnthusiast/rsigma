@@ -39,10 +39,16 @@ mod author_ads;
 mod convert_rules;
 mod evaluate_events;
 mod fix_rules;
+mod get_incident;
+mod get_incident_bundle;
+mod get_rule_quality;
 mod lint_rules;
 mod list_backends;
 mod list_builtin_pipelines;
 mod list_fields;
+mod list_incidents;
+mod list_risk_entities;
+mod list_silences;
 mod parse_condition;
 mod parse_rule;
 mod resolve_pipeline;
@@ -69,7 +75,6 @@ struct State {
     delegate_permits: tokio::sync::Semaphore,
     /// Client for a running daemon's control-plane API. `None` keeps the
     /// server on the Engineer-cycle surface: operate tools are not registered.
-    #[allow(dead_code)]
     daemon: Option<DaemonClient>,
     /// Whether the two mutating operate tools register. Ignored when `daemon`
     /// is `None`.
@@ -124,7 +129,7 @@ impl RsigmaMcp {
         let daemon = connect.as_ref().map(DaemonClient::connect).transpose()?;
         let has_daemon = daemon.is_some();
         Ok(Self {
-            tool_router: Self::tool_router(),
+            tool_router: Self::tool_router(has_daemon, has_daemon && allow_operate_writes),
             state: Arc::new(State {
                 root,
                 lint_config,
@@ -156,9 +161,32 @@ impl RsigmaMcp {
     }
 
     /// The daemon client, when operate tools are registered.
-    #[allow(dead_code)]
     pub(crate) fn daemon(&self) -> Option<&DaemonClient> {
         self.state.daemon.as_ref()
+    }
+
+    /// `GET` a daemon path, or a content error when no daemon is configured.
+    pub(crate) async fn daemon_get(&self, path: &str) -> Value {
+        match self.daemon() {
+            Some(client) => client.get(path).await,
+            None => json!({
+                "ok": false,
+                "error": "no daemon configured",
+                "hint": "pass --daemon-url (or mcp.daemon_url)",
+            }),
+        }
+    }
+
+    /// `POST` a daemon path, or a content error when no daemon is configured.
+    pub(crate) async fn daemon_post(&self, path: &str, body: &Value) -> Value {
+        match self.daemon() {
+            Some(client) => client.post(path, body).await,
+            None => json!({
+                "ok": false,
+                "error": "no daemon configured",
+                "hint": "pass --daemon-url (or mcp.daemon_url)",
+            }),
+        }
     }
 
     /// Whether the mutating operate tools are registered.
@@ -171,9 +199,9 @@ impl RsigmaMcp {
     ///
     /// Each submodule contributes a `*_router()` built by `#[tool_router]`;
     /// [`ToolRouter`] implements `Add`, so summing them yields a router holding
-    /// all 15 tools.
-    fn tool_router() -> ToolRouter<Self> {
-        Self::parse_rule_router()
+    /// the Engineer-cycle tools plus, when configured, the operate tools.
+    fn tool_router(has_daemon: bool, _allow_writes: bool) -> ToolRouter<Self> {
+        let mut router = Self::parse_rule_router()
             + Self::parse_condition_router()
             + Self::lint_rules_router()
             + Self::validate_rules_router()
@@ -187,7 +215,17 @@ impl RsigmaMcp {
             + Self::author_ads_router()
             + Self::reverse_router()
             + Self::tune_rules_router()
-            + Self::test_exemplars_router()
+            + Self::test_exemplars_router();
+        if has_daemon {
+            router = router
+                + Self::list_incidents_router()
+                + Self::get_incident_router()
+                + Self::get_incident_bundle_router()
+                + Self::list_risk_entities_router()
+                + Self::get_rule_quality_router()
+                + Self::list_silences_router();
+        }
+        router
     }
 }
 
@@ -212,14 +250,21 @@ impl ServerHandler for RsigmaMcp {
         info.server_info = Implementation::from_build_env();
         info.server_info.name = "rsigma-mcp".to_string();
         info.server_info.version = env!("CARGO_PKG_VERSION").to_string();
-        info.instructions = Some(
+        let mut instructions = String::from(
             "Sigma detection-rule toolchain: parse, parse_condition, lint, validate, evaluate, \
              convert, tune, test exemplars, fix, list fields, resolve pipelines, and author ADS \
              detection-strategy metadata. Every tool accepts inline content (e.g. `yaml`) or a \
              file `path`. Resources expose the lint catalogue, the ADS section catalogue, and \
-             modifier / MITRE reference data."
-                .to_string(),
+             modifier / MITRE reference data.",
         );
+        if self.daemon().is_some() {
+            instructions.push_str(
+                " A daemon URL is configured, so operate tools are available: list_incidents, \
+                 get_incident, get_incident_bundle, list_risk_entities, get_rule_quality, and \
+                 list_silences.",
+            );
+        }
+        info.instructions = Some(instructions);
         info
     }
 

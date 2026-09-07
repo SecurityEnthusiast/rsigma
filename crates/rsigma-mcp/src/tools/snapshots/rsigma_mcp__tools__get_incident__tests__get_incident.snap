@@ -1,0 +1,10 @@
+---
+source: crates/rsigma-mcp/src/tools/get_incident.rs
+expression: value
+---
+{
+  "incident_id": "inc-1",
+  "max_level": "high",
+  "ok": true,
+  "state": "open"
+}

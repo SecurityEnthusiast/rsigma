@@ -5,7 +5,8 @@
 
 use rmcp::model::CallToolRequestParams;
 use rmcp::{ServiceExt, object};
-use rsigma_mcp::RsigmaMcp;
+use rsigma_mcp::{DaemonConnect, RsigmaMcp};
+use rsigma_parser::LintConfig;
 
 const RULE: &str = r#"
 title: Whoami Execution
@@ -30,16 +31,40 @@ async fn connect() -> (
     rmcp::service::RunningService<rmcp::RoleServer, RsigmaMcp>,
     rmcp::service::RunningService<rmcp::RoleClient, ()>,
 ) {
+    connect_handler(RsigmaMcp::default()).await
+}
+
+async fn connect_handler(
+    handler: RsigmaMcp,
+) -> (
+    rmcp::service::RunningService<rmcp::RoleServer, RsigmaMcp>,
+    rmcp::service::RunningService<rmcp::RoleClient, ()>,
+) {
     let (server_io, client_io) = tokio::io::duplex(64 * 1024);
     // The server's `serve` blocks on the initialize handshake, so the client
     // must be connecting concurrently. Spawn the server, then drive the client.
-    let server_task = tokio::spawn(async move { RsigmaMcp::default().serve(server_io).await });
+    let server_task = tokio::spawn(async move { handler.serve(server_io).await });
     let client = ().serve(client_io).await.expect("client initialize");
     let server = server_task
         .await
         .expect("server task join")
         .expect("server initialize");
     (server, client)
+}
+
+fn operate_handler() -> RsigmaMcp {
+    RsigmaMcp::with_daemon(
+        None,
+        LintConfig::default(),
+        false,
+        DaemonConnect {
+            url: "http://127.0.0.1:9090".into(),
+            ca_pem: None,
+            token: None,
+        },
+        false,
+    )
+    .expect("operate handler")
 }
 
 /// Extract the JSON text content of a tool result.
@@ -88,6 +113,40 @@ async fn tools_list_exposes_all_core_tools() {
     assert!(
         schema.to_string().contains("yaml"),
         "parse_rule schema should mention `yaml`: {schema}"
+    );
+
+    client.cancel().await.ok();
+    server.cancel().await.ok();
+}
+
+#[tokio::test]
+async fn tools_list_gains_operate_reads_when_daemon_url_is_set() {
+    let (server, client) = connect_handler(operate_handler()).await;
+    let tools = client.list_all_tools().await.expect("list tools");
+    let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+    for expected in [
+        "list_incidents",
+        "get_incident",
+        "get_incident_bundle",
+        "list_risk_entities",
+        "get_rule_quality",
+        "list_silences",
+    ] {
+        assert!(
+            names.contains(&expected.to_string()),
+            "missing operate tool {expected} in {names:?}"
+        );
+    }
+    assert_eq!(
+        tools.len(),
+        21,
+        "expected 15 engineer tools plus 6 operate reads, got {names:?}"
+    );
+    assert!(
+        !names
+            .iter()
+            .any(|n| n == "create_silence" || n == "post_disposition"),
+        "write tools must stay gated off: {names:?}"
     );
 
     client.cancel().await.ok();
