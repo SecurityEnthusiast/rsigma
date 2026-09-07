@@ -21,16 +21,15 @@ pub struct PostDispositionInput {
     /// Incident-scoped identity. Fans out to contributing rules.
     #[serde(default)]
     pub incident_id: Option<String>,
-    /// Target rule id. Required for detection scope when the daemon cannot
-    /// infer it from the fingerprint.
+    /// Target rule id. The daemon requires it for detection-scoped verdicts.
     #[serde(default)]
     pub rule_id: Option<String>,
     /// `detection` (default) or `incident`.
     #[serde(default)]
     pub scope: Option<String>,
-    /// Epoch seconds for rolling-window placement.
+    /// RFC 3339 time for rolling-window placement; defaults to ingest time.
     #[serde(default)]
-    pub timestamp: Option<i64>,
+    pub timestamp: Option<String>,
     /// Who recorded the verdict. Defaults to `rsigma-mcp`.
     #[serde(default)]
     pub analyst: Option<String>,
@@ -81,7 +80,7 @@ impl RsigmaMcp {
         if let Some(scope) = input.scope.filter(|s| !s.is_empty()) {
             body["scope"] = json!(scope);
         }
-        if let Some(timestamp) = input.timestamp {
+        if let Some(timestamp) = input.timestamp.filter(|s| !s.is_empty()) {
             body["timestamp"] = json!(timestamp);
         }
         if let Some(note) = input.note {
@@ -116,6 +115,7 @@ mod tests {
             "rejected": 0,
             "echo_fingerprint": body.get("fingerprint"),
             "echo_analyst": body.get("analyst"),
+            "echo_timestamp": body.get("timestamp"),
         }))
     }
 
@@ -159,6 +159,30 @@ mod tests {
             assert_eq!(value["accepted"], 1);
             assert_eq!(value["echo_analyst"], "rsigma-mcp");
             insta::assert_json_snapshot!("post_disposition", value);
+        });
+    }
+
+    #[test]
+    fn timestamp_is_passed_through_as_rfc3339_string() {
+        block_on(async {
+            let url =
+                spawn_stub(axum::Router::new().route("/api/v1/dispositions", post(ingest))).await;
+            let handler = operate_handler(&url, true);
+            let value = handler
+                .run_post_disposition(PostDispositionInput {
+                    verdict: "true_positive".into(),
+                    fingerprint: Some("fp2".into()),
+                    incident_id: None,
+                    rule_id: Some("r1".into()),
+                    scope: None,
+                    timestamp: Some("2026-09-07T12:00:00Z".into()),
+                    analyst: None,
+                    note: None,
+                })
+                .await
+                .unwrap();
+            assert_eq!(value["ok"], true);
+            assert_eq!(value["echo_timestamp"], "2026-09-07T12:00:00Z");
         });
     }
 }

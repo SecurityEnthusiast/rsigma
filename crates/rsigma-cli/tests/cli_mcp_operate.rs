@@ -31,7 +31,10 @@ async fn call_tool(
     let name = name.into();
     let mut req = CallToolRequestParams::new(name.clone());
     req.arguments = Some(arguments);
-    let result = client.call_tool(req).await.unwrap_or_else(|e| panic!("{name}: {e}"));
+    let result = client
+        .call_tool(req)
+        .await
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
     result_json(&result)
 }
 
@@ -93,7 +96,8 @@ async fn operate_tools_chain_against_a_live_daemon() {
         object!({
             "verdict": "false_positive",
             "fingerprint": "e2e-fp-1",
-            "rule_id": "00000000-0000-0000-0000-000000000001"
+            "rule_id": "00000000-0000-0000-0000-000000000001",
+            "timestamp": chrono::Utc::now().to_rfc3339()
         }),
     )
     .await;
