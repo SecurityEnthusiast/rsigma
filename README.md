@@ -253,7 +253,7 @@ Expose the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio:
 rsigma mcp serve --rules-dir rules/
 ```
 
-The agent then calls structured tools (`parse_rule`, `lint_rules`, `validate_rules`, `evaluate_events`, `convert_rules`, `list_fields`, ...) and gets back JSON. See the [MCP server guide](https://rsigma.io/guide/mcp-server/).
+The agent then calls structured tools (`parse_rule`, `lint_rules`, `validate_rules`, `evaluate_events`, `convert_rules`, `list_fields`, ...) and gets back JSON. Point `--daemon-url` at a running daemon to add the Operate-cycle tools. See the [MCP server guide](https://rsigma.io/guide/mcp-server/).
 
 ### Library Usage
 

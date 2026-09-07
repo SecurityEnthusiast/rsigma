@@ -124,6 +124,10 @@ mcp:
   # lint_config: ./.rsigma-lint.yml
   # rules_dir: ./rules
   allow_sigma_cli: false    # let convert_rules delegate non-native targets
+  # daemon_url: http://127.0.0.1:9090
+  # daemon_ca: /etc/rsigma/tls/ca.pem
+  # allow_operate_writes: false
+  # daemon token is flag/env only: --daemon-token / RSIGMA_MCP_DAEMON_TOKEN
 
 backtest:
   rules: ./rules
@@ -194,7 +198,7 @@ Run [`rsigma config init`](../cli/config/init.md) to scaffold a full, commented 
 | `visibility` | `rule visibility` | `mapping` (logsource/field to ATT&CK data-source table path or URL; unset uses the bundled default) and `fail_on_blind_spots`. `rules` and `observed` are intentionally absent (they are invocation-specific CLI arguments). |
 | `doc` | `rule doc` | `fail_on_missing` (the CI gate). The ADS bar itself (enforced statuses and required sections) lives in `.rsigma-lint.yml` under an `ads:` block, not here. See [Detection Strategy](../guide/detection-strategy.md). |
 | `hygiene` | `rule hygiene` | `rules`, the optional sources (`metrics`, `metrics_window`, `fields`), the thresholds (`silent_threshold`, `stale_threshold`, `noisy_threshold`), and `fail_on`. See [Rule Hygiene](../guide/rule-hygiene.md). |
-| `mcp` | `mcp serve` | `mcp.http_addr` (the `--http` bind address; unset means stdio), `mcp.lint_config`, `mcp.rules_dir`, and `mcp.allow_sigma_cli` (let `convert_rules` delegate non-native targets to an installed sigma-cli; off by default). The auth token is secret and stays flag/env-only. Inert unless built with the `mcp` feature. |
+| `mcp` | `mcp serve` | `mcp.http_addr` (the `--http` bind address; unset means stdio), `mcp.lint_config`, `mcp.rules_dir`, `mcp.allow_sigma_cli` (let `convert_rules` delegate non-native targets to an installed sigma-cli; off by default), `mcp.daemon_url`, `mcp.daemon_ca`, and `mcp.allow_operate_writes`. The MCP HTTP auth token and the daemon token are secrets and stay flag/env-only. Inert unless built with the `mcp` feature. |
 
 ### Secrets policy
 
@@ -217,6 +221,9 @@ Two parallel schemes are honored:
     | `RSIGMA_DAEMON__INPUT__BUFFER_SIZE=20000` | `daemon.input.buffer_size` |
     | `RSIGMA_GLOBAL__LOG_FORMAT=json` | `global.log_format` |
     | `RSIGMA_MCP__HTTP_ADDR=127.0.0.1:9100` | `mcp.http_addr` |
+    | `RSIGMA_MCP__DAEMON_URL=http://127.0.0.1:9090` | `mcp.daemon_url` |
+    | `RSIGMA_MCP__DAEMON_CA=/etc/rsigma/tls/ca.pem` | `mcp.daemon_ca` |
+    | `RSIGMA_MCP__ALLOW_OPERATE_WRITES=true` | `mcp.allow_operate_writes` |
 
 2. **Legacy clap-bound names** with a single underscore (`NATS_CREDS`, `RSIGMA_CONSUMER_GROUP`, `RSIGMA_TLS_KEY_PASSWORD`). These continue to work at the flag layer and are listed in [Environment Variables](environment-variables.md). Secrets are *only* readable this way.
 

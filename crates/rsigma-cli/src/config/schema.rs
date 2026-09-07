@@ -1071,8 +1071,9 @@ impl Merge for HygienePartial {
     }
 }
 
-/// `mcp serve` settings. The auth token is deliberately absent: secrets stay
-/// flag/env-only (`--auth-token` / `RSIGMA_MCP_AUTH_TOKEN`).
+/// `mcp serve` settings. The MCP HTTP auth token and the daemon token are
+/// deliberately absent: secrets stay flag/env-only (`--auth-token` /
+/// `RSIGMA_MCP_AUTH_TOKEN`, `--daemon-token` / `RSIGMA_MCP_DAEMON_TOKEN`).
 #[derive(Debug, Default, Clone, Deserialize, Serialize, JsonSchema)]
 pub(crate) struct McpPartial {
     /// Bind address for the Streamable HTTP transport (maps to `--http`).
@@ -1090,6 +1091,19 @@ pub(crate) struct McpPartial {
     /// Defaults to off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_sigma_cli: Option<bool>,
+    /// Base URL of a running daemon (maps to `--daemon-url`). Unset means the
+    /// operate-cycle tools stay unregistered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daemon_url: Option<String>,
+    /// Extra root CA PEM path for a self-signed daemon TLS listener (maps to
+    /// `--daemon-ca`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daemon_ca: Option<PathBuf>,
+    /// Register the mutating operate tools (maps to `--allow-operate-writes`).
+    /// Defaults to off. The daemon token is deliberately absent: secrets stay
+    /// flag/env-only (`--daemon-token` / `RSIGMA_MCP_DAEMON_TOKEN`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_operate_writes: Option<bool>,
 }
 
 impl Merge for McpPartial {
@@ -1099,6 +1113,9 @@ impl Merge for McpPartial {
             lint_config: over.lint_config.or(self.lint_config),
             rules_dir: over.rules_dir.or(self.rules_dir),
             allow_sigma_cli: over.allow_sigma_cli.or(self.allow_sigma_cli),
+            daemon_url: over.daemon_url.or(self.daemon_url),
+            daemon_ca: over.daemon_ca.or(self.daemon_ca),
+            allow_operate_writes: over.allow_operate_writes.or(self.allow_operate_writes),
         }
     }
 }
@@ -1150,7 +1167,7 @@ mod tests {
     #[test]
     fn mcp_section_parses_and_merges() {
         let base: RsigmaConfigPartial = yaml_serde::from_str(
-            "mcp:\n  http_addr: 127.0.0.1:9100\n  rules_dir: /etc/rsigma/rules\n  allow_sigma_cli: true\n",
+            "mcp:\n  http_addr: 127.0.0.1:9100\n  rules_dir: /etc/rsigma/rules\n  allow_sigma_cli: true\n  daemon_url: http://127.0.0.1:9090\n  allow_operate_writes: true\n",
         )
         .expect("parses mcp section");
         let over: RsigmaConfigPartial =
@@ -1161,6 +1178,8 @@ mod tests {
         assert_eq!(mcp.http_addr.as_deref(), Some("127.0.0.1:9100"));
         assert_eq!(mcp.rules_dir, Some(PathBuf::from("/override/rules")));
         assert_eq!(mcp.allow_sigma_cli, Some(true));
+        assert_eq!(mcp.daemon_url.as_deref(), Some("http://127.0.0.1:9090"));
+        assert_eq!(mcp.allow_operate_writes, Some(true));
     }
 
     #[test]

@@ -1,0 +1,25 @@
+---
+source: crates/rsigma-mcp/src/tools/list_incidents.rs
+expression: value
+---
+{
+  "count": 3,
+  "incidents": [
+    {
+      "incident_id": "low-1",
+      "max_level": "low",
+      "state": "open"
+    },
+    {
+      "incident_id": "high-1",
+      "max_level": "high",
+      "state": "open"
+    },
+    {
+      "incident_id": "crit-1",
+      "max_level": "critical",
+      "state": "open"
+    }
+  ],
+  "ok": true
+}

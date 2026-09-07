@@ -414,8 +414,9 @@ hygiene:
   # | broken-fields | deprecated | any. Exit 1 when a selected condition matches.
   # fail_on: [silent]
 
-# `rsigma mcp serve` settings. The auth token is NOT configurable here by
-# design; supply it via --auth-token or RSIGMA_MCP_AUTH_TOKEN.
+# `rsigma mcp serve` settings. The MCP HTTP auth token and the daemon token
+# are NOT configurable here by design; supply them via --auth-token /
+# RSIGMA_MCP_AUTH_TOKEN and --daemon-token / RSIGMA_MCP_DAEMON_TOKEN.
 mcp:
   # Bind address for the Streamable HTTP transport (`--http`). Unset = stdio.
   # http_addr: 127.0.0.1:9100
@@ -427,3 +428,11 @@ mcp:
   # to an installed sigma-cli (`--allow-sigma-cli`). Off by default; delegated
   # path inputs stay confined to rules_dir when it is set.
   # allow_sigma_cli: false
+  # Base URL of a running daemon (`--daemon-url`). Unset means the operate
+  # tools stay unregistered.
+  # daemon_url: http://127.0.0.1:9090
+  # Extra root CA PEM for a self-signed daemon TLS listener (`--daemon-ca`).
+  # daemon_ca: /etc/rsigma/tls/ca.pem
+  # Register create_silence and post_disposition (`--allow-operate-writes`).
+  # Off by default; requires daemon_url.
+  # allow_operate_writes: false

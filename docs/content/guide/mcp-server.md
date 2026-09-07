@@ -45,7 +45,7 @@ Either way the client launches `rsigma mcp serve` as a subprocess and talks to i
 
 ## Tool reference
 
-Fifteen tools. Content-bearing tools accept **either** inline content (`yaml`, `condition`, `events`, `query`) **or** a file `path`, never both. Path arguments resolve against `--rules-dir` when relative (and `tune_rules` / `test_exemplars` path inputs stay confined to that root when it is set). Outputs are JSON with an `ok` flag plus tool-specific fields. Content errors (a rule that fails to parse, a backend that cannot represent a rule) come back inside a successful response as `{ "ok": false, ... }` so the agent can read and act on them; only malformed requests return MCP errors.
+Fifteen Engineer-cycle tools always register. When `--daemon-url` (or `mcp.daemon_url`) points at a running daemon, six Operate-cycle read tools join `tools/list`; `--allow-operate-writes` adds the two mutating tools. Content-bearing Engineer tools accept **either** inline content (`yaml`, `condition`, `events`, `query`) **or** a file `path`, never both. Path arguments resolve against `--rules-dir` when relative (and `tune_rules` / `test_exemplars` path inputs stay confined to that root when it is set). Outputs are JSON with an `ok` flag plus tool-specific fields. Content errors (a rule that fails to parse, a backend that cannot represent a rule, or a daemon that returns non-2xx) come back inside a successful response as `{ "ok": false, ... }` so the agent can read and act on them; only malformed requests return MCP errors.
 
 | Tool | Input | Output |
 |------|-------|--------|
@@ -64,6 +64,44 @@ Fifteen tools. Content-bearing tools accept **either** inline content (`yaml`, `
 | `author_ads` | `yaml` or file/dir `path` | Per rule: the current ADS sections, the required sections missing under the active config, and a `rsigma.ads.*` scaffold to complete. |
 | `tune_rules` | rules (`yaml` or confined file/dir `path`), target `rule`, inline `false_positives` and `true_positives`, optional `pipelines` and tuning bounds | A verified `TuneReport` containing filter YAML, field rationale, clusters, FP coverage, warnings, and before/after counts. |
 | `test_exemplars` | rules (`yaml` or confined file/dir `path`), optional `pipelines` | The shared exemplar report: per-entry expect/actual/pass plus rules with no exemplars. |
+| `list_incidents` | optional `min_level`, `limit` | Open incidents from `GET /api/v1/incidents`. Registers when a daemon URL is set. |
+| `get_incident` | `id` | One open incident from `GET /api/v1/incidents/{id}`. 404 and grouping-disabled 503 come back as content errors. |
+| `get_incident_bundle` | `id`, optional `format` (`json` or `markdown`) | Evidence bundle from `GET /api/v1/incidents/{id}/bundle`. |
+| `list_risk_entities` | (none) | Open risk entities from `GET /api/v1/risk`. Empty responses include a note so a disabled accumulator is not mistaken for a clean estate. |
+| `get_rule_quality` | optional `rule_id` | Per-rule quality view from `GET /api/v1/dispositions`. |
+| `list_silences` | (none) | Operator silences from `GET /api/v1/silences`, with `origin` and `state`. |
+| `create_silence` | `matchers`, exactly one of `ends_at` or `duration`, optional `id`/`starts_at`/`comment`/`created_by` | Write-gated. Creates a TTL-bounded silence; a retried client `id` returns the existing entry. |
+| `post_disposition` | `verdict` plus `fingerprint` or `incident_id`, optional `rule_id`/`scope`/`timestamp`/`analyst`/`note` | Write-gated. Returns the ingest summary; a redelivered identity is `duplicate`, not an error. |
+
+## Operate cycle
+
+The operate tools are thin wrappers over the daemon control-plane API. They register only when the MCP server is pointed at a daemon, and the two mutating tools take a second explicit gate. An agent discovers what it is allowed to do from `tools/list`.
+
+```bash
+# Read-only triage against a loopback daemon
+rsigma mcp serve --rules-dir /path/to/rules --daemon-url http://127.0.0.1:9090
+
+# Same, plus silences and dispositions
+rsigma mcp serve --rules-dir /path/to/rules \
+  --daemon-url http://127.0.0.1:9090 \
+  --allow-operate-writes
+```
+
+Three registration tiers:
+
+| Configuration | Tools in `tools/list` |
+|---------------|----------------------|
+| No daemon URL | The 15 Engineer-cycle tools. |
+| `--daemon-url` set | Those 15 plus the six read tools. |
+| `--daemon-url` and `--allow-operate-writes` | Those 21 plus `create_silence` and `post_disposition`. |
+
+`--allow-operate-writes` mirrors `--allow-sigma-cli`: default off, flag beats config (`mcp.allow_operate_writes`). A daemon running API authentication needs `--daemon-token` (or `RSIGMA_MCP_DAEMON_TOKEN`); the token is flag/env-only. A `reader` token covers the six read tools; an `operator` token adds `silences:write` and `dispositions:write` (and `capture:write` when capture is enabled). 401/403 come back as `{ "ok": false }` with a hint naming the flag and the required permission.
+
+`--daemon-ca <PATH>` adds a PEM root CA for a self-signed daemon TLS listener. Unix-socket daemon URLs are unsupported; use TCP loopback.
+
+`create_silence` refuses an unbounded window: supply `ends_at` (RFC 3339) or `duration` (humantime, converted at call time). An optional client `id` is checked against `GET /api/v1/silences` first so a retried create is a no-op. `post_disposition` requires `fingerprint` or `incident_id` so the disposition store's redelivery key engages; without an identity a retry would double-count.
+
+A typical triage loop: `list_incidents` (optionally `min_level` / `limit`) → `get_incident` / `get_incident_bundle` → `list_risk_entities` and `get_rule_quality` → `create_silence` with a TTL → `post_disposition` → `tune_rules` if the verdict is a false positive.
 
 ## Resources
 
@@ -177,7 +215,7 @@ rsigma mcp serve --http 127.0.0.1:9100
 - **TLS.** `--tls-cert`/`--tls-key` terminate TLS in-process using the same rustls loader as the daemon (requires a build with the `daemon-tls` feature). Alternatively terminate TLS at a sidecar proxy and bind plaintext with `--allow-plaintext`.
 - **Plaintext safety.** Binding plaintext on a non-loopback address is refused unless `--allow-plaintext` is set.
 
-The `--http`, `--lint-config`, and `--rules-dir` settings also resolve from the layered config (`mcp` section) and the `RSIGMA_MCP__*` environment layer (for example `RSIGMA_MCP__HTTP_ADDR=127.0.0.1:9100`); the auth token stays flag/env-only.
+The `--http`, `--lint-config`, `--rules-dir`, `--daemon-url`, `--daemon-ca`, and `--allow-operate-writes` settings also resolve from the layered config (`mcp` section) and the `RSIGMA_MCP__*` environment layer (for example `RSIGMA_MCP__HTTP_ADDR=127.0.0.1:9100`); the MCP HTTP auth token and the daemon token stay flag/env-only.
 
 ## See also
 

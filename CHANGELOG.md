@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Operate-cycle MCP tools (#481)
+
+`rsigma mcp serve --daemon-url` registers six read-only tools against a running daemon's control-plane API (`list_incidents`, `get_incident`, `get_incident_bundle`, `list_risk_entities`, `get_rule_quality`, `list_silences`). `--allow-operate-writes` adds `create_silence` and `post_disposition`. The daemon token is flag/env-only (`--daemon-token` / `RSIGMA_MCP_DAEMON_TOKEN`). Unix-socket daemon URLs are unsupported.
+
 ### Coverage atomics plan (#480)
 
 `rsigma rule coverage --emit atomics-plan` turns the Atomic Red Team gap list (`atomics_without_rule`) into a runnable test plan: per uncovered technique, the atomic test names, GUIDs, supported platforms, and ready-to-paste `Invoke-AtomicTest` invocations. `--platforms windows,linux,macos` keeps only tests the estate can run. Default `--emit report` is unchanged. rsigma emits the plan and does not execute tests.

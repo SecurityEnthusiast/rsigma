@@ -1,0 +1,10 @@
+---
+source: crates/rsigma-mcp/src/tools/get_incident_bundle.rs
+expression: value
+---
+{
+  "incident_id": "inc-1",
+  "ok": true,
+  "risk": [],
+  "rules": []
+}

@@ -11,7 +11,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes 
 - You are wiring RSigma into an MCP client (Cursor, Claude Code): use the [`rsigma mcp serve`](../cli/mcp/serve.md) command, which embeds this crate.
 - You are building your own agent host and want to serve the RSigma tool surface from your binary: depend on this crate and call `serve_stdio` (or `serve_http` with the `http` feature).
 
-For the end-to-end workflow, client setup, and the 14-tool reference with example calls, see the [MCP server guide](../guide/mcp-server.md).
+For the end-to-end workflow, client setup, and the tool reference with example calls, see the [MCP server guide](../guide/mcp-server.md).
 
 ## Install
 
@@ -31,6 +31,8 @@ rsigma-mcp = "{{ rsigma.version }}"
 | Item | Purpose |
 |------|---------|
 | `RsigmaMcp::new(root, lint_config, allow_sigma_cli)` | Build the handler with an optional default root for relative path-based tool calls, a lint configuration, and the sigma-cli delegation switch for `convert_rules` (pass `false` to keep conversion native-only). |
+| `RsigmaMcp::with_daemon(..., connect, allow_operate_writes)` | Same as `new`, plus a [`DaemonConnect`](https://docs.rs/rsigma-mcp) so Operate-cycle tools register against a running daemon. Write tools register only when `allow_operate_writes` is true. |
+| `DaemonClient` / `DaemonConnect` / `DaemonError` | HTTP client pointed at the daemon control-plane API. |
 | `RsigmaMcp::default()` | A handler with no root, default lint configuration, and delegation disabled. |
 | `serve_stdio(handler)` | Serve the handler over stdio, blocking until the client disconnects. The caller owns the tokio runtime. |
 | `serve_http` / `http_router` (`http` feature) | Serve over Streamable HTTP (`/mcp`), or obtain the axum router for embedding. |

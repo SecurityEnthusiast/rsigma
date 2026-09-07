@@ -32,18 +32,27 @@ use rsigma_parser::reference::{MITRE_TACTICS, MODIFIERS};
 use rsigma_parser::{LintConfig, ads_catalogue, catalogue};
 use serde_json::{Value, json};
 
+use crate::daemon::{DaemonClient, DaemonConnect, DaemonError};
 use shared::to_value;
 
 mod author_ads;
 mod convert_rules;
+mod create_silence;
 mod evaluate_events;
 mod fix_rules;
+mod get_incident;
+mod get_incident_bundle;
+mod get_rule_quality;
 mod lint_rules;
 mod list_backends;
 mod list_builtin_pipelines;
 mod list_fields;
+mod list_incidents;
+mod list_risk_entities;
+mod list_silences;
 mod parse_condition;
 mod parse_rule;
+mod post_disposition;
 mod resolve_pipeline;
 mod reverse;
 mod shared;
@@ -66,6 +75,12 @@ struct State {
     allow_sigma_cli: bool,
     /// Bounds concurrent sigma-cli subprocesses across all sessions.
     delegate_permits: tokio::sync::Semaphore,
+    /// Client for a running daemon's control-plane API. `None` keeps the
+    /// server on the Engineer-cycle surface: operate tools are not registered.
+    daemon: Option<DaemonClient>,
+    /// Whether the two mutating operate tools register. Ignored when `daemon`
+    /// is `None`.
+    allow_operate_writes: bool,
 }
 
 /// The rsigma MCP handler. Cloned per request by rmcp; the real state lives
@@ -81,15 +96,50 @@ impl RsigmaMcp {
     /// lint configuration, and the sigma-cli delegation switch
     /// (`--allow-sigma-cli`; pass `false` for the previous behavior).
     pub fn new(root: Option<PathBuf>, lint_config: LintConfig, allow_sigma_cli: bool) -> Self {
-        Self {
-            tool_router: Self::tool_router(),
+        Self::build(root, lint_config, allow_sigma_cli, None, false)
+            .expect("building without a daemon cannot fail")
+    }
+
+    /// Build a handler that also fronts a running daemon's control-plane API.
+    ///
+    /// The six read tools register whenever `connect` is supplied. The two
+    /// write tools register only when `allow_operate_writes` is also true.
+    pub fn with_daemon(
+        root: Option<PathBuf>,
+        lint_config: LintConfig,
+        allow_sigma_cli: bool,
+        connect: DaemonConnect,
+        allow_operate_writes: bool,
+    ) -> Result<Self, DaemonError> {
+        Self::build(
+            root,
+            lint_config,
+            allow_sigma_cli,
+            Some(connect),
+            allow_operate_writes,
+        )
+    }
+
+    fn build(
+        root: Option<PathBuf>,
+        lint_config: LintConfig,
+        allow_sigma_cli: bool,
+        connect: Option<DaemonConnect>,
+        allow_operate_writes: bool,
+    ) -> Result<Self, DaemonError> {
+        let daemon = connect.as_ref().map(DaemonClient::connect).transpose()?;
+        let has_daemon = daemon.is_some();
+        Ok(Self {
+            tool_router: Self::tool_router(has_daemon, has_daemon && allow_operate_writes),
             state: Arc::new(State {
                 root,
                 lint_config,
                 allow_sigma_cli,
                 delegate_permits: tokio::sync::Semaphore::new(DELEGATE_MAX_CONCURRENT),
+                daemon,
+                allow_operate_writes: has_daemon && allow_operate_writes,
             }),
-        }
+        })
     }
 
     fn root(&self) -> Option<&Path> {
@@ -111,13 +161,48 @@ impl RsigmaMcp {
         &self.state.delegate_permits
     }
 
+    /// The daemon client, when operate tools are registered.
+    pub(crate) fn daemon(&self) -> Option<&DaemonClient> {
+        self.state.daemon.as_ref()
+    }
+
+    /// `GET` a daemon path, or a content error when no daemon is configured.
+    pub(crate) async fn daemon_get(&self, path: &str) -> Value {
+        match self.daemon() {
+            Some(client) => client.get(path).await,
+            None => json!({
+                "ok": false,
+                "error": "no daemon configured",
+                "hint": "pass --daemon-url (or mcp.daemon_url)",
+            }),
+        }
+    }
+
+    /// `POST` a daemon path, or a content error when no daemon is configured.
+    pub(crate) async fn daemon_post(&self, path: &str, body: &Value) -> Value {
+        match self.daemon() {
+            Some(client) => client.post(path, body).await,
+            None => json!({
+                "ok": false,
+                "error": "no daemon configured",
+                "hint": "pass --daemon-url (or mcp.daemon_url)",
+            }),
+        }
+    }
+
+    /// Whether the mutating operate tools are registered.
+    #[cfg(test)]
+    pub(crate) fn allow_operate_writes(&self) -> bool {
+        self.state.allow_operate_writes
+    }
+
     /// Combine the per-tool routers into the single router rmcp dispatches over.
     ///
     /// Each submodule contributes a `*_router()` built by `#[tool_router]`;
     /// [`ToolRouter`] implements `Add`, so summing them yields a router holding
-    /// all 15 tools.
-    fn tool_router() -> ToolRouter<Self> {
-        Self::parse_rule_router()
+    /// the Engineer-cycle tools plus, when configured, the operate tools.
+    fn tool_router(has_daemon: bool, allow_writes: bool) -> ToolRouter<Self> {
+        let mut router = Self::parse_rule_router()
             + Self::parse_condition_router()
             + Self::lint_rules_router()
             + Self::validate_rules_router()
@@ -131,7 +216,20 @@ impl RsigmaMcp {
             + Self::author_ads_router()
             + Self::reverse_router()
             + Self::tune_rules_router()
-            + Self::test_exemplars_router()
+            + Self::test_exemplars_router();
+        if has_daemon {
+            router = router
+                + Self::list_incidents_router()
+                + Self::get_incident_router()
+                + Self::get_incident_bundle_router()
+                + Self::list_risk_entities_router()
+                + Self::get_rule_quality_router()
+                + Self::list_silences_router();
+            if allow_writes {
+                router = router + Self::create_silence_router() + Self::post_disposition_router();
+            }
+        }
+        router
     }
 }
 
@@ -156,14 +254,26 @@ impl ServerHandler for RsigmaMcp {
         info.server_info = Implementation::from_build_env();
         info.server_info.name = "rsigma-mcp".to_string();
         info.server_info.version = env!("CARGO_PKG_VERSION").to_string();
-        info.instructions = Some(
+        let mut instructions = String::from(
             "Sigma detection-rule toolchain: parse, parse_condition, lint, validate, evaluate, \
              convert, tune, test exemplars, fix, list fields, resolve pipelines, and author ADS \
              detection-strategy metadata. Every tool accepts inline content (e.g. `yaml`) or a \
              file `path`. Resources expose the lint catalogue, the ADS section catalogue, and \
-             modifier / MITRE reference data."
-                .to_string(),
+             modifier / MITRE reference data.",
         );
+        if self.daemon().is_some() {
+            instructions.push_str(
+                " A daemon URL is configured, so operate tools are available: list_incidents, \
+                 get_incident, get_incident_bundle, list_risk_entities, get_rule_quality, and \
+                 list_silences.",
+            );
+            if self.state.allow_operate_writes {
+                instructions.push_str(
+                    " Write tools are also enabled: create_silence and post_disposition.",
+                );
+            }
+        }
+        info.instructions = Some(instructions);
         info
     }
 
@@ -237,6 +347,23 @@ pub(crate) fn handler() -> RsigmaMcp {
 #[cfg(test)]
 pub(crate) fn delegating_handler(root: Option<PathBuf>) -> RsigmaMcp {
     RsigmaMcp::new(root, LintConfig::default(), true)
+}
+
+/// A handler pointed at `daemon_url`, with write tools gated by `allow_writes`.
+#[cfg(test)]
+pub(crate) fn operate_handler(daemon_url: &str, allow_writes: bool) -> RsigmaMcp {
+    RsigmaMcp::with_daemon(
+        None,
+        LintConfig::default(),
+        false,
+        DaemonConnect {
+            url: daemon_url.into(),
+            ca_pem: None,
+            token: None,
+        },
+        allow_writes,
+    )
+    .expect("test daemon client")
 }
 
 /// Run a future on a fresh current-thread runtime (the per-tool tests are
@@ -381,6 +508,24 @@ mod tests {
         );
         let cat = to_value(&catalogue());
         assert_eq!(cat.as_array().unwrap().len(), 88);
+    }
+
+    #[test]
+    fn with_daemon_stores_client_and_write_gate() {
+        let writes = operate_handler("http://127.0.0.1:9090", true);
+        assert_eq!(
+            writes.daemon().map(DaemonClient::base_url),
+            Some("http://127.0.0.1:9090")
+        );
+        assert!(writes.allow_operate_writes());
+
+        let reads_only = operate_handler("http://127.0.0.1:9090", false);
+        assert!(reads_only.daemon().is_some());
+        assert!(!reads_only.allow_operate_writes());
+
+        let engineer = handler();
+        assert!(engineer.daemon().is_none());
+        assert!(!engineer.allow_operate_writes());
     }
 
     #[test]
