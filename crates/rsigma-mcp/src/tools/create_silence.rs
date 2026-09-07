@@ -134,7 +134,7 @@ mod tests {
     use axum::extract::Json as AxumJson;
     use axum::http::StatusCode;
     use axum::response::{IntoResponse, Response};
-    use axum::routing::{get, post};
+    use axum::routing::get;
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone, Default)]

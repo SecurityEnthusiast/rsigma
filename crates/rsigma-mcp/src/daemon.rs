@@ -199,11 +199,11 @@ async fn encode_response(method: Method, path: &str, response: reqwest::Response
         "error": error,
         "hint": hint,
     });
-    if let Some(Value::Object(extra)) = parsed {
-        if let Some(obj) = out.as_object_mut() {
-            for (key, value) in extra {
-                obj.entry(key).or_insert(value);
-            }
+    if let Some(Value::Object(extra)) = parsed
+        && let Some(obj) = out.as_object_mut()
+    {
+        for (key, value) in extra {
+            obj.entry(key).or_insert(value);
         }
     }
     out
