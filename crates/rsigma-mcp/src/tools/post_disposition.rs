@@ -158,7 +158,9 @@ mod tests {
             assert_eq!(value["ok"], true);
             assert_eq!(value["accepted"], 1);
             assert_eq!(value["echo_analyst"], "rsigma-mcp");
-            insta::assert_json_snapshot!("post_disposition", value);
+            insta::with_settings!({sort_maps => true}, {
+                insta::assert_json_snapshot!("post_disposition", value);
+            });
         });
     }
 

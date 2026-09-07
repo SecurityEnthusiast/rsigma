@@ -218,7 +218,9 @@ mod tests {
             let stored = store.0.lock().expect("store")[0].clone();
             assert!(stored["ends_at"].as_str().unwrap().contains('T'));
             assert_eq!(stored["created_by"], "rsigma-mcp");
-            insta::assert_json_snapshot!("create_silence", value);
+            insta::with_settings!({sort_maps => true}, {
+                insta::assert_json_snapshot!("create_silence", value);
+            });
         });
     }
 

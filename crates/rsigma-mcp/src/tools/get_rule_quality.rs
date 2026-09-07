@@ -88,7 +88,9 @@ mod tests {
                 .await;
             assert_eq!(all["ok"], true);
             assert_eq!(all["rules"].as_array().unwrap().len(), 2);
-            insta::assert_json_snapshot!("get_rule_quality", all);
+            insta::with_settings!({sort_maps => true}, {
+                insta::assert_json_snapshot!("get_rule_quality", all);
+            });
 
             let one = handler
                 .run_get_rule_quality(GetRuleQualityInput {

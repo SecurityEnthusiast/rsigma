@@ -115,7 +115,9 @@ mod tests {
                 .unwrap();
             assert_eq!(value["ok"], true);
             assert_eq!(value["count"], 3);
-            insta::assert_json_snapshot!("list_incidents", value);
+            insta::with_settings!({sort_maps => true}, {
+                insta::assert_json_snapshot!("list_incidents", value);
+            });
         });
     }
 

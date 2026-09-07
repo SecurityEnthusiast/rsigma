@@ -105,7 +105,9 @@ mod tests {
                 .unwrap();
             assert_eq!(value["ok"], true);
             assert_eq!(value["incident_id"], "inc-1");
-            insta::assert_json_snapshot!("get_incident_bundle", value);
+            insta::with_settings!({sort_maps => true}, {
+                insta::assert_json_snapshot!("get_incident_bundle", value);
+            });
         });
     }
 
