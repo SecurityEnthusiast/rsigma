@@ -46,7 +46,7 @@ impl CoverageReport {
     /// runtime-only and is threaded through [`CoverageReport::exit_code`].
     pub(crate) fn build(
         coverage: &Coverage,
-        atomics: Option<CrossRef>,
+        atomics: Option<&CrossRef>,
         baseline: Option<CrossRef>,
         targets: Option<Targets>,
     ) -> Self {
@@ -76,7 +76,7 @@ impl CoverageReport {
             summary,
             techniques,
             untagged_rules: coverage.untagged_rules.clone(),
-            atomics: atomics.map(|a| build_atomics_gap(coverage, &a)),
+            atomics: atomics.map(|a| build_atomics_gap(coverage, a)),
             baseline: baseline.map(|b| build_baseline_gap(coverage, &b)),
             targets: targets.map(|t| build_target_gap(coverage, &t)),
         }
@@ -385,7 +385,7 @@ detection: {sel: {Image|endswith: '\x.exe'}, condition: sel}
         let cov = coverage_from(RULES);
         // Atomics exist for T1059 (parent of a covered sub) and T1566 (no rule).
         let atomics = cross_ref(&["T1059", "T1566"]);
-        let report = CoverageReport::build(&cov, Some(atomics), None, None);
+        let report = CoverageReport::build(&cov, Some(&atomics), None, None);
         let a = report.atomics.as_ref().unwrap();
         // T1059 is covered via the sub-technique rule; T1566 is not.
         assert_eq!(a.covered, 1);

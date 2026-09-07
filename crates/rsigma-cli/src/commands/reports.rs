@@ -194,6 +194,45 @@ pub(crate) struct TargetGap {
     pub(crate) covered_via_subtechnique: Vec<String>,
 }
 
+/// Summary of an Atomic Red Team test plan emitted by `rule coverage`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct AtomicsPlanSummary {
+    pub(crate) atomics_total: usize,
+    pub(crate) uncovered_testable: usize,
+    pub(crate) techniques_in_plan: usize,
+    pub(crate) tests_in_plan: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) platforms: Vec<String>,
+}
+
+/// One atomic test in an [`AtomicsPlan`] technique entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct AtomicsPlanTest {
+    pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) guid: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) platforms: Vec<String>,
+    pub(crate) invocation: String,
+}
+
+/// One uncovered technique in an [`AtomicsPlan`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct AtomicsPlanTechnique {
+    pub(crate) technique: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) tactics: Vec<String>,
+    pub(crate) tests: Vec<AtomicsPlanTest>,
+    pub(crate) invocation: String,
+}
+
+/// Runnable Atomic Red Team test plan for uncovered-but-testable techniques.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct AtomicsPlan {
+    pub(crate) summary: AtomicsPlanSummary,
+    pub(crate) techniques: Vec<AtomicsPlanTechnique>,
+}
+
 /// The full `rule coverage` report document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CoverageReport {

@@ -78,6 +78,19 @@ T1486        # data encrypted for impact
 
 The report's `targets.uncovered` is the list to work down.
 
+## From gaps to simulations
+
+`atomics_without_rule` is the set of techniques you could validate with Atomic Red Team today but have no detection for. `--emit atomics-plan` turns that list into a file: per uncovered technique, the test names, `auto_generated_guid`s, supported platforms, and ready-to-paste `Invoke-AtomicTest` invocations.
+
+```bash
+rsigma rule coverage -r rules/ --atomics --emit atomics-plan --platforms windows \
+    --output-format tsv > atomics-plan.tsv
+```
+
+rsigma does not run the tests. Attack simulation stays [Atomic Red Team](https://github.com/redcanaryco/atomic-red-team)'s job: take the `INVOCATION` column into a lab, capture the resulting telemetry, and feed it back as a [`rule backtest`](../cli/rule/backtest.md) corpus or as [`rsigma.exemplars`](../cli/rule/test.md) on the new rules. The next `rule coverage` run then shows those techniques as covered.
+
+`--fail-on-gaps` keeps its usual meaning under `--emit atomics-plan`: a non-empty uncovered-but-testable set still exits `1`.
+
 ## Gate CI on coverage
 
 `--fail-on-gaps` turns any requested cross-reference's uncovered set into a non-zero exit, so coverage becomes a CI gate. The most common use is a target list that must stay fully covered:

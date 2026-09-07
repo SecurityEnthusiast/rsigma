@@ -1,0 +1,61 @@
+{
+    "summary": {
+        "atomics_total": 5,
+        "uncovered_testable": 2,
+        "techniques_in_plan": 2,
+        "tests_in_plan": 4
+    },
+    "techniques": [
+        {
+            "technique": "T1003",
+            "tactics": [
+                "credential-access"
+            ],
+            "tests": [
+                {
+                    "name": "Dump LSASS",
+                    "guid": "33333333-3333-3333-3333-333333333333",
+                    "platforms": [
+                        "windows"
+                    ],
+                    "invocation": "Invoke-AtomicTest T1003 -TestGuids 33333333-3333-3333-3333-333333333333"
+                }
+            ],
+            "invocation": "Invoke-AtomicTest T1003"
+        },
+        {
+            "technique": "T1566",
+            "tactics": [
+                "defense-evasion",
+                "execution"
+            ],
+            "tests": [
+                {
+                    "name": "Spearphishing Attachment",
+                    "guid": "11111111-1111-1111-1111-111111111111",
+                    "platforms": [
+                        "windows"
+                    ],
+                    "invocation": "Invoke-AtomicTest T1566 -TestGuids 11111111-1111-1111-1111-111111111111"
+                },
+                {
+                    "name": "Phishing via curl",
+                    "guid": "22222222-2222-2222-2222-222222222222",
+                    "platforms": [
+                        "linux",
+                        "macos"
+                    ],
+                    "invocation": "Invoke-AtomicTest T1566 -TestGuids 22222222-2222-2222-2222-222222222222"
+                },
+                {
+                    "name": "GUID-less phishing",
+                    "platforms": [
+                        "macos"
+                    ],
+                    "invocation": "Invoke-AtomicTest T1566"
+                }
+            ],
+            "invocation": "Invoke-AtomicTest T1566"
+        }
+    ]
+}
