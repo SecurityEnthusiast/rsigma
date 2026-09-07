@@ -82,7 +82,7 @@ flowchart TD
     subgraph rsigma-mcp
         direction TB
         MCPSERVE["rsigma mcp serve<br/>stdio · Streamable HTTP (bearer auth · TLS*)"]
-        MCPSERVE --> MCPH["RsigmaMcp handler<br/>14 tools: parse_rule · parse_condition · lint_rules<br/>validate_rules · evaluate_events · convert_rules<br/>list_backends · list_fields · resolve_pipeline<br/>list_builtin_pipelines · fix_rules · author_ads<br/>reverse_convert · tune_rules<br/>4 resources: lint catalogue · ADS schema · modifiers · MITRE tactics"]
+        MCPSERVE --> MCPH["RsigmaMcp handler<br/>15 Engineer tools: parse_rule · parse_condition · lint_rules<br/>validate_rules · evaluate_events · convert_rules<br/>list_backends · list_fields · resolve_pipeline<br/>list_builtin_pipelines · fix_rules · author_ads<br/>reverse_convert · tune_rules · test_exemplars<br/>+ optional Operate tools (--daemon-url)<br/>4 resources: lint catalogue · ADS schema · modifiers · MITRE tactics"]
     end
 
     YAML -->|"Raw YAML Value"| SERDE
@@ -183,7 +183,7 @@ PostgreSQL/TimescaleDB, LynxDB, and Fibratus (rule YAML for Windows EDR sensors)
 
 ### Plus: MCP
 
-`rsigma-mcp` exposes the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio, and over Streamable HTTP (with bearer-token auth) behind the `http` feature. TLS for the HTTP listener is provided by `rsigma-cli` when built with `daemon-tls` (`--tls-cert` / `--tls-key` on `mcp serve`). The `RsigmaMcp` handler wraps `rsigma-parser`, `rsigma-eval`, `rsigma-convert`, and `rsigma-runtime` behind 14 tools (parse, lint, fix, validate, evaluate, convert, reverse-convert, tune, list backends and fields, resolve and list pipelines, and author ADS metadata) and 4 resources (the lint catalogue, the ADS schema, the modifier reference, and MITRE tactics), returning structured JSON. It is driven by `rsigma mcp serve`. See the [MCP server guide](../guide/mcp-server.md).
+`rsigma-mcp` exposes the toolchain to MCP-aware agents (Cursor, Claude Code, ...) over stdio, and over Streamable HTTP (with bearer-token auth) behind the `http` feature. TLS for the HTTP listener is provided by `rsigma-cli` when built with `daemon-tls` (`--tls-cert` / `--tls-key` on `mcp serve`). The `RsigmaMcp` handler wraps `rsigma-parser`, `rsigma-eval`, `rsigma-convert`, and `rsigma-runtime` behind 15 Engineer-cycle tools (parse, lint, fix, validate, evaluate, convert, reverse-convert, tune, test exemplars, list backends and fields, resolve and list pipelines, and author ADS metadata) and 4 resources (the lint catalogue, the ADS schema, the modifier reference, and MITRE tactics), returning structured JSON. Point `--daemon-url` at a running daemon to add the Operate-cycle tools (incidents, risk, silences, dispositions); `--allow-operate-writes` is required for the two mutating tools. It is driven by `rsigma mcp serve`. See the [MCP server guide](../guide/mcp-server.md).
 
 ## Data flow
 

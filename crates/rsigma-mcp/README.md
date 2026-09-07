@@ -15,13 +15,25 @@ rsigma mcp serve --rules-dir /path/to/rules
 To embed the handler in your own binary:
 
 ```rust,no_run
-use rsigma_mcp::RsigmaMcp;
+use rsigma_mcp::{DaemonConnect, RsigmaMcp};
 use rsigma_parser::LintConfig;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // root, lint config, allow sigma-cli delegation in convert_rules
     let handler = RsigmaMcp::new(None, LintConfig::default(), false);
+    // Or attach a daemon so operate tools register:
+    let _operate = RsigmaMcp::with_daemon(
+        None,
+        LintConfig::default(),
+        false,
+        DaemonConnect {
+            url: "http://127.0.0.1:9090".into(),
+            ca_pem: None,
+            token: None,
+        },
+        false,
+    )?;
     rsigma_mcp::serve_stdio(handler).await
 }
 ```
@@ -45,8 +57,16 @@ async fn main() -> anyhow::Result<()> {
 | `reverse_convert` | Reverse-convert a SIEM query (`dialect: lucene` today) into a draft Sigma rule (YAML); takes the metadata and logsource a query cannot carry as parameters. |
 | `tune_rules` | Propose a verified Sigma filter from inline false-positive and true-positive event arrays; path inputs and pipeline files are confined to `--rules-dir`. |
 | `test_exemplars` | Replay embedded `rsigma.exemplars` and return the shared pass/fail report; `path` is confined to `--rules-dir`. |
+| `list_incidents` | List open incidents from a configured daemon (`--daemon-url`). |
+| `get_incident` | Fetch one open incident by id. |
+| `get_incident_bundle` | Fetch the evidence bundle for one incident. |
+| `list_risk_entities` | List open risk entities. |
+| `get_rule_quality` | Fetch the per-rule quality view. |
+| `list_silences` | List operator silences. |
+| `create_silence` | Create a TTL-bounded silence (`--allow-operate-writes`). |
+| `post_disposition` | Record an analyst verdict (`--allow-operate-writes`). |
 
-Every tool accepts inline content (`yaml`/`condition`/`events`) xor a file `path`, and returns structured JSON. Stdout is reserved for the MCP transport; diagnostics go to stderr.
+Engineer-cycle tools always register. Operate-cycle tools appear in `tools/list` only when a daemon URL is configured; the two mutating tools also require `--allow-operate-writes`. Every Engineer tool accepts inline content (`yaml`/`condition`/`events`) xor a file `path`, and returns structured JSON. Stdout is reserved for the MCP transport; diagnostics go to stderr.
 
 ## Resources
 
@@ -58,6 +78,7 @@ Four read-only resources expose reference data: `rsigma://lint/catalogue` (the 8
 - `RsigmaMcp` is the cloneable handler; the tool methods are thin wrappers over the underlying rsigma crates.
 - The CLI owns the tokio runtime entry point (`serve_stdio`), mirroring how the daemon is wired.
 - sigma-cli delegation is opt-in (`--allow-sigma-cli`) and hardened: `path` and file-based pipeline inputs are confined to `--rules-dir` when set, inline YAML is staged to a temp file, the subprocess is killed after 60s, and at most two delegations run concurrently.
+- Operate-cycle tools are opt-in (`--daemon-url`, plus `--allow-operate-writes` for mutations). The daemon token is flag/env-only (`--daemon-token` / `RSIGMA_MCP_DAEMON_TOKEN`).
 
 ## Smoke test
 
