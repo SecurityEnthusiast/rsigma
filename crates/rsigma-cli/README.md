@@ -899,6 +899,8 @@ Reads the `attack.*` tags off every detection and correlation rule, exports an A
 | `--baseline` | path/URL | none | Baseline Navigator layer (bare flag = SigmaHQ heatmap) (or `coverage.baseline`) |
 | `--targets` | path | none | Target technique list, one ID per line (or `coverage.targets`) |
 | `--fail-on-gaps` | flag | off | Exit `1` when a requested cross-reference reports uncovered techniques (or `coverage.fail_on_gaps`) |
+| `--emit` | `report` / `atomics-plan` | `report` | `report` is the coverage document. `atomics-plan` emits `Invoke-AtomicTest` invocations for uncovered-but-testable techniques (requires `--atomics`) |
+| `--platforms` | list | none | Comma-separated platform filter for `--emit atomics-plan` (`windows,linux,macos,...`) |
 
 ```bash
 # Export a Navigator heatmap of the ruleset
@@ -906,6 +908,9 @@ rsigma rule coverage -r rules/ --navigator coverage.json
 
 # Find techniques that have an Atomic Red Team test but no rule
 rsigma rule coverage -r rules/ --atomics --output-format json | jq '.atomics.atomics_without_rule'
+
+# Emit ready-to-paste Invoke-AtomicTest invocations for those gaps
+rsigma rule coverage -r rules/ --atomics --emit atomics-plan --platforms windows --output-format tsv
 
 # Gate CI on a target technique list
 rsigma rule coverage -r rules/ --targets threat-model.txt --fail-on-gaps
