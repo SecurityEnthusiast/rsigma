@@ -206,13 +206,27 @@ class HttpClient:
             text=True,
         )
         for _ in range(50):
+            if self.proc.poll() is not None:
+                break
             with socket.socket() as s:
                 s.settimeout(0.2)
                 if s.connect_ex((host, port)) == 0:
                     break
             time.sleep(0.1)
         else:
+            self._dump_stderr()
             raise RuntimeError("server never bound the HTTP port")
+        if self.proc.poll() is not None:
+            self._dump_stderr()
+            raise RuntimeError(f"server exited with {self.proc.returncode} before binding")
+
+    def _dump_stderr(self):
+        self._stderr.flush()
+        try:
+            with open(self._stderr.name) as f:
+                sys.stderr.write("---- server stderr ----\n" + f.read())
+        except OSError:
+            pass
 
     @staticmethod
     def _parse(ctype, raw):
@@ -326,7 +340,10 @@ def main():
     ap = argparse.ArgumentParser(description="Smoke-test rsigma mcp serve.")
     ap.add_argument("--http", action="store_true", help="use the Streamable HTTP transport")
     ap.add_argument("--bin", default="./target/release/rsigma", help="path to the rsigma binary")
-    ap.add_argument("--port", type=int, default=39517, help="HTTP port (--http only)")
+    # Keep the default below the Linux (32768-60999) and macOS (49152-65535)
+    # ephemeral ranges: an outbound connection on a busy CI runner can hold an
+    # ephemeral port exactly when the server tries to bind it.
+    ap.add_argument("--port", type=int, default=29517, help="HTTP port (--http only)")
     args = ap.parse_args()
 
     passed = True
