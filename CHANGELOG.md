@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Operate-cycle MCP tools
+### Operate-cycle MCP tools (#481)
 
 `rsigma mcp serve --daemon-url` registers six read-only tools against a running daemon's control-plane API (`list_incidents`, `get_incident`, `get_incident_bundle`, `list_risk_entities`, `get_rule_quality`, `list_silences`). `--allow-operate-writes` adds `create_silence` and `post_disposition`. The daemon token is flag/env-only (`--daemon-token` / `RSIGMA_MCP_DAEMON_TOKEN`). Unix-socket daemon URLs are unsupported.
 
