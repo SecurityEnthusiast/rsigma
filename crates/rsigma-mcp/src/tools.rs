@@ -37,6 +37,7 @@ use shared::to_value;
 
 mod author_ads;
 mod convert_rules;
+mod create_silence;
 mod evaluate_events;
 mod fix_rules;
 mod get_incident;
@@ -51,6 +52,7 @@ mod list_risk_entities;
 mod list_silences;
 mod parse_condition;
 mod parse_rule;
+mod post_disposition;
 mod resolve_pipeline;
 mod reverse;
 mod shared;
@@ -78,7 +80,6 @@ struct State {
     daemon: Option<DaemonClient>,
     /// Whether the two mutating operate tools register. Ignored when `daemon`
     /// is `None`.
-    #[allow(dead_code)]
     allow_operate_writes: bool,
 }
 
@@ -200,7 +201,7 @@ impl RsigmaMcp {
     /// Each submodule contributes a `*_router()` built by `#[tool_router]`;
     /// [`ToolRouter`] implements `Add`, so summing them yields a router holding
     /// the Engineer-cycle tools plus, when configured, the operate tools.
-    fn tool_router(has_daemon: bool, _allow_writes: bool) -> ToolRouter<Self> {
+    fn tool_router(has_daemon: bool, allow_writes: bool) -> ToolRouter<Self> {
         let mut router = Self::parse_rule_router()
             + Self::parse_condition_router()
             + Self::lint_rules_router()
@@ -224,6 +225,9 @@ impl RsigmaMcp {
                 + Self::list_risk_entities_router()
                 + Self::get_rule_quality_router()
                 + Self::list_silences_router();
+            if allow_writes {
+                router = router + Self::create_silence_router() + Self::post_disposition_router();
+            }
         }
         router
     }
@@ -263,6 +267,11 @@ impl ServerHandler for RsigmaMcp {
                  get_incident, get_incident_bundle, list_risk_entities, get_rule_quality, and \
                  list_silences.",
             );
+            if self.state.allow_operate_writes {
+                instructions.push_str(
+                    " Write tools are also enabled: create_silence and post_disposition.",
+                );
+            }
         }
         info.instructions = Some(instructions);
         info

@@ -1,0 +1,9 @@
+---
+source: crates/rsigma-mcp/src/tools/create_silence.rs
+expression: value
+---
+{
+  "id": "sil-1",
+  "ok": true,
+  "status": "created"
+}

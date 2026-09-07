@@ -52,7 +52,7 @@ async fn connect_handler(
     (server, client)
 }
 
-fn operate_handler() -> RsigmaMcp {
+fn operate_handler(allow_writes: bool) -> RsigmaMcp {
     RsigmaMcp::with_daemon(
         None,
         LintConfig::default(),
@@ -62,7 +62,7 @@ fn operate_handler() -> RsigmaMcp {
             ca_pem: None,
             token: None,
         },
-        false,
+        allow_writes,
     )
     .expect("operate handler")
 }
@@ -121,7 +121,7 @@ async fn tools_list_exposes_all_core_tools() {
 
 #[tokio::test]
 async fn tools_list_gains_operate_reads_when_daemon_url_is_set() {
-    let (server, client) = connect_handler(operate_handler()).await;
+    let (server, client) = connect_handler(operate_handler(false)).await;
     let tools = client.list_all_tools().await.expect("list tools");
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
     for expected in [
@@ -147,6 +147,23 @@ async fn tools_list_gains_operate_reads_when_daemon_url_is_set() {
             .iter()
             .any(|n| n == "create_silence" || n == "post_disposition"),
         "write tools must stay gated off: {names:?}"
+    );
+
+    client.cancel().await.ok();
+    server.cancel().await.ok();
+}
+
+#[tokio::test]
+async fn tools_list_gains_write_tools_only_when_gated_on() {
+    let (server, client) = connect_handler(operate_handler(true)).await;
+    let tools = client.list_all_tools().await.expect("list tools");
+    let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+    assert!(names.contains(&"create_silence".to_string()));
+    assert!(names.contains(&"post_disposition".to_string()));
+    assert_eq!(
+        tools.len(),
+        23,
+        "expected 15 engineer tools plus 6 reads plus 2 writes, got {names:?}"
     );
 
     client.cancel().await.ok();

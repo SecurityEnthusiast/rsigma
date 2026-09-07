@@ -1,0 +1,12 @@
+---
+source: crates/rsigma-mcp/src/tools/post_disposition.rs
+expression: value
+---
+{
+  "accepted": 1,
+  "duplicate": 0,
+  "echo_analyst": "rsigma-mcp",
+  "echo_fingerprint": "fp1",
+  "ok": true,
+  "rejected": 0
+}
