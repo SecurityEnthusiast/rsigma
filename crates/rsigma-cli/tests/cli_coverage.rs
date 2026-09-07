@@ -13,6 +13,8 @@ use predicates::prelude::*;
 
 const REPORT_GOLDEN: &str = include_str!("golden/coverage_report.json");
 const LAYER_GOLDEN: &str = include_str!("golden/coverage_layer.json");
+const PLAN_JSON_GOLDEN: &str = include_str!("golden/coverage_atomics_plan.json");
+const PLAN_TABLE_GOLDEN: &str = include_str!("golden/coverage_atomics_plan.txt");
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/coverage")
@@ -305,6 +307,260 @@ fn coverage_reads_rules_from_config() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Coverage summary"));
+}
+
+#[test]
+fn coverage_atomics_plan_json_matches_golden() {
+    let output = rsigma()
+        .args([
+            "rule",
+            "coverage",
+            "--rules",
+            &fixture("rules.yml"),
+            "--atomics",
+            &fixture("atomics_plan.yaml"),
+            "--emit",
+            "atomics-plan",
+            "--output-format",
+            "json",
+            "--no-stats",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let actual: serde_json::Value = serde_json::from_slice(&output).expect("stdout is valid JSON");
+    let expected: serde_json::Value =
+        serde_json::from_str(PLAN_JSON_GOLDEN).expect("golden is valid JSON");
+    assert_eq!(actual, expected, "atomics plan JSON drifted from golden");
+}
+
+#[test]
+fn coverage_atomics_plan_table_matches_golden() {
+    let output = rsigma()
+        .args([
+            "rule",
+            "coverage",
+            "--rules",
+            &fixture("rules.yml"),
+            "--atomics",
+            &fixture("atomics_plan.yaml"),
+            "--emit",
+            "atomics-plan",
+            "--output-format",
+            "table",
+            "--color",
+            "never",
+            "--quiet",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let actual = String::from_utf8(output).unwrap();
+    assert_eq!(
+        normalize_eol(&actual).trim_end(),
+        normalize_eol(PLAN_TABLE_GOLDEN).trim_end(),
+        "atomics plan table drifted from golden"
+    );
+}
+
+#[test]
+fn coverage_atomics_plan_tsv_is_one_row_per_test() {
+    rsigma()
+        .args([
+            "rule",
+            "coverage",
+            "--rules",
+            &fixture("rules.yml"),
+            "--atomics",
+            &fixture("atomics_plan.yaml"),
+            "--emit",
+            "atomics-plan",
+            "--output-format",
+            "tsv",
+            "--no-stats",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with(
+            "TECHNIQUE\tTEST\tGUID\tPLATFORMS\tINVOCATION",
+        ))
+        .stdout(predicate::str::contains(
+            "T1003\tDump LSASS\t33333333-3333-3333-3333-333333333333\twindows\tInvoke-AtomicTest T1003 -TestGuids 33333333-3333-3333-3333-333333333333",
+        ))
+        .stdout(predicate::str::contains(
+            "T1566\tGUID-less phishing\t-\tmacos\tInvoke-AtomicTest T1566",
+        ));
+}
+
+#[test]
+fn coverage_atomics_plan_platforms_narrows_tests() {
+    let output = rsigma()
+        .args([
+            "rule",
+            "coverage",
+            "--rules",
+            &fixture("rules.yml"),
+            "--atomics",
+            &fixture("atomics_plan.yaml"),
+            "--emit",
+            "atomics-plan",
+            "--platforms",
+            "linux",
+            "--output-format",
+            "json",
+            "--no-stats",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(v["summary"]["uncovered_testable"], 2);
+    assert_eq!(v["summary"]["techniques_in_plan"], 1);
+    assert_eq!(v["summary"]["tests_in_plan"], 1);
+    assert_eq!(v["summary"]["platforms"][0], "linux");
+    assert_eq!(v["techniques"][0]["technique"], "T1566");
+    assert_eq!(v["techniques"][0]["tests"][0]["name"], "Phishing via curl");
+}
+
+#[test]
+fn coverage_atomics_plan_without_atomics_is_config_error() {
+    rsigma()
+        .args([
+            "rule",
+            "coverage",
+            "--rules",
+            &fixture("rules.yml"),
+            "--emit",
+            "atomics-plan",
+        ])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains(
+            "--emit atomics-plan requires --atomics",
+        ));
+}
+
+#[test]
+fn coverage_atomics_plan_flag_error_beats_bad_rules_path() {
+    // Flag validation runs before rule loading: a misconfigured emit gets the
+    // pointed config error (3), not the rules exit (2).
+    rsigma()
+        .args([
+            "rule",
+            "coverage",
+            "--rules",
+            "/no/such/rules/path.yml",
+            "--emit",
+            "atomics-plan",
+        ])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains(
+            "--emit atomics-plan requires --atomics",
+        ));
+}
+
+#[test]
+fn coverage_platforms_with_report_emit_warns_and_is_ignored() {
+    rsigma()
+        .args([
+            "rule",
+            "coverage",
+            "--rules",
+            &fixture("rules.yml"),
+            "--platforms",
+            "windows",
+            "--output-format",
+            "table",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "--platforms only applies to --emit atomics-plan",
+        ))
+        .stdout(predicate::str::contains("Coverage summary"));
+}
+
+#[test]
+fn coverage_atomics_plan_ndjson_omits_guid_when_absent() {
+    rsigma()
+        .args([
+            "rule",
+            "coverage",
+            "--rules",
+            &fixture("rules.yml"),
+            "--atomics",
+            &fixture("atomics_plan.yaml"),
+            "--emit",
+            "atomics-plan",
+            "--output-format",
+            "ndjson",
+            "--no-stats",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "{\"technique\":\"T1566\",\"test\":\"GUID-less phishing\",\"platforms\":\"macos\",\"invocation\":\"Invoke-AtomicTest T1566\"}",
+        ))
+        .stdout(predicate::str::contains(
+            "\"guid\":\"33333333-3333-3333-3333-333333333333\"",
+        ));
+}
+
+#[test]
+fn coverage_atomics_plan_reads_atomics_from_config() {
+    let cfg = temp_file(
+        ".yaml",
+        &format!("coverage:\n  atomics: {}\n", fixture("atomics_plan.yaml")),
+    );
+    rsigma()
+        .args([
+            "rule",
+            "coverage",
+            "--rules",
+            &fixture("rules.yml"),
+            "--config",
+            cfg.path().to_str().unwrap(),
+            "--emit",
+            "atomics-plan",
+            "--output-format",
+            "json",
+            "--no-stats",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"technique\":\"T1566\""));
+}
+
+#[test]
+fn coverage_fail_on_gaps_exit_parity_across_emit_modes() {
+    // T1566 is uncovered in the plan fixture; both emit modes must exit 1.
+    for emit in ["report", "atomics-plan"] {
+        rsigma()
+            .args([
+                "rule",
+                "coverage",
+                "--rules",
+                &fixture("rules.yml"),
+                "--atomics",
+                &fixture("atomics_plan.yaml"),
+                "--emit",
+                emit,
+                "--fail-on-gaps",
+                "--output-format",
+                "json",
+                "--no-stats",
+            ])
+            .assert()
+            .code(1);
+    }
 }
 
 #[test]

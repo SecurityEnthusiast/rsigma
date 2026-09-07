@@ -12,6 +12,7 @@
 //! cross-reference supplies its own technique set).
 
 mod navigator;
+mod plan;
 mod report;
 mod sources;
 
@@ -20,10 +21,10 @@ use std::path::PathBuf;
 use std::process;
 
 use clap::parser::ValueSource;
-use clap::{ArgMatches, Args};
+use clap::{ArgMatches, Args, ValueEnum};
 use rsigma_parser::SigmaCollection;
 
-use crate::commands::reports::CoverageReport;
+use crate::commands::reports::{AtomicsPlan, CoverageReport};
 use crate::config;
 use crate::exit_code;
 use crate::output::OutputCtx;
@@ -34,6 +35,17 @@ use crate::output::OutputCtx;
 use crate::rule_meta::classify_tags;
 pub(crate) use crate::rule_meta::{normalize_technique, parent_technique};
 use sources::{DEFAULT_ATOMICS_URL, DEFAULT_BASELINE_URL};
+
+/// What `rule coverage` prints.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Default)]
+pub(crate) enum CoverageEmit {
+    /// The coverage report (inventory plus optional cross-reference gaps).
+    #[default]
+    Report,
+    /// A runnable Atomic Red Team test plan for uncovered-but-testable techniques.
+    #[value(name = "atomics-plan")]
+    AtomicsPlan,
+}
 
 /// Arguments for `rsigma rule coverage`.
 #[derive(Args, Debug)]
@@ -85,6 +97,16 @@ pub(crate) struct CoverageArgs {
     /// techniques (for CI gating).
     #[arg(long = "fail-on-gaps")]
     pub fail_on_gaps: bool,
+
+    /// What to print: the coverage report (default) or an Atomic Red Team test plan.
+    #[arg(long, value_enum, default_value_t = CoverageEmit::Report)]
+    pub emit: CoverageEmit,
+
+    /// Keep only atomic tests whose `supported_platforms` intersect this list
+    /// (`windows,linux,macos,...`). Techniques that then have no tests are
+    /// dropped. Applies to `--emit atomics-plan` only.
+    #[arg(long = "platforms", value_name = "LIST", value_delimiter = ',')]
+    pub platforms: Vec<String>,
 }
 
 /// Overlay the `coverage` config section (defaults < file < env) onto `args`
@@ -155,12 +177,24 @@ pub(crate) fn cmd_coverage(args: CoverageArgs, ctx: OutputCtx) -> i32 {
         return exit_code::CONFIG_ERROR;
     }
 
+    // Flag validation before any loading, so a misconfigured invocation gets
+    // the pointed config error rather than a rules exit.
+    if args.emit == CoverageEmit::AtomicsPlan && args.atomics.is_none() {
+        eprintln!(
+            "error: --emit atomics-plan requires --atomics (pass a local index.yaml, an atomics/ checkout, a URL, or bare --atomics for the upstream index)"
+        );
+        return exit_code::CONFIG_ERROR;
+    }
+    if args.emit == CoverageEmit::Report && !args.platforms.is_empty() && ctx.show_progress() {
+        eprintln!("warning: --platforms only applies to --emit atomics-plan; ignored");
+    }
+
     let collection = crate::load_collection_multi(&args.rules);
     let coverage = Coverage::from_collection(&collection);
 
     let atomics = match &args.atomics {
         Some(spec) => match sources::load_atomics(spec) {
-            Ok(loaded) => Some(loaded.cross_ref),
+            Ok(loaded) => Some(loaded),
             Err(e) => {
                 eprintln!("error: {e}");
                 return exit_code::CONFIG_ERROR;
@@ -204,8 +238,23 @@ pub(crate) fn cmd_coverage(args: CoverageArgs, ctx: OutputCtx) -> i32 {
         }
     }
 
-    let report = CoverageReport::build(&coverage, atomics, baseline, targets);
-    report.render(&ctx);
+    let report = CoverageReport::build(
+        &coverage,
+        atomics.as_ref().map(|a| &a.cross_ref),
+        baseline,
+        targets,
+    );
+    match args.emit {
+        CoverageEmit::Report => report.render(&ctx),
+        CoverageEmit::AtomicsPlan => {
+            let catalog = atomics
+                .as_ref()
+                .map(|a| &a.catalog)
+                .expect("atomics-plan requires --atomics, checked above");
+            let plan = AtomicsPlan::build(&coverage, catalog, &args.platforms);
+            plan.render(&ctx);
+        }
+    }
     report.exit_code(args.fail_on_gaps)
 }
 
@@ -455,5 +504,30 @@ tags: [attack.t1059.001]
         let base = partial("coverage:\n  atomics: /file/index.yaml\n");
         overlay_coverage_config(&mut args, &matches, base);
         assert_eq!(args.atomics.as_deref(), Some("/cli/index.yaml"));
+    }
+
+    #[test]
+    fn emit_defaults_to_report() {
+        let (args, _) = parse(&["coverage", "-r", "/r"]);
+        assert_eq!(args.emit, CoverageEmit::Report);
+        assert!(args.platforms.is_empty());
+    }
+
+    #[test]
+    fn emit_atomics_plan_and_platforms() {
+        let (args, _) = parse(&[
+            "coverage",
+            "-r",
+            "/r",
+            "--emit",
+            "atomics-plan",
+            "--platforms",
+            "windows,linux",
+        ]);
+        assert_eq!(args.emit, CoverageEmit::AtomicsPlan);
+        assert_eq!(
+            args.platforms,
+            vec!["windows".to_string(), "linux".to_string()]
+        );
     }
 }

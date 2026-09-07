@@ -45,7 +45,6 @@ pub(crate) struct AtomicTestMeta {
 impl AtomicTestMeta {
     /// GUID when present and non-empty. Upstream occasionally omits
     /// `auto_generated_guid`; never invent one.
-    #[allow(dead_code)] // catalog consumers read this; the id-set path does not
     pub(crate) fn guid(&self) -> Option<&str> {
         self.auto_generated_guid
             .as_deref()
@@ -70,7 +69,6 @@ pub(crate) type AtomicsCatalog = BTreeMap<String, AtomicTechniqueMeta>;
 /// the typed catalog the atomics-plan emit consumes.
 pub(crate) struct AtomicsSource {
     pub(crate) cross_ref: CrossRef,
-    #[allow(dead_code)] // catalog consumers read this; the id-set path does not
     pub(crate) catalog: AtomicsCatalog,
 }
 
@@ -189,7 +187,7 @@ struct IndexEntry {
 
 /// Parse the atomic-red-team `index.yaml`. Inner keys are technique IDs
 /// (only techniques that have atomics appear); outer keys are tactics.
-fn parse_atomics_index(raw: &str) -> Result<AtomicsSource, String> {
+pub(super) fn parse_atomics_index(raw: &str) -> Result<AtomicsSource, String> {
     let parsed: BTreeMap<String, BTreeMap<String, IndexEntry>> =
         yaml_serde::from_str(raw).map_err(|e| format!("parsing Atomic Red Team index: {e}"))?;
 
@@ -203,9 +201,7 @@ fn parse_atomics_index(raw: &str) -> Result<AtomicsSource, String> {
             if !tactic.is_empty() {
                 meta.tactics.insert(tactic.clone());
             }
-            if meta.tests.is_empty() && !entry.atomic_tests.is_empty() {
-                meta.tests = entry.atomic_tests;
-            }
+            merge_tests(&mut meta.tests, entry.atomic_tests);
         }
     }
     Ok(atomics_source(catalog))
@@ -256,13 +252,29 @@ fn walk_atomics(dir: &Path, catalog: &mut AtomicsCatalog) -> Result<(), String> 
                 .or_else(|| normalize_technique(stem));
             if let Some(id) = id {
                 let meta = catalog.entry(id).or_default();
-                if meta.tests.is_empty() && !doc.atomic_tests.is_empty() {
-                    meta.tests = doc.atomic_tests;
-                }
+                merge_tests(&mut meta.tests, doc.atomic_tests);
             }
         }
     }
     Ok(())
+}
+
+/// Dedup incoming tests onto `into` by GUID when both sides have one, else
+/// by name. A technique listed under several tactics in `index.yaml` repeats
+/// the same `atomic_tests` array; first-wins would depend on BTreeMap order
+/// and drop tests that only appear on a later tactic key.
+fn merge_tests(into: &mut Vec<AtomicTestMeta>, incoming: Vec<AtomicTestMeta>) {
+    for test in incoming {
+        let exists = into
+            .iter()
+            .any(|existing| match (existing.guid(), test.guid()) {
+                (Some(a), Some(b)) => a == b,
+                _ => !existing.name.is_empty() && existing.name == test.name,
+            });
+        if !exists {
+            into.push(test);
+        }
+    }
 }
 
 fn atomics_source(catalog: AtomicsCatalog) -> AtomicsSource {
@@ -433,6 +445,36 @@ defense-evasion:
         let empty = loaded.catalog.get("T1027").unwrap();
         assert!(empty.tests.is_empty());
         assert!(loaded.cross_ref.ids.contains("T1027"));
+    }
+
+    #[test]
+    fn merges_tests_when_a_technique_appears_under_several_tactics() {
+        // defense-evasion sorts before execution, so first-wins would keep
+        // only the single defense-evasion test and drop the extra execution one.
+        let raw = "\
+execution:
+  T1566:
+    atomic_tests:
+      - name: Spearphishing Attachment
+        auto_generated_guid: 11111111-1111-1111-1111-111111111111
+        supported_platforms: [windows]
+      - name: Phishing via curl
+        auto_generated_guid: 22222222-2222-2222-2222-222222222222
+        supported_platforms: [linux]
+defense-evasion:
+  T1566:
+    atomic_tests:
+      - name: Spearphishing Attachment
+        auto_generated_guid: 11111111-1111-1111-1111-111111111111
+        supported_platforms: [windows]
+";
+        let loaded = parse_atomics_index(raw).unwrap();
+        let phish = loaded.catalog.get("T1566").unwrap();
+        assert_eq!(phish.tests.len(), 2);
+        assert_eq!(
+            phish.tactics.iter().cloned().collect::<Vec<_>>(),
+            vec!["defense-evasion".to_string(), "execution".to_string()]
+        );
     }
 
     #[test]
