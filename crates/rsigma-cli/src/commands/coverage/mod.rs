@@ -160,7 +160,7 @@ pub(crate) fn cmd_coverage(args: CoverageArgs, ctx: OutputCtx) -> i32 {
 
     let atomics = match &args.atomics {
         Some(spec) => match sources::load_atomics(spec) {
-            Ok(c) => Some(c),
+            Ok(loaded) => Some(loaded.cross_ref),
             Err(e) => {
                 eprintln!("error: {e}");
                 return exit_code::CONFIG_ERROR;

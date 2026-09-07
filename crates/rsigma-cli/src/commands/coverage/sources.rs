@@ -4,10 +4,12 @@
 //! Each loader accepts a local path (and, for atomics/baseline, an `http(s)`
 //! URL fetched through a 7-day on-disk cache that mirrors the schema-download
 //! pattern in [`crate::commands::lint`]). All loaders normalize to a set of
-//! ATT&CK technique IDs; only technique IDs are read, so the upstream files'
-//! exact schema/version is irrelevant beyond the fields touched here.
+//! ATT&CK technique IDs. The atomics loader also retains per-technique test
+//! metadata (`name`, `auto_generated_guid`, `supported_platforms`) and, for
+//! an `index.yaml`, the outer tactic keys; unread fields are ignored, so
+//! upstream schema drift beyond those fields is non-fatal.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -27,6 +29,49 @@ pub(crate) const DEFAULT_BASELINE_URL: &str =
 /// cross-references).
 pub(crate) struct CrossRef {
     pub(crate) ids: BTreeSet<String>,
+}
+
+/// One Atomic Red Team test: the fields a caller needs to name and invoke it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub(crate) struct AtomicTestMeta {
+    #[serde(default)]
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) auto_generated_guid: Option<String>,
+    #[serde(default)]
+    pub(crate) supported_platforms: Vec<String>,
+}
+
+impl AtomicTestMeta {
+    /// GUID when present and non-empty. Upstream occasionally omits
+    /// `auto_generated_guid`; never invent one.
+    #[allow(dead_code)] // catalog consumers read this; the id-set path does not
+    pub(crate) fn guid(&self) -> Option<&str> {
+        self.auto_generated_guid
+            .as_deref()
+            .map(str::trim)
+            .filter(|g| !g.is_empty())
+    }
+}
+
+/// Per-technique Atomic Red Team catalog entry: tactic labels from the
+/// index's outer keys (empty after a directory walk) plus the typed tests.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct AtomicTechniqueMeta {
+    pub(crate) tactics: BTreeSet<String>,
+    pub(crate) tests: Vec<AtomicTestMeta>,
+}
+
+/// Technique id -> test metadata, keyed by the same normalized IDs as
+/// [`CrossRef`].
+pub(crate) type AtomicsCatalog = BTreeMap<String, AtomicTechniqueMeta>;
+
+/// Atomic Red Team load result: the id set used by the coverage report, plus
+/// the typed catalog the atomics-plan emit consumes.
+pub(crate) struct AtomicsSource {
+    pub(crate) cross_ref: CrossRef,
+    #[allow(dead_code)] // catalog consumers read this; the id-set path does not
+    pub(crate) catalog: AtomicsCatalog,
 }
 
 /// An ordered list of target technique IDs (deduplicated at load time).
@@ -119,88 +164,114 @@ fn fetch_cached(url: &str) -> Result<String, String> {
 // Atomic Red Team
 // ---------------------------------------------------------------------------
 
-/// Resolve the set of technique IDs that have Atomic Red Team tests.
+/// Resolve the Atomic Red Team technique set and the typed test catalog.
 ///
 /// A directory is treated as an atomic-red-team `atomics/` checkout and walked
-/// for per-technique YAML files; anything else is read as the `index.yaml`
-/// (local path or URL), a `tactic -> {technique_id -> entry}` map.
-pub(crate) fn load_atomics(spec: &str) -> Result<CrossRef, String> {
-    let ids = if Path::new(spec).is_dir() {
-        atomic_ids_from_dir(Path::new(spec))?
+/// for per-technique YAML files (tactics stay empty: those files have no
+/// tactic field); anything else is read as the `index.yaml` (local path or
+/// URL), a `tactic -> {technique_id -> entry}` map.
+pub(crate) fn load_atomics(spec: &str) -> Result<AtomicsSource, String> {
+    if Path::new(spec).is_dir() {
+        atomics_from_dir(Path::new(spec))
     } else {
         let raw = fetch_or_read(spec)?;
-        parse_atomics_index(&raw)?
-    };
-    Ok(CrossRef { ids })
+        parse_atomics_index(&raw)
+    }
 }
 
-/// Parse the technique IDs out of the atomic-red-team `index.yaml`. The index
-/// is a `tactic -> {technique_id -> entry}` map; the inner keys are the
-/// technique IDs (only techniques that have atomics appear).
-fn parse_atomics_index(raw: &str) -> Result<BTreeSet<String>, String> {
-    use serde::de::IgnoredAny;
-    use std::collections::BTreeMap;
+/// One index.yaml entry. Only `atomic_tests` is read; `technique` and any
+/// other sibling keys are ignored so upstream schema drift is non-fatal.
+#[derive(Deserialize, Default)]
+struct IndexEntry {
+    #[serde(default)]
+    atomic_tests: Vec<AtomicTestMeta>,
+}
 
-    let parsed: BTreeMap<String, BTreeMap<String, IgnoredAny>> =
+/// Parse the atomic-red-team `index.yaml`. Inner keys are technique IDs
+/// (only techniques that have atomics appear); outer keys are tactics.
+fn parse_atomics_index(raw: &str) -> Result<AtomicsSource, String> {
+    let parsed: BTreeMap<String, BTreeMap<String, IndexEntry>> =
         yaml_serde::from_str(raw).map_err(|e| format!("parsing Atomic Red Team index: {e}"))?;
 
-    let mut ids = BTreeSet::new();
-    for inner in parsed.values() {
-        for technique_id in inner.keys() {
-            if let Some(id) = normalize_technique(technique_id) {
-                ids.insert(id);
+    let mut catalog = AtomicsCatalog::new();
+    for (tactic, inner) in parsed {
+        for (technique_id, entry) in inner {
+            let Some(id) = normalize_technique(&technique_id) else {
+                continue;
+            };
+            let meta = catalog.entry(id).or_default();
+            if !tactic.is_empty() {
+                meta.tactics.insert(tactic.clone());
+            }
+            if meta.tests.is_empty() && !entry.atomic_tests.is_empty() {
+                meta.tests = entry.atomic_tests;
             }
         }
     }
-    Ok(ids)
+    Ok(atomics_source(catalog))
 }
 
-/// The `attack_technique` field of a per-technique atomic YAML file.
-#[derive(Deserialize)]
+/// The fields of a per-technique atomic YAML file that this loader reads.
+#[derive(Deserialize, Default)]
 struct AtomicDoc {
     attack_technique: Option<String>,
+    #[serde(default)]
+    atomic_tests: Vec<AtomicTestMeta>,
 }
 
-/// Walk an atomic-red-team `atomics/` directory, collecting technique IDs from
-/// `T*/T*.yaml` files (reading `attack_technique`, falling back to the file
-/// stem when absent).
-fn atomic_ids_from_dir(dir: &Path) -> Result<BTreeSet<String>, String> {
-    let mut ids = BTreeSet::new();
-    walk_atomics(dir, &mut ids)?;
-    if ids.is_empty() {
+/// Walk an atomic-red-team `atomics/` directory, collecting technique IDs and
+/// tests from `T*/T*.yaml` files (reading `attack_technique`, falling back to
+/// the file stem when absent). Tactics are left empty.
+fn atomics_from_dir(dir: &Path) -> Result<AtomicsSource, String> {
+    let mut catalog = AtomicsCatalog::new();
+    walk_atomics(dir, &mut catalog)?;
+    if catalog.is_empty() {
         return Err(format!(
             "no Atomic Red Team technique files found under {}",
             dir.display()
         ));
     }
-    Ok(ids)
+    Ok(atomics_source(catalog))
 }
 
-fn walk_atomics(dir: &Path, ids: &mut BTreeSet<String>) -> Result<(), String> {
+fn walk_atomics(dir: &Path, catalog: &mut AtomicsCatalog) -> Result<(), String> {
     let entries = std::fs::read_dir(dir)
         .map_err(|e| format!("could not read atomics directory {}: {e}", dir.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("could not read entry in {}: {e}", dir.display()))?;
         let path = entry.path();
         if path.is_dir() {
-            walk_atomics(&path, ids)?;
+            walk_atomics(&path, catalog)?;
         } else if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
             let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             if !stem.starts_with('T') && !stem.starts_with('t') {
                 continue;
             }
-            let id = std::fs::read_to_string(&path)
-                .ok()
-                .and_then(|raw| yaml_serde::from_str::<AtomicDoc>(&raw).ok())
-                .and_then(|doc| doc.attack_technique)
-                .and_then(|t| normalize_technique(&t))
+            let raw = std::fs::read_to_string(&path).unwrap_or_default();
+            let doc = yaml_serde::from_str::<AtomicDoc>(&raw).unwrap_or_default();
+            let id = doc
+                .attack_technique
+                .as_deref()
+                .and_then(normalize_technique)
                 .or_else(|| normalize_technique(stem));
             if let Some(id) = id {
-                ids.insert(id);
+                let meta = catalog.entry(id).or_default();
+                if meta.tests.is_empty() && !doc.atomic_tests.is_empty() {
+                    meta.tests = doc.atomic_tests;
+                }
             }
         }
     }
     Ok(())
+}
+
+fn atomics_source(catalog: AtomicsCatalog) -> AtomicsSource {
+    AtomicsSource {
+        cross_ref: CrossRef {
+            ids: catalog.keys().cloned().collect(),
+        },
+        catalog,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -296,11 +367,109 @@ defense-evasion:
   T1055:
     technique: {}
 ";
-        let ids = parse_atomics_index(raw).unwrap();
+        let loaded = parse_atomics_index(raw).unwrap();
+        let ids = &loaded.cross_ref.ids;
         assert!(ids.contains("T1059"));
         assert!(ids.contains("T1059.001"));
         assert!(ids.contains("T1055"));
         assert_eq!(ids.len(), 3);
+        assert_eq!(loaded.catalog.len(), 3);
+    }
+
+    #[test]
+    fn parses_atomics_index_tests_and_tactic_keys() {
+        let raw = "\
+execution:
+  T1059.001:
+    technique: { display_name: PowerShell }
+    atomic_tests:
+      - name: PowerShell
+        auto_generated_guid: 11111111-1111-1111-1111-111111111111
+        supported_platforms: [windows]
+        executor: { name: powershell }
+defense-evasion:
+  T1059.001:
+    technique: {}
+    atomic_tests:
+      - name: PowerShell
+        auto_generated_guid: 11111111-1111-1111-1111-111111111111
+        supported_platforms: [windows]
+  T1566:
+    technique: {}
+    atomic_tests:
+      - name: Phishing Attachment
+        auto_generated_guid: 22222222-2222-2222-2222-222222222222
+        supported_platforms: [windows, macos]
+      - name: GUID-less phishing
+        supported_platforms: [linux]
+  T1027:
+    technique: {}
+    atomic_tests: []
+";
+        let loaded = parse_atomics_index(raw).unwrap();
+        let ps = loaded.catalog.get("T1059.001").unwrap();
+        assert_eq!(
+            ps.tactics.iter().cloned().collect::<Vec<_>>(),
+            vec!["defense-evasion".to_string(), "execution".to_string()]
+        );
+        assert_eq!(ps.tests.len(), 1);
+        assert_eq!(ps.tests[0].name, "PowerShell");
+        assert_eq!(
+            ps.tests[0].guid(),
+            Some("11111111-1111-1111-1111-111111111111")
+        );
+        assert_eq!(ps.tests[0].supported_platforms, vec!["windows"]);
+
+        let phish = loaded.catalog.get("T1566").unwrap();
+        assert_eq!(
+            phish.tactics.iter().cloned().collect::<Vec<_>>(),
+            vec!["defense-evasion".to_string()]
+        );
+        assert_eq!(phish.tests.len(), 2);
+        assert_eq!(phish.tests[1].name, "GUID-less phishing");
+        assert_eq!(phish.tests[1].guid(), None);
+        assert_eq!(phish.tests[1].supported_platforms, vec!["linux"]);
+
+        let empty = loaded.catalog.get("T1027").unwrap();
+        assert!(empty.tests.is_empty());
+        assert!(loaded.cross_ref.ids.contains("T1027"));
+    }
+
+    #[test]
+    fn dir_walk_retains_tests_and_leaves_tactics_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let tech = dir.path().join("T1566");
+        std::fs::create_dir(&tech).unwrap();
+        std::fs::write(
+            tech.join("T1566.yaml"),
+            "\
+attack_technique: T1566
+display_name: Phishing
+atomic_tests:
+  - name: Spearphishing Attachment
+    auto_generated_guid: 33333333-3333-3333-3333-333333333333
+    supported_platforms: [windows]
+",
+        )
+        .unwrap();
+        // A file without atomic_tests still contributes its technique id.
+        let other = dir.path().join("T1059");
+        std::fs::create_dir(&other).unwrap();
+        std::fs::write(other.join("T1059.yaml"), "attack_technique: T1059\n").unwrap();
+
+        let loaded = atomics_from_dir(dir.path()).unwrap();
+        assert_eq!(loaded.cross_ref.ids.len(), 2);
+        let phish = loaded.catalog.get("T1566").unwrap();
+        assert!(phish.tactics.is_empty());
+        assert_eq!(phish.tests.len(), 1);
+        assert_eq!(phish.tests[0].name, "Spearphishing Attachment");
+        assert_eq!(
+            phish.tests[0].guid(),
+            Some("33333333-3333-3333-3333-333333333333")
+        );
+        let parent = loaded.catalog.get("T1059").unwrap();
+        assert!(parent.tactics.is_empty());
+        assert!(parent.tests.is_empty());
     }
 
     #[test]
