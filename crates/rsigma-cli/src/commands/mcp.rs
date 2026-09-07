@@ -41,6 +41,34 @@ pub(crate) struct McpServeArgs {
     #[arg(long = "allow-sigma-cli")]
     pub allow_sigma_cli: bool,
 
+    /// Base URL of a running rsigma daemon (`http://127.0.0.1:9090`). When
+    /// set, the operate-cycle tools (incidents, risk, silences, dispositions)
+    /// register and call this API. Unix-socket URLs are unsupported; use TCP
+    /// loopback. Config key: `mcp.daemon_url`.
+    #[arg(long = "daemon-url", value_name = "URL")]
+    pub daemon_url: Option<String>,
+
+    /// Extra root CA (PEM) for a self-signed daemon TLS listener. Config key:
+    /// `mcp.daemon_ca`.
+    #[arg(long = "daemon-ca", value_name = "PATH")]
+    pub daemon_ca: Option<PathBuf>,
+
+    /// Bearer token sent to the daemon as `Authorization: Bearer <token>`.
+    /// Also read from `RSIGMA_MCP_DAEMON_TOKEN`. Flag/env only: secrets stay
+    /// out of config files.
+    #[arg(
+        long = "daemon-token",
+        env = "RSIGMA_MCP_DAEMON_TOKEN",
+        value_name = "TOKEN"
+    )]
+    pub daemon_token: Option<String>,
+
+    /// Register the mutating operate tools (`create_silence`,
+    /// `post_disposition`). Off by default; requires `--daemon-url`. Config
+    /// key: `mcp.allow_operate_writes`.
+    #[arg(long = "allow-operate-writes")]
+    pub allow_operate_writes: bool,
+
     /// Serve over Streamable HTTP on this address (e.g. `127.0.0.1:9100`)
     /// instead of stdio. The MCP endpoint is mounted at `/mcp`.
     #[arg(long = "http", value_name = "ADDR")]
@@ -81,8 +109,8 @@ pub(crate) fn dispatch_mcp(cmd: McpCommands, ctx: crate::output::OutputCtx) {
 }
 
 /// Overlay the `mcp` config section (defaults < file < env) onto any flag the
-/// operator did not set explicitly. The auth token is intentionally excluded:
-/// secrets stay flag/env-only.
+/// operator did not set explicitly. The MCP HTTP auth token and the daemon
+/// token are intentionally excluded: secrets stay flag/env-only.
 fn apply_mcp_config(args: &mut McpServeArgs) {
     let base = crate::config::load_and_merge(None);
     let Some(mcp) = base.mcp else {
@@ -112,6 +140,17 @@ fn apply_mcp_config(args: &mut McpServeArgs) {
     {
         args.allow_sigma_cli = allow;
     }
+    if args.daemon_url.is_none() {
+        args.daemon_url = mcp.daemon_url;
+    }
+    if args.daemon_ca.is_none() {
+        args.daemon_ca = mcp.daemon_ca;
+    }
+    if !args.allow_operate_writes
+        && let Some(allow) = mcp.allow_operate_writes
+    {
+        args.allow_operate_writes = allow;
+    }
 }
 
 /// Run the MCP server. Builds a multi-thread tokio runtime (same pattern as the
@@ -130,8 +169,13 @@ pub(crate) fn cmd_mcp_serve(mut args: McpServeArgs) {
         None => LintConfig::default(),
     };
 
-    let handler =
-        rsigma_mcp::RsigmaMcp::new(args.rules_dir.clone(), lint_config, args.allow_sigma_cli);
+    let handler = match build_handler(&args, lint_config) {
+        Ok(handler) => handler,
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(exit_code::CONFIG_ERROR);
+        }
+    };
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -153,6 +197,39 @@ pub(crate) fn cmd_mcp_serve(mut args: McpServeArgs) {
         eprintln!("MCP server error: {e}");
         process::exit(exit_code::RULE_ERROR);
     }
+}
+
+/// Build the MCP handler, attaching a daemon client when `--daemon-url` is set.
+fn build_handler(
+    args: &McpServeArgs,
+    lint_config: LintConfig,
+) -> Result<rsigma_mcp::RsigmaMcp, String> {
+    let Some(url) = args.daemon_url.clone() else {
+        return Ok(rsigma_mcp::RsigmaMcp::new(
+            args.rules_dir.clone(),
+            lint_config,
+            args.allow_sigma_cli,
+        ));
+    };
+    let ca_pem = match &args.daemon_ca {
+        Some(path) => Some(
+            std::fs::read(path)
+                .map_err(|e| format!("failed to read daemon CA {}: {e}", path.display()))?,
+        ),
+        None => None,
+    };
+    rsigma_mcp::RsigmaMcp::with_daemon(
+        args.rules_dir.clone(),
+        lint_config,
+        args.allow_sigma_cli,
+        rsigma_mcp::DaemonConnect {
+            url,
+            ca_pem,
+            token: args.daemon_token.clone(),
+        },
+        args.allow_operate_writes,
+    )
+    .map_err(|e| format!("invalid daemon client configuration: {e}"))
 }
 
 /// Serve the Streamable HTTP transport (plaintext, or TLS when `daemon-tls` is
