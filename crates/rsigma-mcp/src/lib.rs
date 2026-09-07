@@ -11,11 +11,13 @@
 //! handlers are thin synchronous wrappers over the underlying rsigma crates,
 //! which keeps stdout reserved for the transport (all diagnostics go to stderr).
 
+mod daemon;
 #[cfg(feature = "http")]
 mod http;
 mod input;
 mod tools;
 
+pub use daemon::{DaemonClient, DaemonConnect, DaemonError};
 #[cfg(feature = "http")]
 pub use http::{http_router, serve_http};
 pub use tools::RsigmaMcp;
