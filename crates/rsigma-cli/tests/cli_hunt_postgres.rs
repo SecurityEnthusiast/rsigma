@@ -99,7 +99,9 @@ async fn start_postgres() -> (testcontainers::ContainerAsync<Postgres>, String) 
 }
 
 /// A plain-PostgreSQL subset of the reference schema, including a TSVECTOR
-/// column (no decoder; the hunt must skip it with a one-time warning).
+/// column (no decoder; the hunt must skip it with a one-time warning) and a
+/// NUMERIC column (a JSON number when the value fits a double exactly,
+/// otherwise the exact decimal text; 2^96 - 1 exercises the text path).
 const SECURITY_EVENTS_DDL: &str = "
 CREATE TABLE security_events (
     time TIMESTAMPTZ NOT NULL,
@@ -109,14 +111,15 @@ CREATE TABLE security_events (
     src_ip INET,
     process_command_line TEXT,
     success BOOLEAN,
+    score NUMERIC,
     metadata JSONB,
     search_vector TSVECTOR
 );
 INSERT INTO security_events VALUES
-  ('2026-07-01T10:00:00Z', 1, 'process', 2, '10.0.0.8', 'curl --insecure https://a.example', true, NULL, 'curl'::tsvector),
-  ('2026-07-01T11:00:00Z', 2, 'process', 2, '10.0.0.9', 'curl --insecure https://b.example', false, NULL, 'curl'::tsvector),
-  ('2026-07-01T12:00:00Z', 3, 'authentication', 1, '10.0.0.10', NULL, true, NULL, 'auth'::tsvector),
-  ('2026-07-05T10:00:00Z', 4, 'process', 3, '10.0.0.11', 'curl --insecure https://c.example', true, NULL, 'curl'::tsvector);
+  ('2026-07-01T10:00:00Z', 1, 'process', 2, '10.0.0.8', 'curl --insecure https://a.example', true, 99.5, NULL, 'curl'::tsvector),
+  ('2026-07-01T11:00:00Z', 2, 'process', 2, '10.0.0.9', 'curl --insecure https://b.example', false, NULL, NULL, 'curl'::tsvector),
+  ('2026-07-01T12:00:00Z', 3, 'authentication', 1, '10.0.0.10', NULL, true, 0.25, NULL, 'auth'::tsvector),
+  ('2026-07-05T10:00:00Z', 4, 'process', 3, '10.0.0.11', 'curl --insecure https://c.example', true, 79228162514264337593543950335, NULL, 'curl'::tsvector);
 ";
 
 const CURL_RULE: &str = r#"
@@ -175,6 +178,17 @@ async fn hunt_returns_matching_rows_as_ndjson() {
         assert!(event.get("metadata").is_none());
         assert!(event.get("search_vector").is_none());
     }
+    // numeric mapping: a number when it fits a double, exact text beyond.
+    let by_id = |id: i64| -> serde_json::Value {
+        lines
+            .iter()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .find(|e| e["event_id"] == id)
+            .unwrap_or_else(|| panic!("no event with event_id {id}: {stdout}"))
+    };
+    assert_eq!(by_id(1)["score"], 99.5);
+    assert!(by_id(2).get("score").is_none(), "NULL numeric is dropped");
+    assert_eq!(by_id(4)["score"], "79228162514264337593543950335");
     let stderr = String::from_utf8(out.get_output().stderr.clone()).unwrap();
     assert!(
         stderr.contains("column 'search_vector' has unmapped type 'tsvector'"),

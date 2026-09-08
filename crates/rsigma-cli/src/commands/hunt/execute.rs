@@ -226,6 +226,7 @@ fn decode_value(row: &Row, idx: usize, ty: &Type) -> SqlValue {
             SqlValue::Timestamp(v.and_utc())
         }),
         Type::JSON | Type::JSONB => decode(row, idx, ty, SqlValue::Json),
+        Type::NUMERIC => decode(row, idx, ty, numeric_value),
         Type::UUID => decode(row, idx, ty, |v: uuid::Uuid| SqlValue::Text(v.to_string())),
         Type::INET => decode(row, idx, ty, |v: std::net::IpAddr| {
             SqlValue::Text(v.to_string())
@@ -233,6 +234,18 @@ fn decode_value(row: &Row, idx: usize, ty: &Type) -> SqlValue {
         _ => SqlValue::Unmapped {
             type_name: ty.name().to_string(),
         },
+    }
+}
+
+/// `numeric` has no native JSON form: emit a JSON number when the value
+/// round-trips through a double exactly, otherwise the exact decimal text.
+/// (A `numeric` `NaN` has no rust_decimal representation; it degrades to the
+/// unmapped-column warning like any other decode failure.)
+fn numeric_value(d: rust_decimal::Decimal) -> SqlValue {
+    use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+    match d.to_f64() {
+        Some(f) if rust_decimal::Decimal::from_f64(f) == Some(d) => SqlValue::Float(f),
+        _ => SqlValue::Text(d.to_string()),
     }
 }
 
@@ -337,5 +350,34 @@ fn write_event(sink: &mut dyn Write, event: &serde_json::Value) {
     if let Err(e) = write() {
         eprintln!("failed to write hunt output: {e}");
         process::exit(exit_code::CONFIG_ERROR);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn dec(s: &str) -> rust_decimal::Decimal {
+        rust_decimal::Decimal::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn numeric_that_fits_a_double_becomes_a_number() {
+        assert_eq!(numeric_value(dec("99.5")), SqlValue::Float(99.5));
+        assert_eq!(numeric_value(dec("0.1")), SqlValue::Float(0.1));
+        assert_eq!(numeric_value(dec("-3")), SqlValue::Float(-3.0));
+        // Trailing zeros compare numerically, not by scale.
+        assert_eq!(numeric_value(dec("2.50")), SqlValue::Float(2.5));
+    }
+
+    #[test]
+    fn numeric_beyond_double_precision_becomes_exact_text() {
+        let exact = "79228162514264337593543950335"; // 2^96 - 1
+        assert_eq!(numeric_value(dec(exact)), SqlValue::Text(exact.to_string()));
+        assert_eq!(
+            numeric_value(dec("0.12345678901234567890")),
+            SqlValue::Text("0.12345678901234567890".to_string())
+        );
     }
 }
