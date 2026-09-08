@@ -320,8 +320,10 @@ fn redacted_dsn(config: &tokio_postgres::Config) -> String {
     let user = config.get_user().unwrap_or("postgres");
     let host = match config.get_hosts().first() {
         Some(tokio_postgres::config::Host::Tcp(name)) => name.clone(),
+        // The Unix-socket variant only exists on cfg(unix) builds.
+        #[cfg(unix)]
         Some(tokio_postgres::config::Host::Unix(path)) => path.display().to_string(),
-        None => "localhost".to_string(),
+        _ => "localhost".to_string(),
     };
     let port = config.get_ports().first().copied().unwrap_or(5432);
     let db = config.get_dbname().unwrap_or(user);
