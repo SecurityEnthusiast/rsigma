@@ -23,9 +23,10 @@ use std::process;
 use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
 use commands::{
     BacktestArgs, ClassifyArgs, ConditionArgs, ConvertArgs, CoverageArgs, DiscoverArgs, DocArgs,
-    DraftArgs, EvalArgs, ExplainArgs, FieldsArgs, HygieneArgs, LintArgs, LintCounts,
+    DraftArgs, EvalArgs, ExplainArgs, FieldsArgs, HuntCommands, HygieneArgs, LintArgs, LintCounts,
     ListFormatsArgs, MigrateSourcesArgs, ParseArgs, PipelineDiffArgs, ReverseArgs, ScorecardArgs,
     StatusArgs, StdinArgs, TailArgs, TapArgs, TestArgs, TuneArgs, ValidateArgs, VisibilityArgs,
+    dispatch_hunt,
 };
 // `pipeline resolve` resolves dynamic sources, which needs the async runtime
 // (tokio) and the source resolver from rsigma-runtime. Both ship with the
@@ -141,6 +142,12 @@ enum Commands {
     Pipeline {
         #[command(subcommand)]
         cmd: PipelineCommands,
+    },
+
+    /// Hunt an archive with converted rules, streaming matches back as events
+    Hunt {
+        #[command(subcommand)]
+        cmd: HuntCommands,
     },
 
     /// Run the Model Context Protocol (MCP) server for AI agents
@@ -374,6 +381,7 @@ fn dispatch(command: Commands, matches: &ArgMatches, ctx: output::OutputCtx) {
         Commands::Rule { cmd } => dispatch_rule(cmd, matches, ctx),
         Commands::Backend { cmd } => dispatch_backend(cmd, ctx),
         Commands::Pipeline { cmd } => dispatch_pipeline(cmd, ctx),
+        Commands::Hunt { cmd } => dispatch_hunt(cmd, ctx),
         #[cfg(feature = "mcp")]
         Commands::Mcp { cmd } => dispatch_mcp(cmd, ctx),
         Commands::Config { cmd } => config::commands::dispatch(cmd, ctx),

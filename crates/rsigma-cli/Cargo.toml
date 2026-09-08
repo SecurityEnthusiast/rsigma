@@ -34,6 +34,10 @@ logfmt = ["rsigma-runtime/logfmt"]
 cef = ["rsigma-runtime/cef"]
 evtx = ["rsigma-runtime/evtx"]
 daachorse-index = ["rsigma-eval/daachorse-index", "rsigma-runtime?/daachorse-index"]
+# `rsigma hunt run --emit events` executing against PostgreSQL. `--emit sql`
+# works without it; the prebuilt binaries and Docker image, built with
+# --all-features, include it.
+hunt-postgres = []
 
 [dependencies]
 rsigma-parser = { path = "../rsigma-parser", version = "0.21.0" }
