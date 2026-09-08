@@ -9,7 +9,7 @@ This page covers the production backends, their output formats and backend optio
 | You want to... | Use |
 |----------------|-----|
 | Stream live events through Sigma rules with sub-millisecond latency. | [Streaming Detection](streaming-detection.md). |
-| Run a Sigma rule across 90 days of logs already in PostgreSQL. | `backend convert -t postgres` and execute the SQL. |
+| Run a Sigma rule across 90 days of logs already in PostgreSQL. | `hunt run -t postgres` (executes read-only, streams exemplar NDJSON) or `backend convert -t postgres` and execute the SQL yourself. |
 | Build a Grafana dashboard from Sigma rules. | `backend convert -t postgres -f view` and add the views as Grafana panels. |
 | Generate a TimescaleDB continuous aggregate from a correlation rule. | `backend convert -t postgres -f continuous_aggregate`. |
 | Forward Sigma rules to LynxDB. | `backend convert -t lynxdb`. |
@@ -454,6 +454,7 @@ This avoids the impedance mismatch of running Sigma rules through pySigma at eve
 ## See also
 
 - [CLI reference: `backend convert`](../cli/backend/convert.md) for the full flag table.
+- [Hunting in the archive](hunting.md) for executing converted detection rules read-only and getting exemplar-shaped events back.
 - [Backends reference: PostgreSQL/TimescaleDB](../reference/backends/postgres.md) for every option, modifier mapping, and edge case.
 - [Backends reference: LynxDB](../reference/backends/lynxdb.md) for SPL2 specifics.
 - [Backends reference: Fibratus](../reference/backends/fibratus.md) for the coverage matrix and correlation lowering.

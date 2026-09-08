@@ -78,7 +78,20 @@ These flags work with every subcommand, mirroring how `--log-format` does, and t
 
 ## Subcommands
 
-Commands are grouped into four noun-led groups: `engine` (eval/daemon), `rule` (parse/validate/lint/fields/draft/tune/doc/test/backtest/coverage/scorecard/visibility/hygiene/condition/stdin), `backend` (convert/targets/formats), and `pipeline` (resolve).
+Commands are grouped into noun-led groups: `engine` (eval/daemon), `rule` (parse/validate/lint/fields/draft/tune/doc/test/backtest/coverage/scorecard/visibility/hygiene/condition/stdin), `backend` (convert/targets/formats), `pipeline` (resolve), and `hunt` (run).
+
+### `hunt run`: Execute converted rules against a PostgreSQL archive
+
+Convert detection rules with the shipped PostgreSQL backend, execute the query read-only against your archive, and stream matching rows back as exemplar-shaped NDJSON for `rule draft`, `rule tune`, `rule test`, and `rule backtest`. Requires the `hunt-postgres` feature for execution; `--emit sql` (review the wrapped query without connecting) works in every build.
+
+```bash
+# Review the wrapped SQL, then run the hunt read-only.
+rsigma hunt run -r rule.yml -t postgres --since 7d --emit sql
+rsigma hunt run -r rule.yml -t postgres --dsn postgres://hunter@archive/siem \
+    --since 7d -o hunted.ndjson
+```
+
+The session enforces `default_transaction_read_only` and a statement timeout; the DSN may come from `RSIGMA_HUNT_DSN` and its password is never rendered in logs or errors. Detection rules only (correlation queries return aggregates, not events); `--target postgres` is the only executable target. See the [CLI reference](https://rsigma.io/cli/hunt/run/) and the [hunting guide](https://rsigma.io/guide/hunting/).
 
 ### `config`: YAML configuration
 

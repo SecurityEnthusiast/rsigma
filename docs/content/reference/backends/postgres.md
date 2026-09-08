@@ -246,6 +246,10 @@ Both are starting points; copy and customize for your schema.
 
 Value-transformation modifiers (`base64`, `base64offset`, `wide`, `utf16`, `utf16le`, `utf16be`, `windash`) fail conversion with `UnsupportedModifier`. Preprocess those values at ingest when needed. There is no `prepared` output format today.
 
+## Executing hunts
+
+[`rsigma hunt run`](../../cli/hunt/run.md) converts detection rules with this backend's `default` format and executes the wrapped query read-only against your archive, streaming matching rows back as exemplar-shaped NDJSON. The `-O` options above (`table`, `schema`, `json_field`, `timestamp_field`) pass through unchanged; the wrapper adds `--since`/`--until` predicates on the `timestamp_field`, `ORDER BY`, and `--limit`. In JSONB mode the `json_field` column is emitted verbatim as the event; flat-column rows are reconstructed into JSON keys. Correlation rules are not huntable (aggregate rows, not events); convert them and run the SQL manually. See [Hunting in the archive](../../guide/hunting.md) for the workflow.
+
 ## See also
 
 - [Rule Conversion](../../guide/rule-conversion.md) for the workflow walkthrough.
