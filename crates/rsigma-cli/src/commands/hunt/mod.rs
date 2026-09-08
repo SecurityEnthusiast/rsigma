@@ -116,6 +116,28 @@ fn query_error_exit_code(err: &HuntQueryError) -> i32 {
     }
 }
 
+/// Parse and bound `--timeout`. The value lands in `SET statement_timeout`
+/// as an integer millisecond literal, where 0 means "no timeout at all", so
+/// sub-millisecond durations (which would truncate to the disabling 0) and
+/// values beyond the server's signed 32-bit range are rejected up front.
+/// Validated on every path, including `--emit sql`, so flag errors look the
+/// same whether or not a connection follows.
+fn parse_timeout(value: &str) -> std::time::Duration {
+    let timeout = humantime::parse_duration(value).unwrap_or_else(|_| {
+        eprintln!("invalid --timeout '{value}': expected a duration like 30s, 5m");
+        process::exit(exit_code::CONFIG_ERROR);
+    });
+    let ms = timeout.as_millis();
+    if ms == 0 || ms > i32::MAX as u128 {
+        eprintln!(
+            "invalid --timeout '{value}': must be between 1ms and {}ms",
+            i32::MAX
+        );
+        process::exit(exit_code::CONFIG_ERROR);
+    }
+    timeout
+}
+
 fn cmd_hunt_run(args: HuntRunArgs, ctx: &OutputCtx) {
     if !matches!(args.target.as_str(), "postgres" | "postgresql" | "pg") {
         eprintln!(
@@ -126,6 +148,8 @@ fn cmd_hunt_run(args: HuntRunArgs, ctx: &OutputCtx) {
         );
         process::exit(exit_code::CONFIG_ERROR);
     }
+
+    let timeout = parse_timeout(&args.timeout);
 
     let now = chrono::Utc::now();
     let parse_bound = |value: &str| {
@@ -157,7 +181,7 @@ fn cmd_hunt_run(args: HuntRunArgs, ctx: &OutputCtx) {
 
     match args.emit {
         EmitMode::Sql => emit_sql(&plan, args.output.as_deref()),
-        EmitMode::Events => run_events(args, plan, ctx),
+        EmitMode::Events => run_events(args, plan, timeout, ctx),
     }
 }
 
@@ -195,14 +219,12 @@ fn emit_sql(plan: &query::HuntPlan, output: Option<&std::path::Path>) {
 /// `--emit events`: stream matching rows as NDJSON over a read-only
 /// tokio-postgres session.
 #[cfg(feature = "hunt-postgres")]
-fn run_events(args: HuntRunArgs, plan: query::HuntPlan, ctx: &OutputCtx) {
-    let timeout = humantime::parse_duration(&args.timeout).unwrap_or_else(|_| {
-        eprintln!(
-            "invalid --timeout '{}': expected a duration like 30s, 5m",
-            args.timeout
-        );
-        process::exit(exit_code::CONFIG_ERROR);
-    });
+fn run_events(
+    args: HuntRunArgs,
+    plan: query::HuntPlan,
+    timeout: std::time::Duration,
+    ctx: &OutputCtx,
+) {
     let dsn = args.dsn.clone().unwrap_or_else(|| {
         eprintln!(
             "hunt execution needs a connection string: pass --dsn or set RSIGMA_HUNT_DSN \
@@ -216,17 +238,13 @@ fn run_events(args: HuntRunArgs, plan: query::HuntPlan, ctx: &OutputCtx) {
 /// `--emit events` without the executor compiled in: fail with a pointed
 /// message. The executor ships with the `hunt-postgres` feature.
 #[cfg(not(feature = "hunt-postgres"))]
-fn run_events(args: HuntRunArgs, plan: query::HuntPlan, _ctx: &OutputCtx) {
-    // Parsed for fail-fast validation even on the disabled path, so flag
-    // errors look identical in every build.
-    let _timeout = humantime::parse_duration(&args.timeout).unwrap_or_else(|_| {
-        eprintln!(
-            "invalid --timeout '{}': expected a duration like 30s, 5m",
-            args.timeout
-        );
-        process::exit(exit_code::CONFIG_ERROR);
-    });
-    let _ = &plan;
+fn run_events(
+    args: HuntRunArgs,
+    plan: query::HuntPlan,
+    _timeout: std::time::Duration,
+    _ctx: &OutputCtx,
+) {
+    let _ = (&args, &plan);
     eprintln!(
         "this binary was built without the 'hunt-postgres' feature; rebuild with \
          --features hunt-postgres or use a released binary. \

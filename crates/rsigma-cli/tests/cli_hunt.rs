@@ -182,6 +182,45 @@ fn invalid_time_bound_is_rejected() {
         ));
 }
 
+/// `--timeout` is validated on every path, including `--emit sql`, and a
+/// value that would render `statement_timeout = 0` (disabling the server
+/// timeout) is rejected rather than truncated.
+#[test]
+fn timeout_is_validated_even_for_emit_sql() {
+    let rule = temp_file(".yml", RULE);
+    let base = |timeout: &str| {
+        let mut cmd = rsigma();
+        cmd.args([
+            "hunt",
+            "run",
+            "-r",
+            rule.path().to_str().unwrap(),
+            "-t",
+            "postgres",
+            "--emit",
+            "sql",
+            "--timeout",
+            timeout,
+        ]);
+        cmd
+    };
+    base("never")
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains(
+            "invalid --timeout 'never': expected a duration",
+        ));
+    base("500us")
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains(
+            "invalid --timeout '500us': must be between 1ms",
+        ));
+    base("0s").assert().code(3).stderr(predicate::str::contains(
+        "invalid --timeout '0s': must be between 1ms",
+    ));
+}
+
 /// Without the `hunt-postgres` feature, `--emit events` fails with a pointed
 /// message instead of connecting.
 #[cfg(not(feature = "hunt-postgres"))]

@@ -50,7 +50,7 @@ v1 is detection-rule hunts only. Correlation rules are rejected with a pointed e
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--dsn <DSN>` | `$RSIGMA_HUNT_DSN` | PostgreSQL connection string (URL or keyword form). Required for `--emit events`. The password is never rendered in logs or errors; messages show a DSN rebuilt from the non-secret fields. `sslmode` is honored (`disable`, `prefer` with plaintext fallback, `require`); TLS uses rustls with the system root store. A dedicated read-only role is recommended but not relied upon. |
-| `--timeout <DURATION>` | `60s` | Server-side `statement_timeout` for the hunt session, rendered as an integer millisecond literal. |
+| `--timeout <DURATION>` | `60s` | Server-side `statement_timeout` for the hunt session, rendered as an integer millisecond literal. Must be between `1ms` and `2147483647ms` (a sub-millisecond value would truncate to `0`, which disables the server timeout). Validated on every path, including `--emit sql`. |
 
 ### Query shaping
 
@@ -59,7 +59,7 @@ v1 is detection-rule hunts only. Correlation rules are rejected with a pointed e
 | `-p, --pipeline <PIPELINE>` | none | Processing pipeline(s) (repeatable). Builtin names or YAML file paths, same as [`backend convert`](../backend/convert.md). |
 | `-O, --option <KEY=VALUE>` | none | Backend options (repeatable): `table`, `schema`, `json_field`, `timestamp_field`. See the [PostgreSQL backend reference](../../reference/backends/postgres.md). |
 | `--since <WHEN>` | none | Window start: an RFC 3339 instant or a duration relative to now (`30m`, `12h`, `7d`). |
-| `--until <WHEN>` | none | Window end (exclusive). Same syntax as `--since`. |
+| `--until <WHEN>` | none | Window end (exclusive). Same syntax as `--since`; a duration is relative to now, so `--until 1h` means "up to one hour ago". |
 | `--limit <N>` | `1000` | Maximum rows per rule. `0` means unbounded. Hitting the limit is reported on stderr so a truncated hunt is never mistaken for a complete one. |
 
 ### Output
