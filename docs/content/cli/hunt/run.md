@@ -67,7 +67,7 @@ v1 is detection-rule hunts only. Correlation rules are rejected with a pointed e
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--emit <MODE>` | `events` | `events` streams NDJSON; `sql` prints the wrapped queries with attribution headers and exits without connecting (works in every build, including binaries without the `hunt-postgres` feature). |
-| `-o, --output <PATH>` | stdout | Write events (or SQL) to a file instead of stdout. |
+| `-o, --output <PATH>` | stdout | Write events (or SQL) to a file instead of stdout. In events mode the file opens on the first event (or, for a successful hunt with no matches, at completion), so a hunt that fails before producing output never clobbers an existing file. |
 
 Events are always NDJSON: one raw JSON event object per line, nothing else on stdout. Per-rule row counts and the final summary (rows, elapsed, truncation) go to stderr and honor `--quiet` / `--no-stats`.
 

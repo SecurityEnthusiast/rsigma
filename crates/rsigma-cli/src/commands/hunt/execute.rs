@@ -88,7 +88,10 @@ async fn run_async(
         ctx.warn_ignored("hunt run", "hunt events are always NDJSON");
     }
 
-    let mut sink = open_sink(output);
+    // The sink opens lazily on the first event (a failed hunt never clobbers
+    // an existing output file); a successful hunt with no matches still
+    // produces its empty file at the end.
+    let mut sink: Option<Box<dyn Write>> = None;
     let started = Instant::now();
     let mut total_rows = 0usize;
     let mut any_truncated = false;
@@ -131,7 +134,10 @@ async fn run_async(
                     process::exit(exit_code::CONFIG_ERROR);
                 }
             };
-            write_event(&mut sink, &event);
+            write_event(
+                sink.get_or_insert_with(|| open_sink(output)).as_mut(),
+                &event,
+            );
             rule_rows += 1;
         }
 
@@ -149,6 +155,10 @@ async fn run_async(
                 }
             );
         }
+    }
+
+    if sink.is_none() && output.is_some() {
+        drop(open_sink(output));
     }
 
     if ctx.show_stats() {

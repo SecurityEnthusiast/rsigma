@@ -243,6 +243,58 @@ async fn since_and_limit_narrow_the_hunt() {
         .stderr(predicate::str::contains(
             "reached --limit 1 (output may be truncated)",
         ));
+
+    // A successful hunt with no matches still produces its output file,
+    // truncated to empty (the "ran, nothing matched" signal).
+    let out_file = temp_file(".ndjson", "stale content from a previous hunt\n");
+    rsigma()
+        .args([
+            "hunt",
+            "run",
+            "-r",
+            rule.path().to_str().unwrap(),
+            "-t",
+            "postgres",
+            "--dsn",
+            &dsn,
+            "--until",
+            "2020-01-01T00:00:00Z",
+            "-o",
+            out_file.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("hunted 0 row(s)"));
+    assert_eq!(std::fs::read_to_string(out_file.path()).unwrap(), "");
+}
+
+/// A hunt that fails before producing output must not clobber an existing
+/// output file: the sink opens lazily on the first event. (No container:
+/// the connection is refused.)
+#[test]
+fn failed_hunt_leaves_the_output_file_untouched() {
+    let out_file = temp_file(".ndjson", "precious results from a previous hunt\n");
+    let rule = temp_file(".yml", CURL_RULE);
+    rsigma()
+        .args([
+            "hunt",
+            "run",
+            "-r",
+            rule.path().to_str().unwrap(),
+            "-t",
+            "postgres",
+            "--dsn",
+            "postgres://hunter@127.0.0.1:9/siem?connect_timeout=3",
+            "-o",
+            out_file.path().to_str().unwrap(),
+        ])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("could not connect"));
+    assert_eq!(
+        std::fs::read_to_string(out_file.path()).unwrap(),
+        "precious results from a previous hunt\n"
+    );
 }
 
 #[tokio::test]
