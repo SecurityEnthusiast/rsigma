@@ -19,6 +19,7 @@ The crate that produces the `rsigma` binary.
 | `cef` | no | `rsigma-runtime/cef` | `--input-format cef` for ArcSight-style logs. |
 | `evtx` | no | `rsigma-runtime/evtx` (dep on the `evtx` crate) | Native `.evtx` file input via `engine eval -e @file.evtx`. See [Input Formats](../guide/input-formats.md#evtx-windows-event-log-feature-gated). |
 | `daachorse-index` | no | `rsigma-eval/daachorse-index`, optionally `rsigma-runtime/daachorse-index` | The `--cross-rule-ac` flag for very large rule sets dominated by shared positive substrings. See [Performance Tuning](../guide/performance-tuning.md#cross-rule-aho-corasick-pre-filter). |
+| `hunt-postgres` | no | `tokio-postgres`, `tokio-postgres-rustls`, `rustls-native-certs`, `tokio`, `tokio-stream` | `hunt run --emit events`: read-only hunt execution against PostgreSQL/TimescaleDB with TLS and DSN redaction. `hunt run --emit sql` works without it. See [Hunting in the archive](../guide/hunting.md). |
 
 ## `rsigma-eval`
 

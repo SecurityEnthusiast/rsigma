@@ -120,6 +120,7 @@ export default {
             { title: "ATT&CK Coverage", path: "/guide/attack-coverage" },
             { title: "Visibility and Data Sources", path: "/guide/visibility-and-data-sources" },
             { title: "Rule Conversion", path: "/guide/rule-conversion" },
+            { title: "Hunting in the Archive", path: "/guide/hunting" },
           ],
         },
         {
@@ -204,6 +205,11 @@ export default {
             { title: "diff", path: "/cli/pipeline/diff" },
             { title: "resolve", path: "/cli/pipeline/resolve" },
           ],
+        },
+        {
+          title: "hunt",
+          collapsible: true,
+          children: [{ title: "run", path: "/cli/hunt/run" }],
         },
         {
           title: "mcp",

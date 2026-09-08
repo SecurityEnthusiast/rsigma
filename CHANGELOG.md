@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### `rsigma hunt run`: read-only hunt execution against PostgreSQL (#482)
+
+`rsigma hunt run -r rule.yml -t postgres --dsn ...` closes the hunt side of the detection loop: detection rules are converted with the shipped PostgreSQL backend, wrapped with `--since`/`--until` time-window predicates, `ORDER BY`, and `--limit` (default 1000 per rule), executed read-only against the archive (`SET default_transaction_read_only = on` plus a server-side statement timeout, TLS via rustls with system roots, `sslmode` honored), and the matching rows stream back as exemplar-shaped NDJSON that `rule draft`, `rule tune`, `rule test`, and `rule backtest` consume directly. In JSONB mode (`-O json_field=data`) the stored document is emitted verbatim with the timestamp column merged in; flat-column rows are reconstructed with SQL types mapped to JSON types and NULL columns dropped. The DSN comes from `--dsn` or `RSIGMA_HUNT_DSN` and its password is never rendered in logs or errors. `--emit sql` prints the wrapped queries without connecting and works in every build; execution ships behind the new `hunt-postgres` feature (included in the prebuilt binaries and Docker image). Detection rules only; correlation rules and non-postgres targets are rejected with a pointer to `backend convert`.
+
 ### Operate-cycle MCP tools (#481)
 
 `rsigma mcp serve --daemon-url` registers six read-only tools against a running daemon's control-plane API (`list_incidents`, `get_incident`, `get_incident_bundle`, `list_risk_entities`, `get_rule_quality`, `list_silences`). `--allow-operate-writes` adds `create_silence` and `post_disposition`. The daemon token is flag/env-only (`--daemon-token` / `RSIGMA_MCP_DAEMON_TOKEN`). Unix-socket daemon URLs are unsupported.

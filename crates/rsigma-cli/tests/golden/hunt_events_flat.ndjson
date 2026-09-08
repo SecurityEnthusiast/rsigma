@@ -1,0 +1,2 @@
+{"category":"process","event_id":9001,"src_ip":"10.0.0.8","success":false,"time":"2026-07-01T10:00:00+00:00"}
+{"category":"authentication","event_id":9002,"metadata":{"mfa":true},"time":"2026-07-01T10:00:00+00:00"}

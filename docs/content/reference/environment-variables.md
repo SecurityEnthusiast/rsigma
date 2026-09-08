@@ -23,6 +23,7 @@ Every variable here has a corresponding `--flag` that takes precedence.
 | `RSIGMA_DETECT_INFLIGHT` | integer 1–8 | scales with rayon (1 on one worker, up to 5 on eight or more) | `engine daemon` | Maximum detection-only batches evaluated concurrently when the loaded rule set has no correlation rules. Sink and ack order stay sequential via a sequence-numbered reducer. Ignored (forced to 1) when correlation rules are present. |
 | `RSIGMA_TLS_KEY_PASSWORD` | string | unset | `engine daemon` with `--tls-key` | Password for an encrypted TLS key. Currently rejected at startup with a clear error; decrypt the key first (`openssl rsa -in key.pem -out key-decrypted.pem`). |
 | `RSIGMA_SIGMA_CLI` | path | unset | `backend convert`, `mcp serve` (with `--allow-sigma-cli`) | Override path to the external `sigma` executable used for delegated conversion. |
+| `RSIGMA_HUNT_DSN` | string | unset | `hunt run` | PostgreSQL connection string for hunt execution. Equivalent to `--dsn`; keeps the password out of `ps aux` and shell history. Secret: flag/env only, never read from config files. |
 | `RSIGMA_API_TOKEN` | string | unset | `engine incidents export` | Default bearer token env var for daemon-client auth. Override the variable name with `--auth-token-env`. |
 | `NATS_CREDS` | path to `.creds` file | unset | `engine daemon` with NATS source or sink | NATS credentials file (JWT + NKey). Equivalent to `--nats-creds`. |
 | `NATS_TOKEN` | string | unset | same | NATS authentication token. Equivalent to `--nats-token`. |

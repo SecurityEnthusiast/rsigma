@@ -96,6 +96,7 @@ Full documentation, including guides, CLI reference, and library API docs, lives
 ### Hunt
 
 * **[Rule conversion](https://rsigma.io/guide/rule-conversion/):** Converts rules into backend-native queries via a pluggable backend trait, with native PostgreSQL/TimescaleDB, LynxDB, and Fibratus backends plus sigma-cli delegation for 30+ pySigma backends (Splunk, Elasticsearch, Microsoft Sentinel, ...)
+* **[Hunt execution](https://rsigma.io/guide/hunting/):** Runs converted detection rules read-only against a PostgreSQL/TimescaleDB archive with `hunt run` and streams matching rows back as exemplar-shaped NDJSON that `rule draft`, `rule tune`, `rule test`, and `rule backtest` consume directly
 * **[Field catalog](https://rsigma.io/cli/rule/fields/):** Lists every field a ruleset references, before or after pipeline mapping, with `rule fields`
 
 ## Crates
