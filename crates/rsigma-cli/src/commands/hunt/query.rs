@@ -60,6 +60,10 @@ pub(crate) struct HuntPlan {
     pub timestamp_field: String,
     /// Effective JSONB column when the backend runs in JSONB mode.
     pub json_field: Option<String>,
+    /// Per-rule row limit baked into the SQL (0 = unbounded). Only the
+    /// gated executor reads it, to detect truncation.
+    #[cfg(feature = "hunt-postgres")]
+    pub limit: usize,
 }
 
 /// Failures while building hunt SQL. Each variant carries everything needed
@@ -281,6 +285,8 @@ pub(crate) fn build_hunt_plan(
         queries,
         timestamp_field: backend.timestamp_field.clone(),
         json_field: backend.json_field.clone(),
+        #[cfg(feature = "hunt-postgres")]
+        limit,
     })
 }
 

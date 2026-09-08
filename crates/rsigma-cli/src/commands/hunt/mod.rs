@@ -9,7 +9,11 @@
 //! execution ship with the `hunt-postgres` feature, since their only
 //! consumer is the gated database client.
 
+#[cfg(feature = "hunt-postgres")]
+pub(crate) mod execute;
 pub(crate) mod query;
+#[cfg(feature = "hunt-postgres")]
+pub(crate) mod reshape;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -188,8 +192,30 @@ fn emit_sql(plan: &query::HuntPlan, output: Option<&std::path::Path>) {
     }
 }
 
+/// `--emit events`: stream matching rows as NDJSON over a read-only
+/// tokio-postgres session.
+#[cfg(feature = "hunt-postgres")]
+fn run_events(args: HuntRunArgs, plan: query::HuntPlan, ctx: &OutputCtx) {
+    let timeout = humantime::parse_duration(&args.timeout).unwrap_or_else(|_| {
+        eprintln!(
+            "invalid --timeout '{}': expected a duration like 30s, 5m",
+            args.timeout
+        );
+        process::exit(exit_code::CONFIG_ERROR);
+    });
+    let dsn = args.dsn.clone().unwrap_or_else(|| {
+        eprintln!(
+            "hunt execution needs a connection string: pass --dsn or set RSIGMA_HUNT_DSN \
+             (or use --emit sql to review the queries without connecting)"
+        );
+        process::exit(exit_code::CONFIG_ERROR);
+    });
+    execute::run(&dsn, &plan, timeout, args.output.as_deref(), ctx);
+}
+
 /// `--emit events` without the executor compiled in: fail with a pointed
 /// message. The executor ships with the `hunt-postgres` feature.
+#[cfg(not(feature = "hunt-postgres"))]
 fn run_events(args: HuntRunArgs, plan: query::HuntPlan, _ctx: &OutputCtx) {
     // Parsed for fail-fast validation even on the disabled path, so flag
     // errors look identical in every build.
