@@ -61,7 +61,7 @@ async fn run_async(
 
     let tls = rustls_connector();
     let (client, connection) = config.connect(tls).await.unwrap_or_else(|e| {
-        eprintln!("could not connect to {redacted}: {e}");
+        eprintln!("could not connect to {redacted}: {}", pg_error(&e));
         process::exit(exit_code::CONFIG_ERROR);
     });
     tokio::spawn(async move {
@@ -77,7 +77,10 @@ async fn run_async(
         timeout.as_millis()
     );
     client.batch_execute(&setup).await.unwrap_or_else(|e| {
-        eprintln!("could not establish the read-only session on {redacted}: {e}");
+        eprintln!(
+            "could not establish the read-only session on {redacted}: {}",
+            pg_error(&e)
+        );
         process::exit(exit_code::CONFIG_ERROR);
     });
 
@@ -98,8 +101,9 @@ async fn run_async(
             .await
             .unwrap_or_else(|e| {
                 eprintln!(
-                    "hunt query for rule '{}' failed on {redacted}: {e}",
-                    query.rule_title
+                    "hunt query for rule '{}' failed on {redacted}: {}",
+                    query.rule_title,
+                    pg_error(&e)
                 );
                 process::exit(exit_code::CONFIG_ERROR);
             });
@@ -108,7 +112,11 @@ async fn run_async(
         let mut rule_rows = 0usize;
         while let Some(row) = rows.next().await {
             let row = row.unwrap_or_else(|e| {
-                eprintln!("hunt stream for rule '{}' failed: {e}", query.rule_title);
+                eprintln!(
+                    "hunt stream for rule '{}' failed: {}",
+                    query.rule_title,
+                    pg_error(&e)
+                );
                 process::exit(exit_code::CONFIG_ERROR);
             });
             let decoded = decode_row(&row);
@@ -151,6 +159,16 @@ async fn run_async(
             if any_truncated { " (truncated)" } else { "" },
         );
     }
+}
+
+/// Render a tokio-postgres error with the server's message when present:
+/// the bare `Display` of a database error is just "db error", while the
+/// wrapped `DbError` carries the SQLSTATE detail ("ERROR: cannot execute
+/// DELETE in a read-only transaction").
+fn pg_error(e: &tokio_postgres::Error) -> String {
+    e.as_db_error()
+        .map(|db| db.to_string())
+        .unwrap_or_else(|| e.to_string())
 }
 
 /// Decode one wire row into the reshaper's column list.
