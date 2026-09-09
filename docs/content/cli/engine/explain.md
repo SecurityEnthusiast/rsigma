@@ -45,6 +45,8 @@ Suspicious PowerShell (ps-1): NO MATCH
 
 `--output-format json` serializes `RuleExplanation` (one array entry per rule): a tree of condition nodes (`selection`, `and`, `or`, `not`, `quantified`), each detection's items, and per-item `matcher`, `pattern`, `actual`, `matched`, and `reason`. JSON `reason` values are snake_case: `matched`, `field_absent`, `value_mismatch`, `case_mismatch`, `existence`, and `no_keyword_match`. The human tree prints the same reasons as spaced phrases (`field absent`, `value mismatch`, `existence check failed`, …).
 
+Array object-scope detections serialize as `array_match` nodes (not the former opaque `other` leaf): `field`, `quantifier` (`any` / `all` / `all_or_empty` / `none`), `matched`, `member_count`, optional `scalar` / `empty_reason` / `truncated` / `omitted`, and a `members` array of `{index, matched, detection}`. Extended `condition:` bodies serialize as `conditional` with a nested condition tree. Human output indents `member[i]` under `array_match "field" quantifier (N members, matched [...])`; fieldless items inside a member render as `.`. Recorded members are capped at 32 per node (failing members first, then matching). CSV/TSV emit one row per leaf with an indexed FIELD (`connections[0].protocol`, `connections[0]` for the member itself, `rules[0].ip[1]` for nested arrays).
+
 ## Examples
 
 Explain why a rule did not match an event:

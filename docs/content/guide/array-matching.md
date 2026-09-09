@@ -57,6 +57,26 @@ rsigma engine eval --pretty -r /tmp/array-rule.yml -e '{"connections":[{"protoco
 
 You should get one `EvaluationResult` for the TCP/`123.1.1.1` member. The UDP sibling does not satisfy both predicates on the same element, so it does not fire by itself. See [Evaluating Rules](evaluating-rules.md) for input modes and output shape.
 
+To see *which* member and predicate decided the quantifier, run the same rule through [`engine explain`](../cli/engine/explain.md):
+
+```bash
+rsigma engine explain --color never -r /tmp/array-rule.yml -e '{"connections":[{"protocol":"TCP","ip":"123.1.1.1"},{"protocol":"UDP","ip":"10.0.0.1"}]}'
+```
+
+```text
+Inbound connection to a suspicious network (0f0e0d0c-0b0a-0908-0706-050403020100): MATCH
+  PASS selection
+    PASS array_match "connections" any (2 members, matched [0])
+      PASS member[0]
+        PASS protocol|exact "tcp" (matched)
+        PASS ip|cidr "123.1.0.0/16" (matched)
+      FAIL member[1]
+        FAIL protocol|exact "tcp"  actual="UDP" (value mismatch)
+        FAIL ip|cidr "123.1.0.0/16"  actual="10.0.0.1" (value mismatch)
+```
+
+CSV/TSV output emits one row per leaf with an indexed path (`connections[0].protocol`). Nested quantifiers indent the same way (`rules[0].ip[1]`).
+
 ## Implicit any-member matching
 
 A plain field expression matches a scalar **or** any member of an array. No special syntax is needed: a scalar is just an array of length one.

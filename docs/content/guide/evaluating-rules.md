@@ -184,6 +184,8 @@ A `full` entry looks like:
 
 Negated matchers add `"negated": true`. Higher levels enlarge each detection line and only run when a rule matches, so they cost nothing on the non-matching hot path. The daemon exposes the same control via `--match-detail` or `daemon.engine.match_detail`.
 
+For array object-scope matches (`field[any]` / `[all]` / `[all_or_empty]` / `[none]`), `matched_fields` records the binding members with indexed paths (`connections[0].protocol`, `connections[0]` for an element-self item) instead of the whole array container. `[any]` emits the members that satisfied the body; `[all]` emits every member up to a cap of 32 (index order); `[none]` and a vacuous `[all_or_empty]` keep the container entry. A scalar treated as one member uses the un-indexed path (`connections.protocol`) so it still resolves through field lookup. Recorded paths are best-effort detail, never a verdict surface.
+
 ## Debugging why a rule did not match
 
 `--match-detail` explains a match. The harder question is why a rule did not match the event you wrote it for. The answer is usually a single field: a renamed key, a wrong value, or a casing difference. [`engine explain`](../cli/engine/explain.md) runs a non-short-circuiting evaluator over one rule and one event and prints, for every condition node and field, whether it passed and why not:
@@ -204,6 +206,8 @@ Suspicious PowerShell (ps-1): NO MATCH
 ```
 
 Each failed leaf carries a reason: `field absent`, `value mismatch` (with the actual value), `case mismatch`, an existence-check failure, or no keyword match. The verdict always agrees with `engine eval`, since it runs the same matchers. Add `--output-format json` for a machine-readable trace, `--rule-id` to focus one rule, and `-p` to explain through a pipeline (with `--show-pipeline` to print the rewrite first).
+
+Array object-scope traces include the member index, each predicate, and nested scopes (`rules[any]` containing `ip[all]`). See [Array Matching](array-matching.md) for a worked `engine explain` tree.
 
 When the field name itself is in doubt, [`pipeline diff`](../cli/pipeline/diff.md) shows how a pipeline rewrites the rule before evaluation:
 
