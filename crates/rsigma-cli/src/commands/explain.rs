@@ -13,8 +13,8 @@ use std::process;
 use clap::Args;
 
 use rsigma_eval::{
-    ConditionTrace, DetectionTrace, ItemTrace, JsonEvent, MatchReason, RuleExplanation,
-    SelectionBranch, apply_pipelines, compile_rule, explain_rule,
+    ArrayEmptyReason, ConditionTrace, DetectionTrace, ItemTrace, JsonEvent, MatchReason,
+    RuleExplanation, SelectionBranch, apply_pipelines, compile_rule, explain_rule,
 };
 
 use crate::output::{DelimitedWriter, OutputCtx, OutputFormat, Painter, Tabular, render_json};
@@ -191,9 +191,9 @@ fn render_human(
         for (ci, cond) in exp.conditions.iter().enumerate() {
             if exp.conditions.len() > 1 {
                 println!("  condition {}:", ci + 1);
-                render_condition(cond, 2, &p);
+                render_condition(cond, 2, &p, false);
             } else {
-                render_condition(cond, 1, &p);
+                render_condition(cond, 1, &p, false);
             }
         }
     }
@@ -211,7 +211,7 @@ fn indent(level: usize) -> String {
     "  ".repeat(level)
 }
 
-fn render_condition(cond: &ConditionTrace, level: usize, p: &Painter) {
+fn render_condition(cond: &ConditionTrace, level: usize, p: &Painter, in_member: bool) {
     let pad = indent(level);
     match cond {
         ConditionTrace::Selection {
@@ -220,23 +220,23 @@ fn render_condition(cond: &ConditionTrace, level: usize, p: &Painter) {
             detection,
         } => {
             println!("{pad}{} {}", marker(p, *matched), p.bold(name));
-            render_detection(detection, level + 1, p);
+            render_detection(detection, level + 1, p, in_member);
         }
         ConditionTrace::And { matched, children } => {
             println!("{pad}{} all of:", marker(p, *matched));
             for c in children {
-                render_condition(c, level + 1, p);
+                render_condition(c, level + 1, p, in_member);
             }
         }
         ConditionTrace::Or { matched, children } => {
             println!("{pad}{} any of:", marker(p, *matched));
             for c in children {
-                render_condition(c, level + 1, p);
+                render_condition(c, level + 1, p, in_member);
             }
         }
         ConditionTrace::Not { matched, child } => {
             println!("{pad}{} not:", marker(p, *matched));
-            render_condition(child, level + 1, p);
+            render_condition(child, level + 1, p, in_member);
         }
         ConditionTrace::Quantified {
             quantifier,
@@ -250,52 +250,104 @@ fn render_condition(cond: &ConditionTrace, level: usize, p: &Painter) {
                 marker(p, *matched)
             );
             for b in branches {
-                render_branch(b, level + 1, p);
+                render_branch(b, level + 1, p, in_member);
             }
         }
     }
 }
 
-fn render_branch(b: &SelectionBranch, level: usize, p: &Painter) {
+fn render_branch(b: &SelectionBranch, level: usize, p: &Painter, in_member: bool) {
     println!(
         "{}{} {}",
         indent(level),
         marker(p, b.matched),
         p.bold(&b.name)
     );
-    render_detection(&b.detection, level + 1, p);
+    render_detection(&b.detection, level + 1, p, in_member);
 }
 
-fn render_detection(det: &DetectionTrace, level: usize, p: &Painter) {
+fn render_detection(det: &DetectionTrace, level: usize, p: &Painter, in_member: bool) {
     let pad = indent(level);
     match det {
         DetectionTrace::AllOf { items, .. } => {
             for item in items {
-                render_item(item, level, p);
+                render_item(item, level, p, in_member);
             }
         }
         DetectionTrace::AnyOf { matched, branches } => {
             println!("{pad}{} any of:", marker(p, *matched));
             for b in branches {
-                render_detection(b, level + 1, p);
+                render_detection(b, level + 1, p, in_member);
             }
         }
         DetectionTrace::And { matched, branches } => {
             println!("{pad}{} all of:", marker(p, *matched));
             for b in branches {
-                render_detection(b, level + 1, p);
+                render_detection(b, level + 1, p, in_member);
             }
         }
-        DetectionTrace::Keywords { item, .. } => render_item(item, level, p),
+        DetectionTrace::Keywords { item, .. } => render_item(item, level, p, in_member),
+        DetectionTrace::ArrayMatch {
+            field,
+            quantifier,
+            matched,
+            member_count,
+            scalar,
+            empty_reason,
+            truncated,
+            omitted,
+            members,
+        } => {
+            let mut extra = format!("({member_count} members");
+            let matched_idx: Vec<String> = members
+                .iter()
+                .filter(|m| m.matched)
+                .map(|m| m.index.to_string())
+                .collect();
+            extra.push_str(&format!(", matched [{}]", matched_idx.join(", ")));
+            if *scalar {
+                extra.push_str(", scalar");
+            }
+            if let Some(reason) = empty_reason {
+                extra.push_str(match reason {
+                    ArrayEmptyReason::MissingOrNull => ", missing_or_null",
+                    ArrayEmptyReason::EmptyArray => ", empty_array",
+                });
+            }
+            if *truncated {
+                extra.push_str(&format!(", truncated, omitted={omitted}"));
+            }
+            extra.push(')');
+            println!(
+                "{pad}{} array_match {field:?} {quantifier} {extra}",
+                marker(p, *matched)
+            );
+            for m in members {
+                println!(
+                    "{}{} member[{}]",
+                    indent(level + 1),
+                    marker(p, m.matched),
+                    m.index
+                );
+                render_detection(&m.detection, level + 2, p, true);
+            }
+        }
+        DetectionTrace::Conditional { condition, .. } => {
+            render_condition(condition.as_ref(), level, p, in_member);
+        }
         DetectionTrace::Other { kind, matched } => {
             println!("{pad}{} {kind}", marker(p, *matched));
         }
     }
 }
 
-fn render_item(item: &ItemTrace, level: usize, p: &Painter) {
+fn render_item(item: &ItemTrace, level: usize, p: &Painter, in_member: bool) {
     let pad = indent(level);
-    let field = item.field.as_deref().unwrap_or("keyword");
+    let field = match item.field.as_deref() {
+        Some(f) => f,
+        None if in_member => ".",
+        None => "keyword",
+    };
     let kind = matcher_kind_str(item);
     let pattern = item
         .pattern
@@ -405,7 +457,7 @@ fn collect_condition_leaves(rule: &str, cond: &ConditionTrace, out: &mut Vec<Lea
     match cond {
         ConditionTrace::Selection {
             name, detection, ..
-        } => collect_detection_leaves(rule, name, detection, out),
+        } => collect_detection_leaves(rule, name, detection, "", out),
         ConditionTrace::And { children, .. } | ConditionTrace::Or { children, .. } => {
             for c in children {
                 collect_condition_leaves(rule, c, out);
@@ -416,7 +468,7 @@ fn collect_condition_leaves(rule: &str, cond: &ConditionTrace, out: &mut Vec<Lea
         }
         ConditionTrace::Quantified { branches, .. } => {
             for b in branches {
-                collect_detection_leaves(rule, &b.name, &b.detection, out);
+                collect_detection_leaves(rule, &b.name, &b.detection, "", out);
             }
         }
     }
@@ -426,20 +478,35 @@ fn collect_detection_leaves(
     rule: &str,
     selection: &str,
     det: &DetectionTrace,
+    prefix: &str,
     out: &mut Vec<LeafRow>,
 ) {
     match det {
         DetectionTrace::AllOf { items, .. } => {
             for item in items {
-                out.push(leaf_row(rule, selection, item));
+                out.push(leaf_row(rule, selection, item, prefix));
             }
         }
         DetectionTrace::AnyOf { branches, .. } | DetectionTrace::And { branches, .. } => {
             for b in branches {
-                collect_detection_leaves(rule, selection, b, out);
+                collect_detection_leaves(rule, selection, b, prefix, out);
             }
         }
-        DetectionTrace::Keywords { item, .. } => out.push(leaf_row(rule, selection, item)),
+        DetectionTrace::Keywords { item, .. } => out.push(leaf_row(rule, selection, item, prefix)),
+        DetectionTrace::ArrayMatch {
+            field,
+            scalar,
+            members,
+            ..
+        } => {
+            for m in members {
+                let member_prefix = array_csv_member_path(prefix, field, m.index, *scalar);
+                collect_detection_leaves(rule, selection, &m.detection, &member_prefix, out);
+            }
+        }
+        DetectionTrace::Conditional { condition, .. } => {
+            collect_condition_leaves_prefixed(rule, condition.as_ref(), prefix, out);
+        }
         DetectionTrace::Other { kind, matched } => out.push(LeafRow {
             rule: rule.to_string(),
             result: result_str(*matched),
@@ -452,15 +519,63 @@ fn collect_detection_leaves(
     }
 }
 
-fn leaf_row(rule: &str, selection: &str, item: &ItemTrace) -> LeafRow {
+fn collect_condition_leaves_prefixed(
+    rule: &str,
+    cond: &ConditionTrace,
+    prefix: &str,
+    out: &mut Vec<LeafRow>,
+) {
+    match cond {
+        ConditionTrace::Selection {
+            name, detection, ..
+        } => collect_detection_leaves(rule, name, detection, prefix, out),
+        ConditionTrace::And { children, .. } | ConditionTrace::Or { children, .. } => {
+            for c in children {
+                collect_condition_leaves_prefixed(rule, c, prefix, out);
+            }
+        }
+        ConditionTrace::Not { child, .. } => {
+            collect_condition_leaves_prefixed(rule, child, prefix, out);
+        }
+        ConditionTrace::Quantified { branches, .. } => {
+            for b in branches {
+                collect_detection_leaves(rule, &b.name, &b.detection, prefix, out);
+            }
+        }
+    }
+}
+
+fn array_csv_member_path(prefix: &str, field: &str, index: usize, scalar: bool) -> String {
+    let base = if prefix.is_empty() {
+        field.to_string()
+    } else {
+        format!("{prefix}.{field}")
+    };
+    if scalar {
+        base
+    } else {
+        format!("{base}[{index}]")
+    }
+}
+
+fn leaf_row(rule: &str, selection: &str, item: &ItemTrace, prefix: &str) -> LeafRow {
     LeafRow {
         rule: rule.to_string(),
         result: result_str(item.matched),
         selection: selection.to_string(),
-        field: item.field.clone().unwrap_or_else(|| "keyword".to_string()),
+        field: csv_field_name(prefix, item.field.as_deref()),
         matcher: matcher_kind_str(item),
         reason: reason_str(item.reason).to_string(),
         actual: item.actual.as_ref().map(compact_json).unwrap_or_default(),
+    }
+}
+
+fn csv_field_name(prefix: &str, item_field: Option<&str>) -> String {
+    match (prefix.is_empty(), item_field) {
+        (true, Some(f)) => f.to_string(),
+        (true, None) => "keyword".to_string(),
+        (false, Some(f)) => format!("{prefix}.{f}"),
+        (false, None) => prefix.to_string(),
     }
 }
 

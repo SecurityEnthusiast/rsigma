@@ -16,7 +16,10 @@ pub mod optimizer;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use array::{array_quantifier_matches_empty, eval_array_quantified};
+pub(crate) use array::{
+    array_quantifier_from_member_matches, array_quantifier_matches_empty, element_field,
+    eval_array_body, eval_array_item, eval_array_quantified, select_recorded_member_indices,
+};
 
 pub use from_ir::compile_to_compiled;
 
@@ -1130,15 +1133,6 @@ where
 #[cfg(test)]
 fn eval_detection_item(item: &CompiledDetectionItem, event: &impl Event) -> bool {
     eval_detection_item_with_bloom(item, event, &crate::engine::bloom_index::NoBloom)
-}
-
-/// Evaluate a compiled detection against an event without bloom pre-filtering.
-///
-/// Used by the [`crate::explain`] recording evaluator to obtain the exact
-/// verdict for a detection subtree (including opaque array/conditional bodies)
-/// so the explain trace can never disagree with the production engine.
-pub(crate) fn eval_detection_no_bloom(detection: &CompiledDetection, event: &impl Event) -> bool {
-    eval_detection_with_bloom(detection, event, &crate::engine::bloom_index::NoBloom)
 }
 
 /// Evaluate a single compiled detection item against an event without bloom
