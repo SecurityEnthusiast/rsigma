@@ -1,0 +1,15 @@
+---
+source: crates/rsigma-cli/tests/cli_explain.rs
+expression: "String::from_utf8_lossy(&output.stdout).trim()"
+---
+Nested rules (nest-1): MATCH
+  PASS selection
+    PASS array_match "rules" any (1 members, matched [0])
+      PASS member[0]
+        PASS all of:
+          PASS type|exact "allow" (matched)
+          PASS array_match "ip" all (2 members, matched [0, 1])
+            PASS member[0]
+              PASS .|startswith "123.1.1" (matched)
+            PASS member[1]
+              PASS .|startswith "123.1.1" (matched)

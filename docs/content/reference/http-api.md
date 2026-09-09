@@ -836,6 +836,8 @@ curl -sS -N 'http://127.0.0.1:9090/api/v1/detections/stream?level=high&rule=whoa
 {"rsigma_tail_summary":{"streamed":1,"dropped":0}}
 ```
 
+For rules that use array object-scope matching, `matched_fields` entries carry indexed paths such as `connections[2].ip`; see [Evaluating rules](../guide/evaluating-rules.md#match-detail) for the recording rules.
+
 Error semantics:
 
 | Status | When |

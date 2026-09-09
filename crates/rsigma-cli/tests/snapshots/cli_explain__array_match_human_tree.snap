@@ -1,0 +1,13 @@
+---
+source: crates/rsigma-cli/tests/cli_explain.rs
+expression: "String::from_utf8_lossy(&output.stdout).trim()"
+---
+Suspicious connection (arr-1): MATCH
+  PASS selection
+    PASS array_match "connections" any (2 members, matched [1])
+      FAIL member[0]
+        FAIL protocol|exact "tcp"  actual="UDP" (value mismatch)
+        FAIL ip|cidr "123.1.0.0/16"  actual="10.0.0.1" (value mismatch)
+      PASS member[1]
+        PASS protocol|exact "tcp" (matched)
+        PASS ip|cidr "123.1.0.0/16" (matched)

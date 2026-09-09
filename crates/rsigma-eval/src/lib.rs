@@ -135,8 +135,8 @@ pub use exemplar::{
     ExemplarReport, ExemplarResult, ExemplarRunError, MissingExemplars, run_exemplars,
 };
 pub use explain::{
-    ConditionTrace, DetectionTrace, ItemTrace, MatchReason, RuleExplanation, SelectionBranch,
-    explain_rule,
+    ArrayEmptyReason, ArrayMemberTrace, ConditionTrace, DetectionTrace, ItemTrace, MatchReason,
+    RuleExplanation, SelectionBranch, explain_rule,
 };
 pub use field_observer::{FieldCoverage, FieldObservation, FieldObservationEntry, FieldObserver};
 pub use fields::{FieldOrigin, FieldSource, RuleFieldSet};

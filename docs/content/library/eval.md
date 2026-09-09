@@ -48,7 +48,7 @@ serde_json = "1"   # only if you use the JsonEvent shim
 | `CompiledMatcher`, `CompiledRule` | Internal matcher tree types; consume via the AST conversion or build them yourself for an alternative front-end. |
 | `draft_rule`, `DraftConfig`, `DraftReport` | Profile positive exemplars against an optional baseline and emit a verified detection-rule draft. |
 | `rule_draft::correlation::{draft_correlation, GroupedExemplar, TimedEvent, CorrelationDraftConfig, CorrelationDraftReport}` | Infer recurring slots, entity, order, and window from grouped timed exemplars, then emit and verify a multi-document temporal correlation. |
-| `tune_rule`, `TuneConfig`, `TuneReport` | Contrast false-positive and true-positive exemplars and emit a verified Sigma filter rule that suppresses no TP. |
+| `explain_rule`, `RuleExplanation`, `ConditionTrace`, `DetectionTrace`, `ArrayMemberTrace`, `ArrayEmptyReason`, `ItemTrace`, `MatchReason` | Non-short-circuiting recording evaluator behind `engine explain`. `DetectionTrace::ArrayMatch` records per-member traces; `Conditional` covers extended array bodies. |
 
 The full enum of modifiers, the matcher-optimizer constants, the `rsigma.*` custom-attribute table, and the bloom/cross-rule prefilters live in [the crate README](https://github.com/timescale/rsigma/blob/main/crates/rsigma-eval/README.md).
 

@@ -77,7 +77,8 @@ A non-short-circuiting, bloom-free recording evaluator that backs `rsigma engine
 | Function / type | Description |
 |-----------------|-------------|
 | `explain_rule(rule: &CompiledRule, event: &Event)` | Return a `RuleExplanation` (verdict + condition tree) for one rule and one event |
-| `RuleExplanation` / `ConditionTrace` / `DetectionTrace` / `ItemTrace` | The serializable trace model (mirrors `ConditionExpr` / `CompiledDetection` / `CompiledDetectionItem`) |
+| `RuleExplanation` / `ConditionTrace` / `DetectionTrace` / `ItemTrace` / `ArrayMemberTrace` | The serializable trace model (mirrors `ConditionExpr` / `CompiledDetection` / `CompiledDetectionItem`). `DetectionTrace` includes `AllOf`, `AnyOf`, `And`, `Keywords`, `ArrayMatch` (per-member traces, optional truncation), `Conditional` (extended array-body or top-level condition tree), and `Other` as a last-resort fallback |
+| `ArrayEmptyReason` | Why an `ArrayMatch` node had zero members: `missing_or_null` or `empty_array` |
 | `MatchReason` | Per-leaf reason: `Matched`, `FieldAbsent`, `ValueMismatch`, `CaseMismatch`, `Existence`, `NoKeywordMatch` |
 
 ### Pipeline
@@ -314,7 +315,7 @@ Accessors: `is_detection()` / `is_correlation()`, `as_detection() -> Option<&Det
 | Field | Type | Description |
 |-------|------|-------------|
 | `matched_selections` | `Vec<String>` | Detection names that matched |
-| `matched_fields` | `Vec<FieldMatch>` | Field/value pairs that contributed to the match |
+| `matched_fields` | `Vec<FieldMatch>` | Field/value pairs that contributed to the match. Array object-scope matches record binding members with indexed paths (`connections[0].protocol`), capped at 32 members; `[none]` and vacuous `[all_or_empty]` keep the container. |
 | `event` | `Option<Value>` | Full event JSON when `include_event` is enabled |
 
 ### CorrelationBody

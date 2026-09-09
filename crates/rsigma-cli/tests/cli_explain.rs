@@ -307,3 +307,145 @@ fn invalid_inline_json_exits_nonzero() {
         .failure()
         .stderr(predicate::str::contains("invalid JSON event"));
 }
+
+const ARRAY_RULE: &str = r#"
+title: Suspicious connection
+id: arr-1
+sigma-version: 3
+logsource:
+    category: network_connection
+detection:
+    selection:
+        connections[any]:
+            protocol: 'TCP'
+            ip|cidr: '123.1.0.0/16'
+    condition: selection
+"#;
+
+const NESTED_ARRAY_RULE: &str = r#"
+title: Nested rules
+id: nest-1
+sigma-version: 3
+logsource:
+    category: test
+detection:
+    selection:
+        rules[any]:
+            type: 'allow'
+            ip[all]|startswith: '123.1.1'
+    condition: selection
+"#;
+
+#[test]
+fn array_match_human_tree() {
+    let f = temp_file(".yml", ARRAY_RULE);
+    let output = rsigma()
+        .args([
+            "engine",
+            "explain",
+            "-r",
+            f.path().to_str().unwrap(),
+            "--color",
+            "never",
+            "-e",
+            r#"{"connections":[{"protocol":"UDP","ip":"10.0.0.1"},{"protocol":"TCP","ip":"123.1.9.9"}]}"#,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_snapshot!(String::from_utf8_lossy(&output.stdout).trim());
+}
+
+#[test]
+fn array_miss_human_tree() {
+    let f = temp_file(".yml", ARRAY_RULE);
+    let output = rsigma()
+        .args([
+            "engine",
+            "explain",
+            "-r",
+            f.path().to_str().unwrap(),
+            "--color",
+            "never",
+            "-e",
+            r#"{"connections":[{"protocol":"TCP","ip":"10.0.0.1"},{"protocol":"UDP","ip":"123.1.9.9"}]}"#,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_snapshot!(String::from_utf8_lossy(&output.stdout).trim());
+}
+
+#[test]
+fn nested_array_match_human_tree() {
+    let f = temp_file(".yml", NESTED_ARRAY_RULE);
+    let output = rsigma()
+        .args([
+            "engine",
+            "explain",
+            "-r",
+            f.path().to_str().unwrap(),
+            "--color",
+            "never",
+            "-e",
+            r#"{"rules":[{"type":"allow","ip":["123.1.1.1","123.1.1.2"]}]}"#,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_snapshot!(String::from_utf8_lossy(&output.stdout).trim());
+}
+
+#[test]
+fn array_match_csv_uses_indexed_paths() {
+    let f = temp_file(".yml", ARRAY_RULE);
+    rsigma()
+        .args([
+            "engine",
+            "explain",
+            "-r",
+            f.path().to_str().unwrap(),
+            "--output-format",
+            "csv",
+            "-e",
+            r#"{"connections":[{"protocol":"UDP","ip":"10.0.0.1"},{"protocol":"TCP","ip":"123.1.9.9"}]}"#,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("connections[0].protocol"))
+        .stdout(predicate::str::contains("connections[1].protocol"))
+        .stdout(predicate::str::contains("connections[1].ip"));
+}
+
+#[test]
+fn nested_array_csv_uses_nested_indexed_paths() {
+    let f = temp_file(".yml", NESTED_ARRAY_RULE);
+    rsigma()
+        .args([
+            "engine",
+            "explain",
+            "-r",
+            f.path().to_str().unwrap(),
+            "--output-format",
+            "csv",
+            "-e",
+            r#"{"rules":[{"type":"allow","ip":["123.1.1.1","123.1.1.2"]}]}"#,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("rules[0].type"))
+        .stdout(predicate::str::contains("rules[0].ip[0]"))
+        .stdout(predicate::str::contains("rules[0].ip[1]"));
+}
