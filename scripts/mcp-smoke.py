@@ -198,9 +198,11 @@ class HttpClient:
         self.session = None
         self._id = 0
         self._stderr = open("/tmp/rsigma-mcp-smoke.http.stderr.log", "w")
+        # `--auth-token=...` (not a separate argv entry): token_urlsafe can
+        # start with `-`, which clap would otherwise parse as a flag.
         self.proc = subprocess.Popen(
             [bin_path, "mcp", "serve", "--http", f"{host}:{port}",
-             "--auth-token", self.token],
+             f"--auth-token={self.token}"],
             stdout=subprocess.DEVNULL,
             stderr=self._stderr,
             text=True,
