@@ -42,7 +42,7 @@ use rsigma_parser::{
 };
 
 use crate::error::{EvalError, Result};
-use crate::event::Event;
+use crate::event::{Event, EventValue};
 use crate::matcher::{CompiledMatcher, sigma_string_to_regex};
 use crate::result::{
     DetectionBody, EvaluationResult, FieldMatch, MatchDetailLevel, MatcherKind, ResultBody,
@@ -1295,13 +1295,18 @@ fn collect_detection_fields(
                 }
             }
         }
-        CompiledDetection::ArrayMatch { field, .. } => {
-            // Report the array container field and its value (the member
-            // fields are relative to elements and not meaningful as top-level
-            // field paths).
-            if let Some(value) = event.get_field(field) {
-                out.push(FieldMatch::new(field.clone(), value.to_json()));
-            }
+        CompiledDetection::ArrayMatch { field, body, .. } => {
+            let value = event.get_field(field);
+            collect_array_match_fields(
+                selection,
+                field,
+                body,
+                value.as_ref(),
+                event,
+                level,
+                "",
+                out,
+            );
         }
         CompiledDetection::And(dets) => {
             for d in dets {
@@ -1310,14 +1315,229 @@ fn collect_detection_fields(
                 }
             }
         }
-        // Only appears as an array body, whose member fields are not meaningful
-        // top-level field paths (the container is reported by `ArrayMatch`).
+        // Top-level Conditional is only produced as an array body; member
+        // recording happens in `collect_array_body_fields`.
         CompiledDetection::Conditional { .. } => {}
         CompiledDetection::Keywords(matcher) => {
             // Keyword detections produced no entries historically; only
             // reported above `Off`.
             if level != MatchDetailLevel::Off {
                 collect_keyword_matches(selection, matcher, event, level, out);
+            }
+        }
+    }
+}
+
+/// Record binding members of a matched `ArrayMatch`.
+///
+/// Matching members are emitted with indexed paths (`field[i].leaf`) up to
+/// [`array::ARRAY_MEMBER_CAP`]. A scalar treated as one member uses the
+/// un-indexed path so it still resolves through [`Event::get_field`]. `[none]`
+/// and vacuous `[all_or_empty]` have no binding member and keep the container.
+#[allow(clippy::too_many_arguments)]
+fn collect_array_match_fields<E: Event>(
+    selection: &str,
+    field: &str,
+    body: &CompiledDetection,
+    value: Option<&EventValue>,
+    outer: &E,
+    level: MatchDetailLevel,
+    path_prefix: &str,
+    out: &mut Vec<FieldMatch>,
+) {
+    let container_path = if path_prefix.is_empty() {
+        field.to_string()
+    } else {
+        array::join_member_field(path_prefix, Some(field))
+    };
+
+    let (scalar, members): (bool, Vec<&EventValue>) = match value {
+        None => return,
+        Some(EventValue::Null) => {
+            out.push(FieldMatch::new(container_path, serde_json::Value::Null));
+            return;
+        }
+        Some(EventValue::Array(items)) if items.is_empty() => {
+            out.push(FieldMatch::new(
+                container_path,
+                serde_json::Value::Array(Vec::new()),
+            ));
+            return;
+        }
+        Some(EventValue::Array(items)) => (false, items.iter().collect()),
+        Some(single) => (true, vec![single]),
+    };
+
+    let matching: Vec<usize> = members
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| array::eval_array_body(body, m, outer))
+        .map(|(i, _)| i)
+        .take(array::ARRAY_MEMBER_CAP)
+        .collect();
+
+    if matching.is_empty() {
+        if let Some(v) = value {
+            out.push(FieldMatch::new(container_path, v.to_json()));
+        }
+        return;
+    }
+
+    for i in matching {
+        let member_path = array::array_member_path(&container_path, i, scalar);
+        let before = out.len();
+        collect_array_body_fields(selection, body, members[i], outer, level, &member_path, out);
+        if out.len() == before && !matches!(body, CompiledDetection::Keywords(_)) {
+            out.push(FieldMatch::new(member_path, members[i].to_json()));
+        }
+    }
+}
+
+fn collect_array_body_fields<E: Event>(
+    selection: &str,
+    body: &CompiledDetection,
+    member: &EventValue,
+    outer: &E,
+    level: MatchDetailLevel,
+    member_path: &str,
+    out: &mut Vec<FieldMatch>,
+) {
+    match body {
+        CompiledDetection::AllOf(items) => {
+            for item in items {
+                if !array::eval_array_item(item, member, outer) {
+                    continue;
+                }
+                let relative = item.field.as_deref();
+                let absent =
+                    relative.is_some_and(|name| array::element_field(member, name).is_none());
+                if absent && level == MatchDetailLevel::Off {
+                    continue;
+                }
+                let path = array::join_member_field(member_path, relative);
+                let value = match relative {
+                    Some(name) => array::element_field(member, name)
+                        .map(|v| v.to_json())
+                        .unwrap_or(serde_json::Value::Null),
+                    None => member.to_json(),
+                };
+                out.push(make_field_match(
+                    selection,
+                    &path,
+                    value,
+                    &item.matcher,
+                    level,
+                ));
+            }
+        }
+        CompiledDetection::AnyOf(dets) | CompiledDetection::And(dets) => {
+            for d in dets {
+                if array::eval_array_body(d, member, outer) {
+                    collect_array_body_fields(selection, d, member, outer, level, member_path, out);
+                }
+            }
+        }
+        CompiledDetection::ArrayMatch {
+            field, body: inner, ..
+        } => {
+            collect_array_match_fields(
+                selection,
+                field,
+                inner,
+                array::element_field(member, field),
+                outer,
+                level,
+                member_path,
+                out,
+            );
+        }
+        CompiledDetection::Keywords(matcher) => {
+            if level != MatchDetailLevel::Off && matcher.matches(member, outer) {
+                let d = matcher.describe();
+                out.push(FieldMatch {
+                    field: member_path.to_string(),
+                    value: member.to_json(),
+                    selection: Some(selection.to_string()),
+                    matcher: Some(MatcherKind::Keyword),
+                    pattern: if level == MatchDetailLevel::Full {
+                        d.pattern
+                    } else {
+                        None
+                    },
+                    case_sensitive: d.case_sensitive,
+                    negated: d.negated,
+                });
+            }
+        }
+        CompiledDetection::Conditional { named, condition } => {
+            collect_array_condition_fields(
+                selection,
+                condition,
+                named,
+                member,
+                outer,
+                level,
+                member_path,
+                out,
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_array_condition_fields<E: Event>(
+    selection: &str,
+    expr: &ConditionExpr,
+    named: &HashMap<String, CompiledDetection>,
+    member: &EventValue,
+    outer: &E,
+    level: MatchDetailLevel,
+    member_path: &str,
+    out: &mut Vec<FieldMatch>,
+) {
+    match expr {
+        ConditionExpr::Identifier(name) => {
+            if let Some(det) = named.get(name)
+                && array::eval_array_body(det, member, outer)
+            {
+                collect_array_body_fields(selection, det, member, outer, level, member_path, out);
+            }
+        }
+        ConditionExpr::And(exprs) | ConditionExpr::Or(exprs) => {
+            for e in exprs {
+                collect_array_condition_fields(
+                    selection,
+                    e,
+                    named,
+                    member,
+                    outer,
+                    level,
+                    member_path,
+                    out,
+                );
+            }
+        }
+        ConditionExpr::Not(_) => {}
+        ConditionExpr::Selector { pattern, .. } => {
+            let mut names: Vec<&String> = named
+                .keys()
+                .filter(|n| pattern.matches_detection_name(n))
+                .collect();
+            names.sort();
+            for name in names {
+                if let Some(det) = named.get(name)
+                    && array::eval_array_body(det, member, outer)
+                {
+                    collect_array_body_fields(
+                        selection,
+                        det,
+                        member,
+                        outer,
+                        level,
+                        member_path,
+                        out,
+                    );
+                }
             }
         }
     }

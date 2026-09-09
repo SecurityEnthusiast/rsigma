@@ -10,7 +10,7 @@
 //! 3. `Full` additionally records the matched pattern.
 
 use rsigma_eval::event::JsonEvent;
-use rsigma_eval::{Engine, MatchDetailLevel, MatcherKind};
+use rsigma_eval::{Engine, Event, MatchDetailLevel, MatcherKind};
 use rsigma_parser::parse_sigma_yaml;
 use serde_json::json;
 
@@ -160,4 +160,256 @@ fn null_on_absent_field_is_gated_by_level() {
     assert_eq!(fm.field, "Image");
     assert!(fm.value.is_null());
     assert_eq!(fm.matcher, Some(MatcherKind::Null));
+}
+
+fn array_engine(yaml: &str, level: MatchDetailLevel) -> Engine {
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    let mut engine = Engine::new();
+    engine.set_match_detail(level);
+    engine.add_collection(&collection).unwrap();
+    engine
+}
+
+const ARRAY_ANY: &str = r#"
+title: Array Any
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        connections[any]:
+            protocol: 'TCP'
+            ip|cidr: '123.1.0.0/16'
+    condition: selection
+"#;
+
+#[test]
+fn array_any_records_only_binding_members_with_indexed_paths() {
+    let engine = array_engine(ARRAY_ANY, MatchDetailLevel::Off);
+    let ev = json!({"connections": [
+        {"protocol": "UDP", "ip": "10.0.0.1"},
+        {"protocol": "TCP", "ip": "123.1.9.9"}
+    ]});
+    let results = engine.evaluate(&JsonEvent::borrow(&ev));
+    let det = results[0].as_detection().unwrap();
+    let fields: Vec<&str> = det
+        .matched_fields
+        .iter()
+        .map(|f| f.field.as_str())
+        .collect();
+    assert!(fields.contains(&"connections[1].protocol"));
+    assert!(fields.contains(&"connections[1].ip"));
+    assert!(!fields.iter().any(|f| f.starts_with("connections[0]")));
+    for fm in &det.matched_fields {
+        assert!(fm.selection.is_none());
+        assert!(fm.matcher.is_none());
+        let resolved = JsonEvent::borrow(&ev)
+            .get_field(&fm.field)
+            .expect("indexed path must resolve")
+            .to_json();
+        assert_eq!(resolved, fm.value);
+    }
+}
+
+#[test]
+fn array_all_records_every_member_up_to_cap() {
+    let yaml = r#"
+title: Array All
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        connections[all]:
+            protocol: 'TCP'
+    condition: selection
+"#;
+    let engine = array_engine(yaml, MatchDetailLevel::Off);
+    let ev = json!({"connections": [{"protocol": "TCP"}, {"protocol": "TCP"}]});
+    let results = engine.evaluate(&JsonEvent::borrow(&ev));
+    let det = results[0].as_detection().unwrap();
+    let fields: Vec<&str> = det
+        .matched_fields
+        .iter()
+        .map(|f| f.field.as_str())
+        .collect();
+    assert_eq!(
+        fields,
+        vec!["connections[0].protocol", "connections[1].protocol"]
+    );
+}
+
+#[test]
+fn array_none_and_vacuous_all_or_empty_keep_container() {
+    let none = r#"
+title: None
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        connections[none]:
+            protocol: 'TCP'
+    condition: selection
+"#;
+    let vacuous = r#"
+title: Vacuous
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        connections[all_or_empty]:
+            protocol: 'TCP'
+    condition: selection
+"#;
+    let none_ev = json!({"connections": [{"protocol": "UDP"}]});
+    let empty_ev = json!({"connections": []});
+
+    let none_det = array_engine(none, MatchDetailLevel::Off).evaluate(&JsonEvent::borrow(&none_ev));
+    assert_eq!(none_det[0].as_detection().unwrap().matched_fields.len(), 1);
+    assert_eq!(
+        none_det[0].as_detection().unwrap().matched_fields[0].field,
+        "connections"
+    );
+
+    let vacuous_det =
+        array_engine(vacuous, MatchDetailLevel::Off).evaluate(&JsonEvent::borrow(&empty_ev));
+    assert_eq!(
+        vacuous_det[0].as_detection().unwrap().matched_fields.len(),
+        1
+    );
+    assert_eq!(
+        vacuous_det[0].as_detection().unwrap().matched_fields[0].field,
+        "connections"
+    );
+}
+
+#[test]
+fn array_summary_adds_descriptor_on_indexed_paths() {
+    let engine = array_engine(ARRAY_ANY, MatchDetailLevel::Summary);
+    let ev = json!({"connections": [{"protocol": "TCP", "ip": "123.1.9.9"}]});
+    let results = engine.evaluate(&JsonEvent::borrow(&ev));
+    let det = results[0].as_detection().unwrap();
+    assert!(
+        det.matched_fields
+            .iter()
+            .all(|f| f.selection.as_deref() == Some("selection"))
+    );
+    assert!(det.matched_fields.iter().any(|f| f.matcher.is_some()));
+}
+
+#[test]
+fn array_scalar_records_unindexed_path() {
+    let engine = array_engine(ARRAY_ANY, MatchDetailLevel::Off);
+    let ev = json!({"connections": {"protocol": "TCP", "ip": "123.1.9.9"}});
+    let results = engine.evaluate(&JsonEvent::borrow(&ev));
+    let det = results[0].as_detection().unwrap();
+    let fields: Vec<&str> = det
+        .matched_fields
+        .iter()
+        .map(|f| f.field.as_str())
+        .collect();
+    assert!(fields.contains(&"connections.protocol"));
+    assert!(fields.contains(&"connections.ip"));
+    assert!(!fields.iter().any(|f| f.contains('[')));
+    for fm in &det.matched_fields {
+        let resolved = JsonEvent::borrow(&ev)
+            .get_field(&fm.field)
+            .expect("scalar path must resolve")
+            .to_json();
+        assert_eq!(resolved, fm.value);
+    }
+}
+
+#[test]
+fn array_nested_records_inner_indexed_paths() {
+    let yaml = r#"
+title: Nested
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        rules[any]:
+            type: 'allow'
+            ip[all]|startswith: '123.1.1'
+    condition: selection
+"#;
+    let engine = array_engine(yaml, MatchDetailLevel::Off);
+    let ev = json!({"rules": [{"type": "allow", "ip": ["123.1.1.1", "123.1.1.2"]}]});
+    let results = engine.evaluate(&JsonEvent::borrow(&ev));
+    let det = results[0].as_detection().unwrap();
+    let fields: Vec<&str> = det
+        .matched_fields
+        .iter()
+        .map(|f| f.field.as_str())
+        .collect();
+    assert!(fields.contains(&"rules[0].type"));
+    assert!(fields.contains(&"rules[0].ip[0]"));
+    assert!(fields.contains(&"rules[0].ip[1]"));
+    for fm in &det.matched_fields {
+        let resolved = JsonEvent::borrow(&ev)
+            .get_field(&fm.field)
+            .expect("nested indexed path must resolve")
+            .to_json();
+        assert_eq!(resolved, fm.value);
+    }
+}
+
+#[test]
+fn array_all_caps_recorded_members_at_32() {
+    let yaml = r#"
+title: Cap
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        connections[all]:
+            protocol: 'TCP'
+    condition: selection
+"#;
+    let members: Vec<serde_json::Value> = (0..40).map(|_| json!({"protocol": "TCP"})).collect();
+    let ev = json!({"connections": members});
+    let results = array_engine(yaml, MatchDetailLevel::Off).evaluate(&JsonEvent::borrow(&ev));
+    let det = results[0].as_detection().unwrap();
+    assert_eq!(det.matched_fields.len(), 32);
+    assert_eq!(det.matched_fields[0].field, "connections[0].protocol");
+    assert_eq!(det.matched_fields[31].field, "connections[31].protocol");
+}
+
+#[test]
+fn array_keywords_body_gated_by_detail_level() {
+    let yaml = r#"
+title: Keyword Body
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        tags[any]:
+            - suspicious
+    condition: selection
+"#;
+    let ev = json!({"tags": ["ok", "suspicious"]});
+    let off = array_engine(yaml, MatchDetailLevel::Off).evaluate(&JsonEvent::borrow(&ev));
+    let off_fields: Vec<&str> = off[0]
+        .as_detection()
+        .unwrap()
+        .matched_fields
+        .iter()
+        .map(|f| f.field.as_str())
+        .collect();
+    // A list body is AllOf-of-keyword-items or Keywords; at Off, keyword
+    // detections historically emit nothing. Element-self items still emit.
+    let summary = array_engine(yaml, MatchDetailLevel::Summary).evaluate(&JsonEvent::borrow(&ev));
+    let sum_fields: Vec<&str> = summary[0]
+        .as_detection()
+        .unwrap()
+        .matched_fields
+        .iter()
+        .map(|f| f.field.as_str())
+        .collect();
+    assert!(
+        off_fields.contains(&"tags[1]") || off_fields.is_empty(),
+        "off fields: {off_fields:?}"
+    );
+    assert!(
+        sum_fields.contains(&"tags[1]"),
+        "summary fields: {sum_fields:?}"
+    );
 }
