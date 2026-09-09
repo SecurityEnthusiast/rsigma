@@ -404,12 +404,79 @@ detection:
         .iter()
         .map(|f| f.field.as_str())
         .collect();
-    assert!(
-        off_fields.contains(&"tags[1]") || off_fields.is_empty(),
-        "off fields: {off_fields:?}"
-    );
+    // A plain list body compiles to element-self items (a value match on the
+    // member itself, not a keyword search), so the binding member is reported
+    // at every level, including Off, with its resolvable indexed path.
+    assert_eq!(off_fields, vec!["tags[1]"], "off fields: {off_fields:?}");
     assert!(
         sum_fields.contains(&"tags[1]"),
         "summary fields: {sum_fields:?}"
     );
+}
+
+#[test]
+fn array_member_fallback_respects_off_gating() {
+    // The binding member matches only via a Null-on-absent item. Top-level
+    // selections suppress those at Off; the member fallback must too.
+    let yaml = r#"
+title: Null Absent Body
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        connections[any]:
+            legacy_flag: null
+    condition: selection
+"#;
+    let ev = json!({"connections": [{"protocol": "TCP"}]});
+    let off = array_engine(yaml, MatchDetailLevel::Off).evaluate(&JsonEvent::borrow(&ev));
+    let det = off[0].as_detection().unwrap();
+    assert!(det.matched_fields.is_empty(), "{:?}", det.matched_fields);
+
+    let summary = array_engine(yaml, MatchDetailLevel::Summary).evaluate(&JsonEvent::borrow(&ev));
+    let det = summary[0].as_detection().unwrap();
+    let fields: Vec<&str> = det
+        .matched_fields
+        .iter()
+        .map(|f| f.field.as_str())
+        .collect();
+    assert!(
+        fields.contains(&"connections[0].legacy_flag"),
+        "summary fields: {fields:?}"
+    );
+}
+
+#[test]
+fn exists_false_on_absent_field_reported_above_off() {
+    // Flat-selection analogue of the array-body exists handling: an
+    // `|exists: false` match on an absent field is suppressed at Off and
+    // reported with a null value above it.
+    let yaml = r#"
+title: Exists False
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        sandbox|exists: false
+        protocol: 'TCP'
+    condition: selection
+"#;
+    let ev = json!({"protocol": "TCP"});
+    let off = array_engine(yaml, MatchDetailLevel::Off).evaluate(&JsonEvent::borrow(&ev));
+    let det = off[0].as_detection().unwrap();
+    let off_fields: Vec<&str> = det
+        .matched_fields
+        .iter()
+        .map(|f| f.field.as_str())
+        .collect();
+    assert_eq!(off_fields, vec!["protocol"]);
+
+    let summary = array_engine(yaml, MatchDetailLevel::Summary).evaluate(&JsonEvent::borrow(&ev));
+    let det = summary[0].as_detection().unwrap();
+    let sandbox = det
+        .matched_fields
+        .iter()
+        .find(|f| f.field == "sandbox")
+        .expect("exists:false entry");
+    assert_eq!(sandbox.value, serde_json::Value::Null);
 }
