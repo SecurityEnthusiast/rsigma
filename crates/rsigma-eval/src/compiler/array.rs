@@ -17,9 +17,11 @@ use crate::matcher::CompiledMatcher;
 
 /// Cap on recorded array members in explain traces and `matched_fields`.
 ///
-/// Explain records a diagnosis subset (failing members first); match-detail
-/// records binding members in index order. Both stop at this cap so a 10k
-/// member `[all]` cannot blow the result envelope.
+/// Explain records a diagnosis subset (decisive members first); match-detail
+/// records binding members in index order. Both stop at this cap so recorded
+/// member entries stay bounded. Note the cap only bounds per-member entries:
+/// a `[none]` or vacuous `[all_or_empty]` match still records the container
+/// with its full array value, as it always has.
 pub(crate) const ARRAY_MEMBER_CAP: usize = 32;
 
 /// Evaluate an array object-scope match against a resolved field value.
@@ -79,28 +81,47 @@ pub(crate) fn array_quantifier_from_member_matches(
     }
 }
 
+/// The member body-verdict that decides a quantifier's node verdict.
+///
+/// For the existential quantifiers (`any`, `none`) the decisive members are
+/// the body-matching ones: they bind an `any` and violate a `none`. For the
+/// universal quantifiers (`all`, `all_or_empty`) the decisive members are the
+/// failing ones. Recording that class first keeps the diagnostic member (the
+/// binding member of a passing `any`, the culprit of a failing `all`) inside
+/// the cap even for large arrays.
+pub(crate) fn decisive_member_verdict(quantifier: ArrayQuantifier) -> bool {
+    matches!(quantifier, ArrayQuantifier::Any | ArrayQuantifier::None)
+}
+
 /// Select up to [`ARRAY_MEMBER_CAP`] member indices to record in an explain
-/// trace: failing members first in index order, then matching members in
+/// trace. Members whose body verdict equals `decisive` are selected first,
+/// the rest fill any remaining room, and the result is returned in ascending
 /// index order.
-pub(crate) fn select_recorded_member_indices(member_matched: &[bool]) -> Vec<usize> {
+pub(crate) fn select_recorded_member_indices(
+    member_matched: &[bool],
+    decisive: bool,
+) -> Vec<usize> {
     let cap = ARRAY_MEMBER_CAP.min(member_matched.len());
     let mut selected = Vec::with_capacity(cap);
-    for (i, matched) in member_matched.iter().enumerate() {
-        if !matched {
+    for (i, &matched) in member_matched.iter().enumerate() {
+        if matched == decisive {
             selected.push(i);
             if selected.len() == cap {
-                return selected;
+                break;
             }
         }
     }
-    for (i, matched) in member_matched.iter().enumerate() {
-        if *matched {
-            selected.push(i);
-            if selected.len() == cap {
-                return selected;
+    if selected.len() < cap {
+        for (i, &matched) in member_matched.iter().enumerate() {
+            if matched != decisive {
+                selected.push(i);
+                if selected.len() == cap {
+                    break;
+                }
             }
         }
     }
+    selected.sort_unstable();
     selected
 }
 
@@ -323,21 +344,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recorded_indices_prefer_fails_then_matches() {
+    fn recorded_indices_under_cap_keep_all_members_in_index_order() {
         let matched = [true, false, true, false, true];
         assert_eq!(
-            select_recorded_member_indices(&matched),
-            vec![1, 3, 0, 2, 4]
+            select_recorded_member_indices(&matched, false),
+            vec![0, 1, 2, 3, 4]
+        );
+        assert_eq!(
+            select_recorded_member_indices(&matched, true),
+            vec![0, 1, 2, 3, 4]
         );
     }
 
     #[test]
-    fn recorded_indices_cap_stops_after_fails() {
-        let matched: Vec<bool> = (0..40).map(|i| i >= 10).collect();
-        let selected = select_recorded_member_indices(&matched);
+    fn recorded_indices_keep_decisive_fails_under_truncation() {
+        // 30 matches then 10 fails: with fails decisive (all/all_or_empty),
+        // every culprit survives the cap even though they sit at the end.
+        let matched: Vec<bool> = (0..40).map(|i| i < 30).collect();
+        let selected = select_recorded_member_indices(&matched, false);
         assert_eq!(selected.len(), ARRAY_MEMBER_CAP);
-        assert_eq!(&selected[..10], &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-        assert_eq!(&selected[10..], &(10..32).collect::<Vec<_>>());
+        for i in 30..40 {
+            assert!(selected.contains(&i), "culprit {i} dropped: {selected:?}");
+        }
+        assert!(selected.windows(2).all(|w| w[0] < w[1]), "not sorted");
+    }
+
+    #[test]
+    fn recorded_indices_keep_decisive_match_under_truncation() {
+        // One binding member at the very end of a large [any] array: with
+        // matches decisive it must survive the cap.
+        let matched: Vec<bool> = (0..40).map(|i| i == 39).collect();
+        let selected = select_recorded_member_indices(&matched, true);
+        assert_eq!(selected.len(), ARRAY_MEMBER_CAP);
+        assert!(selected.contains(&39), "binding member dropped");
+    }
+
+    #[test]
+    fn decisive_verdict_is_true_for_existential_quantifiers() {
+        assert!(decisive_member_verdict(ArrayQuantifier::Any));
+        assert!(decisive_member_verdict(ArrayQuantifier::None));
+        assert!(!decisive_member_verdict(ArrayQuantifier::All));
+        assert!(!decisive_member_verdict(ArrayQuantifier::AllOrEmpty));
     }
 
     #[test]

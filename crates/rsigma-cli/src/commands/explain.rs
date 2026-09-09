@@ -292,6 +292,7 @@ fn render_detection(det: &DetectionTrace, level: usize, p: &Painter, in_member: 
             quantifier,
             matched,
             member_count,
+            matched_count,
             scalar,
             empty_reason,
             truncated,
@@ -299,11 +300,17 @@ fn render_detection(det: &DetectionTrace, level: usize, p: &Painter, in_member: 
             members,
         } => {
             let mut extra = format!("({member_count} members");
-            let matched_idx: Vec<String> = members
+            let mut matched_idx: Vec<String> = members
                 .iter()
                 .filter(|m| m.matched)
                 .map(|m| m.index.to_string())
                 .collect();
+            // matched_count spans the full array; recorded members may omit
+            // matches under truncation, so surface the remainder explicitly.
+            let unlisted = matched_count.saturating_sub(matched_idx.len());
+            if unlisted > 0 {
+                matched_idx.push(format!("+{unlisted} more"));
+            }
             extra.push_str(&format!(", matched [{}]", matched_idx.join(", ")));
             if *scalar {
                 extra.push_str(", scalar");

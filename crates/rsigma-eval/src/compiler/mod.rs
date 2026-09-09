@@ -17,8 +17,9 @@ pub mod optimizer;
 mod tests;
 
 pub(crate) use array::{
-    array_quantifier_from_member_matches, array_quantifier_matches_empty, element_field,
-    eval_array_body, eval_array_item, eval_array_quantified, select_recorded_member_indices,
+    array_quantifier_from_member_matches, array_quantifier_matches_empty, decisive_member_verdict,
+    element_field, eval_array_body, eval_array_item, eval_array_quantified,
+    select_recorded_member_indices,
 };
 
 pub use from_ir::compile_to_compiled;
@@ -1266,10 +1267,14 @@ fn collect_detection_fields(
                                 ));
                             }
                         } else if level != MatchDetailLevel::Off
-                            && matches!(item.matcher, CompiledMatcher::Null)
+                            && matches!(
+                                item.matcher,
+                                CompiledMatcher::Null | CompiledMatcher::Exists(false)
+                            )
                         {
-                            // Field absent and matched by the `Null` matcher.
-                            // Never reported at `Off` (preserves wire shape).
+                            // Field absent and matched by the `Null` matcher or
+                            // an `|exists: false` assertion. Never reported at
+                            // `Off` (preserves wire shape).
                             out.push(make_field_match(
                                 selection,
                                 field_name,
@@ -1387,7 +1392,12 @@ fn collect_array_match_fields<E: Event>(
         let member_path = array::array_member_path(&container_path, i, scalar);
         let before = out.len();
         collect_array_body_fields(selection, body, members[i], outer, level, &member_path, out);
-        if out.len() == before && !matches!(body, CompiledDetection::Keywords(_)) {
+        // A binding member whose body produced no leaf entries (e.g. only
+        // `not` branches matched) is still recorded as a whole. At `Off` the
+        // only leafless cases are level-gated ones (keywords, absent-field
+        // matches), which top-level selections also suppress, so the fallback
+        // must not resurrect them.
+        if out.len() == before && level != MatchDetailLevel::Off {
             out.push(FieldMatch::new(member_path, members[i].to_json()));
         }
     }

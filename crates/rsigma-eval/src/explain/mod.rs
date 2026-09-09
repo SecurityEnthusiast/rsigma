@@ -26,8 +26,8 @@ use rsigma_parser::{ArrayQuantifier, ConditionExpr, Quantifier};
 
 use crate::compiler::{
     CompiledDetection, CompiledDetectionItem, CompiledRule, array_quantifier_from_member_matches,
-    element_field, eval_array_body, eval_array_item, eval_detection_item_no_bloom,
-    select_recorded_member_indices,
+    decisive_member_verdict, element_field, eval_array_body, eval_array_item,
+    eval_detection_item_no_bloom, select_recorded_member_indices,
 };
 use crate::event::{Event, EventValue};
 use crate::matcher::CompiledMatcher;
@@ -138,6 +138,9 @@ pub enum DetectionTrace {
         quantifier: String,
         matched: bool,
         member_count: usize,
+        /// Members whose body matched, counted over the full array (not just
+        /// the recorded subset), so truncation cannot understate it.
+        matched_count: usize,
         /// True when the field value was a non-array scalar treated as one member.
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         scalar: bool,
@@ -422,20 +425,23 @@ fn explain_array_match<E: Event>(
         .map(|m| eval_array_body(body, m, outer))
         .collect();
     let matched = array_quantifier_from_member_matches(quantifier, &member_matched);
-    let recorded: Vec<ArrayMemberTrace> = select_recorded_member_indices(&member_matched)
-        .into_iter()
-        .map(|index| ArrayMemberTrace {
-            index,
-            matched: member_matched[index],
-            detection: explain_array_body(body, members[index], outer),
-        })
-        .collect();
+    let matched_count = member_matched.iter().filter(|&&m| m).count();
+    let recorded: Vec<ArrayMemberTrace> =
+        select_recorded_member_indices(&member_matched, decisive_member_verdict(quantifier))
+            .into_iter()
+            .map(|index| ArrayMemberTrace {
+                index,
+                matched: member_matched[index],
+                detection: explain_array_body(body, members[index], outer),
+            })
+            .collect();
     let omitted = members.len().saturating_sub(recorded.len());
     DetectionTrace::ArrayMatch {
         field: field.to_string(),
         quantifier: quantifier.to_string(),
         matched,
         member_count: members.len(),
+        matched_count,
         scalar,
         empty_reason,
         truncated: omitted > 0,
@@ -1367,7 +1373,9 @@ detection:
     }
 
     #[test]
-    fn array_truncation_keeps_verdict_and_prefers_fails() {
+    fn array_truncation_keeps_verdict_and_records_binding_member() {
+        // [any] over 40 members where only the last one binds: the binding
+        // member is decisive and must survive truncation.
         let rule = compile(
             r#"
 title: Trunc
@@ -1396,6 +1404,7 @@ detection:
                 truncated,
                 omitted,
                 member_count,
+                matched_count,
                 members,
                 matched,
                 ..
@@ -1403,11 +1412,55 @@ detection:
                 assert!(matched);
                 assert!(*truncated);
                 assert_eq!(*member_count, 40);
+                assert_eq!(*matched_count, 1);
                 assert_eq!(*omitted, 8);
                 assert_eq!(members.len(), 32);
-                assert!(members.iter().all(|m| !m.matched));
-                assert_eq!(members[0].index, 0);
-                assert_eq!(members[31].index, 31);
+                let binding = members.iter().find(|m| m.matched).expect("binding member");
+                assert_eq!(binding.index, 39);
+                assert!(members.windows(2).all(|w| w[0].index < w[1].index));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn array_truncation_keeps_all_culprits_for_all_quantifier() {
+        // [all] over 40 members where the last 5 fail: the culprits are
+        // decisive and must all survive truncation.
+        let rule = compile(
+            r#"
+title: TruncAll
+sigma-version: 3
+logsource: {category: test}
+detection:
+    selection:
+        connections[all]:
+            protocol: 'TCP'
+    condition: selection
+"#,
+        );
+        let mut members = Vec::new();
+        for i in 0..40 {
+            members.push(json!({"protocol": if i < 35 { "TCP" } else { "UDP" }}));
+        }
+        let v = json!({"connections": members});
+        let exp = explain_rule(&rule, &JsonEvent::borrow(&v));
+        assert!(!exp.matched);
+        match selection_detection(&exp) {
+            DetectionTrace::ArrayMatch {
+                matched,
+                matched_count,
+                members,
+                ..
+            } => {
+                assert!(!*matched);
+                assert_eq!(*matched_count, 35);
+                let fails: Vec<usize> = members
+                    .iter()
+                    .filter(|m| !m.matched)
+                    .map(|m| m.index)
+                    .collect();
+                assert_eq!(fails, vec![35, 36, 37, 38, 39]);
             }
             other => panic!("unexpected: {other:?}"),
         }
