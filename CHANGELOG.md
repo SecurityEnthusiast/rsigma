@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Array match detail in `engine explain` and `matched_fields`
+### Array match detail in `engine explain` and `matched_fields` (#483)
 
 `engine explain` records per-member and per-predicate traces for array object-scope (`field[any]` / `[all]` / `[all_or_empty]` / `[none]`), including nested scopes, extended `condition:` bodies, scalar-as-one-member, vacuous empty/missing, and a 32-member diagnosis cap that keeps the decisive members first (binding members for `any`/`none`, failing members for `all`/`all_or_empty`), with a `matched_count` field counted over the full array so truncation never understates it. `matched_fields` records the binding members with indexed paths (`connections[0].protocol`) instead of the opaque container, capped at 32 members in index order; `[none]` and vacuous `[all_or_empty]` keep the container. A scalar treated as one member uses the un-indexed path so it still resolves through field lookup. CSV/TSV explain output emits one row per leaf with those indexed paths.
 
