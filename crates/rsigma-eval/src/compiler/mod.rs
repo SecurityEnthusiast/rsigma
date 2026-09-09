@@ -8,12 +8,15 @@
 //! efficiently against events. Modifier interpretation happens during lowering;
 //! this module turns the resolved matchers into executable artifacts.
 
+mod array;
 mod from_ir;
 mod helpers;
 #[doc(hidden)]
 pub mod optimizer;
 #[cfg(test)]
 mod tests;
+
+pub(crate) use array::{array_quantifier_matches_empty, eval_array_quantified};
 
 pub use from_ir::compile_to_compiled;
 
@@ -22,7 +25,6 @@ pub use from_ir::compile_to_compiled;
 #[cfg(test)]
 pub(crate) use optimizer::optimize_any_of as optimize_any_of_for_test;
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -30,7 +32,6 @@ use base64::Engine as Base64Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use regex::Regex;
 
-use rsigma_parser::fieldpath::{first_unescaped, unescape_brackets};
 use rsigma_parser::value::{SpecialChar, StringPart};
 use rsigma_parser::{
     ArrayQuantifier, ConditionExpr, Detection, DetectionItem, Level, LogSource, Modifier,
@@ -38,7 +39,7 @@ use rsigma_parser::{
 };
 
 use crate::error::{EvalError, Result};
-use crate::event::{Event, EventValue};
+use crate::event::Event;
 use crate::matcher::{CompiledMatcher, sigma_string_to_regex};
 use crate::result::{
     DetectionBody, EvaluationResult, FieldMatch, MatchDetailLevel, MatcherKind, ResultBody,
@@ -1181,228 +1182,6 @@ where
         CompiledDetection::Conditional { named, condition } => {
             eval_condition_with_bloom(condition, named, event, &mut Vec::new(), bloom)
         }
-    }
-}
-
-/// Evaluate an array object-scope match against a resolved field value.
-///
-/// A scalar (non-array, non-null) value is treated as a single-member array,
-/// so `any`/`all` both reduce to "the value satisfies the body". `all`
-/// requires a non-empty array; a missing/null value never matches.
-fn eval_array_quantified<E: Event>(
-    value: &EventValue,
-    quantifier: ArrayQuantifier,
-    body: &CompiledDetection,
-    outer: &E,
-) -> bool {
-    match value {
-        EventValue::Array(members) => match quantifier {
-            ArrayQuantifier::Any => members.iter().any(|m| eval_array_body(body, m, outer)),
-            ArrayQuantifier::All => {
-                !members.is_empty() && members.iter().all(|m| eval_array_body(body, m, outer))
-            }
-            ArrayQuantifier::AllOrEmpty => members.iter().all(|m| eval_array_body(body, m, outer)),
-            ArrayQuantifier::None => !members.iter().any(|m| eval_array_body(body, m, outer)),
-        },
-        // A null or missing array is empty: `none` holds vacuously, the others
-        // do not.
-        EventValue::Null => array_quantifier_matches_empty(quantifier),
-        // A scalar (non-array, non-null) value is a single-member array.
-        single => match quantifier {
-            ArrayQuantifier::None => !eval_array_body(body, single, outer),
-            _ => eval_array_body(body, single, outer),
-        },
-    }
-}
-
-/// Whether a quantifier matches an empty or missing array (zero members).
-fn array_quantifier_matches_empty(quantifier: ArrayQuantifier) -> bool {
-    matches!(
-        quantifier,
-        ArrayQuantifier::None | ArrayQuantifier::AllOrEmpty
-    )
-}
-
-/// Evaluate a compiled detection `body` against a single array member.
-///
-/// Field references inside `body` resolve relative to the member; a body item
-/// with no field name matches the member value itself.
-fn eval_array_body<E: Event>(body: &CompiledDetection, member: &EventValue, outer: &E) -> bool {
-    match body {
-        CompiledDetection::AllOf(items) => items
-            .iter()
-            .all(|item| eval_array_item(item, member, outer)),
-        CompiledDetection::AnyOf(dets) => dets.iter().any(|d| eval_array_body(d, member, outer)),
-        CompiledDetection::And(dets) => dets.iter().all(|d| eval_array_body(d, member, outer)),
-        CompiledDetection::ArrayMatch {
-            field,
-            quantifier,
-            body: inner,
-        } => match element_field(member, field) {
-            Some(value) => eval_array_quantified(value, *quantifier, inner, outer),
-            None => array_quantifier_matches_empty(*quantifier),
-        },
-        // Keywords inside an element scope match the member value directly.
-        CompiledDetection::Keywords(matcher) => matcher.matches(member, outer),
-        // Extended block body: evaluate the condition over named sub-selections
-        // against this member (same-element binding under and/or/not).
-        CompiledDetection::Conditional { named, condition } => {
-            eval_array_condition(condition, named, member, outer)
-        }
-    }
-}
-
-/// Evaluate an extended block-body `condition` against a single array member.
-///
-/// Each named sub-selection is evaluated against the member (via
-/// [`eval_array_body`]), and the boolean structure (`and`/`or`/`not` and
-/// selector quantifiers like `1 of x_*`) is applied. This is the element-scoped
-/// analogue of [`eval_condition_with_bloom`]; it carries no bloom because array
-/// members are not bloom-indexed.
-fn eval_array_condition<E: Event>(
-    expr: &ConditionExpr,
-    named: &HashMap<String, CompiledDetection>,
-    member: &EventValue,
-    outer: &E,
-) -> bool {
-    match expr {
-        ConditionExpr::Identifier(name) => named
-            .get(name)
-            .is_some_and(|d| eval_array_body(d, member, outer)),
-        ConditionExpr::And(exprs) => exprs
-            .iter()
-            .all(|e| eval_array_condition(e, named, member, outer)),
-        ConditionExpr::Or(exprs) => exprs
-            .iter()
-            .any(|e| eval_array_condition(e, named, member, outer)),
-        ConditionExpr::Not(inner) => !eval_array_condition(inner, named, member, outer),
-        ConditionExpr::Selector {
-            quantifier,
-            pattern,
-        } => {
-            let names: Vec<&String> = named
-                .keys()
-                .filter(|n| pattern.matches_detection_name(n))
-                .collect();
-            let count = names
-                .iter()
-                .filter(|n| {
-                    named
-                        .get(**n)
-                        .is_some_and(|d| eval_array_body(d, member, outer))
-                })
-                .count() as u64;
-            match quantifier {
-                Quantifier::Any => count >= 1,
-                Quantifier::All => count == names.len() as u64,
-                Quantifier::Count(n) => count >= *n,
-            }
-        }
-    }
-}
-
-/// Evaluate one body item against an array member.
-fn eval_array_item<E: Event>(item: &CompiledDetectionItem, member: &EventValue, outer: &E) -> bool {
-    if let Some(expect_exists) = item.exists {
-        let exists = match &item.field {
-            Some(name) => element_field(member, name).is_some_and(|v| !v.is_null()),
-            None => !member.is_null(),
-        };
-        return exists == expect_exists;
-    }
-
-    match &item.field {
-        Some(name) => match element_field(member, name) {
-            Some(value) => item.matcher.matches(value, outer),
-            None => matches!(item.matcher, CompiledMatcher::Null),
-        },
-        // No field name: match the array member value itself.
-        None => item.matcher.matches(member, outer),
-    }
-}
-
-/// Resolve a field path within an array member (an [`EventValue`]).
-///
-/// Mirrors `JsonEvent::get_field`: a flat key first, then dot-separated
-/// traversal that distributes over arrays for object keys and selects a single
-/// element for positional `[N]` indices.
-fn element_field<'a>(member: &'a EventValue<'a>, path: &str) -> Option<&'a EventValue<'a>> {
-    if let EventValue::Map(entries) = member
-        && let Some((_, v)) = entries.iter().find(|(k, _)| k.as_ref() == path)
-    {
-        return Some(v);
-    }
-    let ops = parse_event_ops(path);
-    nav_event_value(member, &ops)
-}
-
-enum EventOp<'a> {
-    Key(Cow<'a, str>),
-    Index(i64),
-}
-
-/// Parse a dot path into navigation ops, recognizing positional `name[N]`.
-/// Only an unescaped `[...]` is an index; `\[` / `\]` are literal and unescaped
-/// into the key.
-fn parse_event_ops(path: &str) -> Vec<EventOp<'_>> {
-    let mut ops = Vec::new();
-    for part in path.split('.') {
-        match first_unescaped(part, b'[') {
-            Some(bpos) if index_groups(&part[bpos..]).is_some() => {
-                let name = &part[..bpos];
-                if !name.is_empty() {
-                    ops.push(EventOp::Key(unescape_brackets(name)));
-                }
-                for idx in index_groups(&part[bpos..]).expect("checked") {
-                    ops.push(EventOp::Index(idx));
-                }
-            }
-            _ => ops.push(EventOp::Key(unescape_brackets(part))),
-        }
-    }
-    ops
-}
-
-/// Parse `[N]` or `[N][M]...` into indices (negative allowed), or `None` if
-/// malformed/non-numeric.
-fn index_groups(s: &str) -> Option<Vec<i64>> {
-    let mut out = Vec::new();
-    let mut rem = s;
-    while !rem.is_empty() {
-        let rest = rem.strip_prefix('[')?;
-        let close = rest.find(']')?;
-        out.push(rest[..close].parse().ok()?);
-        rem = &rest[close + 1..];
-    }
-    Some(out)
-}
-
-fn nav_event_value<'a>(
-    current: &'a EventValue<'a>,
-    ops: &[EventOp<'_>],
-) -> Option<&'a EventValue<'a>> {
-    let Some((op, rest)) = ops.split_first() else {
-        return Some(current);
-    };
-    match op {
-        EventOp::Key(key) => match current {
-            EventValue::Map(entries) => {
-                let next = entries
-                    .iter()
-                    .find(|(k, _)| k.as_ref() == key.as_ref())
-                    .map(|(_, v)| v)?;
-                nav_event_value(next, rest)
-            }
-            EventValue::Array(members) => members.iter().find_map(|m| nav_event_value(m, ops)),
-            _ => None,
-        },
-        EventOp::Index(i) => match current {
-            EventValue::Array(members) => {
-                let idx = crate::event::resolve_array_index(*i, members.len())?;
-                nav_event_value(members.get(idx)?, rest)
-            }
-            _ => None,
-        },
     }
 }
 
