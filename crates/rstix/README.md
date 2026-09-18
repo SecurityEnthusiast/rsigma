@@ -610,7 +610,7 @@ let status = client
 
 #### Collection ingest (`taxii-store`)
 
-[`ingest_collection`](taxii::ingest_collection) paginates [`TaxiiClient::objects_stream`](taxii::TaxiiClient::objects_stream), wraps the objects in a synthetic [`Bundle`](model::Bundle), and calls [`StixStore::import_bundle`](store::StixStore::import_bundle). Requires **`taxii-store`** (`taxii` + `store`). Works with [`MemoryStore`](store::MemoryStore) or [`FsStore`](store::FsStore).
+[`ingest_collection`](taxii::ingest_collection) paginates [`TaxiiClient::objects_stream`](taxii::TaxiiClient::objects_stream), imports each page via [`StixStore::import_objects`](store::StixStore::import_objects), and returns an [`IngestReport`](taxii::IngestReport) with [`ImportReport`](store::ImportReport) counters. Requires **`taxii-store`** (`taxii` + `store`). Works with [`MemoryStore`](store::MemoryStore) or [`FsStore`](store::FsStore).
 
 ```rust
 use rstix::store::{MemoryStore, StixStore};
@@ -619,15 +619,40 @@ use rstix::taxii::{ingest_collection, TaxiiClient, TaxiiClientConfig, TaxiiFilte
 let client = TaxiiClient::new(TaxiiClientConfig::new("https://taxii.example.com"))?;
 let store = MemoryStore::new();
 let report = ingest_collection(&client, &store, api_root_url, "col1", TaxiiFilter::new()).await?;
+println!("added {}", report.import.objects_added);
 ```
+
+**Validate-on-ingest** (requires **`validate`** in addition to `taxii-store`):
+
+```rust
+use rstix::taxii::{IngestOptions, ingest_collection_with_bundle_id};
+
+let report = ingest_collection_with_bundle_id(
+    &client,
+    &store,
+    api_root_url,
+    "col1",
+    TaxiiFilter::new(),
+    bundle_id,
+    IngestOptions::interop_strict(),
+)
+.await?;
+assert!(report.validation.is_valid());
+```
+
+Each page is validated as a synthetic [`Bundle`](model::Bundle) before import. Invalid pages are skipped by default (`reject_invalid_pages: true`); diagnostics are in [`IngestValidationReport`](taxii::IngestValidationReport).
 
 Notes:
 
 - Each TAXII page is imported separately (memory bounded by page size).
 - Reference checks run **after all pages** against the full store (forward refs across pages resolve correctly).
 - Re-ingest is **idempotent** (`ImportReport::objects_deduplicated`).
+**Offline test:**
 
-**Offline test:** `cargo test -p rstix --features taxii-store --test taxii_store`
+```bash
+cargo test -p rstix --features taxii-store --test taxii_store --locked
+cargo test -p rstix --features taxii-store,validate --test taxii_store --locked
+```
 
 ### TAXII TXC interop self-certification (CSD01 Table 51)
 
@@ -698,7 +723,7 @@ Request invariants (all calls): `Accept: application/taxii+json;version=2.1`, `U
 | DELETE preflight | Requires both `can_read` and `can_write` | Spec section 5.7 |
 | Manifest Accept | TAXII + STIX media types | Spec section 5.3 |
 | DNS SRV discovery | `resolve_taxii_srv` + `TaxiiClient::discover_via_srv` | `_taxii2._tcp` records |
-| Collection ingest | `ingest_collection` streams objects → synthetic `Bundle` → `StixStore::import_bundle` | `taxii-store` feature |
+| Collection ingest | `ingest_collection` streams pages → `StixStore::import_objects`; optional per-page `Validator` via `IngestOptions` (`validate` feature) | `taxii-store`; validate-on-ingest when `validate` enabled |
 | mTLS / rustls crypto | PEM or PKCS#12 via [`ClientCertificate`](taxii::ClientCertificate); `build_rustls_config` and interop mTLS mock use **`ring` explicitly** | Avoids process-default panic when `ring` and `aws-lc-rs` are both linked (e.g. via reqwest) |
 | Channels | **Not implemented** | Spec §6 RESERVED |
 | Filter validation | `limit > 0`; `all` version rules enforced | Invalid filters rejected before HTTP |

@@ -4,3 +4,6 @@
 mod ingest_support;
 #[path = "taxii/ingest_tests.rs"]
 mod ingest_tests;
+#[cfg(feature = "validate")]
+#[path = "taxii/ingest_validate_tests.rs"]
+mod ingest_validate_tests;
