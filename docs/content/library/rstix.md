@@ -168,6 +168,36 @@ Optional live harness: see [`tests/taxii-live/README.md`](https://github.com/tim
 
 Full **API surface tables** and **invariant decisions**: [crate README: TAXII Client](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#taxii-client).
 
+### Collection ingest (`taxii-store`)
+
+Optional **`taxii-store`** feature (`taxii` + `store`): paginated collection fetch into [`StixStore`](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#collection-ingest-taxii-store) with bounded memory.
+
+**Public API (breaking vs 0.22.0):** `ingest_collection` / `ingest_collection_with_bundle_id` return `IngestReport` (not `ImportReport`); `ingest_collection_with_bundle_id` takes `IngestOptions`.
+
+```rust
+use rstix::store::{MemoryStore, StixStore};
+use rstix::taxii::{ingest_collection, IngestOptions, TaxiiClient, TaxiiClientConfig, TaxiiFilter};
+
+let client = TaxiiClient::new(TaxiiClientConfig::new("https://taxii.example.com"))?;
+let store = MemoryStore::new();
+let report = ingest_collection(&client, &store, api_root_url, "col1", TaxiiFilter::new()).await?;
+println!("added {}", report.import.objects_added);
+
+// Optional validate-on-ingest (`validate` feature):
+use rstix::taxii::ingest_collection_with_bundle_id;
+let report = ingest_collection_with_bundle_id(
+    &client, &store, api_root_url, "col1", TaxiiFilter::new(), bundle_id,
+    IngestOptions::producer_strict(),
+).await?;
+```
+
+Default ingest does not validate. With `validate`, each object is checked as a one-object synthetic bundle (`producer_strict` skips References); invalid objects are rejected by default when a validator is attached. Unresolved refs are audited after all pages against the store.
+
+```bash
+cargo test -p rstix --features taxii-store --test taxii_store --locked
+cargo test -p rstix --features taxii-store,validate --test taxii_store --locked
+```
+
 ## Graph + Marking + Store
 
 Four optional feature flags (each implies `serde`; `store-fs` also implies `store`):

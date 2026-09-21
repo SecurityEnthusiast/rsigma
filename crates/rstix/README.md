@@ -624,6 +624,8 @@ println!("added {}", report.import.objects_added);
 
 **Validate-on-ingest** (requires **`validate`** in addition to `taxii-store`):
 
+By default, [`ingest_collection`](taxii::ingest_collection) does **not** run the validation pipeline. Attach a validator via [`IngestOptions`](taxii::IngestOptions) to validate each object before import (References phase skipped — TAXII pages are not closed bundles).
+
 ```rust
 use rstix::taxii::{IngestOptions, ingest_collection_with_bundle_id};
 
@@ -634,18 +636,18 @@ let report = ingest_collection_with_bundle_id(
     "col1",
     TaxiiFilter::new(),
     bundle_id,
-    IngestOptions::interop_strict(),
+    IngestOptions::producer_strict(),
 )
 .await?;
 assert!(report.validation.is_valid());
 ```
 
-Each page is validated as a synthetic [`Bundle`](model::Bundle) before import. Invalid pages are skipped by default (`reject_invalid_pages: true`); diagnostics are in [`IngestValidationReport`](taxii::IngestValidationReport).
+Each object is validated as a one-object synthetic [`Bundle`](model::Bundle) before import ([`Validator::producer_strict`](validate::Validator::producer_strict) skips References, so TAXII pages are not treated as closed bundles). Invalid objects are skipped by default when a validator is set (`reject_invalid_objects: true`); diagnostics are in [`IngestValidationReport`](taxii::IngestValidationReport). Use [`IngestOptions::interop_strict()`](taxii::IngestOptions::interop_strict) only when zero-leniency interop checks on each object are required — not for ordinary paginated ingest.
 
 Notes:
 
 - Each TAXII page is imported separately (memory bounded by page size).
-- Reference checks run **after all pages** against the full store (forward refs across pages resolve correctly).
+- With **no validator**, reference checks run **after all pages** against the full store (forward refs across pages resolve correctly). With a validator, unresolved refs are still audited post-ingest via [`ImportReport::unresolved_references`](store::ImportReport::unresolved_references).
 - Re-ingest is **idempotent** (`ImportReport::objects_deduplicated`).
 **Offline test:**
 

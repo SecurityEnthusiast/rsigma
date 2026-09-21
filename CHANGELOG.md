@@ -6,7 +6,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ### rstix: validate-on-ingest for TAXII collections (#499)
 
-`ingest_collection` now returns [`IngestReport`](crates/rstix/README.md) (`import` + optional `validation`). With the `validate` feature, [`IngestOptions::interop_strict()`](crates/rstix/README.md) validates each TAXII page as a synthetic bundle before store import and rejects invalid pages by default.
+**Public API (breaking vs 0.22.0):**
+
+- `ingest_collection` / `ingest_collection_with_bundle_id` now return `IngestReport` instead of `ImportReport`.
+- `ingest_collection_with_bundle_id` takes a new `IngestOptions` argument.
+
+With the `validate` feature, attach `IngestOptions::producer_strict()` (or a custom `Validator`) to validate each object before store import; invalid objects are rejected by default (`reject_invalid_objects: true`). Per-object validation skips the References phase so forward refs across TAXII pages still resolve after the full ingest.
 
 ### Security: rustls advisory + cargo-deny config (#498)
 

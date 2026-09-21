@@ -5,6 +5,7 @@
 //! [`IngestOptions::validator`](IngestOptions::validator).
 
 use crate::core::StixId;
+#[cfg(feature = "validate")]
 use crate::model::Bundle;
 use crate::store::{ImportReport, StixStore, StoreError, audit_unresolved_refs};
 #[cfg(feature = "validate")]
@@ -20,33 +21,49 @@ pub const DEFAULT_INGEST_BUNDLE_ID: &str = "bundle--00000000-0000-0000-0000-0000
 
 /// Options controlling TAXII collection ingest.
 #[derive(Clone, Debug)]
+#[cfg_attr(not(feature = "validate"), derive(Default))]
 pub struct IngestOptions {
-    /// When set, each page is validated as a synthetic bundle before import.
+    /// When set, each object is validated before import as a one-object synthetic [`Bundle`]
+    /// (profile-dependent; [`Validator::producer_strict`] skips References).
     #[cfg(feature = "validate")]
     pub validator: Option<Validator>,
-    /// Skip store import for pages that fail validation (default: `true`).
+    /// Skip store import for objects that fail validation (default: `true` when `validate` is enabled).
     #[cfg(feature = "validate")]
-    pub reject_invalid_pages: bool,
+    pub reject_invalid_objects: bool,
 }
 
+#[cfg(feature = "validate")]
 impl Default for IngestOptions {
     fn default() -> Self {
         Self {
-            #[cfg(feature = "validate")]
             validator: None,
-            #[cfg(feature = "validate")]
-            reject_invalid_pages: true,
+            reject_invalid_objects: true,
         }
     }
 }
 
 #[cfg(feature = "validate")]
 impl IngestOptions {
-    /// Validate each page with [`Validator::interop_strict`] and reject invalid pages.
+    /// Validate each object with [`Validator::producer_strict`] and reject invalid objects.
+    ///
+    /// Skips the References phase (TAXII pages are not closed bundles). Unresolved refs are
+    /// audited after all pages via [`ImportReport::unresolved_references`].
+    pub fn producer_strict() -> Self {
+        Self {
+            validator: Some(Validator::producer_strict()),
+            reject_invalid_objects: true,
+        }
+    }
+
+    /// Validate each object with [`Validator::interop_strict`] at zero leniency.
+    ///
+    /// **Stricter than [`Self::producer_strict`]:** warnings (for example `STIX-W0010`) fail
+    /// validation. Still skips References (per-object validation). Prefer [`Self::producer_strict`]
+    /// for paginated collection ingest unless you need interop-grade strictness on each object.
     pub fn interop_strict() -> Self {
         Self {
             validator: Some(Validator::interop_strict()),
-            reject_invalid_pages: true,
+            reject_invalid_objects: true,
         }
     }
 
@@ -54,26 +71,26 @@ impl IngestOptions {
     pub fn with_validator(validator: Validator) -> Self {
         Self {
             validator: Some(validator),
-            reject_invalid_pages: true,
+            reject_invalid_objects: true,
         }
     }
 
-    /// Import pages even when validation fails (diagnostics still recorded).
-    pub fn allow_invalid_pages(mut self) -> Self {
-        self.reject_invalid_pages = false;
+    /// Import objects even when validation fails (diagnostics still recorded).
+    pub fn allow_invalid_objects(mut self) -> Self {
+        self.reject_invalid_objects = false;
         self
     }
 }
 
-/// Validation outcome for one rejected TAXII page.
+/// Validation outcome for one rejected TAXII object.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg(feature = "validate")]
 pub struct IngestValidationFailure {
     /// Zero-based page index in fetch order.
     pub page: usize,
-    /// Objects on the page that were not imported.
-    pub object_count: usize,
-    /// Pipeline diagnostics for the synthetic bundle built from the page.
+    /// STIX id of the object that was not imported (or imported with `allow_invalid_objects`).
+    pub object_id: StixId,
+    /// Pipeline diagnostics for the object.
     pub report: ValidationReport,
 }
 
@@ -81,21 +98,19 @@ pub struct IngestValidationFailure {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg(feature = "validate")]
 pub struct IngestValidationReport {
-    /// Pages validated (validator configured and page non-empty).
-    pub pages_validated: usize,
-    /// Pages skipped because validation failed and [`IngestOptions::reject_invalid_pages`] was set.
-    pub pages_rejected: usize,
-    /// Objects not imported due to page rejection.
-    pub rejected_object_count: usize,
-    /// Per-page failure details.
+    /// Objects validated (validator configured and page non-empty).
+    pub objects_validated: usize,
+    /// Objects skipped because validation failed and [`IngestOptions::reject_invalid_objects`] was set.
+    pub objects_rejected: usize,
+    /// Per-object failure details.
     pub failures: Vec<IngestValidationFailure>,
 }
 
 #[cfg(feature = "validate")]
 impl IngestValidationReport {
-    /// True when no page was rejected.
+    /// True when no object was rejected.
     pub fn is_valid(&self) -> bool {
-        self.pages_rejected == 0
+        self.objects_rejected == 0
     }
 }
 
@@ -224,36 +239,35 @@ fn import_page(
     }
 
     #[cfg(not(feature = "validate"))]
-    let _ = &bundle_id;
+    let _ = (&bundle_id, options, page_index);
 
-    #[cfg(feature = "validate")]
-    if let Some(validator) = &options.validator {
-        report.validation.pages_validated += 1;
-        let bundle = Bundle::from_objects(bundle_id.clone(), envelope.objects.clone());
-        let validation = validator.validate_bundle(&bundle);
-        if !validation.is_valid() {
-            if options.reject_invalid_pages {
-                report.validation.pages_rejected += 1;
-                report.validation.rejected_object_count += envelope.objects.len();
+    let mut batch = Vec::with_capacity(envelope.objects.len());
+    for object in envelope.objects {
+        #[cfg(feature = "validate")]
+        if let Some(validator) = &options.validator {
+            report.validation.objects_validated += 1;
+            let bundle = Bundle::from_objects(bundle_id.clone(), vec![object.clone()]);
+            let validation = validator.validate_bundle(&bundle);
+            if !validation.is_valid() {
                 report.validation.failures.push(IngestValidationFailure {
                     page: page_index,
-                    object_count: envelope.objects.len(),
+                    object_id: object.id().clone(),
                     report: validation,
                 });
-                return Ok(());
+                if options.reject_invalid_objects {
+                    report.validation.objects_rejected += 1;
+                    continue;
+                }
             }
-            report.validation.failures.push(IngestValidationFailure {
-                page: page_index,
-                object_count: envelope.objects.len(),
-                report: validation,
-            });
         }
+        ingested_ids.push(object.id().clone());
+        batch.push(object);
     }
 
-    for object in &envelope.objects {
-        ingested_ids.push(object.id().clone());
+    if batch.is_empty() {
+        return Ok(());
     }
-    merge_import_report(&mut report.import, store.import_objects(&envelope.objects)?);
+    merge_import_report(&mut report.import, store.import_objects(&batch)?);
     Ok(())
 }
 
