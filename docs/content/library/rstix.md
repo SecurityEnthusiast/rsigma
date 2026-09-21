@@ -191,7 +191,7 @@ let report = ingest_collection_with_bundle_id(
 ).await?;
 ```
 
-Default ingest does not validate. With `validate`, each object is checked as a one-object synthetic bundle (`producer_strict` skips References); invalid objects are rejected by default when a validator is attached. Unresolved refs are audited after all pages against the store.
+Default ingest does not validate. With `validate`, each object is checked as a one-object synthetic bundle; use `IngestOptions::producer_strict()` (skips References). `interop_strict` is zero-leniency and still closed-bundle on refs — not for paginated ingest. Invalid objects are rejected by default when a validator is attached. Unresolved refs are audited after all pages against the store.
 
 ```bash
 cargo test -p rstix --features taxii-store --test taxii_store --locked

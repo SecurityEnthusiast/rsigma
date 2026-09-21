@@ -58,8 +58,9 @@ impl IngestOptions {
     /// Validate each object with [`Validator::interop_strict`] at zero leniency.
     ///
     /// **Stricter than [`Self::producer_strict`]:** warnings (for example `STIX-W0010`) fail
-    /// validation. Still skips References (per-object validation). Prefer [`Self::producer_strict`]
-    /// for paginated collection ingest unless you need interop-grade strictness on each object.
+    /// validation, and the References phase runs on each one-object synthetic bundle (unresolved
+    /// outbound refs fail closed). Not for paginated collection ingest — use
+    /// [`Self::producer_strict`].
     pub fn interop_strict() -> Self {
         Self {
             validator: Some(Validator::interop_strict()),

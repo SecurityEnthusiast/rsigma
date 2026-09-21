@@ -624,7 +624,7 @@ println!("added {}", report.import.objects_added);
 
 **Validate-on-ingest** (requires **`validate`** in addition to `taxii-store`):
 
-By default, [`ingest_collection`](taxii::ingest_collection) does **not** run the validation pipeline. Attach a validator via [`IngestOptions`](taxii::IngestOptions) to validate each object before import (References phase skipped — TAXII pages are not closed bundles).
+By default, [`ingest_collection`](taxii::ingest_collection) does **not** run the validation pipeline. Attach a validator via [`IngestOptions`](taxii::IngestOptions) to validate each object before import. Prefer [`IngestOptions::producer_strict()`](taxii::IngestOptions::producer_strict), which skips References so TAXII pages are not treated as closed bundles.
 
 ```rust
 use rstix::taxii::{IngestOptions, ingest_collection_with_bundle_id};
@@ -642,7 +642,7 @@ let report = ingest_collection_with_bundle_id(
 assert!(report.validation.is_valid());
 ```
 
-Each object is validated as a one-object synthetic [`Bundle`](model::Bundle) before import ([`Validator::producer_strict`](validate::Validator::producer_strict) skips References, so TAXII pages are not treated as closed bundles). Invalid objects are skipped by default when a validator is set (`reject_invalid_objects: true`); diagnostics are in [`IngestValidationReport`](taxii::IngestValidationReport). Use [`IngestOptions::interop_strict()`](taxii::IngestOptions::interop_strict) only when zero-leniency interop checks on each object are required — not for ordinary paginated ingest.
+Each object is validated as a one-object synthetic [`Bundle`](model::Bundle) before import. [`Validator::producer_strict`](validate::Validator::producer_strict) skips References, so TAXII pages are not treated as closed bundles. Invalid objects are skipped by default when a validator is set (`reject_invalid_objects: true`); diagnostics are in [`IngestValidationReport`](taxii::IngestValidationReport). [`IngestOptions::interop_strict()`](taxii::IngestOptions::interop_strict) adds zero leniency and still runs References on each one-object bundle (outbound refs must resolve in that wrapper) — not for paginated ingest.
 
 Notes:
 
@@ -725,7 +725,7 @@ Request invariants (all calls): `Accept: application/taxii+json;version=2.1`, `U
 | DELETE preflight | Requires both `can_read` and `can_write` | Spec section 5.7 |
 | Manifest Accept | TAXII + STIX media types | Spec section 5.3 |
 | DNS SRV discovery | `resolve_taxii_srv` + `TaxiiClient::discover_via_srv` | `_taxii2._tcp` records |
-| Collection ingest | `ingest_collection` streams pages → `StixStore::import_objects`; optional per-page `Validator` via `IngestOptions` (`validate` feature) | `taxii-store`; validate-on-ingest when `validate` enabled |
+| Collection ingest | `ingest_collection` streams pages → `StixStore::import_objects`; optional per-object `Validator` via `IngestOptions` (`validate` feature; prefer `producer_strict`) | `taxii-store`; validate-on-ingest when `validate` enabled |
 | mTLS / rustls crypto | PEM or PKCS#12 via [`ClientCertificate`](taxii::ClientCertificate); `build_rustls_config` and interop mTLS mock use **`ring` explicitly** | Avoids process-default panic when `ring` and `aws-lc-rs` are both linked (e.g. via reqwest) |
 | Channels | **Not implemented** | Spec §6 RESERVED |
 | Filter validation | `limit > 0`; `all` version rules enforced | Invalid filters rejected before HTTP |
