@@ -59,7 +59,7 @@ async fn ingest_collection_imports_paginated_objects() {
         .await
         .expect("ingest");
 
-    assert_eq!(report.objects_added, 2);
+    assert_eq!(report.import.objects_added, 2);
     assert!(
         store
             .get(&StixId::parse("indicator--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f").unwrap())
@@ -98,12 +98,12 @@ async fn ingest_collection_is_idempotent() {
     let first = ingest_collection(&client, &store, &api, "col1", filter.clone())
         .await
         .expect("first ingest");
-    assert_eq!(first.objects_added, 1);
+    assert_eq!(first.import.objects_added, 1);
 
     let second = ingest_collection(&client, &store, &api, "col1", filter)
         .await
         .expect("second ingest");
-    assert_eq!(second.objects_deduplicated, 1);
+    assert_eq!(second.import.objects_deduplicated, 1);
 }
 
 #[tokio::test]
@@ -157,8 +157,8 @@ async fn ingest_collection_resolves_forward_refs_across_pages() {
         .expect("ingest");
 
     assert!(
-        report.unresolved_references.is_empty(),
+        report.import.unresolved_references.is_empty(),
         "forward ref to indicator on page 2 must resolve after full ingest: {:?}",
-        report.unresolved_references
+        report.import.unresolved_references
     );
 }

@@ -154,8 +154,11 @@ pub use taxii::{
 };
 #[cfg(all(feature = "taxii", feature = "store"))]
 pub use taxii::{
-    DEFAULT_INGEST_BUNDLE_ID, IngestError, ingest_collection, ingest_collection_with_bundle_id,
+    DEFAULT_INGEST_BUNDLE_ID, IngestError, IngestOptions, IngestReport, ingest_collection,
+    ingest_collection_with_bundle_id,
 };
+#[cfg(all(feature = "taxii", feature = "store", feature = "validate"))]
+pub use taxii::{IngestValidationFailure, IngestValidationReport};
 
 /// Parse a STIX bundle from a JSON string using default options.
 #[cfg(feature = "serde")]

@@ -4,7 +4,16 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Security: rustls advisory + cargo-deny config
+### rstix: validate-on-ingest for TAXII collections (#499)
+
+**Public API (breaking vs 0.22.0):**
+
+- `ingest_collection` / `ingest_collection_with_bundle_id` now return `IngestReport` instead of `ImportReport`.
+- `ingest_collection_with_bundle_id` takes a new `IngestOptions` argument.
+
+With the `validate` feature, attach `IngestOptions::producer_strict()` (or a custom `Validator`) to validate each object before store import; invalid objects are rejected by default (`reject_invalid_objects: true`). Per-object validation skips the References phase so forward refs across TAXII pages still resolve after the full ingest.
+
+### Security: rustls advisory + cargo-deny config (#498)
 
 - **`Cargo.lock`:** bump `rustls` 0.23.44 → 0.23.45 ([RUSTSEC-2026-0285](https://rustsec.org/advisories/RUSTSEC-2026-0285)).
 - **`deny.toml`:** remove stale `RUSTSEC-2021-0153` ignore entry that triggered `advisory-not-detected`; `encoding` via `evtx` remains a workspace unmaintained warning.

@@ -46,8 +46,11 @@ pub use filter::{
 pub use headers::{TaxiiPageHeaders, TaxiiPaged};
 #[cfg(feature = "store")]
 pub use ingest::{
-    DEFAULT_INGEST_BUNDLE_ID, IngestError, ingest_collection, ingest_collection_with_bundle_id,
+    DEFAULT_INGEST_BUNDLE_ID, IngestError, IngestOptions, IngestReport, ingest_collection,
+    ingest_collection_with_bundle_id,
 };
+#[cfg(all(feature = "store", feature = "validate"))]
+pub use ingest::{IngestValidationFailure, IngestValidationReport};
 pub use policy::{CapabilityPolicy, PostSubmitPolicy, PreflightPolicy};
 pub use resources::{TaxiiApiRoot, TaxiiCollection, TaxiiDiscovery, VersionsResponse};
 pub use retry::RetryPolicy;
