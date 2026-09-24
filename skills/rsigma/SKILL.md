@@ -7,7 +7,7 @@ description: "Use the rsigma CLI and MCP server: engine eval, engine daemon, rul
 
 Use rsigma to run Sigma rules. Author the YAML with the [sigma-rules](https://github.com/timescale/sigma-rules) skill (`npx skills add timescale/sigma-rules -g -y`). This skill covers the toolchain: command names, when to call MCP versus the CLI, and which command fits the job.
 
-Flag tables and option lists live at [rsigma.io](https://rsigma.io/). Read them when you need a flag. Do not invent flags, and do not memorize lint or auto-fix counts from memory. The [linting guide](https://rsigma.io/guide/linting-rules/) is the catalogue.
+Flag tables and option lists live at [rsigma.io](https://rsigma.io/). Read them when you need a flag. Do not invent flags, and do not quote lint or auto-fix counts. The [linting guide](https://rsigma.io/guide/linting-rules/) is the catalogue.
 
 ## Command names
 
@@ -67,6 +67,6 @@ rsigma backend convert -t postgres rules/
 rsigma backend convert -t splunk rules/
 ```
 
-Native targets include `postgres` (`postgresql`, `pg`), `lynxdb`, `fibratus`, and `test`. `backend targets` is the live list. Delegated conversion needs `sigma` on `PATH` (override with `RSIGMA_SIGMA_CLI`). The Docker image has no Python, so delegation is a local-binary feature. On MCP, `convert_rules` delegates only when the server was started with `--allow-sigma-cli`. Builtin pipeline names (`ecs_windows`, `fibratus_windows`, `sysmon`) are not translated for delegated targets. Pass a sigma-cli pipeline name or a YAML path.
+Native targets are `postgres` (`postgresql`, `pg`), `lynxdb`, and `fibratus`, plus a backend-neutral `test` target that is not a deployment backend. `backend targets` is the live list. Delegated conversion needs `sigma` on `PATH` (override with `RSIGMA_SIGMA_CLI`). The Docker image has no Python, so delegation is a local-binary feature. On MCP, `convert_rules` delegates only when the server was started with `--allow-sigma-cli`. Builtin pipeline names (`ecs_windows`, `fibratus_windows`, `sysmon`) are not translated for delegated targets. Pass a sigma-cli pipeline name or a YAML path.
 
 See [backend convert](https://rsigma.io/cli/backend/convert/) and [sigma-cli delegation](https://rsigma.io/reference/backends/sigma-cli/).

@@ -21,7 +21,7 @@ Guide: [MCP server](https://rsigma.io/guide/mcp-server/).
 
 `engine eval` reads a fixed input and exits. Use it to test a rule.
 
-`engine daemon` stays up, reloads rules, and exposes health and metrics. Use it when events are a stream (stdin, HTTP, NATS, OTLP). It needs the `daemon` feature. Release binaries include it.
+`engine daemon` stays up, reloads rules, and exposes health and metrics. Use it when events are a stream. It needs the `daemon` feature. NATS input also needs `daemon-nats`, and OTLP logs arrive on `/v1/logs` on the API address with `daemon-otlp`, not through `--input`. Release binaries include all three; a `cargo install rsigma` build has only `daemon`.
 
 Guide: [Evaluating rules](https://rsigma.io/guide/evaluating-rules/), [Streaming detection](https://rsigma.io/guide/streaming-detection/).
 
@@ -35,12 +35,4 @@ Guide: [Rule drafting](https://rsigma.io/guide/rule-drafting/).
 
 ## Convert
 
-```bash
-rsigma backend targets
-rsigma backend convert -t postgres rules/
-rsigma backend convert -t splunk rules/
-```
-
-`backend targets` is the list of compiled-in backends. `postgres`, `lynxdb`, `fibratus`, and `test` are native. Any other installed sigma-cli target is delegated. If delegation fails, the error is that `sigma` is missing, not that the target name is wrong.
-
-Reference: [backend convert](https://rsigma.io/cli/backend/convert/).
+Native versus delegated targets are in the Convert section of [SKILL.md](../SKILL.md#convert). When delegation fails, read the error. If `sigma` could not be found or executed, install sigma-cli or set `RSIGMA_SIGMA_CLI`. If sigma-cli rejects the target, install that backend plugin (`sigma plugin install <name>`), then check `rsigma backend targets`.
