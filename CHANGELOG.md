@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Agent skill for the CLI and MCP loop (#501)
+
+`skills/rsigma/` teaches agents the current command groups (`engine`, `rule`, `backend`, `pipeline`, `mcp`, `config`) and the write-lint-evaluate-convert loop. Install with `npx skills add timescale/rsigma -g -y`. Sigma YAML authoring stays in the sigma-rules skill.
+
 ### rstix: validate-on-ingest for TAXII collections (#499)
 
 **Public API (breaking vs 0.22.0):**

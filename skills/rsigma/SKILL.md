@@ -1,0 +1,72 @@
+---
+name: rsigma
+description: "Use the rsigma CLI and MCP server: engine eval, engine daemon, rule lint, rule draft, rule tune, rule backtest, backend convert, mcp serve. Prefer MCP tools when rsigma mcp serve is connected. For authoring Sigma YAML (detection, correlation, filters, pipelines, modifiers), use the sigma-rules skill. Use this skill whenever the user mentions rsigma, evaluating or linting Sigma rules, converting rules to a SIEM query, running a detection daemon, drafting or tuning rules from events, or backtesting a ruleset, even if they do not name the binary."
+---
+
+# rsigma
+
+Use rsigma to run Sigma rules. Author the YAML with the [sigma-rules](https://github.com/timescale/sigma-rules) skill (`npx skills add timescale/sigma-rules -g -y`). This skill covers the toolchain: command names, when to call MCP versus the CLI, and which command fits the job.
+
+Flag tables and option lists live at [rsigma.io](https://rsigma.io/). Read them when you need a flag. Do not invent flags, and do not quote lint or auto-fix counts. The [linting guide](https://rsigma.io/guide/linting-rules/) is the catalogue.
+
+## Command names
+
+The CLI is noun-led. These old top-level forms do not exist:
+
+| Do not run | Run instead |
+|------------|-------------|
+| `rsigma eval` | `rsigma engine eval` |
+| `rsigma lint` | `rsigma rule lint` |
+| `rsigma validate` | `rsigma rule validate` |
+| `rsigma daemon` | `rsigma engine daemon` |
+
+Groups:
+
+| Group | Use it for |
+|-------|------------|
+| `engine` | Evaluate events, explain a miss, classify schemas, and run or inspect the daemon (`eval`, `explain`, `classify`, `discover-schemas`, `status`, `tap`, `tail`, `daemon`) |
+| `rule` | Lint, validate, draft, tune, test exemplars, backtest, and reverse-convert |
+| `backend` | Convert rules to a query (`convert`, `targets`, `formats`) |
+| `pipeline` | See how a pipeline rewrites a rule (`diff`) and dry-run dynamic sources (`resolve`) |
+| `mcp` | Serve the toolchain to an agent (`serve`) |
+| `config` | Scaffold and inspect `rsigma.yaml` |
+
+`engine daemon` and `pipeline resolve` need a build with the `daemon` feature. `mcp serve` needs the `mcp` feature. Release binaries and the Docker image include both. `rsigma --features` prints what this binary was built with.
+
+Full tree: [CLI reference](https://rsigma.io/cli/).
+
+## Prefer MCP when it is connected
+
+If `rsigma mcp serve` is already connected, call its tools. They return JSON (`ok`, findings, matches) and you do not scrape CLI text. If it is not connected, use the CLI commands in [workflows.md](references/workflows.md).
+
+Start a local server only when the user wants the agent wired up:
+
+```bash
+rsigma mcp serve --rules-dir rules/
+```
+
+Point `--daemon-url` at a running daemon when the task is live triage (incidents, silences, dispositions). Those tools stay off until that URL is set. Writes stay behind `--allow-operate-writes`. Details: [MCP server guide](https://rsigma.io/guide/mcp-server/).
+
+## Which command
+
+- One-shot check against a file or a few events: `engine eval`. A long-running process with reload, metrics, and sinks: `engine daemon`.
+- A rule from exemplar events (optional baseline, or `--groups` for a temporal correlation): `rule draft`. A rule the user already described in words: write the YAML with sigma-rules, then lint and evaluate it here.
+- A noisy rule with known false positives and true positives that must still fire: `rule tune`.
+- Embedded `rsigma.exemplars`: `rule test`. A separate corpus and expectations file: `rule backtest`.
+- Why a rule missed: `engine explain`. How a pipeline rewrote fields: `pipeline diff`.
+
+The write-lint-evaluate-convert loop, with the MCP tool beside each CLI command, is in [workflows.md](references/workflows.md).
+
+## Convert
+
+Native targets run inside rsigma. Anything else is delegated to an installed [sigma-cli](https://github.com/SigmaHQ/sigma-cli).
+
+```bash
+rsigma backend targets
+rsigma backend convert -t postgres rules/
+rsigma backend convert -t splunk rules/
+```
+
+Native targets are `postgres` (`postgresql`, `pg`), `lynxdb`, and `fibratus`, plus a backend-neutral `test` target that is not a deployment backend. `backend targets` is the live list. Delegated conversion needs `sigma` on `PATH` (override with `RSIGMA_SIGMA_CLI`). The Docker image has no Python, so delegation is a local-binary feature. On MCP, `convert_rules` delegates only when the server was started with `--allow-sigma-cli`. Builtin pipeline names (`ecs_windows`, `fibratus_windows`, `sysmon`) are not translated for delegated targets. Pass a sigma-cli pipeline name or a YAML path.
+
+See [backend convert](https://rsigma.io/cli/backend/convert/) and [sigma-cli delegation](https://rsigma.io/reference/backends/sigma-cli/).

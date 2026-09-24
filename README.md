@@ -256,6 +256,13 @@ rsigma mcp serve --rules-dir rules/
 
 The agent then calls structured tools (`parse_rule`, `lint_rules`, `validate_rules`, `evaluate_events`, `convert_rules`, `list_fields`, ...) and gets back JSON. Point `--daemon-url` at a running daemon to add the Operate-cycle tools. See the [MCP server guide](https://rsigma.io/guide/mcp-server/).
 
+To teach an agent the current CLI and that loop, install the skill (Sigma YAML authoring is a separate skill):
+
+```bash
+npx skills add timescale/sigma-rules -g -y
+npx skills add timescale/rsigma -g -y
+```
+
 ### Library Usage
 
 Use the crates directly from Rust:
