@@ -133,6 +133,17 @@ rsigma --help
 
 You should see `rsigma {{ rsigma.version }}`, the Cargo features compiled into that binary, and a list of the top-level command groups (`engine`, `rule`, `backend`, `pipeline`, `config`, and `mcp` when built with the `mcp` feature).
 
+## Agent skill
+
+Coding agents that run rsigma (eval, lint, draft, tune, convert, daemon) can load a skill that teaches the current command groups and the MCP loop. YAML authoring stays in the separate [sigma-rules](https://github.com/timescale/sigma-rules) skill.
+
+```bash
+npx skills add timescale/sigma-rules -g -y
+npx skills add timescale/rsigma -g -y
+```
+
+The rsigma skill is published from `skills/rsigma/` in this repository. It does not replace `rsigma mcp serve`. Connect the MCP server when you want typed tools instead of shelling out.
+
 ## Next steps
 
 - Run your first rule in [the quick start](quick-start.md).
