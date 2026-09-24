@@ -138,8 +138,8 @@ You should see `rsigma {{ rsigma.version }}`, the Cargo features compiled into t
 Coding agents that run rsigma (eval, lint, draft, tune, convert, daemon) can load a skill that teaches the current command groups and the MCP loop. YAML authoring stays in the separate [sigma-rules](https://github.com/timescale/sigma-rules) skill.
 
 ```bash
-npx skills add timescale/sigma-rules -g -y
-npx skills add timescale/rsigma -g -y
+npx skills add timescale/sigma-rules -y
+npx skills add timescale/rsigma -y
 ```
 
 The rsigma skill is published from `skills/rsigma/` in this repository. It does not replace `rsigma mcp serve`. Connect the MCP server when you want typed tools instead of shelling out.
