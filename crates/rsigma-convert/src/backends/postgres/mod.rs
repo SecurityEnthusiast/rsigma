@@ -828,6 +828,9 @@ impl Backend for PostgresBackend {
         let f1 = self.field_expr(field1)?;
         let f2 = self.field_expr(field2)?;
         let expr = match op {
+            IrStrOp::Exact if case_insensitive => {
+                format!("lower(({f1})::text) = lower(({f2})::text)")
+            }
             IrStrOp::Exact => format!("{f1} = {f2}"),
             IrStrOp::Contains | IrStrOp::StartsWith | IrStrOp::EndsWith => {
                 fieldref_substr_sql(&f1, &f2, op, case_insensitive)

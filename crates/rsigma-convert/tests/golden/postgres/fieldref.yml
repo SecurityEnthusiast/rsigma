@@ -5,6 +5,7 @@ logsource:
 detection:
     selection:
         Image|fieldref: ParentImage
+        User|fieldref|cased: TargetUser
         CommandLine|fieldref|contains: Token
         Path|fieldref|startswith: Folder
         File|fieldref|endswith|cased: Name
