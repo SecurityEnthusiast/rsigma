@@ -105,6 +105,16 @@ pub trait Backend: Send + Sync {
     fn convert_condition_or(&self, exprs: &[String]) -> Result<String>;
     fn convert_condition_not(&self, expr: &str) -> Result<String>;
 
+    /// Negate a field-to-field comparison.
+    ///
+    /// The evaluator treats a missing referenced field as not equal when the
+    /// left field is present, and a missing left field as no match. The
+    /// default is [`Backend::convert_condition_not`]. PostgreSQL overrides
+    /// this because `NOT (NULL)` is not true.
+    fn convert_negated_field_ref(&self, _field: &str, expr: &str) -> Result<String> {
+        self.convert_condition_not(expr)
+    }
+
     /// Whether this backend can lower a positional array index (`field[N]`) in
     /// a field path. Backends that cannot must not silently emit a literal
     /// field reference (which would diverge from the evaluator's element-`N`
@@ -221,11 +231,14 @@ pub trait Backend: Send + Sync {
         state: &mut ConversionState,
     ) -> Result<String>;
 
-    /// Field-to-field comparison (`|fieldref`).
+    /// Field-to-field comparison (`|fieldref`, optionally with
+    /// `contains`, `startswith`, or `endswith`).
     fn convert_field_ref(
         &self,
         field1: &str,
         field2: &str,
+        op: IrStrOp,
+        case_insensitive: bool,
         state: &mut ConversionState,
     ) -> Result<ConvertResult>;
 

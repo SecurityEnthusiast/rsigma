@@ -4,6 +4,20 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Field references with contains, startswith, and endswith (#506)
+
+`fieldref` may be followed by one of `contains`, `startswith`, or `endswith`. The comparison is case-insensitive unless `|cased` is also set. A wildcard in the referenced field name is rejected, and a string modifier written before `fieldref` is rejected. Thanks to @Karib0u, who reported these three combinations in #505.
+
+PostgreSQL renders the substring forms with `strpos` and `right`, so `%` and `_` in the referenced value stay literal, and `fieldref` equality compares `lower()` of both sides unless `|cased` is set. Fibratus renders equality with `~=` and the substring forms with `icontains`, `istartswith`, and `iendswith`.
+
+`|neq` now negates the whole detection item, as pySigma does. `Field|neq: [a, b]` matches when the field is neither `a` nor `b`; before, it matched when the field differed from either value. `re|neq`, `cidr|neq`, `fieldref|neq`, and `neq` with a timestamp part also compiled without the negation before.
+
+`|neq` now converts. A missing referenced field counts as not equal when the left field is present. PostgreSQL expresses that as `(comparison) IS NOT TRUE AND "field" IS NOT NULL`. LynxDB negates its deferred `where` clauses (`!~`, `NOT cidrmatch`). Other backends negate the comparison directly.
+
+`incompatible_modifiers` accepts `fieldref` followed by one of those string modifiers, and `fieldref` or a string comparison combined with `neq`. It warns when a string modifier precedes `fieldref`, and when `fieldref` is combined with `re`, `cidr`, a numeric comparison, `exists`, a timestamp part, or an encoding modifier. `neq` combines with string comparisons as well as with numbers.
+
+`FieldRef` now carries the string operator. The HIR cache schema is 2, so a cache written by an older build is rejected and recompiled.
+
 ### Agent skill for the CLI and MCP loop (#501)
 
 `skills/rsigma/` teaches agents the current command groups (`engine`, `rule`, `backend`, `pipeline`, `mcp`, `config`) and the write-lint-evaluate-convert loop. Install with `npx skills add timescale/rsigma -g -y`. Sigma YAML authoring stays in the sigma-rules skill.

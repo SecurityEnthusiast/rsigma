@@ -154,7 +154,7 @@ These also apply to detection rules but sit apart from the core detection-block 
 |------|----------|-----|-------------|
 | `single_value_all_modifier` | `warning` | yes | A single-value detection item carries the `\|all` modifier, which is a no-op. The fix removes the redundant modifier. |
 | `all_with_re` | `warning` | yes | The `\|all` modifier is combined with `\|re`, which is not meaningful (regex matching is inherently set-style). The fix removes `\|all`. |
-| `incompatible_modifiers` | `warning` | none | Two modifiers on the same field are mutually exclusive (e.g. `\|contains\|startswith`). |
+| `incompatible_modifiers` | `warning` | none | Two modifiers on the same field cannot combine (e.g. `\|contains\|startswith`). `fieldref` may be followed by one of `contains`, `startswith`, or `endswith`, and by `neq`. A string modifier before `fieldref` is a warning, as is `fieldref` combined with `re`, `cidr`, a numeric comparison, `exists`, a timestamp part, or an encoding modifier. |
 | `invalid_related_id` | `warning` | none | `related[].id` is not a valid UUID. |
 | `invalid_related_type` | `error` | none | `related[].type` is not one of `derived`, `obsolete`, `merged`, `renamed`, `similar`. |
 | `related_missing_required` | `error` | none | `related[]` entry is missing the required `id:` or `type:` field. |

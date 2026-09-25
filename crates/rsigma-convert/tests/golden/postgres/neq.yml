@@ -1,0 +1,14 @@
+title: Neq
+logsource:
+    category: test
+detection:
+    selection:
+        Field|neq: foo
+        Image|fieldref|neq: ParentImage
+        User|neq:
+            - root
+            - admin
+        CommandLine|contains|all|neq:
+            - whoami
+            - /all
+    condition: selection

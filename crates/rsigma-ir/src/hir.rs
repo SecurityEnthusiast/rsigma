@@ -232,8 +232,12 @@ pub enum IrMatcher {
     NumericLt(IrNumber),
     NumericLte(IrNumber),
     Exists(bool),
+    /// Field-to-field comparison. `op` is equality, or a substring,
+    /// prefix, or suffix check against the referenced field's value
+    /// (`fieldref` followed by `contains`, `startswith`, or `endswith`).
     FieldRef {
         field: String,
+        op: IrStrOp,
         case_insensitive: bool,
     },
     Null,

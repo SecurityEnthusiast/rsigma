@@ -1,0 +1,7 @@
+title: Fieldref substring
+detection:
+  s:
+    ps.cmdline|fieldref|contains: ps.exe
+    file.path|fieldref|startswith: folder
+    file.name|fieldref|endswith|cased: ext
+  condition: s

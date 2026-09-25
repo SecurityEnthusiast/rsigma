@@ -382,6 +382,18 @@ impl Backend for FibratusBackend {
         item: &IrDetectionItem,
         state: &mut ConversionState,
     ) -> Result<String> {
+        // `|neq` over a list negates the collapsed list clause.
+        if let IrMatcher::Not(inner) = &item.matcher
+            && matches!(inner.as_ref(), IrMatcher::AnyOf(_) | IrMatcher::AllOf(_))
+        {
+            let positive = IrDetectionItem {
+                matcher: inner.as_ref().clone(),
+                ..item.clone()
+            };
+            let expr = self.convert_ir_detection_item(&positive, state)?;
+            return self.convert_condition_not(&expr);
+        }
+
         // Multi-value OR lists (`AnyOf`) collapse into a single Fibratus
         // list-operator / variadic-function clause. `|all` lowers to `AllOf`
         // and falls through to the generic AND-join.
@@ -636,11 +648,24 @@ impl Backend for FibratusBackend {
         &self,
         field1: &str,
         field2: &str,
+        op: IrStrOp,
+        case_insensitive: bool,
         _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
         let f1 = self.escape_and_quote_field(field1);
         let f2 = self.escape_and_quote_field(field2);
-        Ok(ConvertResult::Query(format!("{f1} = {f2}")))
+        let cased = self.fibratus.case_sensitive || !case_insensitive;
+        let token = match (op, cased) {
+            (IrStrOp::Exact, false) => "~=",
+            (IrStrOp::Exact, true) => "=",
+            (IrStrOp::Contains, false) => "icontains",
+            (IrStrOp::Contains, true) => "contains",
+            (IrStrOp::StartsWith, false) => "istartswith",
+            (IrStrOp::StartsWith, true) => "startswith",
+            (IrStrOp::EndsWith, false) => "iendswith",
+            (IrStrOp::EndsWith, true) => "endswith",
+        };
+        Ok(ConvertResult::Query(format!("{f1} {token} {f2}")))
     }
 
     fn convert_keyword_str(

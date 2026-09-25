@@ -568,6 +568,25 @@ impl Default for PostgresBackend {
     }
 }
 
+/// Substring comparison of two SQL expressions. `strpos` and `right` keep
+/// `%` and `_` inside the referenced value literal, unlike `LIKE`.
+fn fieldref_substr_sql(lhs: &str, rhs: &str, op: IrStrOp, case_insensitive: bool) -> String {
+    let (lhs, rhs) = if case_insensitive {
+        (
+            format!("lower(({lhs})::text)"),
+            format!("lower(({rhs})::text)"),
+        )
+    } else {
+        (format!("({lhs})::text"), format!("({rhs})::text"))
+    };
+    match op {
+        IrStrOp::Contains => format!("strpos({lhs}, {rhs}) > 0"),
+        IrStrOp::StartsWith => format!("strpos({lhs}, {rhs}) = 1"),
+        IrStrOp::EndsWith => format!("right({lhs}, char_length({rhs})) = {rhs}"),
+        IrStrOp::Exact => unreachable!("equality is rendered with ="),
+    }
+}
+
 impl Backend for PostgresBackend {
     fn name(&self) -> &str {
         "postgres"
@@ -623,6 +642,11 @@ impl Backend for PostgresBackend {
 
     fn convert_condition_not(&self, expr: &str) -> Result<String> {
         Ok(text_convert_condition_not(self.config, expr))
+    }
+
+    fn convert_negated_field_ref(&self, field: &str, expr: &str) -> Result<String> {
+        let f = self.escape_and_quote_field(field);
+        Ok(format!("({expr}) IS NOT TRUE AND {f} IS NOT NULL"))
     }
 
     fn convert_ir_array_match(
@@ -797,11 +821,22 @@ impl Backend for PostgresBackend {
         &self,
         field1: &str,
         field2: &str,
+        op: IrStrOp,
+        case_insensitive: bool,
         _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
         let f1 = self.field_expr(field1)?;
         let f2 = self.field_expr(field2)?;
-        Ok(ConvertResult::Query(format!("{f1} = {f2}")))
+        let expr = match op {
+            IrStrOp::Exact if case_insensitive => {
+                format!("lower(({f1})::text) = lower(({f2})::text)")
+            }
+            IrStrOp::Exact => format!("{f1} = {f2}"),
+            IrStrOp::Contains | IrStrOp::StartsWith | IrStrOp::EndsWith => {
+                fieldref_substr_sql(&f1, &f2, op, case_insensitive)
+            }
+        };
+        Ok(ConvertResult::Query(expr))
     }
 
     fn convert_keyword_str(

@@ -657,7 +657,7 @@ detection:
   condition: s
 "#,
     );
-    assert_eq!(q, vec!["ps.pid = thread.pid"]);
+    assert_eq!(q, vec!["ps.pid ~= thread.pid"]);
 }
 
 // ---------------------------------------------------------------------
@@ -1009,7 +1009,7 @@ detection:
     );
     assert!(raw_out.contains("not (evt.pid = 4)"), "got: {raw_out}");
     assert!(
-        raw_out.contains("not (evt.pid = thread.pid)"),
+        raw_out.contains("not (evt.pid ~= thread.pid)"),
         "got: {raw_out}",
     );
 }

@@ -338,8 +338,21 @@ impl Backend for TextQueryTestBackend {
         &self,
         field1: &str,
         field2: &str,
+        op: IrStrOp,
+        _case_insensitive: bool,
         _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
+        if !matches!(op, IrStrOp::Exact) {
+            let f1 = text_escape_and_quote_field(self.config, field1);
+            let f2 = text_escape_and_quote_field(self.config, field2);
+            let token = match op {
+                IrStrOp::Contains => "contains",
+                IrStrOp::StartsWith => "startswith",
+                IrStrOp::EndsWith => "endswith",
+                IrStrOp::Exact => unreachable!("exact handled below"),
+            };
+            return Ok(ConvertResult::Query(format!("{f1} {token} {f2}")));
+        }
         let expr = self
             .config
             .field_eq_field_expression
@@ -565,9 +578,12 @@ impl Backend for MandatoryPipelineTestBackend {
         &self,
         field1: &str,
         field2: &str,
+        op: IrStrOp,
+        case_insensitive: bool,
         state: &mut ConversionState,
     ) -> Result<ConvertResult> {
-        self.0.convert_field_ref(field1, field2, state)
+        self.0
+            .convert_field_ref(field1, field2, op, case_insensitive, state)
     }
 
     fn convert_keyword_str(
@@ -1095,11 +1111,8 @@ detection:
     }
 
     #[test]
-    fn test_default_path_rejects_neq_modifier() {
-        // `Field|neq: value` would silently become equality through the
-        // generic dispatch. Reject loudly with UnsupportedModifier so the
-        // generated query is never wrong.
-        let err = convert_rule_yaml_err(
+    fn test_neq_modifier() {
+        let queries = convert_rule_yaml(
             r#"
 title: Test
 logsource:
@@ -1107,12 +1120,14 @@ logsource:
 detection:
     selection:
         Field|neq: forbidden
+        EventID|neq: 1
+        Image|fieldref|neq: ParentImage
     condition: selection
 "#,
         );
-        assert!(
-            matches!(&err, ConvertError::UnsupportedModifier(m) if m.contains("Neq")),
-            "expected UnsupportedModifier(Neq), got: {err}",
+        assert_eq!(
+            queries,
+            vec!["not Field=\"forbidden\" and not EventID=1 and not Image=fieldref(ParentImage)"]
         );
     }
 

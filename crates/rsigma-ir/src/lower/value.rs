@@ -36,6 +36,17 @@ fn plain_pattern(s: &str) -> IrPattern {
     }
 }
 
+/// Field name referenced by `|fieldref`. Wildcards are rejected; an escaped
+/// `\*` is a literal asterisk in the name.
+fn fieldref_name(value: &SigmaValue) -> Result<String> {
+    match value {
+        SigmaValue::String(s) => s.as_plain().ok_or_else(|| {
+            IrError::IncompatibleValue("field reference must not contain wildcards".into())
+        }),
+        other => value_to_plain_string(other),
+    }
+}
+
 /// The string operator implied by the modifier context.
 fn str_op(ctx: &ModCtx) -> IrStrOp {
     if ctx.contains {
@@ -114,9 +125,10 @@ pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher>
     }
 
     if ctx.fieldref {
-        let field_name = value_to_plain_string(value)?;
+        let field_name = fieldref_name(value)?;
         return Ok(IrMatcher::FieldRef {
             field: field_name,
+            op: str_op(ctx),
             case_insensitive: ci,
         });
     }
@@ -151,13 +163,6 @@ pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher>
         if ctx.lte {
             return Ok(IrMatcher::NumericLte(IrNumber::Literal(n)));
         }
-    }
-
-    if ctx.has_neq() {
-        let mut inner_ctx = *ctx;
-        inner_ctx.neq = false;
-        let inner = lower_value(value, &inner_ctx)?;
-        return Ok(IrMatcher::Not(Box::new(inner)));
     }
 
     match value {

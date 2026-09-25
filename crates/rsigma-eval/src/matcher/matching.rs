@@ -1,4 +1,5 @@
 use regex::RegexSet;
+use rsigma_ir::IrStrOp;
 
 use super::helpers::{
     ascii_lowercase_cow, expand_template, extract_timestamp_part, match_cidr, match_numeric_value,
@@ -20,6 +21,26 @@ fn regex_set_matches(set: &RegexSet, mode: GroupMode, s: &str) -> bool {
             let hits = set.matches(s);
             hits.iter().count() == set.len()
         }
+    }
+}
+
+/// Substring, prefix, or suffix comparison of two runtime strings.
+fn fieldref_substr(op: IrStrOp, haystack: &str, needle: &str, case_insensitive: bool) -> bool {
+    if case_insensitive {
+        let haystack = haystack.to_lowercase();
+        let needle = needle.to_lowercase();
+        fieldref_substr_cmp(op, &haystack, &needle)
+    } else {
+        fieldref_substr_cmp(op, haystack, needle)
+    }
+}
+
+fn fieldref_substr_cmp(op: IrStrOp, haystack: &str, needle: &str) -> bool {
+    match op {
+        IrStrOp::Contains => haystack.contains(needle),
+        IrStrOp::StartsWith => haystack.starts_with(needle),
+        IrStrOp::EndsWith => haystack.ends_with(needle),
+        IrStrOp::Exact => haystack == needle,
     }
 }
 
@@ -113,19 +134,31 @@ impl CompiledMatcher {
 
             CompiledMatcher::FieldRef {
                 field: ref_field,
+                op,
                 case_insensitive,
             } => {
-                if let Some(ref_value) = event.get_field(ref_field) {
-                    if *case_insensitive {
-                        match (value.as_str(), ref_value.as_str()) {
-                            (Some(a), Some(b)) => a.to_lowercase() == b.to_lowercase(),
-                            _ => value == &ref_value,
+                let Some(ref_value) = event.get_field(ref_field) else {
+                    return false;
+                };
+                match op {
+                    IrStrOp::Exact => {
+                        if *case_insensitive {
+                            match (value.as_str(), ref_value.as_str()) {
+                                (Some(a), Some(b)) => a.to_lowercase() == b.to_lowercase(),
+                                _ => value == &ref_value,
+                            }
+                        } else {
+                            value == &ref_value
                         }
-                    } else {
-                        value == &ref_value
                     }
-                } else {
-                    false
+                    IrStrOp::Contains | IrStrOp::StartsWith | IrStrOp::EndsWith => {
+                        let Some(needle) = ref_value.as_str() else {
+                            return false;
+                        };
+                        match_str_value(value, |s| {
+                            fieldref_substr(*op, s, needle.as_ref(), *case_insensitive)
+                        })
+                    }
                 }
             }
 
@@ -470,9 +503,40 @@ mod tests {
         let event = JsonEvent::borrow(&e);
         let m = CompiledMatcher::FieldRef {
             field: "dst".into(),
+            op: IrStrOp::Exact,
             case_insensitive: true,
         };
         assert!(m.matches(&EventValue::Str("10.0.0.1".into()), &event));
+    }
+
+    #[test]
+    fn test_field_ref_contains() {
+        let e = json!({"user": "Alice", "arn": "arn:aws:iam::123:user/alice"});
+        let event = JsonEvent::borrow(&e);
+        let m = CompiledMatcher::FieldRef {
+            field: "user".into(),
+            op: IrStrOp::Contains,
+            case_insensitive: true,
+        };
+        assert!(m.matches(
+            &EventValue::Str("arn:aws:iam::123:user/alice".into()),
+            &event
+        ));
+        let cased = CompiledMatcher::FieldRef {
+            field: "user".into(),
+            op: IrStrOp::Contains,
+            case_insensitive: false,
+        };
+        assert!(!cased.matches(
+            &EventValue::Str("arn:aws:iam::123:user/alice".into()),
+            &event
+        ));
+        let missing_type = CompiledMatcher::FieldRef {
+            field: "missing".into(),
+            op: IrStrOp::StartsWith,
+            case_insensitive: true,
+        };
+        assert!(!missing_type.matches(&EventValue::Str("alice".into()), &event));
     }
 
     #[test]

@@ -883,6 +883,39 @@ mod modifier_validation_tests {
     }
 
     #[test]
+    fn accepts_fieldref_contains() {
+        let item = make_item(
+            "Image",
+            &[Modifier::FieldRef, Modifier::Contains],
+            vec![SigmaValue::String(SigmaString::new("ParentImage"))],
+        );
+        assert!(compile_detection_item(&item).is_ok());
+    }
+
+    #[test]
+    fn rejects_contains_before_fieldref() {
+        assert_rejects(
+            &[Modifier::Contains, Modifier::FieldRef],
+            vec![SigmaValue::String(SigmaString::new("ParentImage"))],
+            "must follow |fieldref",
+        );
+    }
+
+    #[test]
+    fn rejects_fieldref_wildcard() {
+        let item = make_item(
+            "Image",
+            &[Modifier::FieldRef],
+            vec![SigmaValue::String(SigmaString::new("Other*"))],
+        );
+        let err = compile_detection_item(&item).unwrap_err();
+        assert!(
+            err.to_string().contains("must not contain wildcards"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn rejects_two_timestamp_parts() {
         assert_rejects(
             &[Modifier::Hour, Modifier::Day],
@@ -1048,6 +1081,17 @@ mod modifier_validation_tests {
         assert_accepts(
             &[Modifier::Re, Modifier::Neq],
             vec![SigmaValue::String(SigmaString::new("foo.*"))],
+        );
+        let item = make_item(
+            "CommandLine",
+            &[Modifier::Re, Modifier::Neq],
+            vec![SigmaValue::String(SigmaString::new("foo.*"))],
+        );
+        let compiled = compile_detection_item(&item).unwrap();
+        assert!(
+            matches!(compiled.matcher, CompiledMatcher::Not(ref inner) if matches!(**inner, CompiledMatcher::Regex(_))),
+            "re|neq must negate the regex, got {:?}",
+            compiled.matcher
         );
     }
 

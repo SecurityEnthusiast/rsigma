@@ -117,8 +117,9 @@ pub const EXPRESSION_MACROS: &[(&str, &str)] = &[
 ///   for a non-`evt.name` literal);
 /// - literal inequality (`field != value`); and
 /// - the De Morgan negated equality the `add_condition` pipeline emits for
-///   an inequality macro clause (`not (field = value)`, or
-///   `not (field ~= 'literal')` for the case-insensitive default).
+///   an inequality macro clause (`not (field = value)` for a number,
+///   `not (field ~= 'literal')` for a string, and `not (field ~= other)`
+///   for a field reference).
 ///
 /// Each clause is matched independently against its own form set, so a
 /// macro whose `evt.name` clause renders with `=` while a sibling status
@@ -348,10 +349,9 @@ fn split_clauses(src: &str) -> Vec<&str> {
 /// (`field = 'literal'`) it adds the case-insensitive default
 /// (`field ~= 'literal'`). For an inequality clause (`field != value`) it
 /// adds the De Morgan negated equalities the `add_condition` pipeline
-/// produces (`not (field = value)`, plus `not (field ~= 'literal')` when
-/// the right-hand side is a quoted literal), so a disposition guard the
-/// pipeline injects as a negated equality recognizes against the macro's
-/// `!=` clause.
+/// produces: `not (field = value)` always, and `not (field ~= value)` when
+/// the right-hand side is a quoted literal or another field. A numeric or
+/// boolean right-hand side stays on `=`.
 fn accepted_clause_forms(clause: &str) -> Vec<String> {
     let clause = clause.trim();
     let mut forms = vec![clause.to_string()];
@@ -363,7 +363,7 @@ fn accepted_clause_forms(clause: &str) -> Vec<String> {
         let lhs = lhs.trim();
         let rhs = rhs.trim();
         forms.push(format!("not ({lhs} = {rhs})"));
-        if rhs.starts_with('\'') {
+        if rhs.starts_with('\'') || is_field_operand(rhs) {
             forms.push(format!("not ({lhs} ~= {rhs})"));
         }
     }
@@ -411,10 +411,11 @@ fn split_top_level_neq(clause: &str) -> Option<(&str, &str)> {
 /// operator and is what the backend emits for a non-`evt.name` literal
 /// without `|cased`.
 ///
-/// Only the ` = '<literal>'` shape is transformed; numeric, boolean,
-/// `!=`, regex, function-call, list (`in (...)`), and field-to-field
-/// equalities are passed through unchanged (the backend renders them
-/// identically regardless of case).
+/// Only the ` = '<literal>'` shape is transformed. Numeric, boolean,
+/// `!=`, regex, function-call, and list (`in (...)`) clauses are passed
+/// through unchanged. Field-to-field `~=` is accepted from the inequality
+/// path in [`accepted_clause_forms`], because a field reference renders
+/// with `~=` unless the rule asks for case-sensitive comparison.
 fn to_ci_eq(clause: &str) -> String {
     // Find a top-level ` = '` boundary; if none, return verbatim.
     let bytes = clause.as_bytes();
@@ -450,6 +451,20 @@ fn to_ci_eq(clause: &str) -> String {
         i += 1;
     }
     clause.to_string()
+}
+
+/// Whether `rhs` is another field rather than a number, boolean, or quote.
+///
+/// Field references render with `~=`. Numbers and booleans stay on `=`.
+fn is_field_operand(rhs: &str) -> bool {
+    let rhs = rhs.trim();
+    let Some(first) = rhs.bytes().next() else {
+        return false;
+    };
+    if first == b'\'' || first == b'"' || first.is_ascii_digit() || first == b'-' || first == b'+' {
+        return false;
+    }
+    !rhs.eq_ignore_ascii_case("true") && !rhs.eq_ignore_ascii_case("false")
 }
 
 // =============================================================================
@@ -545,6 +560,14 @@ mod tests {
             "evt.name = 'RegSetValue' and registry.status ~= 'Success' and registry.path icontains '\\Run\\'",
         );
         assert_eq!(out, "set_value and registry.path icontains '\\Run\\'",);
+    }
+
+    #[test]
+    fn recognize_create_remote_thread_field_inequality() {
+        let out = recognize(
+            "evt.name = 'CreateThread' and not (evt.pid = 4) and not (evt.pid ~= thread.pid)",
+        );
+        assert_eq!(out, "create_remote_thread");
     }
 
     #[test]

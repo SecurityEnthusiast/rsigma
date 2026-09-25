@@ -171,7 +171,7 @@ Contrasts false-positive events with required true-positive exemplars and emits 
    - `AllOf` → compile each item, reject empty.
    - `AnyOf` → recursively compile each sub-detection, reject empty.
    - `Keywords` → compile each value as case-insensitive contains, combine with `AnyOf`.
-3. **Value compilation** (`compile_value`): Handles modifiers in this order: `|expand` → timestamp part → `|fieldref` → `|re` → `|cidr` → numeric comparison → `|neq` → string modifiers. String modifiers: `|wide`/`|utf16le` → `|utf16be` → `|utf16` → `|base64` → `|base64offset` → `|windash` → string match.
+3. **Value compilation** (`compile_value`): `|neq` wraps the combined item in `Not`, so `Field|neq: [a, b]` matches when the field is neither `a` nor `b`. The other modifiers are handled in this order: `|expand` → timestamp part → `|fieldref` → `|re` → `|cidr` → numeric comparison → string modifiers. String modifiers: `|wide`/`|utf16le` → `|utf16be` → `|utf16` → `|base64` → `|base64offset` → `|windash` → string match. `|fieldref` may be followed by one of `|contains`, `|startswith`, or `|endswith`; that modifier must come after `|fieldref`.
 
 ### Compiled Matcher Types
 
@@ -185,7 +185,7 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 | `Cidr` | `\|cidr` | IP network matching via `IpNet` |
 | `NumericEq/Gt/Gte/Lt/Lte` | `\|gt`, `\|gte`, etc. | f64 comparison |
 | `Exists` | `\|exists` | Accepts `true`/`yes`/`false`/`no` as values |
-| `FieldRef` | `\|fieldref` | Compares against another field's value |
+| `FieldRef` | `\|fieldref` | Compares against another field. Optional `\|contains`, `\|startswith`, or `\|endswith` after `\|fieldref`. Case-insensitive unless `\|cased`. |
 | `Null` | — | Matches null or missing values |
 | `BoolEq` | — | Boolean equality |
 | `Expand` | `\|expand` | Placeholder template expansion |

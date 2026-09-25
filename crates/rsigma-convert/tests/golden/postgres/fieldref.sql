@@ -1,0 +1,1 @@
+SELECT * FROM security_events WHERE lower(("Image")::text) = lower(("ParentImage")::text) AND "User" = "TargetUser" AND strpos(lower(("CommandLine")::text), lower(("Token")::text)) > 0 AND strpos(lower(("Path")::text), lower(("Folder")::text)) = 1 AND right(("File")::text, char_length(("Name")::text)) = ("Name")::text

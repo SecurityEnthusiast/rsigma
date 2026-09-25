@@ -345,6 +345,288 @@ detection:
 }
 
 #[test]
+fn fieldref_contains_matches_substring() {
+    let engine = engine_from(
+        r#"
+title: FieldRef Contains
+logsource: { category: test }
+detection:
+    selection:
+        userIdentity.arn|fieldref|contains: responseElements.accessKey.userName
+    condition: selection
+"#,
+    );
+    assert!(matches(
+        &engine,
+        &json!({
+            "userIdentity.arn": "arn:aws:iam::123:user/alice",
+            "responseElements.accessKey.userName": "alice"
+        })
+    ));
+    assert!(matches(
+        &engine,
+        &json!({
+            "userIdentity.arn": "arn:aws:iam::123:user/Alice",
+            "responseElements.accessKey.userName": "alice"
+        })
+    ));
+    assert!(!matches(
+        &engine,
+        &json!({
+            "userIdentity.arn": "arn:aws:iam::123:user/bob",
+            "responseElements.accessKey.userName": "alice"
+        })
+    ));
+}
+
+#[test]
+fn fieldref_startswith_and_endswith() {
+    let start = engine_from(
+        r#"
+title: FieldRef Starts
+logsource: { category: test }
+detection:
+    selection:
+        Image|fieldref|startswith: Folder
+    condition: selection
+"#,
+    );
+    assert!(matches(
+        &start,
+        &json!({"Image": "C:\\Windows\\cmd.exe", "Folder": "C:\\Windows"})
+    ));
+    assert!(!matches(
+        &start,
+        &json!({"Image": "C:\\Windows\\cmd.exe", "Folder": "cmd.exe"})
+    ));
+
+    let end = engine_from(
+        r#"
+title: FieldRef Ends
+logsource: { category: test }
+detection:
+    selection:
+        Image|fieldref|endswith: OriginalFileName
+    condition: selection
+"#,
+    );
+    assert!(matches(
+        &end,
+        &json!({"Image": "C:\\Temp\\net.exe", "OriginalFileName": "net.exe"})
+    ));
+    assert!(!matches(
+        &end,
+        &json!({"Image": "C:\\Temp\\net.exe", "OriginalFileName": "cmd.exe"})
+    ));
+}
+
+#[test]
+fn fieldref_contains_cased_and_numeric_needle() {
+    let engine = engine_from(
+        r#"
+title: FieldRef Cased
+logsource: { category: test }
+detection:
+    selection:
+        Message|fieldref|contains|cased: Token
+    condition: selection
+"#,
+    );
+    assert!(matches(
+        &engine,
+        &json!({"Message": "id=Admin", "Token": "Admin"})
+    ));
+    assert!(!matches(
+        &engine,
+        &json!({"Message": "id=Admin", "Token": "admin"})
+    ));
+
+    let numeric = engine_from(
+        r#"
+title: FieldRef Numeric
+logsource: { category: test }
+detection:
+    selection:
+        Message|fieldref|contains: Code
+    condition: selection
+"#,
+    );
+    assert!(matches(
+        &numeric,
+        &json!({"Message": "exit 42", "Code": 42})
+    ));
+}
+
+#[test]
+fn fieldref_contains_all_requires_every_name() {
+    let engine = engine_from(
+        r#"
+title: FieldRef All
+logsource: { category: test }
+detection:
+    selection:
+        CommandLine|fieldref|contains|all:
+            - User
+            - Host
+    condition: selection
+"#,
+    );
+    assert!(matches(
+        &engine,
+        &json!({"CommandLine": "alice@host", "User": "alice", "Host": "host"})
+    ));
+    assert!(!matches(
+        &engine,
+        &json!({"CommandLine": "alice@other", "User": "alice", "Host": "host"})
+    ));
+}
+
+#[test]
+fn fieldref_neq_negates_equality() {
+    let engine = engine_from(
+        r#"
+title: FieldRef Neq
+logsource: { category: test }
+detection:
+    selection:
+        Image|fieldref|neq: ParentImage
+    condition: selection
+"#,
+    );
+    assert!(matches(
+        &engine,
+        &json!({"Image": "a.exe", "ParentImage": "b.exe"})
+    ));
+    assert!(!matches(
+        &engine,
+        &json!({"Image": "a.exe", "ParentImage": "a.exe"})
+    ));
+    assert!(matches(&engine, &json!({"Image": "a.exe"})));
+    assert!(!matches(&engine, &json!({"ParentImage": "a.exe"})));
+}
+
+#[test]
+fn neq_negates_the_whole_value_list() {
+    let any = engine_from(
+        r#"
+title: Neq List
+logsource: { category: test }
+detection:
+    selection:
+        User|neq:
+            - root
+            - admin
+    condition: selection
+"#,
+    );
+    assert!(matches(&any, &json!({"User": "alice"})));
+    assert!(!matches(&any, &json!({"User": "root"})));
+    assert!(!matches(&any, &json!({"User": "admin"})));
+    assert!(!matches(&any, &json!({"Other": "x"})));
+
+    let all = engine_from(
+        r#"
+title: Neq All
+logsource: { category: test }
+detection:
+    selection:
+        CommandLine|contains|all|neq:
+            - whoami
+            - /all
+    condition: selection
+"#,
+    );
+    assert!(matches(&all, &json!({"CommandLine": "whoami"})));
+    assert!(!matches(&all, &json!({"CommandLine": "whoami /all"})));
+}
+
+#[test]
+fn neq_negates_regex_and_cidr() {
+    let engine = engine_from(
+        r#"
+title: Neq Pattern
+logsource: { category: test }
+detection:
+    selection:
+        CommandLine|re|neq: 'whoami'
+        SourceIp|cidr|neq: 10.0.0.0/8
+    condition: selection
+"#,
+    );
+    assert!(matches(
+        &engine,
+        &json!({"CommandLine": "ipconfig", "SourceIp": "192.168.1.1"})
+    ));
+    assert!(!matches(
+        &engine,
+        &json!({"CommandLine": "whoami /all", "SourceIp": "192.168.1.1"})
+    ));
+    assert!(!matches(
+        &engine,
+        &json!({"CommandLine": "ipconfig", "SourceIp": "10.1.2.3"})
+    ));
+}
+
+#[test]
+fn fieldref_rejects_wildcard_and_leading_string_modifier() {
+    let wildcard = try_compile(
+        r#"
+title: FieldRef Wildcard
+logsource: { category: test }
+detection:
+    selection:
+        Image|fieldref: 'Other*'
+    condition: selection
+"#,
+    );
+    assert!(
+        wildcard.is_err(),
+        "wildcard fieldref should fail: {wildcard:?}"
+    );
+
+    let order = try_compile(
+        r#"
+title: Contains Then FieldRef
+logsource: { category: test }
+detection:
+    selection:
+        Image|contains|fieldref: ParentImage
+    condition: selection
+"#,
+    );
+    let err = order.expect_err("contains before fieldref should fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("must follow |fieldref"),
+        "unexpected error: {msg}"
+    );
+
+    let both = try_compile(
+        r#"
+title: FieldRef Two Strings
+logsource: { category: test }
+detection:
+    selection:
+        Image|fieldref|contains|startswith: ParentImage
+    condition: selection
+"#,
+    );
+    assert!(both.is_err(), "two string ops should fail: {both:?}");
+
+    let with_re = try_compile(
+        r#"
+title: FieldRef Re
+logsource: { category: test }
+detection:
+    selection:
+        Image|fieldref|re: ParentImage
+    condition: selection
+"#,
+    );
+    assert!(with_re.is_err(), "fieldref|re should fail: {with_re:?}");
+}
+
+#[test]
 fn cidr_matches_network() {
     let engine = engine_from(
         r#"
