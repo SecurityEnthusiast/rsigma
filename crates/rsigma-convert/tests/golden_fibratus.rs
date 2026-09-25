@@ -131,6 +131,11 @@ fn golden_fieldref_substr() {
 }
 
 #[test]
+fn golden_neq() {
+    run_golden("neq", "expr");
+}
+
+#[test]
 fn golden_and_or_not() {
     run_golden("and_or_not", "expr");
 }

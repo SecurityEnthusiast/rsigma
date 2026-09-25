@@ -1111,11 +1111,8 @@ detection:
     }
 
     #[test]
-    fn test_default_path_rejects_neq_modifier() {
-        // `Field|neq: value` would silently become equality through the
-        // generic dispatch. Reject loudly with UnsupportedModifier so the
-        // generated query is never wrong.
-        let err = convert_rule_yaml_err(
+    fn test_neq_modifier() {
+        let queries = convert_rule_yaml(
             r#"
 title: Test
 logsource:
@@ -1123,12 +1120,14 @@ logsource:
 detection:
     selection:
         Field|neq: forbidden
+        EventID|neq: 1
+        Image|fieldref|neq: ParentImage
     condition: selection
 "#,
         );
-        assert!(
-            matches!(&err, ConvertError::UnsupportedModifier(m) if m.contains("Neq")),
-            "expected UnsupportedModifier(Neq), got: {err}",
+        assert_eq!(
+            queries,
+            vec!["not Field=\"forbidden\" and not EventID=1 and not Image=fieldref(ParentImage)"]
         );
     }
 

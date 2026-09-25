@@ -1,0 +1,1 @@
+not (ps.name ~= 'cmd.exe') and not (ps.exe ~= ps.parent.name)

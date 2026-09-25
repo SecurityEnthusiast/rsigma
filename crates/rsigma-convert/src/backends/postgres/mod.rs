@@ -644,6 +644,11 @@ impl Backend for PostgresBackend {
         Ok(text_convert_condition_not(self.config, expr))
     }
 
+    fn convert_negated_field_ref(&self, field: &str, expr: &str) -> Result<String> {
+        let f = self.escape_and_quote_field(field);
+        Ok(format!("({expr}) IS NOT TRUE AND {f} IS NOT NULL"))
+    }
+
     fn convert_ir_array_match(
         &self,
         field: &str,

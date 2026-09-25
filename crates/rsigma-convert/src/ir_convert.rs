@@ -1,9 +1,10 @@
 //! IR-native detection/item dispatch for the `Backend` trait.
 //!
 //! Walks [`IrDetection`] / [`IrDetectionItem`] and calls the IR-native
-//! `Backend` value leaves. Encoding transforms, `neq`, `expand`, and timestamp
-//! parts have no faithful backend rendering and are rejected here, matching the
-//! historical parser-path behavior.
+//! `Backend` value leaves. Encoding transforms, `expand`, and timestamp parts
+//! have no faithful backend rendering and are rejected here, matching the
+//! historical parser-path behavior. `|neq` lowers to [`IrMatcher::Not`] and is
+//! rendered with [`Backend::convert_condition_not`].
 
 use std::collections::HashMap;
 
@@ -239,14 +240,22 @@ fn convert_leaf<B: Backend + ?Sized>(
             let res = backend.convert_field_ref(field, rf, *op, *case_insensitive, state)?;
             Ok(resolve(res, state))
         }
-        // Encoding transforms, negation, expand, and timestamp parts have no
-        // faithful backend rendering; reject them (as the parser path did).
+        // Encoding transforms, expand, and timestamp parts have no faithful
+        // backend rendering; reject them (as the parser path did).
         IrMatcher::Encoded { .. } => Err(ConvertError::UnsupportedModifier(
             "value-transformation modifiers (base64/wide/utf16/windash) are not \
              expressible as a backend query"
                 .into(),
         )),
-        IrMatcher::Not(_) => Err(ConvertError::UnsupportedModifier("Neq".into())),
+        IrMatcher::Not(inner) => {
+            let Some(expr) = convert_leaf(backend, field, inner, state)? else {
+                return Ok(None);
+            };
+            if matches!(inner.as_ref(), IrMatcher::FieldRef { .. }) {
+                return Ok(Some(backend.convert_negated_field_ref(field, &expr)?));
+            }
+            Ok(Some(backend.convert_condition_not(&expr)?))
+        }
         IrMatcher::Expand { .. } => Err(ConvertError::UnsupportedModifier("Expand".into())),
         IrMatcher::TimestampPart { .. } => {
             Err(ConvertError::UnsupportedModifier("timestamp part".into()))

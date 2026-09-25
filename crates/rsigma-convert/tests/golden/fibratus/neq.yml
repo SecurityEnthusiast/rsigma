@@ -1,0 +1,6 @@
+title: Neq
+detection:
+  s:
+    ps.name|neq: cmd.exe
+    ps.exe|fieldref|neq: ps.parent.name
+  condition: s
