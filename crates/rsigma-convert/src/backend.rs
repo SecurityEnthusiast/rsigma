@@ -221,11 +221,14 @@ pub trait Backend: Send + Sync {
         state: &mut ConversionState,
     ) -> Result<String>;
 
-    /// Field-to-field comparison (`|fieldref`).
+    /// Field-to-field comparison (`|fieldref`, optionally with
+    /// `contains`, `startswith`, or `endswith`).
     fn convert_field_ref(
         &self,
         field1: &str,
         field2: &str,
+        op: IrStrOp,
+        case_insensitive: bool,
         state: &mut ConversionState,
     ) -> Result<ConvertResult>;
 

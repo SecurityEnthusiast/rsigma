@@ -362,6 +362,8 @@ impl Backend for LynxDbBackend {
         &self,
         _field1: &str,
         _field2: &str,
+        _op: IrStrOp,
+        _case_insensitive: bool,
         _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
         Err(ConvertError::UnsupportedModifier(

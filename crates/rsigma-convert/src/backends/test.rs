@@ -338,8 +338,21 @@ impl Backend for TextQueryTestBackend {
         &self,
         field1: &str,
         field2: &str,
+        op: IrStrOp,
+        _case_insensitive: bool,
         _state: &mut ConversionState,
     ) -> Result<ConvertResult> {
+        if !matches!(op, IrStrOp::Exact) {
+            let f1 = text_escape_and_quote_field(self.config, field1);
+            let f2 = text_escape_and_quote_field(self.config, field2);
+            let token = match op {
+                IrStrOp::Contains => "contains",
+                IrStrOp::StartsWith => "startswith",
+                IrStrOp::EndsWith => "endswith",
+                IrStrOp::Exact => unreachable!("exact handled below"),
+            };
+            return Ok(ConvertResult::Query(format!("{f1} {token} {f2}")));
+        }
         let expr = self
             .config
             .field_eq_field_expression
@@ -565,9 +578,12 @@ impl Backend for MandatoryPipelineTestBackend {
         &self,
         field1: &str,
         field2: &str,
+        op: IrStrOp,
+        case_insensitive: bool,
         state: &mut ConversionState,
     ) -> Result<ConvertResult> {
-        self.0.convert_field_ref(field1, field2, state)
+        self.0
+            .convert_field_ref(field1, field2, op, case_insensitive, state)
     }
 
     fn convert_keyword_str(

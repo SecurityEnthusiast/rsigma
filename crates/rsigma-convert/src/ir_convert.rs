@@ -231,8 +231,12 @@ fn convert_leaf<B: Backend + ?Sized>(
         IrMatcher::Exists(expect) => Ok(Some(backend.convert_field_exists(field, *expect, state)?)),
         IrMatcher::Null => Ok(Some(backend.convert_field_eq_null(field, state)?)),
         IrMatcher::BoolEq(b) => Ok(Some(backend.convert_field_eq_bool(field, *b, state)?)),
-        IrMatcher::FieldRef { field: rf, .. } => {
-            let res = backend.convert_field_ref(field, rf, state)?;
+        IrMatcher::FieldRef {
+            field: rf,
+            op,
+            case_insensitive,
+        } => {
+            let res = backend.convert_field_ref(field, rf, *op, *case_insensitive, state)?;
             Ok(resolve(res, state))
         }
         // Encoding transforms, negation, expand, and timestamp parts have no

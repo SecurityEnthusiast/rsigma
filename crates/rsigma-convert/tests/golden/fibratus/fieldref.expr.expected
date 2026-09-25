@@ -1,1 +1,1 @@
-ps.name = ps.exe
+ps.name ~= ps.exe

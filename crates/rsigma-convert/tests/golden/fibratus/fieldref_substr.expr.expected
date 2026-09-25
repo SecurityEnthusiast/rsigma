@@ -1,0 +1,1 @@
+ps.cmdline icontains ps.exe and file.path istartswith folder and file.name endswith ext

@@ -106,6 +106,11 @@ fn golden_multi_field_detection() {
 }
 
 #[test]
+fn golden_fieldref() {
+    run_golden("fieldref");
+}
+
+#[test]
 fn golden_custom_table() {
     run_golden("custom_table");
 }
