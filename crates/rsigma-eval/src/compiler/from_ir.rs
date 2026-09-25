@@ -183,9 +183,11 @@ fn compile_ir_matcher(matcher: &IrMatcher) -> Result<CompiledMatcher> {
         IrMatcher::Exists(b) => Ok(CompiledMatcher::Exists(*b)),
         IrMatcher::FieldRef {
             field,
+            op,
             case_insensitive,
         } => Ok(CompiledMatcher::FieldRef {
             field: field.clone(),
+            op: *op,
             case_insensitive: *case_insensitive,
         }),
         IrMatcher::Null => Ok(CompiledMatcher::Null),

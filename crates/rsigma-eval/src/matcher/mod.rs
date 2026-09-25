@@ -16,6 +16,7 @@ use regex::{Regex, RegexSet};
 use crate::event::Event;
 use crate::result::MatcherKind;
 use ipnet::IpNet;
+use rsigma_ir::IrStrOp;
 
 /// Upper bound on the length of a `pattern` string recorded in match
 /// detail. Long Aho-Corasick / regex-set joins are truncated with an
@@ -176,8 +177,12 @@ pub enum CompiledMatcher {
     /// Field existence check. `true` = field must exist, `false` = must not exist.
     Exists(bool),
     /// Compare against another field's value.
+    ///
+    /// `op` is equality, or a substring, prefix, or suffix check
+    /// (`fieldref` followed by `contains`, `startswith`, or `endswith`).
     FieldRef {
         field: String,
+        op: IrStrOp,
         case_insensitive: bool,
     },
     /// Match null / missing values.
@@ -361,6 +366,7 @@ impl CompiledMatcher {
             CompiledMatcher::FieldRef {
                 field,
                 case_insensitive,
+                ..
             } => MatchDescriptor {
                 kind: MatcherKind::FieldRef,
                 pattern: Some(field.clone()),

@@ -137,7 +137,9 @@ pub(super) fn validate_modifiers(ctx: &ModCtx, modifiers: &[Modifier]) -> Result
     if ctx.exists {
         operators.push("exists");
     }
-    if ctx.fieldref {
+    // `fieldref` may combine with exactly one of contains/startswith/endswith.
+    // Any other operator, or two string operators, is still a conflict.
+    if ctx.fieldref && fieldref_conflicts(ctx) {
         operators.push("fieldref");
     }
     if ctx.gt {
@@ -162,6 +164,14 @@ pub(super) fn validate_modifiers(ctx: &ModCtx, modifiers: &[Modifier]) -> Result
             Modifier::Year => operators.push("year"),
             _ => {}
         }
+    }
+    if ctx.fieldref
+        && !fieldref_conflicts(ctx)
+        && let Some(name) = string_modifier_before_fieldref(modifiers)
+    {
+        return Err(IrError::InvalidModifiers(format!(
+            "conflicting modifiers: |{name} must follow |fieldref"
+        )));
     }
     if operators.len() > 1 {
         return Err(IrError::InvalidModifiers(format!(
@@ -260,4 +270,30 @@ pub(super) fn validate_modifiers(ctx: &ModCtx, modifiers: &[Modifier]) -> Result
     }
 
     Ok(())
+}
+
+/// `fieldref` conflicts when paired with a non-string operator, or with more
+/// than one of `contains` / `startswith` / `endswith`.
+fn fieldref_conflicts(ctx: &ModCtx) -> bool {
+    let string_ops = u8::from(ctx.contains) + u8::from(ctx.startswith) + u8::from(ctx.endswith);
+    let blocked = ctx.re
+        || ctx.cidr
+        || ctx.exists
+        || ctx.has_numeric_comparison()
+        || ctx.timestamp_part.is_some();
+    blocked || string_ops > 1
+}
+
+/// A string modifier that appears before `|fieldref` wildcards the field name
+/// in pySigma and is rejected there.
+fn string_modifier_before_fieldref(modifiers: &[Modifier]) -> Option<&'static str> {
+    let fieldref_at = modifiers
+        .iter()
+        .position(|m| matches!(m, Modifier::FieldRef))?;
+    modifiers[..fieldref_at].iter().find_map(|m| match m {
+        Modifier::Contains => Some("contains"),
+        Modifier::StartsWith => Some("startswith"),
+        Modifier::EndsWith => Some("endswith"),
+        _ => None,
+    })
 }

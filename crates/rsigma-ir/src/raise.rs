@@ -288,9 +288,16 @@ fn raise_matcher(matcher: &IrMatcher) -> Result<(Vec<Modifier>, Vec<SigmaValue>)
         IrMatcher::Exists(expect) => Ok((vec![Modifier::Exists], vec![SigmaValue::Bool(*expect)])),
         IrMatcher::FieldRef {
             field,
+            op,
             case_insensitive,
         } => {
             let mut modifiers = vec![Modifier::FieldRef];
+            match op {
+                IrStrOp::Contains => modifiers.push(Modifier::Contains),
+                IrStrOp::StartsWith => modifiers.push(Modifier::StartsWith),
+                IrStrOp::EndsWith => modifiers.push(Modifier::EndsWith),
+                IrStrOp::Exact => {}
+            }
             if !case_insensitive {
                 modifiers.push(Modifier::Cased);
             }

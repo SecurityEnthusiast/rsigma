@@ -36,6 +36,7 @@ use base64::Engine as Base64Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use regex::Regex;
 
+use rsigma_ir::IrStrOp;
 use rsigma_parser::value::{SpecialChar, StringPart};
 use rsigma_parser::{
     ArrayQuantifier, ConditionExpr, Detection, DetectionItem, Level, LogSource, Modifier,
@@ -510,7 +511,9 @@ fn compile_detection_item(item: &DetectionItem) -> Result<CompiledDetectionItem>
 /// 1. At most one *operator* modifier per item: `contains`,
 ///    `startswith`, `endswith`, `re`, `cidr`, `exists`, `fieldref`,
 ///    numeric comparison, and the timestamp parts each describe how
-///    the comparison works and are mutually exclusive.
+///    the comparison works and are mutually exclusive. `fieldref` is
+///    the exception: it may be followed by exactly one of `contains`,
+///    `startswith`, or `endswith`.
 /// 2. At most one UTF-16 encoding: `wide`, `utf16`, and `utf16be`
 ///    describe different UTF-16 dialects and cannot coexist.
 /// 3. `base64` and `base64offset` are mutually exclusive (each
@@ -544,7 +547,9 @@ fn validate_modifiers(ctx: &ModCtx, modifiers: &[Modifier]) -> Result<()> {
     if ctx.exists {
         operators.push("exists");
     }
-    if ctx.fieldref {
+    // `fieldref` may combine with exactly one of contains/startswith/endswith.
+    // Any other operator, or two string operators, is still a conflict.
+    if ctx.fieldref && fieldref_conflicts(ctx) {
         operators.push("fieldref");
     }
     if ctx.gt {
@@ -569,6 +574,14 @@ fn validate_modifiers(ctx: &ModCtx, modifiers: &[Modifier]) -> Result<()> {
             Modifier::Year => operators.push("year"),
             _ => {}
         }
+    }
+    if ctx.fieldref
+        && !fieldref_conflicts(ctx)
+        && let Some(name) = string_modifier_before_fieldref(modifiers)
+    {
+        return Err(EvalError::InvalidModifiers(format!(
+            "conflicting modifiers: |{name} must follow |fieldref"
+        )));
     }
     if operators.len() > 1 {
         return Err(EvalError::InvalidModifiers(format!(
@@ -676,6 +689,54 @@ fn validate_modifiers(ctx: &ModCtx, modifiers: &[Modifier]) -> Result<()> {
     Ok(())
 }
 
+/// `fieldref` conflicts when paired with a non-string operator, or with more
+/// than one of `contains` / `startswith` / `endswith`.
+fn fieldref_conflicts(ctx: &ModCtx) -> bool {
+    let string_ops = u8::from(ctx.contains) + u8::from(ctx.startswith) + u8::from(ctx.endswith);
+    let blocked = ctx.re
+        || ctx.cidr
+        || ctx.exists
+        || ctx.has_numeric_comparison()
+        || ctx.timestamp_part.is_some();
+    blocked || string_ops > 1
+}
+
+/// A string modifier that appears before `|fieldref` wildcards the field name
+/// in pySigma and is rejected there.
+fn string_modifier_before_fieldref(modifiers: &[Modifier]) -> Option<&'static str> {
+    let fieldref_at = modifiers
+        .iter()
+        .position(|m| matches!(m, Modifier::FieldRef))?;
+    modifiers[..fieldref_at].iter().find_map(|m| match m {
+        Modifier::Contains => Some("contains"),
+        Modifier::StartsWith => Some("startswith"),
+        Modifier::EndsWith => Some("endswith"),
+        _ => None,
+    })
+}
+
+/// Field name referenced by `|fieldref`. Wildcards are rejected.
+fn fieldref_name(value: &SigmaValue) -> Result<String> {
+    match value {
+        SigmaValue::String(s) => s.as_plain().ok_or_else(|| {
+            EvalError::IncompatibleValue("field reference must not contain wildcards".into())
+        }),
+        other => value_to_plain_string(other),
+    }
+}
+
+fn fieldref_str_op(ctx: &ModCtx) -> IrStrOp {
+    if ctx.contains {
+        IrStrOp::Contains
+    } else if ctx.startswith {
+        IrStrOp::StartsWith
+    } else if ctx.endswith {
+        IrStrOp::EndsWith
+    } else {
+        IrStrOp::Exact
+    }
+}
+
 // =============================================================================
 // Value compilation (modifier interpretation)
 // =============================================================================
@@ -726,11 +787,16 @@ fn compile_value(value: &SigmaValue, ctx: &ModCtx) -> Result<CompiledMatcher> {
 
     // |fieldref — value is a field name to compare against
     if ctx.fieldref {
-        let field_name = value_to_plain_string(value)?;
-        return Ok(CompiledMatcher::FieldRef {
+        let field_name = fieldref_name(value)?;
+        let matcher = CompiledMatcher::FieldRef {
             field: field_name,
+            op: fieldref_str_op(ctx),
             case_insensitive: ci,
-        });
+        };
+        if ctx.has_neq() {
+            return Ok(CompiledMatcher::Not(Box::new(matcher)));
+        }
+        return Ok(matcher);
     }
 
     // |re — value is a regex pattern
