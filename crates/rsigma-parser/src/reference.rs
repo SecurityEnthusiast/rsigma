@@ -46,7 +46,10 @@ pub const MODIFIERS: &[(&str, &str)] = &[
         "Check if the field exists (true) or is absent (false)",
     ),
     ("expand", "Expand placeholders in the value"),
-    ("fieldref", "Value references another field name"),
+    (
+        "fieldref",
+        "Value is another field name. May be followed by contains, startswith, or endswith. Must not contain wildcards",
+    ),
     ("gt", "Field value must be greater than the specified value"),
     ("gte", "Field value must be greater than or equal"),
     ("lt", "Field value must be less than the specified value"),

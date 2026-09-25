@@ -206,8 +206,9 @@ The parser recognizes 30 modifier variants, some with aliases:
 | Case | `cased` | — |
 | Existence | `exists` | — |
 | Placeholder | `expand` | — |
-| Field reference | `fieldref` | — |
-| Numeric comparison | `gt`, `gte`, `lt`, `lte`, `neq` | — |
+| Field reference | `fieldref` | May be followed by one of `contains`, `startswith`, or `endswith`, and by `neq`. The value must not contain wildcards. |
+| Numeric comparison | `gt`, `gte`, `lt`, `lte` | — |
+| Inequality | `neq` | Negates the comparison. Combines with string modifiers and with `fieldref`. |
 | Regex flags | `i`, `m`, `s` | `ignorecase` → `i`, `multiline` → `m`, `dotall` → `s` |
 | Timestamp parts | `minute`, `hour`, `day`, `week`, `month`, `year` | — |
 

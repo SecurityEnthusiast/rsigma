@@ -37,6 +37,10 @@ Every Sigma modifier is translated to a native PostgreSQL construct. The mapping
 | `exists: true` | `"field" IS NOT NULL` |
 | `exists: false` | `"field" IS NULL` |
 | `all` | values combined with `AND` instead of the default `OR` |
+| `fieldref` | `"field" = "other"` |
+| `fieldref` with `contains` | `strpos(lower(("field")::text), lower(("other")::text)) > 0`. `startswith` uses `strpos(...) = 1`. `endswith` uses `right(("field")::text, char_length(("other")::text)) = ("other")::text`. `|cased` drops the `lower()` calls. `%` and `_` in the referenced value stay literal. |
+| `neq` | `NOT "field" = 'value'` |
+| `fieldref` with `neq` | `("field" = "other") IS NOT TRUE AND "field" IS NOT NULL`. A missing referenced field still matches when the left field is present. |
 | `null` value | `"field" IS NULL` |
 | keywords | `to_tsvector('simple', ROW(*)::text) @@ plainto_tsquery('simple', 'value')` |
 
