@@ -579,7 +579,7 @@ fn check_modifier_compatibility(field_key: &str) -> Option<String> {
 
     let string_match: &[&str] = &["contains", "startswith", "endswith"];
     let pattern_match: &[&str] = &["re", "cidr"];
-    let numeric_compare: &[&str] = &["gt", "gte", "lt", "lte", "neq"];
+    let numeric_compare: &[&str] = &["gt", "gte", "lt", "lte"];
     let regex_flags: &[&str] = &["i", "ignorecase", "m", "multiline", "s", "dotall"];
 
     let has_string = modifiers
@@ -617,7 +617,7 @@ fn check_modifier_compatibility(field_key: &str) -> Option<String> {
 
     if has_numeric && (has_string > 0 || !has_pattern.is_empty()) {
         return Some(
-            "numeric comparison modifiers (gt, gte, lt, lte, neq) are incompatible \
+            "numeric comparison modifiers (gt, gte, lt, lte) are incompatible \
              with string-match and pattern modifiers"
                 .to_string(),
         );
@@ -638,6 +638,49 @@ fn check_modifier_compatibility(field_key: &str) -> Option<String> {
 
     if has_regex_flags && !has_re {
         return Some("regex flag modifiers (i, m, s) require the 're' modifier".to_string());
+    }
+
+    if let Some(fieldref_at) = modifiers.iter().position(|m| *m == "fieldref") {
+        if let Some(name) = modifiers[..fieldref_at]
+            .iter()
+            .find(|m| string_match.contains(*m))
+        {
+            return Some(format!("|{name} must follow |fieldref"));
+        }
+        let blocked: &[&str] = &[
+            "re",
+            "cidr",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "exists",
+            "minute",
+            "hour",
+            "day",
+            "week",
+            "month",
+            "year",
+            "base64",
+            "base64offset",
+            "wide",
+            "utf16",
+            "utf16le",
+            "utf16be",
+            "windash",
+            "expand",
+        ];
+        let hits: Vec<&str> = modifiers
+            .iter()
+            .copied()
+            .filter(|m| blocked.contains(m))
+            .collect();
+        if !hits.is_empty() {
+            return Some(format!(
+                "fieldref is incompatible with: {}",
+                hits.join(", ")
+            ));
+        }
     }
 
     None
@@ -1231,6 +1274,75 @@ logsource:
 detection:
     selection:
         Field|gt|contains: 100
+    condition: selection
+level: medium
+"#,
+        );
+        assert!(has_rule(&w, LintRule::IncompatibleModifiers));
+    }
+
+    #[test]
+    fn fieldref_contains_is_compatible() {
+        let w = lint(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    selection:
+        Field|fieldref|contains: Other
+    condition: selection
+level: medium
+"#,
+        );
+        assert!(has_no_rule(&w, LintRule::IncompatibleModifiers));
+    }
+
+    #[test]
+    fn fieldref_neq_is_compatible() {
+        let w = lint(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    selection:
+        Field|fieldref|neq: Other
+        CommandLine|contains|neq: 'test'
+    condition: selection
+level: medium
+"#,
+        );
+        assert!(has_no_rule(&w, LintRule::IncompatibleModifiers));
+    }
+
+    #[test]
+    fn contains_before_fieldref_is_incompatible() {
+        let w = lint(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    selection:
+        Field|contains|fieldref: Other
+    condition: selection
+level: medium
+"#,
+        );
+        assert!(has_rule(&w, LintRule::IncompatibleModifiers));
+    }
+
+    #[test]
+    fn fieldref_with_re_is_incompatible() {
+        let w = lint(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    selection:
+        Field|fieldref|re: Other
     condition: selection
 level: medium
 "#,
