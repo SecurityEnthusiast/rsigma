@@ -4,9 +4,9 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Field references with contains, startswith, and endswith (#505)
+### Field references with contains, startswith, and endswith (#506)
 
-`fieldref` may be followed by one of `contains`, `startswith`, or `endswith`. The comparison is case-insensitive unless `|cased` is also set. A wildcard in the referenced field name is rejected, and a string modifier written before `fieldref` is rejected. Thanks to @Karib0u for reporting these three combinations.
+`fieldref` may be followed by one of `contains`, `startswith`, or `endswith`. The comparison is case-insensitive unless `|cased` is also set. A wildcard in the referenced field name is rejected, and a string modifier written before `fieldref` is rejected. Thanks to @Karib0u, who reported these three combinations in #505.
 
 PostgreSQL renders the substring forms with `strpos` and `right`, so `%` and `_` in the referenced value stay literal. Fibratus renders equality with `~=` and the substring forms with `icontains`, `istartswith`, and `iendswith`.
 
