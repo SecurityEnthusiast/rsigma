@@ -453,9 +453,14 @@ fn compile_detection_item(item: &DetectionItem) -> Result<CompiledDetectionItem>
         ));
     }
 
-    // Compile each value into a matcher
-    let matchers: Result<Vec<CompiledMatcher>> =
-        item.values.iter().map(|v| compile_value(v, &ctx)).collect();
+    // Compile each value into a matcher. `|neq` negates the whole item, so
+    // `Field|neq: [a, b]` means neither a nor b.
+    let value_ctx = ModCtx { neq: false, ..ctx };
+    let matchers: Result<Vec<CompiledMatcher>> = item
+        .values
+        .iter()
+        .map(|v| compile_value(v, &value_ctx))
+        .collect();
     let matchers = matchers?;
 
     // Combine multiple values: |all → AND, default → OR.
@@ -476,6 +481,11 @@ fn compile_detection_item(item: &DetectionItem) -> Result<CompiledDetectionItem>
     } else {
         optimizer::optimize_any_of(matchers)
     };
+    let combined = if ctx.has_neq() {
+        CompiledMatcher::Not(Box::new(combined))
+    } else {
+        combined
+    };
 
     let bloom_eligible = item.field.name.is_some()
         && crate::engine::bloom_index::is_positive_substring_matcher(&combined);
@@ -495,9 +505,9 @@ fn compile_detection_item(item: &DetectionItem) -> Result<CompiledDetectionItem>
 /// Reject contradictory modifier combinations before any value is compiled.
 ///
 /// The compiler dispatch in [`compile_value`] checks modifier flags in a
-/// fixed order (`neq` wraps the rest, then `expand` -> timestamp part ->
-/// `fieldref` -> `re` -> `cidr` -> numeric comparison -> default
-/// string/value matching). Whichever flag the dispatch checks first wins, so a
+/// fixed order (`expand` -> timestamp part -> `fieldref` -> `re` ->
+/// `cidr` -> numeric comparison -> default string/value matching).
+/// `neq` negates the combined item in [`compile_detection_item`]. Whichever flag the dispatch checks first wins, so a
 /// field declared as `Field|cidr|contains` silently produced a CIDR
 /// match with the `contains` modifier dropped, and a field declared
 /// as `Field|re|contains` silently produced a regex match with the
@@ -743,14 +753,6 @@ fn fieldref_str_op(ctx: &ModCtx) -> IrStrOp {
 
 /// Compile a single `SigmaValue` using the modifier context.
 fn compile_value(value: &SigmaValue, ctx: &ModCtx) -> Result<CompiledMatcher> {
-    // |neq — negate whatever the remaining modifiers compile to
-    if ctx.has_neq() {
-        let mut inner_ctx = ModCtx { ..*ctx };
-        inner_ctx.neq = false;
-        let inner = compile_value(value, &inner_ctx)?;
-        return Ok(CompiledMatcher::Not(Box::new(inner)));
-    }
-
     let ci = ctx.is_case_insensitive();
 
     // Handle special modifiers first

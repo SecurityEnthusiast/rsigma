@@ -88,13 +88,6 @@ fn encodings(ctx: &ModCtx) -> Vec<IrEncoding> {
 
 /// Lower a single `SigmaValue` using the modifier context.
 pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher> {
-    if ctx.has_neq() {
-        let mut inner_ctx = *ctx;
-        inner_ctx.neq = false;
-        let inner = lower_value(value, &inner_ctx)?;
-        return Ok(IrMatcher::Not(Box::new(inner)));
-    }
-
     let ci = ctx.is_case_insensitive();
 
     if ctx.expand {

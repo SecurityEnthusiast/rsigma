@@ -3,4 +3,7 @@ detection:
   s:
     ps.name|neq: cmd.exe
     ps.exe|fieldref|neq: ps.parent.name
+    ps.username|neq:
+      - root
+      - admin
   condition: s

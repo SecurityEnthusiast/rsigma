@@ -3,8 +3,8 @@
 //! Walks [`IrDetection`] / [`IrDetectionItem`] and calls the IR-native
 //! `Backend` value leaves. Encoding transforms, `expand`, and timestamp parts
 //! have no faithful backend rendering and are rejected here, matching the
-//! historical parser-path behavior. `|neq` lowers to [`IrMatcher::Not`] and is
-//! rendered with [`Backend::convert_condition_not`].
+//! historical parser-path behavior. `|neq` lowers to an [`IrMatcher::Not`]
+//! around the whole item and is rendered with [`Backend::convert_condition_not`].
 
 use std::collections::HashMap;
 
@@ -247,26 +247,7 @@ fn convert_leaf<B: Backend + ?Sized>(
              expressible as a backend query"
                 .into(),
         )),
-        IrMatcher::Not(inner) => {
-            let deferred_before = state.deferred.len();
-            let expr = convert_leaf(backend, field, inner, state)?;
-            let deferred = &mut state.deferred[deferred_before..];
-            match expr {
-                None => {
-                    for part in deferred.iter_mut() {
-                        part.negate();
-                    }
-                    Ok(None)
-                }
-                Some(_) if !deferred.is_empty() => Err(ConvertError::UnsupportedModifier(
-                    "neq over a mix of inline and deferred expressions".into(),
-                )),
-                Some(expr) if matches!(inner.as_ref(), IrMatcher::FieldRef { .. }) => {
-                    Ok(Some(backend.convert_negated_field_ref(field, &expr)?))
-                }
-                Some(expr) => Ok(Some(backend.convert_condition_not(&expr)?)),
-            }
-        }
+        IrMatcher::Not(inner) => convert_not(backend, field, inner, state),
         IrMatcher::Expand { .. } => Err(ConvertError::UnsupportedModifier("Expand".into())),
         IrMatcher::TimestampPart { .. } => {
             Err(ConvertError::UnsupportedModifier("timestamp part".into()))
@@ -279,6 +260,70 @@ fn convert_leaf<B: Backend + ?Sized>(
             let parts = convert_matcher_list(backend, field, ms, state)?;
             Ok(Some(join_parts(backend, parts, true)?))
         }
+    }
+}
+
+/// Convert `|neq`, which negates the whole detection item.
+///
+/// Deferred parts are negated in place. They are ANDed onto the query, so
+/// negating each part of an OR list is De Morgan's law; an `|all` list of
+/// several deferred parts has no equivalent and is rejected.
+fn convert_not<B: Backend + ?Sized>(
+    backend: &B,
+    field: &str,
+    inner: &IrMatcher,
+    state: &mut ConversionState,
+) -> Result<Option<String>> {
+    let deferred_before = state.deferred.len();
+    let (expr, compound) = match inner {
+        IrMatcher::AnyOf(ms) | IrMatcher::AllOf(ms) => {
+            let parts = convert_matcher_list(backend, field, ms, state)?;
+            let compound = parts.len() > 1;
+            let all = matches!(inner, IrMatcher::AllOf(_));
+            let expr = if parts.is_empty() {
+                None
+            } else {
+                Some(join_parts(backend, parts, all)?)
+            };
+            (expr, compound)
+        }
+        other => (convert_leaf(backend, field, other, state)?, false),
+    };
+
+    let deferred = &mut state.deferred[deferred_before..];
+    if !deferred.is_empty() {
+        if expr.is_some() {
+            return Err(ConvertError::UnsupportedModifier(
+                "neq over a mix of inline and deferred expressions".into(),
+            ));
+        }
+        if deferred.len() > 1 && matches!(inner, IrMatcher::AllOf(_)) {
+            return Err(ConvertError::UnsupportedModifier(
+                "neq over an |all list of deferred expressions".into(),
+            ));
+        }
+        for part in deferred.iter_mut() {
+            part.negate();
+        }
+        return Ok(None);
+    }
+
+    let Some(expr) = expr else {
+        return Ok(None);
+    };
+    if contains_field_ref(inner) {
+        return Ok(Some(backend.convert_negated_field_ref(field, &expr)?));
+    }
+    let expr = if compound { format!("({expr})") } else { expr };
+    Ok(Some(backend.convert_condition_not(&expr)?))
+}
+
+fn contains_field_ref(matcher: &IrMatcher) -> bool {
+    match matcher {
+        IrMatcher::FieldRef { .. } => true,
+        IrMatcher::AnyOf(ms) | IrMatcher::AllOf(ms) => ms.iter().any(contains_field_ref),
+        IrMatcher::Not(inner) => contains_field_ref(inner),
+        _ => false,
     }
 }
 

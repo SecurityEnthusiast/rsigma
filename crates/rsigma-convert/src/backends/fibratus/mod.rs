@@ -382,6 +382,18 @@ impl Backend for FibratusBackend {
         item: &IrDetectionItem,
         state: &mut ConversionState,
     ) -> Result<String> {
+        // `|neq` over a list negates the collapsed list clause.
+        if let IrMatcher::Not(inner) = &item.matcher
+            && matches!(inner.as_ref(), IrMatcher::AnyOf(_) | IrMatcher::AllOf(_))
+        {
+            let positive = IrDetectionItem {
+                matcher: inner.as_ref().clone(),
+                ..item.clone()
+            };
+            let expr = self.convert_ir_detection_item(&positive, state)?;
+            return self.convert_condition_not(&expr);
+        }
+
         // Multi-value OR lists (`AnyOf`) collapse into a single Fibratus
         // list-operator / variadic-function clause. `|all` lowers to `AllOf`
         // and falls through to the generic AND-join.

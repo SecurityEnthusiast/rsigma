@@ -506,6 +506,41 @@ detection:
 }
 
 #[test]
+fn neq_negates_the_whole_value_list() {
+    let any = engine_from(
+        r#"
+title: Neq List
+logsource: { category: test }
+detection:
+    selection:
+        User|neq:
+            - root
+            - admin
+    condition: selection
+"#,
+    );
+    assert!(matches(&any, &json!({"User": "alice"})));
+    assert!(!matches(&any, &json!({"User": "root"})));
+    assert!(!matches(&any, &json!({"User": "admin"})));
+    assert!(!matches(&any, &json!({"Other": "x"})));
+
+    let all = engine_from(
+        r#"
+title: Neq All
+logsource: { category: test }
+detection:
+    selection:
+        CommandLine|contains|all|neq:
+            - whoami
+            - /all
+    condition: selection
+"#,
+    );
+    assert!(matches(&all, &json!({"CommandLine": "whoami"})));
+    assert!(!matches(&all, &json!({"CommandLine": "whoami /all"})));
+}
+
+#[test]
 fn neq_negates_regex_and_cidr() {
     let engine = engine_from(
         r#"

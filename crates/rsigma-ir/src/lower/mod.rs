@@ -186,8 +186,14 @@ pub fn lower_detection_item(item: &DetectionItem, opts: &LowerOptions) -> Result
         ));
     }
 
-    let matchers: Result<Vec<IrMatcher>> =
-        item.values.iter().map(|v| lower_value(v, &ctx)).collect();
+    // `|neq` negates the whole item, so `Field|neq: [a, b]` means neither a nor b.
+    let mut value_ctx = ctx;
+    value_ctx.neq = false;
+    let matchers: Result<Vec<IrMatcher>> = item
+        .values
+        .iter()
+        .map(|v| lower_value(v, &value_ctx))
+        .collect();
     let matchers = matchers?;
 
     let combined = if ctx.all {
@@ -200,6 +206,11 @@ pub fn lower_detection_item(item: &DetectionItem, opts: &LowerOptions) -> Result
         matchers.into_iter().next().unwrap()
     } else {
         IrMatcher::AnyOf(matchers)
+    };
+    let combined = if ctx.has_neq() {
+        IrMatcher::Not(Box::new(combined))
+    } else {
+        combined
     };
 
     Ok(IrDetectionItem {
