@@ -248,13 +248,24 @@ fn convert_leaf<B: Backend + ?Sized>(
                 .into(),
         )),
         IrMatcher::Not(inner) => {
-            let Some(expr) = convert_leaf(backend, field, inner, state)? else {
-                return Ok(None);
-            };
-            if matches!(inner.as_ref(), IrMatcher::FieldRef { .. }) {
-                return Ok(Some(backend.convert_negated_field_ref(field, &expr)?));
+            let deferred_before = state.deferred.len();
+            let expr = convert_leaf(backend, field, inner, state)?;
+            let deferred = &mut state.deferred[deferred_before..];
+            match expr {
+                None => {
+                    for part in deferred.iter_mut() {
+                        part.negate();
+                    }
+                    Ok(None)
+                }
+                Some(_) if !deferred.is_empty() => Err(ConvertError::UnsupportedModifier(
+                    "neq over a mix of inline and deferred expressions".into(),
+                )),
+                Some(expr) if matches!(inner.as_ref(), IrMatcher::FieldRef { .. }) => {
+                    Ok(Some(backend.convert_negated_field_ref(field, &expr)?))
+                }
+                Some(expr) => Ok(Some(backend.convert_condition_not(&expr)?)),
             }
-            Ok(Some(backend.convert_condition_not(&expr)?))
         }
         IrMatcher::Expand { .. } => Err(ConvertError::UnsupportedModifier("Expand".into())),
         IrMatcher::TimestampPart { .. } => {

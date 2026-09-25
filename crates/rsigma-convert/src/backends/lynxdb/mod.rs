@@ -915,6 +915,28 @@ detection:
         );
     }
 
+    #[test]
+    fn neq_negates_deferred_expressions() {
+        let q = convert(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    selection:
+        CommandLine|re|neq: '.*whoami.*'
+        SourceIP|cidr|neq: '10.0.0.0/8'
+    condition: selection
+"#,
+        );
+        assert_eq!(
+            q,
+            vec![
+                "FROM main | search * | where CommandLine !~ \".*whoami.*\" | where NOT cidrmatch(\"10.0.0.0/8\", SourceIP)"
+            ]
+        );
+    }
+
     // --- CIDR (deferred where clause) ---
 
     #[test]

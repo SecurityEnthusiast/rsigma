@@ -10,7 +10,9 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 PostgreSQL renders the substring forms with `strpos` and `right`, so `%` and `_` in the referenced value stay literal. Fibratus renders equality with `~=` and the substring forms with `icontains`, `istartswith`, and `iendswith`.
 
-`|neq` now converts. A missing referenced field counts as not equal when the left field is present. PostgreSQL expresses that as `(comparison) IS NOT TRUE AND "field" IS NOT NULL`. Other backends negate the comparison directly.
+`|neq` now negates every matcher it is combined with. Before, `re|neq`, `cidr|neq`, `fieldref|neq`, and `neq` with a timestamp part compiled without the negation.
+
+`|neq` now converts. A missing referenced field counts as not equal when the left field is present. PostgreSQL expresses that as `(comparison) IS NOT TRUE AND "field" IS NOT NULL`. LynxDB negates its deferred `where` clauses (`!~`, `NOT cidrmatch`). Other backends negate the comparison directly.
 
 `incompatible_modifiers` accepts `fieldref` followed by one of those string modifiers, and `fieldref` or a string comparison combined with `neq`. It warns when a string modifier precedes `fieldref`, and when `fieldref` is combined with `re`, `cidr`, a numeric comparison, `exists`, a timestamp part, or an encoding modifier. `neq` combines with string comparisons as well as with numbers.
 
