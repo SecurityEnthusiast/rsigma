@@ -495,9 +495,9 @@ fn compile_detection_item(item: &DetectionItem) -> Result<CompiledDetectionItem>
 /// Reject contradictory modifier combinations before any value is compiled.
 ///
 /// The compiler dispatch in [`compile_value`] checks modifier flags in a
-/// fixed order (`expand` -> timestamp part -> `fieldref` -> `re` ->
-/// `cidr` -> numeric comparison -> `neq` -> default string/value
-/// matching). Whichever flag the dispatch checks first wins, so a
+/// fixed order (`neq` wraps the rest, then `expand` -> timestamp part ->
+/// `fieldref` -> `re` -> `cidr` -> numeric comparison -> default
+/// string/value matching). Whichever flag the dispatch checks first wins, so a
 /// field declared as `Field|cidr|contains` silently produced a CIDR
 /// match with the `contains` modifier dropped, and a field declared
 /// as `Field|re|contains` silently produced a regex match with the
@@ -743,6 +743,14 @@ fn fieldref_str_op(ctx: &ModCtx) -> IrStrOp {
 
 /// Compile a single `SigmaValue` using the modifier context.
 fn compile_value(value: &SigmaValue, ctx: &ModCtx) -> Result<CompiledMatcher> {
+    // |neq — negate whatever the remaining modifiers compile to
+    if ctx.has_neq() {
+        let mut inner_ctx = ModCtx { ..*ctx };
+        inner_ctx.neq = false;
+        let inner = compile_value(value, &inner_ctx)?;
+        return Ok(CompiledMatcher::Not(Box::new(inner)));
+    }
+
     let ci = ctx.is_case_insensitive();
 
     // Handle special modifiers first
@@ -788,15 +796,11 @@ fn compile_value(value: &SigmaValue, ctx: &ModCtx) -> Result<CompiledMatcher> {
     // |fieldref — value is a field name to compare against
     if ctx.fieldref {
         let field_name = fieldref_name(value)?;
-        let matcher = CompiledMatcher::FieldRef {
+        return Ok(CompiledMatcher::FieldRef {
             field: field_name,
             op: fieldref_str_op(ctx),
             case_insensitive: ci,
-        };
-        if ctx.has_neq() {
-            return Ok(CompiledMatcher::Not(Box::new(matcher)));
-        }
-        return Ok(matcher);
+        });
     }
 
     // |re — value is a regex pattern
@@ -832,15 +836,6 @@ fn compile_value(value: &SigmaValue, ctx: &ModCtx) -> Result<CompiledMatcher> {
         if ctx.lte {
             return Ok(CompiledMatcher::NumericLte(n));
         }
-    }
-
-    // |neq — not-equal: negate the normal equality match
-    if ctx.has_neq() {
-        // Compile the value as a normal matcher, then wrap in Not
-        let mut inner_ctx = ModCtx { ..*ctx };
-        inner_ctx.neq = false;
-        let inner = compile_value(value, &inner_ctx)?;
-        return Ok(CompiledMatcher::Not(Box::new(inner)));
     }
 
     // For non-string values without string modifiers, use simple matchers

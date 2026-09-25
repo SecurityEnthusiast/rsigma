@@ -88,6 +88,13 @@ fn encodings(ctx: &ModCtx) -> Vec<IrEncoding> {
 
 /// Lower a single `SigmaValue` using the modifier context.
 pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher> {
+    if ctx.has_neq() {
+        let mut inner_ctx = *ctx;
+        inner_ctx.neq = false;
+        let inner = lower_value(value, &inner_ctx)?;
+        return Ok(IrMatcher::Not(Box::new(inner)));
+    }
+
     let ci = ctx.is_case_insensitive();
 
     if ctx.expand {
@@ -126,15 +133,11 @@ pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher>
 
     if ctx.fieldref {
         let field_name = fieldref_name(value)?;
-        let matcher = IrMatcher::FieldRef {
+        return Ok(IrMatcher::FieldRef {
             field: field_name,
             op: str_op(ctx),
             case_insensitive: ci,
-        };
-        if ctx.has_neq() {
-            return Ok(IrMatcher::Not(Box::new(matcher)));
-        }
-        return Ok(matcher);
+        });
     }
 
     if ctx.re {
@@ -167,13 +170,6 @@ pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher>
         if ctx.lte {
             return Ok(IrMatcher::NumericLte(IrNumber::Literal(n)));
         }
-    }
-
-    if ctx.has_neq() {
-        let mut inner_ctx = *ctx;
-        inner_ctx.neq = false;
-        let inner = lower_value(value, &inner_ctx)?;
-        return Ok(IrMatcher::Not(Box::new(inner)));
     }
 
     match value {

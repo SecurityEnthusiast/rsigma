@@ -1082,6 +1082,17 @@ mod modifier_validation_tests {
             &[Modifier::Re, Modifier::Neq],
             vec![SigmaValue::String(SigmaString::new("foo.*"))],
         );
+        let item = make_item(
+            "CommandLine",
+            &[Modifier::Re, Modifier::Neq],
+            vec![SigmaValue::String(SigmaString::new("foo.*"))],
+        );
+        let compiled = compile_detection_item(&item).unwrap();
+        assert!(
+            matches!(compiled.matcher, CompiledMatcher::Not(ref inner) if matches!(**inner, CompiledMatcher::Regex(_))),
+            "re|neq must negate the regex, got {:?}",
+            compiled.matcher
+        );
     }
 
     #[test]

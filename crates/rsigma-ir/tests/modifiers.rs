@@ -501,6 +501,35 @@ detection:
         &engine,
         &json!({"Image": "a.exe", "ParentImage": "a.exe"})
     ));
+    assert!(matches(&engine, &json!({"Image": "a.exe"})));
+    assert!(!matches(&engine, &json!({"ParentImage": "a.exe"})));
+}
+
+#[test]
+fn neq_negates_regex_and_cidr() {
+    let engine = engine_from(
+        r#"
+title: Neq Pattern
+logsource: { category: test }
+detection:
+    selection:
+        CommandLine|re|neq: 'whoami'
+        SourceIp|cidr|neq: 10.0.0.0/8
+    condition: selection
+"#,
+    );
+    assert!(matches(
+        &engine,
+        &json!({"CommandLine": "ipconfig", "SourceIp": "192.168.1.1"})
+    ));
+    assert!(!matches(
+        &engine,
+        &json!({"CommandLine": "whoami /all", "SourceIp": "192.168.1.1"})
+    ));
+    assert!(!matches(
+        &engine,
+        &json!({"CommandLine": "ipconfig", "SourceIp": "10.1.2.3"})
+    ));
 }
 
 #[test]
