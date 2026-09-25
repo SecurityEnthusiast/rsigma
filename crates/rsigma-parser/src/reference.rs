@@ -54,7 +54,10 @@ pub const MODIFIERS: &[(&str, &str)] = &[
     ("gte", "Field value must be greater than or equal"),
     ("lt", "Field value must be less than the specified value"),
     ("lte", "Field value must be less than or equal"),
-    ("neq", "Field value must not equal the specified value"),
+    (
+        "neq",
+        "Field value must not match any of the specified values",
+    ),
     ("i", "Regex flag: case insensitive"),
     ("m", "Regex flag: multiline"),
     ("s", "Regex flag: dot matches all"),

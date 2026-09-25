@@ -8,9 +8,9 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 `fieldref` may be followed by one of `contains`, `startswith`, or `endswith`. The comparison is case-insensitive unless `|cased` is also set. A wildcard in the referenced field name is rejected, and a string modifier written before `fieldref` is rejected. Thanks to @Karib0u, who reported these three combinations in #505.
 
-PostgreSQL renders the substring forms with `strpos` and `right`, so `%` and `_` in the referenced value stay literal. Fibratus renders equality with `~=` and the substring forms with `icontains`, `istartswith`, and `iendswith`.
+PostgreSQL renders the substring forms with `strpos` and `right`, so `%` and `_` in the referenced value stay literal, and `fieldref` equality compares `lower()` of both sides unless `|cased` is set. Fibratus renders equality with `~=` and the substring forms with `icontains`, `istartswith`, and `iendswith`.
 
-`|neq` now negates every matcher it is combined with. Before, `re|neq`, `cidr|neq`, `fieldref|neq`, and `neq` with a timestamp part compiled without the negation.
+`|neq` now negates the whole detection item, as pySigma does. `Field|neq: [a, b]` matches when the field is neither `a` nor `b`; before, it matched when the field differed from either value. `re|neq`, `cidr|neq`, `fieldref|neq`, and `neq` with a timestamp part also compiled without the negation before.
 
 `|neq` now converts. A missing referenced field counts as not equal when the left field is present. PostgreSQL expresses that as `(comparison) IS NOT TRUE AND "field" IS NOT NULL`. LynxDB negates its deferred `where` clauses (`!~`, `NOT cidrmatch`). Other backends negate the comparison directly.
 

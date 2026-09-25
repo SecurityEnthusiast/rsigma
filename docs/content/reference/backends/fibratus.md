@@ -50,7 +50,7 @@ Verified against the Fibratus backend's unit tests at [`crates/rsigma-convert/sr
 | `exists: true` / `false` | `field != false` / `field = false` (Fibratus has no `null`; presence is expressed against the field's zero value). |
 | `null` value | `field = ''` (Fibratus has no `null` token, so a null comparison is an empty-string comparison). |
 | Field reference (`fieldref` modifier) | `field1 ~= field2` (case-insensitive). With `\|cased` or `case_sensitive`: `field1 = field2`. With `contains` / `startswith` / `endswith`: `field1 icontains field2`, `istartswith`, or `iendswith` (bare `contains` / `startswith` / `endswith` when case-sensitive). The string modifier must follow `fieldref`. |
-| `neq` | `not (field ~= 'value')` for a string, `not (field = N)` for a number, and `not (field1 ~= field2)` for a field reference. |
+| `neq` | `not (field ~= 'value')` for a string, `not (field = N)` for a number, and `not (field1 ~= field2)` for a field reference. A list negates the whole item: `not (field iin ('a', 'b'))`. |
 | Boolean `AND`, `OR`, `NOT` | Lowercase tokens; OR groups inside AND are explicitly parenthesized so the standard Sigma precedence is preserved. |
 | Keywords (unbound full-text search) | `UnsupportedKeyword`. Sigma keywords have no field, and Fibratus operators require a bound field, so there is no faithful lowering. Bind the search to a field via a pipeline if you need it. |
 

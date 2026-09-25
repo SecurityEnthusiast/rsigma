@@ -208,7 +208,7 @@ The parser recognizes 30 modifier variants, some with aliases:
 | Placeholder | `expand` | — |
 | Field reference | `fieldref` | May be followed by one of `contains`, `startswith`, or `endswith`, and by `neq`. The value must not contain wildcards. |
 | Numeric comparison | `gt`, `gte`, `lt`, `lte` | — |
-| Inequality | `neq` | Negates the comparison. Combines with string modifiers and with `fieldref`. |
+| Inequality | `neq` | Negates the whole item, so a list matches when the field equals none of the values. Combines with string modifiers, `re`, `cidr`, and `fieldref`. |
 | Regex flags | `i`, `m`, `s` | `ignorecase` → `i`, `multiline` → `m`, `dotall` → `s` |
 | Timestamp parts | `minute`, `hour`, `day`, `week`, `month`, `year` | — |
 
