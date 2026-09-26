@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix: ATT&CK-scale paginated TAXII ingest tests
+### rstix: ATT&CK-scale paginated TAXII ingest tests (#507)
 
 - Synthetic **5 000-object** paginated `ingest_collection` test with `IngestOptions::producer_strict()` runs in CI (`taxii-store` + `validate`).
 - Env-gated **`RSTIX_ATTCK_BUNDLE`** corpus test for real MITRE enterprise bundles (`allow_custom` on `TaxiiClient`).
