@@ -821,31 +821,33 @@ Negative fixtures: `tests/fixtures/spec/sco/file-name-enc-*.json`, `directory-pa
 
 ### Local MITRE ATT&CK corpus test
 
-The full ATT&CK STIX bundle (~50 MiB) locally tested. CI uses synthetic 5 000-object streaming tests. For local verification, download a bundle (for example MITRE ATT&CK 19.1) and point the integration test at it:
+The full ATT&CK STIX bundle (~51 MiB) is tested locally against the pinned MITRE **`enterprise-attack-19.2.json`** release. CI uses synthetic 5 000-object streaming tests. For local verification, download that bundle (or copy your local copy) and point the integration test at it:
 
 ```bash
 # Point at a local ATT&CK bundle file (download separately; not in the repo)
-RSTIX_ATTCK_BUNDLE=/path/to/enterprise-attack-19.1.json \
+RSTIX_ATTCK_BUNDLE=/path/to/enterprise-attack-19.2.json \
   cargo test -p rstix --features serde attck_corpus_roundtrip_when_present -- --nocapture
 ```
 
-This runs `parse_reader` → serialize → reparse and asserts object count stability. Verified locally against `enterprise-attack-19.1.json` (~53 MiB).
+Or place the file at `tests/fixtures/corpus/enterprise-attack-19.2.json` (see `tests/fixtures/corpus/README.md`). When **`RSTIX_ATTCK_BUNDLE` is set**, the path must exist (the test **fails** if the file is missing); when unset, the test **skips** if the default corpus file is absent.
+
+This runs `parse_reader` → serialize → reparse and asserts object count stability. Verified locally against `enterprise-attack-19.2.json` (~51 MiB).
 
 <a id="attack-scale-paginated-taxii-ingest"></a>
 
 ### ATT&CK-scale paginated TAXII ingest
 
-CI runs a **synthetic 5 000-object** paginated ingest (`ingest_attck_scale_synthetic_paginated`) with `IngestOptions::producer_strict()` and a fixed page size of **64** objects (`ATTCK_INGEST_PAGE_SIZE` in `tests/taxii/ingest_support.rs`). Peak working set stays bounded by page size, not corpus size.
+CI runs a **synthetic 5 000-object** paginated ingest (`ingest_attck_scale_synthetic_paginated`) with `IngestOptions::producer_strict()` and a fixed page size of **64** objects (`ATTCK_INGEST_PAGE_SIZE` in `tests/taxii/ingest_support.rs`). The test mounts paginated wiremock responses; ingest fetches **one TAXII page at a time** (same as production `ingest_collection`).
 
 With a local ATT&CK bundle, run the env-gated corpus test:
 
 ```bash
-RSTIX_ATTCK_BUNDLE=/path/to/enterprise-attack-19.1.json \
+RSTIX_ATTCK_BUNDLE=/path/to/enterprise-attack-19.2.json \
   cargo test -p rstix --features taxii-store,validate --test taxii_store \
   ingest_attck_corpus_paginated_when_present --locked -- --nocapture
 ```
 
-Optional manual CI: workflow **ATT&CK ingest proof** (`.github/workflows/attck-ingest.yml`, `workflow_dispatch`) downloads the current MITRE enterprise bundle and runs the corpus test. It is **not** a PR gate.
+Optional manual CI: workflow **ATT&CK ingest proof** (`.github/workflows/attck-ingest.yml`, `workflow_dispatch`) downloads the pinned MITRE **`enterprise-attack-19.2.json`** bundle and runs the corpus test. It is **not** a PR gate.
 
 ## Development Notes
 

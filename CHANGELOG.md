@@ -7,7 +7,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 ### rstix: ATT&CK-scale paginated TAXII ingest tests (#507)
 
 - Synthetic **5 000-object** paginated `ingest_collection` test with `IngestOptions::producer_strict()` runs in CI (`taxii-store` + `validate`).
-- Env-gated **`RSTIX_ATTCK_BUNDLE`** corpus test for real MITRE enterprise bundles (`allow_custom` on `TaxiiClient`).
+- Env-gated **`RSTIX_ATTCK_BUNDLE`** corpus test for real MITRE enterprise bundles (`allow_custom` on `TaxiiClient`); pinned release **`enterprise-attack-19.2.json`** for manual workflow and local corpus path.
 - Optional **`workflow_dispatch`** job **ATT&CK ingest proof** (`.github/workflows/attck-ingest.yml`); not a PR gate.
 
 ### Field references with contains, startswith, and endswith (#506)

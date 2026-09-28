@@ -30,13 +30,13 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: false
-      - name: Download MITRE ATT&CK STIX bundle
+      - name: Download MITRE ATT&CK STIX bundle (pinned release)
         run: |
-          curl -fsSL -o /tmp/enterprise-attack.json \
-            https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json
+          curl -fsSL -o /tmp/enterprise-attack-19.2.json \
+            https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack-19.2.json
       - name: Paginated ingest test (real corpus)
         run: |
           cargo test -p rstix --features taxii-store,validate --test taxii_store \
             ingest_attck_corpus_paginated_when_present --locked -- --nocapture
         env:
-          RSTIX_ATTCK_BUNDLE: /tmp/enterprise-attack.json
+          RSTIX_ATTCK_BUNDLE: /tmp/enterprise-attack-19.2.json

@@ -9,8 +9,9 @@ use rstix::store::{MemoryStore, StixStore};
 use rstix::taxii::{IngestOptions, TaxiiFilter, ingest_collection_with_bundle_id};
 
 use super::ingest_support::{
-    ATTCK_INGEST_PAGE_SIZE, api_root_url, attck_bundle_path, mount_paginated_taxii_objects,
-    synthetic_identity_objects, wiremock_client_attck,
+    ATTCK_CORPUS_DEFAULT_FILE, ATTCK_INGEST_PAGE_SIZE, SYNTHETIC_FORWARD_REF_RELATIONSHIP_ID,
+    api_root_url, mount_paginated_taxii_objects, resolve_attck_bundle_path,
+    synthetic_forward_ref_relationship, synthetic_identity_objects, wiremock_client_attck,
 };
 
 const API_ROOT: &str = "/api1/";
@@ -32,7 +33,14 @@ fn load_attck_wire_objects(path: &std::path::Path) -> Vec<serde_json::Value> {
 async fn ingest_attck_scale_synthetic_paginated() {
     let server = wiremock::MockServer::start().await;
     let api = api_root_url(&server);
-    let objects = synthetic_identity_objects(SYNTHETIC_OBJECT_COUNT);
+    let last_identity_index = SYNTHETIC_OBJECT_COUNT - 1;
+    let mut objects = synthetic_identity_objects(SYNTHETIC_OBJECT_COUNT);
+    // Page 1: relationship whose target sits on the last page (interop_strict would reject).
+    objects.insert(
+        0,
+        synthetic_forward_ref_relationship(0, last_identity_index),
+    );
+    let expected_count = objects.len();
     mount_paginated_taxii_objects(&server, API_ROOT, "col1", &objects, ATTCK_INGEST_PAGE_SIZE)
         .await;
 
@@ -51,29 +59,45 @@ async fn ingest_attck_scale_synthetic_paginated() {
     .await
     .expect("ingest");
 
-    assert_eq!(report.import.objects_added, SYNTHETIC_OBJECT_COUNT);
-    assert_eq!(report.validation.objects_validated, SYNTHETIC_OBJECT_COUNT);
+    assert_eq!(report.import.objects_added, expected_count);
+    assert_eq!(report.validation.objects_validated, expected_count);
     assert_eq!(report.validation.objects_rejected, 0);
     assert!(report.validation.is_valid());
     assert!(
         report.import.unresolved_references.is_empty(),
-        "synthetic identities have no outbound refs: {:?}",
+        "forward ref to identity on last page must resolve after full ingest: {:?}",
         report.import.unresolved_references
+    );
+    assert!(
+        store
+            .get(&StixId::parse(SYNTHETIC_FORWARD_REF_RELATIONSHIP_ID).unwrap())
+            .expect("get relationship")
+            .is_some(),
+        "relationship with forward target_ref must be imported under producer_strict"
     );
 
     let exported = store.export_bundle(bundle_id).expect("export");
-    assert_eq!(exported.object_count(), SYNTHETIC_OBJECT_COUNT);
+    assert_eq!(exported.object_count(), expected_count);
 }
 
 #[tokio::test]
 async fn ingest_attck_corpus_paginated_when_present() {
-    let Some(path) = attck_bundle_path() else {
-        eprintln!(
-            "skip ingest_attck_corpus_paginated_when_present: set RSTIX_ATTCK_BUNDLE \
-             (e.g. enterprise-attack-19.1.json) or place bundle at \
-             tests/fixtures/corpus/enterprise-attack.json"
-        );
-        return;
+    let path = match resolve_attck_bundle_path() {
+        Ok(Some(path)) => path,
+        Ok(None) => {
+            eprintln!(
+                "skip ingest_attck_corpus_paginated_when_present: set RSTIX_ATTCK_BUNDLE \
+                 (e.g. {ATTCK_CORPUS_DEFAULT_FILE}) or place bundle at \
+                 tests/fixtures/corpus/{ATTCK_CORPUS_DEFAULT_FILE}"
+            );
+            return;
+        }
+        Err(missing) => {
+            panic!(
+                "RSTIX_ATTCK_BUNDLE is set but not a readable file: {}",
+                missing.display()
+            );
+        }
     };
 
     let wire_objects = load_attck_wire_objects(&path);
@@ -113,6 +137,11 @@ async fn ingest_attck_corpus_paginated_when_present() {
     assert_eq!(report.validation.objects_validated, expected_count);
     assert_eq!(report.validation.objects_rejected, 0);
     assert!(report.validation.is_valid());
+    assert!(
+        report.import.unresolved_references.is_empty(),
+        "ATT&CK corpus outbound refs must resolve within the bundle: {:?}",
+        report.import.unresolved_references
+    );
 
     let exported = store.export_bundle(bundle_id).expect("export");
     assert_eq!(exported.object_count(), expected_count);

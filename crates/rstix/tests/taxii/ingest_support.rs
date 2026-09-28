@@ -1,5 +1,10 @@
 //! Wiremock helpers for TAXII collection ingest tests.
 
+#[path = "../support/attck_corpus.rs"]
+mod attck_corpus;
+
+pub use attck_corpus::{ATTCK_CORPUS_DEFAULT_FILE, resolve_attck_bundle_path};
+
 use rstix::model::ParseOptions;
 use rstix::taxii::{
     CapabilityPolicy, PostSubmitPolicy, PreflightPolicy, TaxiiClient, TaxiiClientConfig,
@@ -9,8 +14,16 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const TAXII_MEDIA_TYPE: &str = "application/taxii+json;version=2.1";
 
-/// TAXII page size for ATT&CK-scale ingest tests (peak memory stays O(page), not O(corpus)).
+/// TAXII page size for ATT&CK-scale paginated ingest tests.
 pub const ATTCK_INGEST_PAGE_SIZE: usize = 64;
+
+/// Fixed relationship id for synthetic forward-ref fixtures.
+pub const SYNTHETIC_FORWARD_REF_RELATIONSHIP_ID: &str =
+    "relationship--aaaaaaaa-0000-4000-8000-000000000001";
+
+pub fn synthetic_identity_id(index: usize) -> String {
+    format!("identity--{index:08x}-0000-4000-8000-{index:012x}")
+}
 
 pub fn wiremock_client_no_preflight(server: &MockServer) -> TaxiiClient {
     TaxiiClient::new(
@@ -43,25 +56,13 @@ pub fn wiremock_client_attck(server: &MockServer) -> TaxiiClient {
     .expect("client")
 }
 
-/// Resolve optional MITRE ATT&CK bundle path (`RSTIX_ATTCK_BUNDLE` or corpus fixture).
-pub fn attck_bundle_path() -> Option<std::path::PathBuf> {
-    let path = std::env::var("RSTIX_ATTCK_BUNDLE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            std::path::PathBuf::from("tests/fixtures/corpus/enterprise-attack.json")
-        });
-    path.is_file().then_some(path)
-}
-
 pub fn synthetic_identity_objects(count: usize) -> Vec<serde_json::Value> {
     (0..count)
         .map(|index| {
             serde_json::json!({
                 "type": "identity",
                 "spec_version": "2.1",
-                "id": format!(
-                    "identity--{index:08x}-0000-4000-8000-{index:012x}"
-                ),
+                "id": synthetic_identity_id(index),
                 "created": "2016-05-12T08:17:27.000Z",
                 "modified": "2016-05-12T08:17:27.000Z",
                 "name": format!("org-{index}"),
@@ -69,6 +70,23 @@ pub fn synthetic_identity_objects(count: usize) -> Vec<serde_json::Value> {
             })
         })
         .collect()
+}
+
+/// Relationship on page 1 whose `target_ref` is the identity at `target_index` (typically last page).
+pub fn synthetic_forward_ref_relationship(
+    source_index: usize,
+    target_index: usize,
+) -> serde_json::Value {
+    serde_json::json!({
+        "type": "relationship",
+        "spec_version": "2.1",
+        "id": SYNTHETIC_FORWARD_REF_RELATIONSHIP_ID,
+        "created": "2016-05-12T08:17:27.000Z",
+        "modified": "2016-05-12T08:17:27.000Z",
+        "relationship_type": "related-to",
+        "source_ref": synthetic_identity_id(source_index),
+        "target_ref": synthetic_identity_id(target_index),
+    })
 }
 
 /// Mount paginated TAXII object pages for `ingest_collection` (opaque `next` cursors).

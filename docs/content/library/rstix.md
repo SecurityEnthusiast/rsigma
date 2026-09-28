@@ -56,7 +56,7 @@ use rstix::parse_bundle;
 let bundle = parse_bundle(json_str)?;
 
 // Streaming parse (large bundles, e.g. MITRE ATT&CK ~50 MiB)
-let file = File::open("enterprise-attack.json")?;
+let file = File::open("enterprise-attack-19.2.json")?;
 let bundle = Bundle::parse_reader(BufReader::new(file))?;
 
 // T0 MUST rules at parse; T1 SHOULD via bundle.validate()
@@ -444,14 +444,16 @@ cargo test -p rstix --features pattern   # Pattern Engine
 
 ### Local MITRE ATT&CK corpus
 
-The full MITRE ATT&CK STIX bundle (~50 MiB) is available for download and parsing. CI uses a synthetic 5000-object streaming test. For local verification, download a bundle (for example MITRE ATT&CK 19.1) and point the integration test at it:
+The full MITRE ATT&CK STIX bundle (~51 MiB) is available for download and parsing. The pinned local/CI corpus is **`enterprise-attack-19.2.json`**. CI uses a synthetic 5000-object streaming test. For local verification, download that release from [MITRE attack-stix-data](https://github.com/mitre-attack/attack-stix-data) and point the integration test at it:
 
 ```bash
-RSTIX_ATTCK_BUNDLE=/path/to/enterprise-attack-19.1.json \
+RSTIX_ATTCK_BUNDLE=/path/to/enterprise-attack-19.2.json \
   cargo test -p rstix --features serde attck_corpus_roundtrip_when_present -- --nocapture
 ```
 
-This runs `parse_reader` → serialize → reparse and asserts object count stability. Verified against `enterprise-attack-19.1.json` (~53 MiB) locally.
+Or copy the file to `crates/rstix/tests/fixtures/corpus/enterprise-attack-19.2.json` (see that directory's README).
+
+This runs `parse_reader` → serialize → reparse and asserts object count stability. Verified against `enterprise-attack-19.2.json` (~51 MiB) locally.
 
 Paginated TAXII ingest at ATT&CK scale: CI runs a synthetic 5 000-object test; with a local bundle, run `ingest_attck_corpus_paginated_when_present` (`taxii-store` + `validate`, `IngestOptions::producer_strict()`). See [crate README: ATT&CK-scale paginated TAXII ingest](https://github.com/timescale/rsigma/blob/main/crates/rstix/README.md#attack-scale-paginated-taxii-ingest).
 
