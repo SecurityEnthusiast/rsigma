@@ -2,7 +2,11 @@
 
 #![cfg(feature = "serde")]
 
+#[path = "support/attck_corpus.rs"]
+mod attck_corpus;
+
 mod integration {
+    use super::attck_corpus::{ATTCK_CORPUS_DEFAULT_FILE, resolve_attck_bundle_path};
     use std::io::Cursor;
 
     use rstix::core::{QueryValue, QueryableStixObject, SpecVersion, StixId, StixTimestamp};
@@ -149,18 +153,23 @@ mod integration {
 
     #[test]
     fn attck_corpus_roundtrip_when_present() {
-        let path = std::env::var("RSTIX_ATTCK_BUNDLE")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::path::PathBuf::from("tests/fixtures/corpus/enterprise-attack.json")
-            });
-        if !path.is_file() {
-            eprintln!(
-                "skip attck_corpus_roundtrip_when_present: set RSTIX_ATTCK_BUNDLE (e.g. enterprise-attack-19.1.json) or place bundle at {}",
-                path.display()
-            );
-            return;
-        }
+        let path = match resolve_attck_bundle_path() {
+            Ok(Some(path)) => path,
+            Ok(None) => {
+                eprintln!(
+                    "skip attck_corpus_roundtrip_when_present: set RSTIX_ATTCK_BUNDLE \
+                     (e.g. {ATTCK_CORPUS_DEFAULT_FILE}) or place bundle at \
+                     tests/fixtures/corpus/{ATTCK_CORPUS_DEFAULT_FILE}"
+                );
+                return;
+            }
+            Err(missing) => {
+                panic!(
+                    "RSTIX_ATTCK_BUNDLE is set but not a readable file: {}",
+                    missing.display()
+                );
+            }
+        };
 
         use std::fs::File;
         use std::io::BufReader;
