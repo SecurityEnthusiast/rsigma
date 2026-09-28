@@ -78,20 +78,24 @@ pub struct TaxiiSyncArgs {
         long,
         env = "RSIGMA_TAXII_BEARER_TOKEN",
         hide_env_values = true,
-        group = "auth"
+        conflicts_with_all = ["basic_user", "api_key"]
     )]
     pub bearer_token: Option<String>,
 
-    /// HTTP Basic username.
-    #[arg(long, group = "auth")]
+    /// HTTP Basic username (requires `--basic-password` or `RSIGMA_TAXII_BASIC_PASSWORD`).
+    #[arg(
+        long,
+        requires = "basic_password",
+        conflicts_with_all = ["bearer_token", "api_key"]
+    )]
     pub basic_user: Option<String>,
 
-    /// HTTP Basic password.
+    /// HTTP Basic password (requires `--basic-user`).
     #[arg(
         long,
         env = "RSIGMA_TAXII_BASIC_PASSWORD",
         hide_env_values = true,
-        group = "auth"
+        requires = "basic_user"
     )]
     pub basic_password: Option<String>,
 
@@ -100,7 +104,7 @@ pub struct TaxiiSyncArgs {
         long,
         env = "RSIGMA_TAXII_API_KEY",
         hide_env_values = true,
-        group = "auth"
+        conflicts_with_all = ["bearer_token", "basic_user"]
     )]
     pub api_key: Option<String>,
 

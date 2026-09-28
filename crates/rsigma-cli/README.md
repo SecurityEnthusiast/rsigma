@@ -98,17 +98,15 @@ The session enforces `default_transaction_read_only` and a statement timeout; th
 Fetch objects from a TAXII 2.1 collection and persist them under a local [`FsStore`](https://rsigma.io/library/rstix/#rstix-graph-marking-store) directory. Requires the **`taxii-sync`** feature (included in prebuilt `--all-features` binaries). Uses [`IngestOptions::producer_strict()`](https://rsigma.io/library/rstix/#rstix-taxii-client) validate-on-ingest; default **`--strict`** exits **1** when validation rejects objects. The TAXII client fetches one page at a time (`--limit`, default **64**).
 
 ```bash
-# Bearer auth: export RSIGMA_TAXII_BEARER_TOKEN or pass --bearer-token on the same command line.
 rsigma taxii sync \
   --server https://attack-taxii.mitre.org/ \
   --api-root https://attack-taxii.mitre.org/api/v21/ \
   --collection x-mitre-collection--1f5f1533-f617-4ca8-9ab4-6a02367fa019 \
   --store ./attck-store \
-  --bearer-token "$RSIGMA_TAXII_BEARER_TOKEN" \
   --allow-custom
 ```
 
-Re-sync is idempotent (`objects_deduplicated`). List collection ids with `GET …/collections/` on the API root. See the [CLI reference](https://rsigma.io/cli/taxii/sync/).
+For feeds that require auth, pass `--bearer-token`, `--basic-user` with `--basic-password` (or `RSIGMA_TAXII_BASIC_PASSWORD`), or `--api-key` — at most one method. Re-sync is idempotent (`objects_deduplicated`). List collection ids with `GET …/collections/` on the API root. See the [CLI reference](https://rsigma.io/cli/taxii/sync/).
 
 ### `config`: YAML configuration
 

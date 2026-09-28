@@ -212,6 +212,11 @@ export default {
           children: [{ title: "run", path: "/cli/hunt/run" }],
         },
         {
+          title: "taxii",
+          collapsible: true,
+          children: [{ title: "sync", path: "/cli/taxii/sync" }],
+        },
+        {
           title: "mcp",
           collapsible: true,
           children: [{ title: "serve", path: "/cli/mcp/serve" }],

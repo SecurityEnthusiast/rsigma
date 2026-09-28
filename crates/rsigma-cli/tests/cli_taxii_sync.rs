@@ -303,3 +303,27 @@ fn sync_forward_ref_relationship_resolves_across_pages() {
         );
     });
 }
+
+#[test]
+fn basic_auth_accepts_user_and_password_together() {
+    rsigma()
+        .args([
+            "taxii",
+            "sync",
+            "--server",
+            "https://example.com",
+            "--collection",
+            "col1",
+            "--store",
+            "/tmp/rsigma-taxii-test-store",
+            "--basic-user",
+            "alice",
+            "--basic-password",
+            "secret",
+            "--limit",
+            "0",
+        ])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("invalid --limit"));
+}
