@@ -46,6 +46,14 @@ hunt-postgres = [
     "dep:rustls-native-certs",
     "dep:rust_decimal",
 ]
+# `rsigma taxii sync` → local FsStore via rstix TAXII ingest (`taxii-sync` feature).
+taxii-sync = [
+    "tokio",
+    "dep:rstix",
+    "rstix/taxii-store",
+    "rstix/store-fs",
+    "rstix/validate",
+]
 
 [dependencies]
 rsigma-parser = { path = "../rsigma-parser", version = "0.22.0" }
@@ -53,6 +61,7 @@ rsigma-eval = { path = "../rsigma-eval", version = "0.22.0", features = ["parall
 rsigma-convert = { path = "../rsigma-convert", version = "0.22.0", features = ["sigma-cli"] }
 rsigma-runtime = { path = "../rsigma-runtime", version = "0.22.0", optional = true }
 rsigma-mcp = { path = "../rsigma-mcp", version = "0.22.0", optional = true }
+rstix = { path = "../rstix", version = "0.22.0", optional = true }
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -115,6 +124,7 @@ tower-service = { version = "0.3", optional = true }
 tikv-jemallocator = "0.6"
 
 [dev-dependencies]
+rstix = { path = "../rstix", features = ["taxii-store", "store-fs", "validate"] }
 rmcp = { version = "3.0", features = ["client"] }
 assert_cmd = "2.2.2"
 predicates = "3.1.4"

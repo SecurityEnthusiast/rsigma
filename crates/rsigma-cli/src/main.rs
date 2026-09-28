@@ -37,6 +37,8 @@ use commands::ResolveArgs;
 use commands::{DaemonArgs, cmd_daemon};
 #[cfg(feature = "mcp")]
 use commands::{McpCommands, dispatch_mcp};
+#[cfg(feature = "taxii-sync")]
+use commands::{TaxiiCommands, dispatch_taxii};
 use jaq_core::load::{Arena, File, Loader};
 use jaq_core::{Compiler, Ctx, Vars, data, unwrap_valr};
 use jaq_json::Val;
@@ -161,6 +163,13 @@ enum Commands {
     Config {
         #[command(subcommand)]
         cmd: config::commands::ConfigCommands,
+    },
+
+    /// Sync threat intelligence from TAXII servers (`taxii-sync` feature)
+    #[cfg(feature = "taxii-sync")]
+    Taxii {
+        #[command(subcommand)]
+        cmd: TaxiiCommands,
     },
 }
 
@@ -385,6 +394,8 @@ fn dispatch(command: Commands, matches: &ArgMatches, ctx: output::OutputCtx) {
         #[cfg(feature = "mcp")]
         Commands::Mcp { cmd } => dispatch_mcp(cmd, ctx),
         Commands::Config { cmd } => config::commands::dispatch(cmd, ctx),
+        #[cfg(feature = "taxii-sync")]
+        Commands::Taxii { cmd } => dispatch_taxii(cmd, ctx),
     }
 }
 

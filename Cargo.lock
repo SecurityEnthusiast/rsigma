@@ -4569,6 +4569,7 @@ dependencies = [
  "rsigma-mcp",
  "rsigma-parser",
  "rsigma-runtime",
+ "rstix",
  "rusqlite",
  "rust_decimal",
  "rustls",

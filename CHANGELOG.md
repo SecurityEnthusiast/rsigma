@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rsigma: `taxii sync` command
+
+- New **`taxii sync`** subcommand (opt-in **`taxii-sync`** feature) imports a TAXII 2.1 collection into a local [`FsStore`](crates/rstix/README.md#rstix-graph-marking-store) with **`IngestOptions::producer_strict()`** validate-on-ingest.
+- Supports bearer, basic, and API-key auth, optional mTLS client certificates, discovery-based API root resolution, and structured import/validation summary output.
+- Default **`--strict`**: exit code **1** when validation rejects objects; re-sync is idempotent (`objects_deduplicated`).
+
 ### rstix: ATT&CK-scale paginated TAXII ingest tests (#507)
 
 - Synthetic **5 000-object** paginated `ingest_collection` test with `IngestOptions::producer_strict()` runs in CI (`taxii-store` + `validate`).
