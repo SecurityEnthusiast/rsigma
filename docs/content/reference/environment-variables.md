@@ -24,6 +24,10 @@ Every variable here has a corresponding `--flag` that takes precedence.
 | `RSIGMA_TLS_KEY_PASSWORD` | string | unset | `engine daemon` with `--tls-key` | Password for an encrypted TLS key. Currently rejected at startup with a clear error; decrypt the key first (`openssl rsa -in key.pem -out key-decrypted.pem`). |
 | `RSIGMA_SIGMA_CLI` | path | unset | `backend convert`, `mcp serve` (with `--allow-sigma-cli`) | Override path to the external `sigma` executable used for delegated conversion. |
 | `RSIGMA_HUNT_DSN` | string | unset | `hunt run` | PostgreSQL connection string for hunt execution. Equivalent to `--dsn`; keeps the password out of `ps aux` and shell history. Secret: flag/env only, never read from config files. |
+| `RSIGMA_TAXII_BEARER_TOKEN` | string | unset | `taxii sync` (`taxii-sync` feature) | Bearer token for TAXII collection ingest (`Authorization: Bearer …`). Equivalent to `--bearer-token`. Mutually exclusive with basic auth and `--api-key`. Secret: flag/env only. |
+| `RSIGMA_TAXII_BASIC_PASSWORD` | string | unset | `taxii sync` (`taxii-sync` feature) | HTTP Basic password for TAXII ingest. Requires `--basic-user`. Equivalent to `--basic-password`. Mutually exclusive with bearer and API key auth. Secret: flag/env only. |
+| `RSIGMA_TAXII_API_KEY` | string | unset | `taxii sync` (`taxii-sync` feature) | API key header value for TAXII ingest. Equivalent to `--api-key`. Mutually exclusive with bearer and basic auth. Secret: flag/env only. |
+| `RSIGMA_TAXII_CLIENT_P12_PASSWORD` | string | unset | `taxii sync` (`taxii-sync` feature) | Decryption password for `--client-p12` mTLS client identity. Equivalent to `--client-p12-password`. Secret: flag/env only. |
 | `RSIGMA_API_TOKEN` | string | unset | `engine incidents export` | Default bearer token env var for daemon-client auth. Override the variable name with `--auth-token-env`. |
 | `NATS_CREDS` | path to `.creds` file | unset | `engine daemon` with NATS source or sink | NATS credentials file (JWT + NKey). Equivalent to `--nats-creds`. |
 | `NATS_TOKEN` | string | unset | same | NATS authentication token. Equivalent to `--nats-token`. |

@@ -35,6 +35,8 @@ mod scorecard;
 mod status;
 mod tail;
 mod tap;
+#[cfg(feature = "taxii-sync")]
+mod taxii;
 mod test;
 mod tune;
 mod validate;
@@ -70,6 +72,8 @@ pub(crate) use scorecard::{ScorecardArgs, apply_scorecard_config, cmd_scorecard}
 pub(crate) use status::{StatusArgs, cmd_status};
 pub(crate) use tail::{TailArgs, cmd_tail};
 pub(crate) use tap::{TapArgs, cmd_tap};
+#[cfg(feature = "taxii-sync")]
+pub(crate) use taxii::{TaxiiCommands, dispatch_taxii};
 pub(crate) use test::{TestArgs, cmd_test};
 pub(crate) use tune::{TuneArgs, cmd_tune};
 pub(crate) use validate::{ValidateArgs, cmd_validate};

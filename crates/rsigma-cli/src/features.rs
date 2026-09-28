@@ -29,8 +29,10 @@ cli_features! {
     "daemon-otlp",
     "daemon-tls",
     "evtx",
+    "hunt-postgres",
     "logfmt",
     "mcp",
+    "taxii-sync",
 }
 
 pub fn print_enabled() {
