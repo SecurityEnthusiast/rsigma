@@ -1,4 +1,4 @@
-//! `rsigma taxii sync`: import a TAXII collection into an on-disk [`FsStore`](rstix::FsStore).
+//! `rsigma taxii sync`: import a TAXII collection into an on-disk [`FsStore`].
 
 use std::path::PathBuf;
 use std::process;
@@ -10,8 +10,8 @@ use rstix::model::ParseOptions;
 use rstix::store::FsStore;
 use rstix::taxii::{
     ApiKeyHeader, BasicAuth, BearerAuth, CapabilityPolicy, ClientCertificate,
-    DEFAULT_INGEST_BUNDLE_ID, IngestOptions, PostSubmitPolicy, PreflightPolicy, TaxiiClient,
-    TaxiiClientConfig, TaxiiError, TaxiiFilter, ingest_collection_with_bundle_id,
+    DEFAULT_INGEST_BUNDLE_ID, IngestError, IngestOptions, PostSubmitPolicy, PreflightPolicy,
+    TaxiiClient, TaxiiClientConfig, TaxiiError, TaxiiFilter, ingest_collection_with_bundle_id,
 };
 use serde::Serialize;
 
@@ -37,7 +37,7 @@ pub struct TaxiiSyncArgs {
     #[arg(long, value_name = "DIR")]
     pub store: PathBuf,
 
-    /// STIX bundle id recorded for [`FsStore::export_bundle`].
+    /// STIX bundle id recorded for [`StixStore::export_bundle`](rstix::store::StixStore::export_bundle).
     #[arg(long = "bundle-id", default_value = DEFAULT_INGEST_BUNDLE_ID)]
     pub bundle_id: String,
 
@@ -276,7 +276,9 @@ pub fn cmd_taxii_sync(args: TaxiiSyncArgs, ctx: OutputCtx) {
         });
 
     let report = rt.block_on(async {
-        let api_root = resolve_api_root(&client, args.api_root.as_deref()).await?;
+        let api_root = resolve_api_root(&client, args.api_root.as_deref())
+            .await
+            .map_err(|err| IngestError::Taxii(*err))?;
         let mut ingest_options = IngestOptions::producer_strict();
         if args.allow_invalid {
             ingest_options = ingest_options.allow_invalid_objects();
@@ -365,18 +367,18 @@ pub fn cmd_taxii_sync(args: TaxiiSyncArgs, ctx: OutputCtx) {
 async fn resolve_api_root(
     client: &TaxiiClient,
     explicit: Option<&str>,
-) -> Result<String, TaxiiError> {
+) -> Result<String, Box<TaxiiError>> {
     if let Some(url) = explicit {
         return Ok(url.to_string());
     }
-    let discovery = client.discover().await?;
+    let discovery = client.discover().await.map_err(Box::new)?;
     discovery
         .default_api_root()
         .map(str::to_string)
         .ok_or_else(|| {
-            TaxiiError::InvalidUrl(
+            Box::new(TaxiiError::InvalidUrl(
                 "discovery response has no default API root; pass --api-root".into(),
-            )
+            ))
         })
 }
 

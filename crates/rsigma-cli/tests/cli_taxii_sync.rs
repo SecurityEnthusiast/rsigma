@@ -96,7 +96,7 @@ fn sync_imports_collection_into_fs_store() {
             ])
             .assert()
             .success()
-            .stdout(predicate::str::contains("\"objects_added\": 1"));
+            .stdout(predicate::str::contains("\"objects_added\":1"));
 
         let store = FsStore::open(store_dir.path()).expect("reopen store");
         assert!(
@@ -141,13 +141,13 @@ fn resync_is_idempotent() {
             .args(base_args)
             .assert()
             .success()
-            .stdout(predicate::str::contains("\"objects_added\": 1"));
+            .stdout(predicate::str::contains("\"objects_added\":1"));
 
         rsigma()
             .args(base_args)
             .assert()
             .success()
-            .stdout(predicate::str::contains("\"objects_deduplicated\": 1"));
+            .stdout(predicate::str::contains("\"objects_deduplicated\":1"));
     });
 }
 
@@ -181,7 +181,7 @@ fn strict_rejects_invalid_object() {
             ])
             .assert()
             .code(1)
-            .stdout(predicate::str::contains("\"objects_rejected\": 1"));
+            .stdout(predicate::str::contains("\"objects_rejected\":1"));
 
         let entries = fs::read_dir(store_dir.path().join("objects"))
             .expect("objects dir")
@@ -197,6 +197,7 @@ fn sync_forward_ref_relationship_resolves_across_pages() {
     let rt = tokio::runtime::Runtime::new().expect("runtime");
     rt.block_on(async {
         let server = MockServer::start().await;
+        let source_id = "identity--11111111-1111-4111-8111-111111111111";
         let target_id = "identity--22222222-2222-4222-8222-222222222222";
         let relationship_id = "relationship--33333333-3333-4333-8333-333333333333";
 
@@ -216,7 +217,7 @@ fn sync_forward_ref_relationship_resolves_across_pages() {
                         "created": "2016-04-06T20:03:48.000Z",
                         "modified": "2016-04-06T20:03:48.000Z",
                         "relationship_type": "uses",
-                        "source_ref": "identity--11111111-1111-4111-8111-111111111111",
+                        "source_ref": source_id,
                         "target_ref": target_id
                     }]
                 }),
@@ -231,15 +232,26 @@ fn sync_forward_ref_relationship_resolves_across_pages() {
                 200,
                 serde_json::json!({
                     "more": false,
-                    "objects": [{
-                        "type": "identity",
-                        "spec_version": "2.1",
-                        "id": target_id,
-                        "created": "2016-04-06T20:03:48.000Z",
-                        "modified": "2016-04-06T20:03:48.000Z",
-                        "name": "Target identity",
-                        "identity_class": "organization"
-                    }]
+                    "objects": [
+                        {
+                            "type": "identity",
+                            "spec_version": "2.1",
+                            "id": source_id,
+                            "created": "2016-04-06T20:03:48.000Z",
+                            "modified": "2016-04-06T20:03:48.000Z",
+                            "name": "Source identity",
+                            "identity_class": "organization"
+                        },
+                        {
+                            "type": "identity",
+                            "spec_version": "2.1",
+                            "id": target_id,
+                            "created": "2016-04-06T20:03:48.000Z",
+                            "modified": "2016-04-06T20:03:48.000Z",
+                            "name": "Target identity",
+                            "identity_class": "organization"
+                        }
+                    ]
                 }),
             ))
             .mount(&server)
@@ -271,8 +283,8 @@ fn sync_forward_ref_relationship_resolves_across_pages() {
             .assert()
             .success()
             .stdout(
-                predicate::str::contains("\"objects_added\": 2")
-                    .and(predicate::str::contains("\"unresolved_references\": 0")),
+                predicate::str::contains("\"objects_added\":3")
+                    .and(predicate::str::contains("\"unresolved_references\":0")),
             );
 
         let store = FsStore::open(store_dir.path()).expect("reopen store");
