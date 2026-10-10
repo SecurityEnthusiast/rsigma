@@ -86,16 +86,17 @@ RSigma combines pySigma-style conversion with a streaming evaluator in one self-
 
 ## Built with RSigma
 
-| Project | Role |
-|---|---|
-| [detection.studio](https://github.com/northsh/detection.studio) | Browser-based Sigma playground with real-time evaluation via RSigma compiled to WebAssembly |
-| [Garmr](https://github.com/hentorp/garmr) | Self-hosted application-audit and insider-risk platform using RSigma for per-event Sigma detection |
-| [LocalObserve](https://github.com/JJediny/LocalObserve) | Local-first Linux security observability stack using RSigma for edge Sigma detection and webhook alerting |
-| [MFT](https://github.com/fukusuket/MFT) | Windows NTFS forensic triage from `$MFT` using RSigma to match file records against Sigma rules |
-| [Rustinel](https://github.com/Karib0u/rustinel) | Cross-platform endpoint detection engine with RSigma as the only Sigma backend for live telemetry |
-| [sagan2sigma](https://github.com/NRGLine4Sec/sagan2sigma) | Converts Sagan rules to Sigma and verifies them with RSigma |
-| [Sheut](https://github.com/PerceptraHQ/sheut-community) | Local-first cyber threat intelligence workbench using RSigma for STIX 2.1 validation and interchange |
-| [Sigmacatch](https://github.com/frack113/sigmacatch) | Captures live Windows Event Log events, matches them with RSigma, and writes SigmaHQ-ready regression data |
+| Project | License | Role |
+|---|---|---|
+| [AxoDetect](https://axoflow.com/axodetect) | Commercial | Axoflow's detection workbench that runs Sigma rules in-stream inside its security data pipeline with RSigma as the evaluation engine |
+| [detection.studio](https://github.com/northsh/detection.studio) | MIT | Browser-based Sigma playground with real-time evaluation via RSigma compiled to WebAssembly |
+| [Garmr](https://github.com/hentorp/garmr) | AGPL-3.0 or commercial | Self-hosted application-audit and insider-risk platform using RSigma for per-event Sigma detection |
+| [LocalObserve](https://github.com/JJediny/LocalObserve) | Not specified | Local-first Linux security observability stack using RSigma for edge Sigma detection and webhook alerting |
+| [MFT](https://github.com/fukusuket/MFT) | AGPL-3.0 | Windows NTFS forensic triage from `$MFT` using RSigma to match file records against Sigma rules |
+| [Rustinel](https://github.com/Karib0u/rustinel) | Apache-2.0 | Cross-platform endpoint detection engine with RSigma as the only Sigma backend for live telemetry |
+| [sagan2sigma](https://github.com/NRGLine4Sec/sagan2sigma) | GPL-2.0 | Converts Sagan rules to Sigma and verifies them with RSigma |
+| [Sheut](https://github.com/PerceptraHQ/sheut-community) | MPL-2.0 | Local-first cyber threat intelligence workbench using RSigma for STIX 2.1 validation and interchange |
+| [Sigmacatch](https://github.com/frack113/sigmacatch) | MIT | Captures live Windows Event Log events, matches them with RSigma, and writes SigmaHQ-ready regression data |
 
 ## Read the deep dives
 
