@@ -667,3 +667,84 @@ detection:
     let err = backend.convert_rule(&collection.rules[0], "default", &PipelineState::default());
     assert!(matches!(err, Err(ConvertError::UnsupportedArrayMatching)));
 }
+
+// --- Field path parsing ---
+
+#[test]
+fn field_ops_mix_keys_and_indexes() {
+    assert_eq!(
+        parse_field_ops("process.args[0][-1].name").unwrap(),
+        vec![
+            FieldOp::Key("process".into()),
+            FieldOp::Key("args".into()),
+            FieldOp::Index(0),
+            FieldOp::Index(-1),
+            FieldOp::Key("name".into()),
+        ]
+    );
+}
+
+#[test]
+fn field_ops_accept_a_leading_index() {
+    assert_eq!(parse_field_ops("[2]").unwrap(), vec![FieldOp::Index(2)]);
+}
+
+#[test]
+fn jsonb_path_extracts_text_only_on_the_last_hop() {
+    assert_eq!(
+        jsonb_path("data", "args[-1]", true).unwrap(),
+        "data->'args'->>-1"
+    );
+    assert_eq!(
+        jsonb_path("data", "args[-1]", false).unwrap(),
+        "data->'args'->-1"
+    );
+    assert_eq!(jsonb_path("data", "a.b", true).unwrap(), "data->'a'->>'b'");
+}
+
+#[test]
+fn field_ops_reject_malformed_brackets() {
+    for field in [
+        "args[",
+        "args[0",
+        "args[]",
+        "args[x]",
+        "args[0]x",
+        "args[0]]",
+        "args[1.5]",
+    ] {
+        assert!(
+            matches!(
+                parse_field_ops(field),
+                Err(ConvertError::InvalidIdentifier(_))
+            ),
+            "{field} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn field_ops_reject_keys_that_are_not_identifiers() {
+    for field in ["a]", "a b", "a'b", "1a", "a.b-c"] {
+        assert!(
+            matches!(
+                parse_field_ops(field),
+                Err(ConvertError::InvalidIdentifier(_))
+            ),
+            "{field} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn field_ops_reject_an_empty_path() {
+    for field in ["", ".", ".."] {
+        assert!(
+            matches!(
+                parse_field_ops(field),
+                Err(ConvertError::InvalidIdentifier(_))
+            ),
+            "{field:?} should be rejected"
+        );
+    }
+}

@@ -21,6 +21,7 @@ pub(super) const TEXT_ELEMENT_KEY: &str = "_text_array_element";
 
 /// A JSONB field-path navigation op: an object key or a positional index
 /// (possibly negative, counting from the end of the array).
+#[derive(Debug, PartialEq)]
 enum FieldOp {
     Key(String),
     Index(i64),
