@@ -5,6 +5,9 @@
 //! `connections[any]` becomes an `EXISTS` over `jsonb_array_elements` with the
 //! body converted relative to the per-element alias.
 
+#[cfg(test)]
+mod tests;
+
 use rsigma_ir::{IrDetection, IrDetectionItem};
 use rsigma_parser::ArrayQuantifier;
 
