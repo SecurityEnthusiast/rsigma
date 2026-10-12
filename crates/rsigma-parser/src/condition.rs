@@ -8,6 +8,8 @@
 //!
 //! Reference: pySigma conditions.py (uses pyparsing infix_notation)
 
+use std::num::NonZeroU64;
+
 use pest::Parser;
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
@@ -96,6 +98,19 @@ struct PrattError {
     location: Option<SourceLocation>,
 }
 
+impl PrattError {
+    /// Keeps only the bare message of a condition error, so the location is
+    /// rendered once by the outer error instead of being nested in the text.
+    fn from_error(err: SigmaParserError, fallback: Option<SourceLocation>) -> Self {
+        let location = err.location().or(fallback);
+        let message = match err {
+            SigmaParserError::Condition(message, _) => message,
+            other => other.to_string(),
+        };
+        PrattError { message, location }
+    }
+}
+
 fn location_from_pair(pair: &Pair<'_, Rule>) -> Option<SourceLocation> {
     let (line, col) = pair.as_span().start_pos().line_col();
     Some(SourceLocation {
@@ -128,17 +143,11 @@ fn parse_expr(
             match primary.as_rule() {
                 Rule::ident => ConditionExpr::Identifier(primary.as_str().to_string()),
                 Rule::selector => parse_selector(primary).unwrap_or_else(|e| {
-                    errors.borrow_mut().push(PrattError {
-                        message: e.to_string(),
-                        location: e.location().or(loc),
-                    });
+                    errors.borrow_mut().push(PrattError::from_error(e, loc));
                     ConditionExpr::Identifier(String::new())
                 }),
                 Rule::expr => parse_expr(primary, pratt, depth).unwrap_or_else(|e| {
-                    errors.borrow_mut().push(PrattError {
-                        message: e.to_string(),
-                        location: e.location().or(loc),
-                    });
+                    errors.borrow_mut().push(PrattError::from_error(e, loc));
                     ConditionExpr::Identifier(String::new())
                 }),
                 other => {
@@ -181,7 +190,11 @@ fn parse_expr(
 
     depth.set(depth.get().saturating_sub(1));
 
-    let collected = errors.into_inner();
+    let mut collected = errors.into_inner();
+    if collected.len() == 1 {
+        let PrattError { message, location } = collected.remove(0);
+        return Err(SigmaParserError::Condition(message, location));
+    }
     if !collected.is_empty() {
         let combined = collected
             .iter()
@@ -261,10 +274,21 @@ fn parse_quantifier(pair: Pair<'_, Rule>) -> Result<Quantifier> {
             let n: u64 = inner.as_str().parse().map_err(|e| {
                 SigmaParserError::Condition(format!("invalid quantifier number: {e}"), None)
             })?;
-            if n == 1 {
-                Ok(Quantifier::Any)
-            } else {
-                Ok(Quantifier::Count(n))
+            match NonZeroU64::new(n) {
+                None => {
+                    let (line, col) = inner.as_span().start_pos().line_col();
+                    Err(SigmaParserError::Condition(
+                        "'0 of' is always true and matches every event; use 'not 1 of' to \
+                         require that none of the detections match"
+                            .into(),
+                        Some(SourceLocation {
+                            line: line as u32,
+                            col: col as u32,
+                        }),
+                    ))
+                }
+                Some(n) if n.get() == 1 => Ok(Quantifier::Any),
+                Some(n) => Ok(Quantifier::Count(n)),
             }
         }
         other => Err(SigmaParserError::Condition(
@@ -543,14 +567,52 @@ mod tests {
     }
 
     #[test]
+    fn test_nested_error_reported_once() {
+        let input = format!("{}a{}", "(".repeat(70), ")".repeat(70));
+        let message = parse_condition(&input).unwrap_err().to_string();
+        assert_eq!(
+            message.matches("Condition parse error").count(),
+            1,
+            "{message}"
+        );
+        assert_eq!(message.matches("maximum depth").count(), 1, "{message}");
+    }
+
+    #[test]
     fn test_count_of() {
         let expr = parse_condition("3 of selection_*").unwrap();
         assert_eq!(
             expr,
             ConditionExpr::Selector {
-                quantifier: Quantifier::Count(3),
+                quantifier: Quantifier::Count(NonZeroU64::new(3).unwrap()),
                 pattern: SelectorPattern::Pattern("selection_*".to_string()),
             }
+        );
+    }
+
+    #[test]
+    fn test_zero_of_rejected() {
+        for input in [
+            "0 of selection_*",
+            "00 of them",
+            "selection and not 0 of filter_*",
+        ] {
+            let err = parse_condition(input).unwrap_err();
+            let SigmaParserError::Condition(message, location) = &err else {
+                panic!("expected a condition error for {input:?}, got {err:?}");
+            };
+            assert!(message.starts_with("'0 of' is always true"), "{message}");
+            let col = input.find('0').unwrap() as u32 + 1;
+            assert_eq!(*location, Some(SourceLocation { line: 1, col }), "{input}");
+        }
+    }
+
+    #[test]
+    fn test_zero_count_not_deserializable() {
+        assert!(serde_json::from_str::<Quantifier>(r#"{"Count":0}"#).is_err());
+        assert_eq!(
+            serde_json::from_str::<Quantifier>(r#"{"Count":2}"#).unwrap(),
+            Quantifier::Count(NonZeroU64::new(2).unwrap())
         );
     }
 

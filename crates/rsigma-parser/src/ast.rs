@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::num::NonZeroU64;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -301,8 +302,9 @@ pub enum Quantifier {
     Any,
     /// Match all: `all of ...`
     All,
-    /// Match a specific count: `N of ...`
-    Count(u64),
+    /// Match at least `N` detections: `N of ...`. The parser maps `1 of` to
+    /// [`Quantifier::Any`] and rejects `0 of`.
+    Count(NonZeroU64),
 }
 
 impl fmt::Display for Quantifier {

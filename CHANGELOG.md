@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### `0 of` selectors are rejected (#562)
+
+A condition such as `0 of selection_*` parsed, compiled, and matched every event, because at least zero of anything is always true. The parser now rejects it with a located condition error that suggests `not 1 of`, which is what such a condition almost always means. No rule in the SigmaHQ corpus uses it. A condition error raised inside a selector or a parenthesized group also no longer repeats `Condition parse error at L:C:` once per nesting level, and `rule condition` no longer prints that prefix twice.
+
+Breaking changes for library users: `Quantifier::Count` holds a `NonZeroU64` instead of a `u64`, so a zero count cannot be built or deserialized. The serialized form of a valid count is unchanged, so `HIR_SCHEMA_VERSION` stays at 3.
+
 ### Pipeline errors get their own variant (#561)
 
 Processing pipeline failures were reported as `invalid modifier combination: ...`, so a YAML syntax error in a pipeline file, an unknown transformation type, or a deliberate `rule_failure` read like a problem with a rule's field modifiers. They now return the new `EvalError::Pipeline` variant and print as `pipeline error: ...`, and `rule migrate-sources` reports pipeline YAML errors the same way. The rejection message for an inline pipeline `sources:` block, and the remaining docs pages that mention it, now date the removal to 0.19.0 instead of v1.0.

@@ -301,15 +301,12 @@ where
                     matching.all(|(_, det)| eval_detection_with_bloom(det, event, bloom))
                 }
                 Quantifier::Count(required) => {
-                    if *required == 0 {
-                        return true;
-                    }
                     let mut matched = 0u64;
                     matching.any(|(_, det)| {
                         if eval_detection_with_bloom(det, event, bloom) {
                             matched += 1;
                         }
-                        matched >= *required
+                        matched >= required.get()
                     })
                 }
             }
@@ -380,7 +377,7 @@ where
             match quantifier {
                 Quantifier::Any => match_count >= 1,
                 Quantifier::All => match_count == matching_names.len() as u64,
-                Quantifier::Count(n) => match_count >= *n,
+                Quantifier::Count(n) => match_count >= n.get(),
             }
         }
     }

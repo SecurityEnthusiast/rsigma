@@ -220,7 +220,7 @@ pub(crate) fn eval_array_condition<E: Event>(
             match quantifier {
                 Quantifier::Any => count >= 1,
                 Quantifier::All => count == names.len() as u64,
-                Quantifier::Count(n) => count >= *n,
+                Quantifier::Count(n) => count >= n.get(),
             }
         }
     }

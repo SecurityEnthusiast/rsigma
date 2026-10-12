@@ -484,8 +484,8 @@ fn boolean_condition_pass_agrees_with_detail_pass() {
     let conditions = [
         selector(Quantifier::Any),
         selector(Quantifier::All),
-        selector(Quantifier::Count(2)),
-        selector(Quantifier::Count(0)),
+        selector(Quantifier::Count(std::num::NonZeroU64::new(2).unwrap())),
+        selector(Quantifier::Count(std::num::NonZeroU64::new(3).unwrap())),
         ConditionExpr::Not(Box::new(selector(Quantifier::Any))),
     ];
     let events = [

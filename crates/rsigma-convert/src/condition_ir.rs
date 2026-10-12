@@ -61,7 +61,8 @@ pub fn convert_ir_condition(
                 ));
             }
             let all = match quantifier {
-                Quantifier::Any | Quantifier::Count(1) => false,
+                Quantifier::Any => false,
+                Quantifier::Count(n) if n.get() == 1 => false,
                 Quantifier::All => true,
                 Quantifier::Count(n) => {
                     return Err(ConvertError::RuleConversion(format!(

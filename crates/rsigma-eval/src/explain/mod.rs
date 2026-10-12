@@ -334,7 +334,7 @@ fn explain_condition(
             let (quant_str, need, matched) = match quantifier {
                 Quantifier::Any => ("any".to_string(), 1, got >= 1),
                 Quantifier::All => ("all".to_string(), total, got == total),
-                Quantifier::Count(n) => (n.to_string(), *n, got >= *n),
+                Quantifier::Count(n) => (n.to_string(), n.get(), got >= n.get()),
             };
             ConditionTrace::Quantified {
                 quantifier: quant_str,
@@ -598,7 +598,7 @@ fn explain_array_condition<E: Event>(
             let (quant_str, need, matched) = match quantifier {
                 Quantifier::Any => ("any".to_string(), 1, got >= 1),
                 Quantifier::All => ("all".to_string(), total, got == total),
-                Quantifier::Count(n) => (n.to_string(), *n, got >= *n),
+                Quantifier::Count(n) => (n.to_string(), n.get(), got >= n.get()),
             };
             ConditionTrace::Quantified {
                 quantifier: quant_str,

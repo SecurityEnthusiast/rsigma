@@ -191,11 +191,9 @@ fn analyze_condition(cond: &IrCondition, dets: &HashMap<String, IrDetection>) ->
             }
             match quantifier {
                 Quantifier::All => and_combine(resolved.into_iter().map(analyze_detection)),
-                Quantifier::Any => or_combine(resolved.into_iter().map(analyze_detection)),
-                Quantifier::Count(n) if *n >= 1 => {
+                Quantifier::Any | Quantifier::Count(_) => {
                     or_combine(resolved.into_iter().map(analyze_detection))
                 }
-                Quantifier::Count(_) => Open("count-zero"),
             }
         }
     }
