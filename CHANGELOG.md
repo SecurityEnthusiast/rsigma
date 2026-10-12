@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### PostgreSQL correlation conversion lives in one module
+
+The PostgreSQL backend builds correlation queries in its `correlation` module, which now also holds the window-mode resolution and the per-type query selection that used to sit in the `Backend` impl. The aggregate and temporal query builders are private to that module. Generated SQL is byte-identical for every output format, window mode, and `correlation_method`.
+
 ### Parse warnings are reported apart from parse errors (#566)
 
 The parser keeps a rule whose `status` or `level` is outside the allowed set, or whose `related` entries or `sigma-version` are malformed, and ignores the invalid value. It reported those problems in the same list as documents it dropped, so `rule validate` exited `2` and the MCP `validate_rules` and `parse_rule` tools returned `ok: false` for a rule that parsed and compiled. These are now parse warnings, reported next to parse errors but not failing validation by default.
