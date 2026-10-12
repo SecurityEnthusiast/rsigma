@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Lint and the parser agree on modifiers and conditions
+### Lint and the parser agree on modifiers and conditions (#565)
 
 `incompatible_modifiers` and `condition_references_unknown` now run the parser's own validators instead of separate copies, so `rule lint`, the LSP, and the MCP `lint_rules` tool flag exactly the modifier chains and condition references that `rule validate` rejects. Lint used to accept chains the parser rejects, such as `wide|utf16be`, `base64|base64offset`, `base64|re`, `i|re`, and `exists|cased`, and it missed a selector such as `1 of filter_*` that matches no detection. It also split a condition that does not parse into words and reported each word as an unknown identifier. Such a condition is now reported once by the new `invalid_condition` lint, an error that carries the parser's message and location. Each unresolved identifier or selector gets its own `condition_references_unknown` finding with the parser's wording. On the SigmaHQ corpus, the only change is in four files under `unsupported/`, whose 39 word-by-word findings become one `invalid_condition` each.
 
