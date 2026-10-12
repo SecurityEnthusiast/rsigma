@@ -757,6 +757,13 @@ export default {
     // Browsers request /favicon.ico on their own for pages without icon links
     // (raw files, feeds), so the site root carries a copy too.
     writeIfChanged(path.join(outputDir, "favicon.ico"), (await renderBrandImages(assetsDir))["favicon.ico"]);
+    // The config template and deployment units point yaml-language-server at
+    // https://rsigma.io/rsigma.schema.json. Docs CI does not build the Rust
+    // binary, so the schema is a committed artifact copied to the site root.
+    writeIfChanged(
+      path.join(outputDir, "rsigma.schema.json"),
+      fs.readFileSync(path.join(docsRoot, "rsigma.schema.json")),
+    );
     const ratios = diagramAspectRatios(assetsDir);
     let stripped = 0;
     let titlesRendered = 0;
