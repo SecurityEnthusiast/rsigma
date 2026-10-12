@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### PostgreSQL JSONB rendering lives in its own module
+### PostgreSQL JSONB rendering lives in its own module (#568)
 
 The PostgreSQL backend renders JSONB field paths and array object-scope matches (`field[any]`, `field[all]`, `field[all_or_empty]`, `field[none]`) in a private `jsonb` module, with its tests beside it and new unit tests for negative and leading indexes and for malformed bracket paths. Generated SQL is byte-identical for the SigmaHQ ruleset and for array rules, with and without a JSONB column.
 
