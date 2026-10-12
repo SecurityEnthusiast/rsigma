@@ -5,9 +5,10 @@
 //! pySigma does when it loads a rule. IR lowering repeats the item checks for
 //! detections that are built or rewritten after parsing.
 
+use std::fmt;
 use std::net::IpAddr;
 
-use crate::ast::{ConditionExpr, Detection, DetectionItem, Modifier};
+use crate::ast::{ConditionExpr, Detection, DetectionItem, Modifier, Quantifier, SelectorPattern};
 use crate::emit::modifier_str;
 use crate::error::{Result, SigmaParserError};
 use crate::value::SigmaValue;
@@ -360,30 +361,73 @@ pub(crate) fn check_detection(name: &str, detection: &Detection) -> Result<()> {
 /// Check that every identifier in a condition names a detection and every
 /// selector matches at least one.
 pub(crate) fn check_condition(expr: &ConditionExpr, names: &[&str]) -> Result<()> {
+    match unresolved_references(expr, names).first() {
+        None => Ok(()),
+        Some(unresolved) => Err(SigmaParserError::InvalidDetection(unresolved.to_string())),
+    }
+}
+
+/// A condition reference that resolves to no detection.
+pub(crate) enum Unresolved<'a> {
+    /// An identifier that names no detection.
+    Identifier(&'a str),
+    /// A selector whose pattern matches no detection.
+    Selector {
+        quantifier: &'a Quantifier,
+        pattern: &'a SelectorPattern,
+    },
+}
+
+impl fmt::Display for Unresolved<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Unresolved::Identifier(id) => {
+                write!(
+                    f,
+                    "condition references unknown detection identifier '{id}'"
+                )
+            }
+            Unresolved::Selector {
+                quantifier,
+                pattern,
+            } => write!(
+                f,
+                "selector '{quantifier} of {pattern}' matches no detection identifier"
+            ),
+        }
+    }
+}
+
+/// Every unresolved reference in a condition, in the order it appears.
+pub(crate) fn unresolved_references<'a>(
+    expr: &'a ConditionExpr,
+    names: &[&str],
+) -> Vec<Unresolved<'a>> {
+    let mut out = Vec::new();
+    collect_unresolved(expr, names, &mut out);
+    out
+}
+
+fn collect_unresolved<'a>(expr: &'a ConditionExpr, names: &[&str], out: &mut Vec<Unresolved<'a>>) {
     match expr {
         ConditionExpr::And(exprs) | ConditionExpr::Or(exprs) => {
-            exprs.iter().try_for_each(|e| check_condition(e, names))
+            exprs.iter().for_each(|e| collect_unresolved(e, names, out))
         }
-        ConditionExpr::Not(inner) => check_condition(inner, names),
+        ConditionExpr::Not(inner) => collect_unresolved(inner, names, out),
         ConditionExpr::Identifier(id) => {
-            if names.contains(&id.as_str()) {
-                Ok(())
-            } else {
-                Err(SigmaParserError::InvalidDetection(format!(
-                    "condition references unknown detection identifier '{id}'"
-                )))
+            if !names.contains(&id.as_str()) {
+                out.push(Unresolved::Identifier(id));
             }
         }
         ConditionExpr::Selector {
             quantifier,
             pattern,
         } => {
-            if names.iter().any(|n| pattern.matches_detection_name(n)) {
-                Ok(())
-            } else {
-                Err(SigmaParserError::InvalidDetection(format!(
-                    "selector '{quantifier} of {pattern}' matches no detection identifier"
-                )))
+            if !names.iter().any(|n| pattern.matches_detection_name(n)) {
+                out.push(Unresolved::Selector {
+                    quantifier,
+                    pattern,
+                });
             }
         }
     }

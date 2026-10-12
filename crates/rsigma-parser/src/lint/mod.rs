@@ -107,6 +107,7 @@ pub enum LintRule {
     ScopeTooShort,
     LogsourceValueNotLowercase,
     ConditionReferencesUnknown,
+    InvalidCondition,
     DeprecatedAggregationSyntax,
     DeprecatedDetectionTimeframe,
 
@@ -213,6 +214,7 @@ impl fmt::Display for LintRule {
             LintRule::ScopeTooShort => "scope_too_short",
             LintRule::LogsourceValueNotLowercase => "logsource_value_not_lowercase",
             LintRule::ConditionReferencesUnknown => "condition_references_unknown",
+            LintRule::InvalidCondition => "invalid_condition",
             LintRule::DeprecatedAggregationSyntax => "deprecated_aggregation_syntax",
             LintRule::DeprecatedDetectionTimeframe => "deprecated_detection_timeframe",
             LintRule::MissingCorrelation => "missing_correlation",

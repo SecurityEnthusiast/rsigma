@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Lint and the parser agree on modifiers and conditions (#565)
+
+`incompatible_modifiers` and `condition_references_unknown` now run the parser's own validators instead of separate copies, so `rule lint`, the LSP, and the MCP `lint_rules` tool flag exactly the modifier chains and condition references that `rule validate` rejects. Lint used to accept chains the parser rejects, such as `wide|utf16be`, `base64|base64offset`, `base64|re`, `i|re`, and `exists|cased`, and it missed a selector such as `1 of filter_*` that matches no detection. It also split a condition that does not parse into words and reported each word as an unknown identifier. Such a condition is now reported once by the new `invalid_condition` lint, an error that carries the parser's message and location. Each unresolved identifier or selector gets its own `condition_references_unknown` finding with the parser's wording. On the SigmaHQ corpus, the only change is in four files under `unsupported/`, whose 39 word-by-word findings become one `invalid_condition` each.
+
+Breaking changes: `incompatible_modifiers` is an error instead of a warning, because every chain it flags fails to parse. A ruleset that passed `rule lint` at the default `--fail-level error` while carrying such a chain now fails. Fix the chain, or set `incompatible_modifiers: warning` under `severity_overrides` in `.rsigma-lint.yml` while migrating. `condition_references_unknown` messages now read `condition references unknown detection identifier 'x'` and `selector '1 of x*' matches no detection identifier`, so a CI filter that matches the old `no such detection identifier exists` text needs updating. The lint catalogue, including the MCP `rsigma://lint/catalogue` resource, has 92 entries.
+
 ### pySigma 2.0.1 as the `test` backend reference (#564)
 
 The engine test that compares the `test` backend with pySigma's `TextQueryTestBackend` now runs against pySigma 2.0.1 instead of 1.5.1. All 69 shared cases convert the same way under both releases, so no case or known difference changes. pySigma 2.0 adds `google-re2` and `jq` to the pinned, hash-checked requirements of the test image.
