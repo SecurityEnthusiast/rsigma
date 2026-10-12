@@ -49,6 +49,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # Compile tests, examples, and benches against the pinned MSRV too.
       - run: cargo check --workspace --all-targets --all-features --locked
+      # The CLI README documents `cargo build --no-default-features` for a
+      # build without the daemon dependencies.
+      - run: cargo check -p rsigma --no-default-features --all-targets --locked
 
   wasm:
     name: WASM build

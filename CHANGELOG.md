@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### `--no-default-features` builds compile again (#560)
+
+`cargo build -p rsigma --no-default-features`, the minimal build the CLI README documents, had failed to compile since 0.22.0 because the disposition-spool reader behind `rule tune --from-dispositions` needs `rsigma-runtime`, which only the `daemon` feature pulls in. The reader is now gated on `daemon`, and in a build without it `--from-dispositions` exits `3` with a rebuild hint. The `check` CI job compiles the CLI and its tests without default features so the build stays green.
+
 ### Docs checked against the code (#559)
 
 The CLI README lists all four native backends, and its `backend targets` and `backend formats` samples, like the LynxDB and Fibratus samples on the docs site, match the binary output. The daemon's `--stix-store-allow-custom` flag and its `daemon.stix_store_allow_custom` key, added in 0.23.0, are documented. `rule parse` and `rule stdin` report YAML syntax errors as warnings and exit `0`, and the exit-code pages now say so. The `rule parse` jq example selects through `rules[0]`, and the CLI README no longer claims JSON is always pretty-printed. The condition reference documents `any of` and counted selectors such as `2 of selection_*`, which the evaluator reads as "at least two" and conversion rejects. Inline pipeline `sources:` blocks are dated to their removal in 0.19.0 instead of a v1.0 release. Two scripts under `scripts/docs-audit/` now run on every pull request: one compares the docs catalogues with the source tree, and one checks the CLI pages, config schema, MCP tool list, backend samples, and YAML examples against an all-features binary.

@@ -142,6 +142,19 @@ pub(crate) fn cmd_tune(args: TuneArgs, ctx: OutputCtx) {
     emit_reports(&[(rule, report)], &args, &ctx);
 }
 
+/// `--from-dispositions` without the spool reader compiled in. The spool
+/// format lives in `rsigma-runtime`, which ships with the `daemon` feature.
+#[cfg(not(feature = "daemon"))]
+fn cmd_tune_from_dispositions(_args: TuneArgs, _ctx: OutputCtx) {
+    eprintln!(
+        "this binary was built without the 'daemon' feature; rebuild with \
+         --features daemon or use a released binary to read a disposition spool. \
+         (--fp and --tp work in every build.)"
+    );
+    process::exit(crate::exit_code::CONFIG_ERROR);
+}
+
+#[cfg(feature = "daemon")]
 fn cmd_tune_from_dispositions(args: TuneArgs, ctx: OutputCtx) {
     let spool = args
         .from_dispositions

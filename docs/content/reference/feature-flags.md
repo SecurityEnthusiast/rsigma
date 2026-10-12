@@ -10,7 +10,7 @@ The crate that produces the `rsigma` binary.
 
 | Feature | Default | Pulls in | What it enables |
 |---------|---------|----------|-----------------|
-| `daemon` | yes | `rsigma-runtime`, `tokio`, `axum`, `prometheus`, `notify`, `rusqlite`, `tower-http` | `engine daemon`, the HTTP API server, `/metrics`, hot-reload, SQLite state persistence. The default; disable only for a minimal `engine eval` / `rule *` build. |
+| `daemon` | yes | `rsigma-runtime`, `tokio`, `axum`, `prometheus`, `notify`, `rusqlite`, `tower-http` | `engine daemon`, the HTTP API server, `/metrics`, hot-reload, SQLite state persistence, and `rule tune --from-dispositions`. The default; disable only for a minimal `engine eval` / `rule *` build. |
 | `mcp` | no | `rsigma-mcp` (pulls in `rmcp`, `schemars`), `tokio` | `mcp serve`, the Model Context Protocol server exposing the toolchain to AI agents. Opt-in: build with `--features mcp`. The prebuilt binaries and Docker image (`--all-features`) include it. See the [MCP server guide](../guide/mcp-server.md). |
 | `daemon-nats` | no | `daemon` + `async-nats`, `tokio-stream`, `time`, `rsigma-runtime/nats` | NATS JetStream as `--input` and `--output` (and DLQ). All `--nats-*` flags. `RSIGMA_CONSUMER_GROUP`. See [NATS Streaming](../guide/nats-streaming.md). |
 | `daemon-otlp` | no | `daemon` + `prost`, `tonic`, `flate2`, `rsigma-runtime/otlp` | OTLP/HTTP and OTLP/gRPC receivers on `/v1/logs`, plus the OTLP output sink that exports detections over OTLP/HTTP and OTLP/gRPC. See [OTLP Integration](../guide/otlp-integration.md). |
@@ -114,7 +114,7 @@ cargo test -p rsigma-cli --features daemon-nats
 
 ### CI coverage
 
-The repo's `ci.yml` runs `cargo check` against the pinned MSRV, plus `cargo clippy`, `cargo test`, `cargo doc`, and the coverage job against `--all-features`, with a cross-platform `cargo test --all-features` matrix on Ubuntu, macOS, and Windows. A separate job builds `rsigma-parser` and `rsigma-eval` for `wasm32-unknown-unknown` with `--no-default-features` and then instantiates a linked module in a JavaScript-free runtime (Wasmtime). There is no general per-feature opt-in matrix: every other gated dependency listed above is built on every push, but no job exercises, for example, `daemon-nats` in isolation.
+The repo's `ci.yml` runs `cargo check` against the pinned MSRV, plus `cargo clippy`, `cargo test`, `cargo doc`, and the coverage job against `--all-features`, with a cross-platform `cargo test --all-features` matrix on Ubuntu, macOS, and Windows. A separate job builds `rsigma-parser` and `rsigma-eval` for `wasm32-unknown-unknown` with `--no-default-features` and then instantiates a linked module in a JavaScript-free runtime (Wasmtime). The `check` job also compiles the `rsigma` CLI and its tests with `--no-default-features`. There is no general per-feature opt-in matrix: every other gated dependency listed above is built on every push, but no job exercises, for example, `daemon-nats` in isolation.
 
 If a feature combination matters to you (and especially if a build with `--no-default-features` or a single optional feature is part of your downstream pipeline) and CI does not currently exercise it, file an issue so a job can be added.
 
