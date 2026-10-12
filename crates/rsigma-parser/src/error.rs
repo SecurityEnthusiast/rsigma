@@ -1,12 +1,13 @@
 use std::fmt;
 
+use serde::Serialize;
 use thiserror::Error;
 
 /// Source location within a Sigma document.
 ///
 /// Attached to parse errors when position information is available
 /// (e.g. from pest parse failures). Line and column are 1-indexed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct SourceLocation {
     pub line: u32,
     pub col: u32,
@@ -82,12 +83,60 @@ pub enum SigmaParserError {
     ConditionTooLong(usize, usize),
 }
 
+/// The variant of a [`SigmaParserError`], without its payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum SigmaParserErrorKind {
+    Yaml,
+    Condition,
+    UnknownModifier,
+    DuplicateModifier,
+    NotIsNotAModifier,
+    InvalidFieldSpec,
+    InvalidModifiers,
+    InvalidRule,
+    MissingField,
+    InvalidDetection,
+    InvalidCorrelation,
+    InvalidTimespan,
+    InvalidValue,
+    InvalidAction,
+    Io,
+    MergeTooDeep,
+    ConditionTooLong,
+}
+
 impl SigmaParserError {
     /// Returns the source location if this error variant carries one.
     pub fn location(&self) -> Option<SourceLocation> {
         match self {
             SigmaParserError::Condition(_, loc) => *loc,
             _ => None,
+        }
+    }
+
+    /// The variant of this error, without its payload.
+    pub fn kind(&self) -> SigmaParserErrorKind {
+        use SigmaParserErrorKind as K;
+        match self {
+            SigmaParserError::Yaml(_) => K::Yaml,
+            SigmaParserError::Condition(..) => K::Condition,
+            SigmaParserError::UnknownModifier(_) => K::UnknownModifier,
+            SigmaParserError::DuplicateModifier(_) => K::DuplicateModifier,
+            SigmaParserError::NotIsNotAModifier => K::NotIsNotAModifier,
+            SigmaParserError::InvalidFieldSpec(_) => K::InvalidFieldSpec,
+            SigmaParserError::InvalidModifiers(_) => K::InvalidModifiers,
+            SigmaParserError::InvalidRule(_) => K::InvalidRule,
+            SigmaParserError::MissingField(_) => K::MissingField,
+            SigmaParserError::InvalidDetection(_) => K::InvalidDetection,
+            SigmaParserError::InvalidCorrelation(_) => K::InvalidCorrelation,
+            SigmaParserError::InvalidTimespan(_) => K::InvalidTimespan,
+            SigmaParserError::InvalidValue(_) => K::InvalidValue,
+            SigmaParserError::InvalidAction(_) => K::InvalidAction,
+            SigmaParserError::Io(_) => K::Io,
+            SigmaParserError::MergeTooDeep(_) => K::MergeTooDeep,
+            SigmaParserError::ConditionTooLong(..) => K::ConditionTooLong,
         }
     }
 }

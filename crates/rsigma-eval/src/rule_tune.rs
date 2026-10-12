@@ -732,7 +732,10 @@ fn validate_filter_yaml(yaml: &str) -> Result<(), TuneError> {
             message: format!(
                 "expected one filter and no document errors, got {} filters and {:?}",
                 collection.filters.len(),
-                collection.errors
+                collection
+                    .errors()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
             ),
         });
     }

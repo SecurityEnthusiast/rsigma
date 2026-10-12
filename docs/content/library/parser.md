@@ -30,7 +30,8 @@ The crate has no RSigma dependencies and pulls in `yaml_serde` 0.10 (the maintai
 |------|---------|
 | `parse_sigma_yaml(&str) -> Result<SigmaCollection, SigmaParserError>` | The main entry point. Accepts single-document or multi-document YAML (`---` separator). |
 | `parse_sigma_file(&Path)`, `parse_sigma_directory(&Path)` | File and directory variants. |
-| `SigmaCollection` | A bag of `SigmaRule`, `CorrelationRule`, and `FilterRule` parsed from one input. |
+| `SigmaCollection` | A bag of `SigmaRule`, `CorrelationRule`, and `FilterRule` parsed from one input, plus the `diagnostics` found while parsing it. |
+| `CollectionDiagnostic`, `DiagnosticKind`, `DiagnosticSeverity` | One parse error or parse warning, with its kind, severity, message, document index, file path, and source location. See [Error handling](#error-handling). {{ added "unreleased" }} |
 | `SigmaRule` | A detection rule (`title`, `id`, `sigma_version`, `logsource`, `detection`, `condition`, …). |
 | `CorrelationRule` | A correlation rule (`correlation:` block plus shared metadata). |
 | `FilterRule` | A filter rule (`filter:` block plus shared metadata). |
@@ -131,7 +132,7 @@ Bounds: `MAX_CONDITION_LEN = 64 KiB`, `MAX_CONDITION_DEPTH = 64`. See [Security 
 
 {{ added "0.24.0" }}
 
-The parser validates rule semantics, not only structure. A detection or filter rule fails to parse when its `logsource` is missing or sets none of `category`, `product`, and `service`, when a field combines conflicting modifiers (`|gt|lt`), when a value has the wrong type for its modifiers (a number under `contains`, a string under `gt`), when a `re` or `cidr` value is invalid, when a named detection is empty, or when the condition references a detection that does not exist. Each error is collected per document in `SigmaCollection::errors` and names the field. The usable-logsource requirement is stricter than pySigma's parser, which accepts an empty `logsource` mapping.
+The parser validates rule semantics, not only structure. A detection or filter rule fails to parse when its `logsource` is missing or sets none of `category`, `product`, and `service`, when a field combines conflicting modifiers (`|gt|lt`), when a value has the wrong type for its modifiers (a number under `contains`, a string under `gt`), when a `re` or `cidr` value is invalid, when a named detection is empty, or when the condition references a detection that does not exist. Each error is collected per document in `SigmaCollection::diagnostics` and names the field. The usable-logsource requirement is stricter than pySigma's parser, which accepts an empty `logsource` mapping.
 
 The checks live in the `validate` module. `rsigma-ir` reruns `check_detection_item` when it lowers a rule, so detection items a processing pipeline rewrites after parsing are checked too. Invalid regex syntax still reaches the evaluator's regex compiler so library callers retain the specific `EvalError::InvalidRegex` error.
 
@@ -148,7 +149,28 @@ assert!(check_regex("(?<!x)y").is_ok());
 
 ## Error handling
 
-`SigmaParserError` from `thiserror` (also re-exported as `error::Result<T>`). Variants cover YAML syntax errors, missing required fields, invalid modifiers and modifier combinations (`InvalidModifiers`), invalid values and detections, condition-expression errors, and the size/depth caps above. Most variants carry a `SourceLocation` so callers can highlight the offending location in source.
+`SigmaParserError` from `thiserror` (also re-exported as `error::Result<T>`). Variants cover YAML syntax errors, missing required fields, invalid modifiers and modifier combinations (`InvalidModifiers`), invalid values and detections, condition-expression errors, and the size/depth caps above. `Condition` errors carry a `SourceLocation` so callers can highlight the offending location in source, and `kind()` returns the variant as a payload-free `SigmaParserErrorKind`.
+
+The parse functions return `Err` only when they cannot start, for example when a file cannot be read. Problems inside the input are recorded on the returned collection as `CollectionDiagnostic` values in `SigmaCollection::diagnostics`, so one bad document does not hide the others: {{ added "unreleased" }}
+
+- `severity` is `Error` when a document, a file, or the rest of the YAML stream was dropped, and `Warning` when a document was kept with an invalid `status`, `level`, `related` entry, or `sigma-version` ignored.
+- `kind` says what failed: `YamlSyntax`, `NotAMapping`, `CollectionAction`, `Document(SigmaParserErrorKind)`, `Metadata`, or `File(SigmaParserErrorKind)`.
+- `document` is the zero-based index of the YAML document, `path` is the file when the collection was read from disk, and `location` is set for YAML syntax and condition errors.
+- `Display` prints `message`.
+
+`has_errors()`, `error_count()`, and `into_result()` count only errors, so warnings alone are not a failure. `warning_count()`, `errors()`, and `warnings()` give the rest.
+
+```rust
+use rsigma_parser::parse_sigma_yaml;
+
+let collection = parse_sigma_yaml(yaml)?;
+for warning in collection.warnings() {
+    eprintln!("warning: {warning}");
+}
+let collection = collection.into_result().map_err(|diagnostics| {
+    diagnostics.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n")
+})?;
+```
 
 ## See also
 

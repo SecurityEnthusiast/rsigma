@@ -1,4 +1,5 @@
 use super::*;
+use crate::{DiagnosticSeverity, SigmaParserErrorKind, parse_condition};
 
 #[test]
 fn test_parse_simple_rule() {
@@ -233,7 +234,12 @@ correlation:
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(collection.correlations.is_empty());
-    assert!(collection.errors.iter().any(|e| e.contains("gap")));
+    assert!(
+        collection
+            .diagnostics
+            .iter()
+            .any(|e| e.message.contains("gap"))
+    );
 }
 
 #[test]
@@ -253,7 +259,12 @@ correlation:
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(collection.correlations.is_empty());
-    assert!(collection.errors.iter().any(|e| e.contains("gap")));
+    assert!(
+        collection
+            .diagnostics
+            .iter()
+            .any(|e| e.message.contains("gap"))
+    );
 }
 
 #[test]
@@ -273,7 +284,12 @@ correlation:
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(collection.correlations.is_empty());
-    assert!(collection.errors.iter().any(|e| e.contains("window mode")));
+    assert!(
+        collection
+            .diagnostics
+            .iter()
+            .any(|e| e.message.contains("window mode"))
+    );
 }
 
 #[test]
@@ -342,11 +358,11 @@ correlation:
     assert!(collection.correlations.is_empty());
     assert!(
         collection
-            .errors
+            .diagnostics
             .iter()
-            .any(|e| e.contains("must be a string")),
+            .any(|e| e.message.contains("must be a string")),
         "{:?}",
-        collection.errors
+        collection.diagnostics
     );
 }
 
@@ -369,11 +385,11 @@ rsigma.window: 5
     assert!(collection.correlations.is_empty());
     assert!(
         collection
-            .errors
+            .diagnostics
             .iter()
-            .any(|e| e.contains("rsigma.window") && e.contains("must be a string")),
+            .any(|e| e.message.contains("rsigma.window") && e.message.contains("must be a string")),
         "{:?}",
-        collection.errors
+        collection.diagnostics
     );
 }
 
@@ -393,7 +409,12 @@ rsigma.window: session
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(collection.correlations.is_empty());
-    assert!(collection.errors.iter().any(|e| e.contains("gap")));
+    assert!(
+        collection
+            .diagnostics
+            .iter()
+            .any(|e| e.message.contains("gap"))
+    );
 }
 
 #[test]
@@ -713,9 +734,9 @@ detection:
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert_eq!(collection.rules.len(), 2);
     assert!(
-        collection.errors.is_empty(),
+        collection.diagnostics.is_empty(),
         "errors: {:?}",
-        collection.errors
+        collection.diagnostics
     );
 
     // First rule is the original
@@ -752,8 +773,12 @@ detection:
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert_eq!(collection.rules.len(), 0);
-    assert_eq!(collection.errors.len(), 1);
-    assert!(collection.errors[0].contains("without a previous document"));
+    assert_eq!(collection.diagnostics.len(), 1);
+    assert!(
+        collection.diagnostics[0]
+            .message
+            .contains("without a previous document")
+    );
 }
 
 #[test]
@@ -786,7 +811,7 @@ detection:
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert_eq!(collection.rules.len(), 3);
-    assert!(collection.errors.is_empty());
+    assert!(collection.diagnostics.is_empty());
     assert_eq!(collection.rules[0].title, "Base");
     assert_eq!(collection.rules[1].title, "Repeat One");
     assert_eq!(collection.rules[2].title, "Repeat Two");
@@ -868,7 +893,7 @@ detection:
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert_eq!(collection.rules.len(), 2);
-    assert!(collection.errors.is_empty());
+    assert!(collection.diagnostics.is_empty());
 
     assert_eq!(collection.rules[0].title, "Rule A");
     assert_eq!(collection.rules[1].title, "Rule B");
@@ -993,7 +1018,11 @@ fn test_temporal_without_condition_requires_every_rule() {
     for corr_type in ["temporal", "temporal_ordered"] {
         let yaml = temporal_correlation_yaml(corr_type, "[rule_a, rule_b, rule_c]");
         let collection = parse_sigma_yaml(&yaml).unwrap();
-        assert!(collection.errors.is_empty(), "{:?}", collection.errors);
+        assert!(
+            collection.diagnostics.is_empty(),
+            "{:?}",
+            collection.diagnostics
+        );
         match &collection.correlations[0].condition {
             CorrelationCondition::Threshold {
                 predicates,
@@ -1028,11 +1057,11 @@ fn test_temporal_without_condition_or_rules_is_error() {
     assert!(collection.correlations.is_empty());
     assert!(
         collection
-            .errors
+            .diagnostics
             .iter()
-            .any(|e| e.contains("requires at least one rule")),
+            .any(|e| e.message.contains("requires at least one rule")),
         "{:?}",
-        collection.errors
+        collection.diagnostics
     );
 }
 
@@ -1052,11 +1081,11 @@ correlation:
     assert!(collection.correlations.is_empty());
     assert!(
         collection
-            .errors
+            .diagnostics
             .iter()
-            .any(|e| e.contains("must be greater than zero")),
+            .any(|e| e.message.contains("must be greater than zero")),
         "{:?}",
-        collection.errors
+        collection.diagnostics
     );
 }
 
@@ -1076,12 +1105,11 @@ correlation:
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(collection.correlations.is_empty());
     assert!(
-        collection
-            .errors
-            .iter()
-            .any(|e| e.contains("Unknown correlation condition key: bogus")),
+        collection.diagnostics.iter().any(|e| e
+            .message
+            .contains("Unknown correlation condition key: bogus")),
         "{:?}",
-        collection.errors
+        collection.diagnostics
     );
 }
 
@@ -1100,12 +1128,11 @@ correlation:
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(collection.correlations.is_empty());
     assert!(
-        collection
-            .errors
-            .iter()
-            .any(|e| e.contains("value_count correlation condition requires 'field'")),
+        collection.diagnostics.iter().any(|e| e
+            .message
+            .contains("value_count correlation condition requires 'field'")),
         "{:?}",
-        collection.errors
+        collection.diagnostics
     );
 }
 
@@ -1209,9 +1236,9 @@ level: low
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(
-        collection.errors.is_empty(),
+        collection.diagnostics.is_empty(),
         "errors: {:?}",
-        collection.errors
+        collection.diagnostics
     );
     assert_eq!(collection.rules.len(), 2);
 
@@ -1266,9 +1293,9 @@ level: low
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(
-        collection.errors.is_empty(),
+        collection.diagnostics.is_empty(),
         "errors: {:?}",
-        collection.errors
+        collection.diagnostics
     );
     assert_eq!(collection.rules.len(), 3);
 
@@ -1335,9 +1362,9 @@ detection:
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(
-        collection.errors.is_empty(),
+        collection.diagnostics.is_empty(),
         "errors: {:?}",
-        collection.errors
+        collection.diagnostics
     );
     assert_eq!(collection.rules.len(), 4);
 
@@ -1381,7 +1408,7 @@ detection:
     assert_eq!(collection.rules.len(), 1);
     assert_eq!(collection.rules[0].title, "Valid Rule");
     assert!(
-        !collection.errors.is_empty(),
+        !collection.diagnostics.is_empty(),
         "Expected errors for invalid doc"
     );
 }
@@ -1412,9 +1439,9 @@ detection:
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(
-        collection.errors.is_empty(),
+        collection.diagnostics.is_empty(),
         "errors: {:?}",
-        collection.errors
+        collection.diagnostics
     );
     assert_eq!(collection.rules.len(), 2);
     assert_eq!(collection.rules[0].title, "Base");
@@ -1447,9 +1474,9 @@ level: low
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(
-        collection.errors.is_empty(),
+        collection.diagnostics.is_empty(),
         "errors: {:?}",
-        collection.errors
+        collection.diagnostics
     );
     assert_eq!(collection.rules.len(), 1);
 
@@ -1490,9 +1517,9 @@ level: medium
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(
-        collection.errors.is_empty(),
+        collection.diagnostics.is_empty(),
         "errors: {:?}",
-        collection.errors
+        collection.diagnostics
     );
     assert_eq!(collection.rules.len(), 1);
 }
@@ -1834,9 +1861,11 @@ fn array_brackets_are_literal_below_v3() {
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(collection.rules.is_empty());
     assert!(
-        collection.errors[0].contains("'connections\\[any\\]' takes a value or a list of values"),
+        collection.diagnostics[0]
+            .message
+            .contains("'connections\\[any\\]' takes a value or a list of values"),
         "{:?}",
-        collection.errors
+        collection.diagnostics
     );
 
     let scalar = "title: T\nlogsource:\n    category: test\ndetection:\n    selection:\n        connections[any]: TCP\n    condition: selection\n";
@@ -1934,7 +1963,7 @@ fn array_extended_block_requires_named_selections() {
     let yaml = "title: T\nsigma-version: 3\nlogsource:\n    category: test\ndetection:\n    selection:\n        connections[any]:\n            condition: foo\n    condition: selection\n";
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(collection.rules.is_empty());
-    assert!(!collection.errors.is_empty());
+    assert!(!collection.diagnostics.is_empty());
 }
 
 #[test]
@@ -2108,11 +2137,11 @@ fn array_unknown_quantifier_is_error() {
     assert!(collection.rules.is_empty());
     assert!(
         collection
-            .errors
+            .diagnostics
             .iter()
-            .any(|e| e.contains("unknown array selector")),
+            .any(|e| e.message.contains("unknown array selector")),
         "got: {:?}",
-        collection.errors
+        collection.diagnostics
     );
 }
 
@@ -2198,11 +2227,11 @@ fn array_unknown_selector_is_error() {
     assert!(collection.rules.is_empty());
     assert!(
         collection
-            .errors
+            .diagnostics
             .iter()
-            .any(|e| e.contains("unknown array selector")),
+            .any(|e| e.message.contains("unknown array selector")),
         "got: {:?}",
-        collection.errors
+        collection.diagnostics
     );
 }
 
@@ -2219,9 +2248,6 @@ fn plain_dotted_field_is_unchanged() {
 
 #[test]
 fn sigma_collection_has_errors_and_error_count_are_consistent() {
-    // Per-document parse failures land in `collection.errors` rather
-    // than aborting the whole parse, so the helpers must agree with
-    // the underlying vec.
     let yaml = r#"
 action: repeat
 title: Orphan
@@ -2232,8 +2258,15 @@ detection:
 "#;
     let c = parse_sigma_yaml(yaml).unwrap();
     assert!(c.has_errors());
-    assert_eq!(c.error_count(), c.errors.len());
     assert_eq!(c.error_count(), 1);
+    assert_eq!(c.warning_count(), 0);
+    let diagnostic = &c.diagnostics[0];
+    assert_eq!(diagnostic.kind, DiagnosticKind::CollectionAction);
+    assert_eq!(diagnostic.severity, DiagnosticSeverity::Error);
+    assert_eq!(
+        diagnostic.to_string(),
+        "'action: repeat' without a previous document"
+    );
 }
 
 #[test]
@@ -2251,9 +2284,176 @@ detection:
         Ok(_) => panic!("collection with errors must surface as Err"),
         Err(errors) => {
             assert_eq!(errors.len(), 1);
-            assert!(errors[0].contains("without a previous document"));
+            assert!(errors[0].message.contains("without a previous document"));
         }
     }
+}
+
+const WARNING_ONLY: &str = r#"
+title: Bogus status
+logsource:
+    product: test
+status: bogus
+level: cataclysmic
+detection:
+    selection:
+        Field: value
+    condition: selection
+"#;
+
+#[test]
+fn warnings_do_not_count_as_errors() {
+    let c = parse_sigma_yaml(WARNING_ONLY).unwrap();
+    assert_eq!(c.rules.len(), 1);
+    assert!(!c.has_errors());
+    assert_eq!(c.error_count(), 0);
+    assert_eq!(c.warning_count(), 2);
+    assert!(
+        c.warnings().all(
+            |w| w.kind == DiagnosticKind::Metadata && w.severity == DiagnosticSeverity::Warning
+        )
+    );
+    let c = c.into_result().expect("warnings alone are not a failure");
+    assert_eq!(c.diagnostics.len(), 2, "warnings stay on the collection");
+}
+
+#[test]
+fn into_result_returns_warnings_with_errors() {
+    let yaml = format!(
+        "{WARNING_ONLY}---
+action: bogus
+"
+    );
+    let errors = parse_sigma_yaml(&yaml).unwrap().into_result().unwrap_err();
+    let severities: Vec<_> = errors.iter().map(|d| d.severity).collect();
+    assert_eq!(
+        severities,
+        [
+            DiagnosticSeverity::Warning,
+            DiagnosticSeverity::Warning,
+            DiagnosticSeverity::Error,
+        ]
+    );
+}
+
+#[test]
+fn diagnostics_keep_today_strings() {
+    let yaml = r#"
+title: Bad condition
+logsource:
+    product: test
+detection:
+    selection:
+        Field: value
+    condition: selection and
+---
+- not a mapping
+---
+action: 3
+---
+title: Missing condition
+logsource:
+    product: test
+detection:
+    selection:
+        Field: value
+"#;
+    let c = parse_sigma_yaml(yaml).unwrap();
+    let messages: Vec<String> = c.diagnostics.iter().map(ToString::to_string).collect();
+    let condition_error = parse_condition("selection and").unwrap_err().to_string();
+    assert_eq!(messages[0], condition_error);
+    assert_eq!(messages[1], "Document is not a YAML mapping");
+    assert_eq!(
+        messages[2],
+        "collection 'action' must be a string, got: Number(3)"
+    );
+    assert_eq!(messages[3], "Missing required field 'condition'");
+    assert_eq!(c.error_count(), 4);
+}
+
+#[test]
+fn diagnostics_record_kind_document_and_location() {
+    let yaml = r#"
+title: Good
+logsource:
+    product: test
+detection:
+    selection:
+        Field: value
+    condition: selection
+---
+title: Bad condition
+logsource:
+    product: test
+detection:
+    selection:
+        Field: value
+    condition: selection and
+---
+- not a mapping
+"#;
+    let c = parse_sigma_yaml(yaml).unwrap();
+    assert_eq!(c.rules.len(), 1, "the good document survives");
+    let [condition, mapping] = c.diagnostics.as_slice() else {
+        panic!("expected two diagnostics: {:?}", c.diagnostics);
+    };
+    assert_eq!(
+        condition.kind,
+        DiagnosticKind::Document(SigmaParserErrorKind::Condition)
+    );
+    assert_eq!(condition.document, Some(1));
+    assert!(condition.location.is_some(), "{condition:?}");
+    assert_eq!(condition.path, None);
+    assert_eq!(mapping.kind, DiagnosticKind::NotAMapping);
+    assert_eq!(mapping.document, Some(2));
+}
+
+#[test]
+fn yaml_syntax_error_has_location() {
+    let c = parse_sigma_yaml(
+        "title: ok
+---
+title: [unterminated
+",
+    )
+    .unwrap();
+    let diagnostic = c.diagnostics.last().unwrap();
+    assert_eq!(diagnostic.kind, DiagnosticKind::YamlSyntax);
+    assert_eq!(diagnostic.document, Some(1));
+    assert!(diagnostic.message.starts_with("YAML parse error: "));
+    assert!(diagnostic.location.is_some(), "{diagnostic:?}");
+}
+
+#[test]
+fn directory_diagnostics_carry_file_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let warn = dir.path().join("warn.yml");
+    std::fs::write(&warn, WARNING_ONLY).unwrap();
+    let bad = dir.path().join("bad.yml");
+    let good_then_bad = r#"
+title: Good
+logsource:
+    product: test
+detection:
+    selection:
+        Field: value
+    condition: selection
+---
+action: bogus
+"#;
+    std::fs::write(&bad, good_then_bad).unwrap();
+
+    let c = parse_sigma_directory(dir.path()).unwrap();
+    assert_eq!(c.rules.len(), 2);
+    assert_eq!(c.error_count(), 1, "{:?}", c.diagnostics);
+    assert_eq!(c.warning_count(), 2);
+    for diagnostic in c.warnings() {
+        assert_eq!(diagnostic.path.as_deref(), Some(warn.as_path()));
+        assert_eq!(diagnostic.document, Some(0));
+    }
+    let error = c.errors().next().unwrap();
+    assert_eq!(error.path.as_deref(), Some(bad.as_path()));
+    assert_eq!(error.document, Some(1));
 }
 
 #[test]
@@ -2272,11 +2472,11 @@ detection:
     assert_eq!(c.rules.len(), 1, "rule should still be accepted");
     assert!(c.rules[0].status.is_none(), "invalid status must be None");
     assert!(
-        c.errors
+        c.diagnostics
             .iter()
-            .any(|e| e.contains("invalid status") && e.contains("'bogus'")),
+            .any(|e| e.message.contains("invalid status") && e.message.contains("'bogus'")),
         "warning should mention invalid status; got {:?}",
-        c.errors
+        c.diagnostics
     );
 }
 
@@ -2296,11 +2496,11 @@ detection:
     assert_eq!(c.rules.len(), 1);
     assert!(c.rules[0].level.is_none());
     assert!(
-        c.errors
+        c.diagnostics
             .iter()
-            .any(|e| e.contains("invalid level") && e.contains("'cataclysmic'")),
+            .any(|e| e.message.contains("invalid level") && e.message.contains("'cataclysmic'")),
         "warning should mention invalid level; got {:?}",
-        c.errors
+        c.diagnostics
     );
 }
 
@@ -2334,20 +2534,21 @@ detection:
         "only the well-formed related entry should be retained"
     );
 
-    let errs = &c.errors;
+    let errs = &c.diagnostics;
     assert!(
         errs.iter()
-            .any(|e| e.contains("related[0]") && e.contains("not a mapping")),
+            .any(|e| e.message.contains("related[0]") && e.message.contains("not a mapping")),
         "should warn about the string entry; got {errs:?}"
     );
     assert!(
         errs.iter()
-            .any(|e| e.contains("related[1]") && e.contains("missing 'id'")),
+            .any(|e| e.message.contains("related[1]") && e.message.contains("missing 'id'")),
         "should warn about the missing id; got {errs:?}"
     );
     assert!(
-        errs.iter()
-            .any(|e| e.contains("related[2]") && e.contains("invalid type 'derved'")),
+        errs.iter().any(
+            |e| e.message.contains("related[2]") && e.message.contains("invalid type 'derved'")
+        ),
         "should warn about the unknown type; got {errs:?}"
     );
 }
@@ -2368,11 +2569,11 @@ detection:
     assert_eq!(c.rules.len(), 1);
     assert!(c.rules[0].related.is_empty());
     assert!(
-        c.errors
+        c.diagnostics
             .iter()
-            .any(|e| e.contains("'related' must be a sequence")),
+            .any(|e| e.message.contains("'related' must be a sequence")),
         "should warn about the wrong-shape related field; got {:?}",
-        c.errors
+        c.diagnostics
     );
 }
 

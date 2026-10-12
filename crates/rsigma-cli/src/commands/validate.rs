@@ -4,7 +4,10 @@ use std::process;
 
 use clap::Args;
 use rsigma_eval::Engine;
-use rsigma_parser::{SigmaCollection, SigmaParserError, parse_sigma_directory, parse_sigma_file};
+use rsigma_parser::{
+    CollectionDiagnostic, SigmaCollection, SigmaParserError, parse_sigma_directory,
+    parse_sigma_file,
+};
 use serde::Serialize;
 
 use crate::output::{OutputCtx, OutputFormat, Tabular, render_report};
@@ -31,6 +34,13 @@ pub(crate) struct ValidateArgs {
     /// External source file(s) or directory of source files
     #[arg(long = "source", value_name = "FILE_OR_DIR")]
     pub source_files: Vec<PathBuf>,
+
+    /// Minimum parse diagnostic severity that causes exit code 2.
+    /// 'error' (default): exit 2 on parse errors and compile errors.
+    /// 'warning': also exit 2 on parse warnings, such as an invalid status or level.
+    #[arg(long = "fail-level", default_value = "error",
+           value_parser = ["error", "warning"])]
+    pub fail_level: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,6 +51,7 @@ struct ValidateSummary {
     correlation_rules: usize,
     filter_rules: usize,
     parse_errors: usize,
+    parse_warnings: usize,
     compile_ok: usize,
     compile_errors: usize,
     pipelines: usize,
@@ -69,6 +80,7 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
         pipelines: pipeline_paths,
         resolve_sources,
         source_files,
+        fail_level,
     } = args;
     // Dynamic source resolution (`--resolve-sources` / `--source`) needs the
     // async runtime + source resolver, which ship with the `daemon` feature.
@@ -99,7 +111,9 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
             Err(SigmaParserError::Io(e)) => Err(SigmaParserError::Io(e)),
             Err(e) => {
                 let mut collection = SigmaCollection::new();
-                collection.errors.push(format!("{}: {e}", path.display()));
+                collection
+                    .diagnostics
+                    .push(CollectionDiagnostic::file(&path, &e));
                 Ok(collection)
             }
             ok => ok,
@@ -112,7 +126,8 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
             let rules = collection.rules.len();
             let correlations = collection.correlations.len();
             let filters = collection.filters.len();
-            let parse_errors = collection.errors.len();
+            let parse_errors = collection.error_count();
+            let parse_warnings = collection.warning_count();
 
             let mut engine = Engine::new();
             for p in &pipelines {
@@ -136,7 +151,9 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
             compile_errors.extend(validate_correlation_references(&collection));
 
             let parse_error_msgs: Vec<String> =
-                collection.errors.iter().map(|e| e.to_string()).collect();
+                collection.errors().map(ToString::to_string).collect();
+            let parse_warning_msgs: Vec<String> =
+                collection.warnings().map(ToString::to_string).collect();
 
             let summary = ValidateSummary {
                 path: path.display().to_string(),
@@ -145,6 +162,7 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
                 correlation_rules: correlations,
                 filter_rules: filters,
                 parse_errors,
+                parse_warnings,
                 compile_ok,
                 compile_errors: compile_errors.len(),
                 pipelines: pipelines.len(),
@@ -157,6 +175,13 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
                         path: path.display().to_string(),
                         status: "parse_error".into(),
                         errors: err.clone(),
+                    });
+                }
+                for warning in &parse_warning_msgs {
+                    rows.push(ValidateRow {
+                        path: path.display().to_string(),
+                        status: "parse_warning".into(),
+                        errors: warning.clone(),
                     });
                 }
                 for err in &compile_errors {
@@ -176,6 +201,7 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
                 let envelope = serde_json::json!({
                     "summary": summary,
                     "parse_errors": parse_error_msgs,
+                    "parse_warnings": parse_warning_msgs,
                     "compile_errors": compile_errors,
                 });
                 // NDJSON: one row per finding (or a single ok row). JSON: envelope.
@@ -194,12 +220,14 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
                 println!("  Correlation rules: {correlations}");
                 println!("  Filter rules:      {filters}");
                 println!("  Parse errors:      {parse_errors}");
+                println!("  Parse warnings:    {parse_warnings}");
                 tracing::info!(
                     total,
                     detection_rules = rules,
                     correlation_rules = correlations,
                     filter_rules = filters,
                     parse_errors,
+                    parse_warnings,
                     rules_path = %path.display(),
                     "Validation parsed",
                 );
@@ -211,10 +239,16 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
                 println!("  Compile errors:    {}", compile_errors.len());
 
                 if verbose {
-                    if !collection.errors.is_empty() {
+                    if !parse_error_msgs.is_empty() {
                         println!("\nParse errors:");
-                        for err in &collection.errors {
+                        for err in &parse_error_msgs {
                             println!("  - {err}");
+                        }
+                    }
+                    if !parse_warning_msgs.is_empty() {
+                        println!("\nParse warnings:");
+                        for warning in &parse_warning_msgs {
+                            println!("  - {warning}");
                         }
                     }
                     if !compile_errors.is_empty() {
@@ -226,7 +260,8 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
                 }
             }
 
-            if parse_errors > 0 || !compile_errors.is_empty() {
+            let warnings_fail = fail_level == "warning" && parse_warnings > 0;
+            if parse_errors > 0 || warnings_fail || !compile_errors.is_empty() {
                 process::exit(crate::exit_code::RULE_ERROR);
             }
         }

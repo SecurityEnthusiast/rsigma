@@ -617,7 +617,7 @@ level: high
             collection.correlations.len(),
             1,
             "no correlation parsed for {corr_type}; collected errors: {:?}",
-            collection.errors
+            collection.diagnostics
         );
         let err = compile_correlation(&collection.correlations[0]).unwrap_err();
         let msg = format!("{err}");

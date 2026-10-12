@@ -46,7 +46,9 @@ use rsigma_eval::{
     CorrelationAction, CorrelationConfig, CorrelationEventMode, Pipeline, parse_pipeline_file,
     resolve_builtin_pipeline,
 };
-use rsigma_parser::{SigmaCollection, parse_sigma_directory, parse_sigma_file};
+use rsigma_parser::{
+    CollectionDiagnostic, SigmaCollection, parse_sigma_directory, parse_sigma_file,
+};
 use serde_json_path::JsonPath;
 
 #[derive(Parser)]
@@ -684,12 +686,7 @@ pub(crate) fn load_collection(path: &std::path::Path) -> SigmaCollection {
         }
     };
 
-    if !collection.errors.is_empty() {
-        eprintln!(
-            "Warning: {} parse errors while loading rules",
-            collection.errors.len()
-        );
-    }
+    report_load_diagnostics(&collection);
 
     collection
 }
@@ -712,7 +709,7 @@ pub(crate) fn load_collection_multi(paths: &[PathBuf]) -> SigmaCollection {
                     collection.rules.extend(dir_collection.rules);
                     collection.correlations.extend(dir_collection.correlations);
                     collection.filters.extend(dir_collection.filters);
-                    collection.errors.extend(dir_collection.errors);
+                    collection.diagnostics.extend(dir_collection.diagnostics);
                 }
                 Err(e) => {
                     eprintln!("Error parsing directory {}: {e}", path.display());
@@ -725,7 +722,7 @@ pub(crate) fn load_collection_multi(paths: &[PathBuf]) -> SigmaCollection {
                     collection.rules.extend(file_collection.rules);
                     collection.correlations.extend(file_collection.correlations);
                     collection.filters.extend(file_collection.filters);
-                    collection.errors.extend(file_collection.errors);
+                    collection.diagnostics.extend(file_collection.diagnostics);
                 }
                 Err(e) => {
                     eprintln!("Error parsing {}: {e}", path.display());
@@ -737,12 +734,7 @@ pub(crate) fn load_collection_multi(paths: &[PathBuf]) -> SigmaCollection {
             process::exit(exit_code::RULE_ERROR);
         }
     }
-    if !collection.errors.is_empty() {
-        eprintln!(
-            "Warning: {} parse errors while loading rules",
-            collection.errors.len()
-        );
-    }
+    report_load_diagnostics(&collection);
     if collection.rules.is_empty() && collection.correlations.is_empty() {
         eprintln!("No rules found in specified path(s)");
         process::exit(exit_code::RULE_ERROR);
@@ -750,11 +742,24 @@ pub(crate) fn load_collection_multi(paths: &[PathBuf]) -> SigmaCollection {
     collection
 }
 
-pub(crate) fn print_warnings(errors: &[String]) {
-    if !errors.is_empty() {
+/// Print the per-rule parse error and warning counts of a loaded collection
+/// to stderr. Loading continues with the documents that parsed.
+fn report_load_diagnostics(collection: &SigmaCollection) {
+    let errors = collection.error_count();
+    if errors > 0 {
+        eprintln!("Warning: {errors} parse errors while loading rules");
+    }
+    let warnings = collection.warning_count();
+    if warnings > 0 {
+        eprintln!("Warning: {warnings} parse warnings while loading rules");
+    }
+}
+
+pub(crate) fn print_warnings(diagnostics: &[CollectionDiagnostic]) {
+    if !diagnostics.is_empty() {
         eprintln!("Warnings:");
-        for err in errors {
-            eprintln!("  - {err}");
+        for diagnostic in diagnostics {
+            eprintln!("  - {diagnostic}");
         }
     }
 }

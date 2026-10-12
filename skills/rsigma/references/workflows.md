@@ -14,7 +14,7 @@ Prefer the MCP tool when `rsigma mcp serve` is connected. Otherwise use the CLI.
    Correlation inputs do not produce standalone output by default, including a correlation that feeds another correlation. Set top-level `generate: true` on the referencing correlation or pass `--emit-detections` when those matches are needed.
 4. **Tune.** For a noisy rule, `tune_rules` or `rule tune` with classified false positives and a true-positive set that must still fire. Review the returned filter before writing it.
    Target filters by rule `id` or `name`, not title. Selector patterns in a filter condition refer only to that filter's own detection items.
-5. **Validate.** `validate_rules` or `rule validate` on the set, with pipelines when the rules depend on them.
+5. **Validate.** `validate_rules` or `rule validate` on the set, with pipelines when the rules depend on them. Parse warnings, such as an invalid `status` or `level`, are reported but do not fail validation; pass `fail_level: warning` (or the [`rule validate`](https://rsigma.io/cli/rule/validate/) `--fail-level` flag) to fail on them.
    Pipeline conditions use the pySigma `*_cond_op`, `*_cond_not`, and `*_cond_expr` keys. Placeholder transformations require `|expand` values; `value_placeholders` must resolve every variable unless runtime substitution is explicitly enabled.
 6. **Convert.** `convert_rules` or `backend convert` to the deployment target. Native targets run in-process. Other targets need sigma-cli, and on MCP they also need `--allow-sigma-cli`.
 

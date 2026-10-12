@@ -713,9 +713,11 @@ mod tests {
         rule.logsource = LogSource::default();
         let emitted = emit_rule_yaml(&rule);
         assert!(emitted.contains("logsource: {}"), "{emitted}");
-        let errors = parse_sigma_yaml(&emitted).unwrap().errors;
+        let errors = parse_sigma_yaml(&emitted).unwrap().diagnostics;
         assert!(
-            errors[0].contains("at least one of category, product, or service"),
+            errors[0]
+                .message
+                .contains("at least one of category, product, or service"),
             "{errors:?}"
         );
     }

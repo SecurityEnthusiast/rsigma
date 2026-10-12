@@ -11,6 +11,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+use crate::diagnostic::CollectionDiagnostic;
 use crate::value::{SigmaValue, Timespan};
 
 // =============================================================================
@@ -842,17 +843,16 @@ pub struct SigmaCollection {
     pub rules: Vec<SigmaRule>,
     pub correlations: Vec<CorrelationRule>,
     pub filters: Vec<FilterRule>,
-    /// Per-document parse errors accumulated while building the
-    /// collection. Populated by [`parse_sigma_yaml`](crate::parse_sigma_yaml)
-    /// and friends; one entry per document the parser could not
-    /// produce a [`SigmaRule`], [`CorrelationRule`], or [`FilterRule`]
-    /// from. The collection is still returned on `Ok(_)` so callers
-    /// can decide whether a partial parse is acceptable; the
-    /// [`SigmaCollection::has_errors`] / [`SigmaCollection::error_count`]
-    /// / [`SigmaCollection::into_result`] helpers cover the common
-    /// "treat any error as a failure" path.
+    /// Problems found while building the collection, in the order they
+    /// were found. An [error](crate::DiagnosticSeverity::Error) means a
+    /// document was dropped; a [warning](crate::DiagnosticSeverity::Warning)
+    /// means a document was kept with an invalid value ignored. The
+    /// collection is returned on `Ok(_)` either way, so callers decide
+    /// whether a partial parse is acceptable;
+    /// [`SigmaCollection::has_errors`] and [`SigmaCollection::into_result`]
+    /// cover the common "fail on any error" path.
     #[serde(skip)]
-    pub errors: Vec<String>,
+    pub diagnostics: Vec<CollectionDiagnostic>,
 }
 
 impl SigmaCollection {
@@ -861,7 +861,7 @@ impl SigmaCollection {
             rules: Vec::new(),
             correlations: Vec::new(),
             filters: Vec::new(),
-            errors: Vec::new(),
+            diagnostics: Vec::new(),
         }
     }
 
@@ -874,27 +874,39 @@ impl SigmaCollection {
         self.len() == 0
     }
 
-    /// True when the parser recorded one or more per-document parse
-    /// errors while building this collection.
+    /// The error diagnostics, in order.
+    pub fn errors(&self) -> impl Iterator<Item = &CollectionDiagnostic> {
+        self.diagnostics.iter().filter(|d| d.is_error())
+    }
+
+    /// The warning diagnostics, in order.
+    pub fn warnings(&self) -> impl Iterator<Item = &CollectionDiagnostic> {
+        self.diagnostics.iter().filter(|d| !d.is_error())
+    }
+
+    /// True when at least one diagnostic is an error. Warnings do not count.
     pub fn has_errors(&self) -> bool {
-        !self.errors.is_empty()
+        self.errors().next().is_some()
     }
 
-    /// Number of per-document parse errors recorded while building
-    /// this collection. Equivalent to `self.errors.len()`.
+    /// Number of error diagnostics.
     pub fn error_count(&self) -> usize {
-        self.errors.len()
+        self.errors().count()
     }
 
-    /// Promote the accumulated errors to a hard failure. Returns the
-    /// collection when [`SigmaCollection::has_errors`] is false;
-    /// otherwise returns the collection's [`errors`](Self::errors) so
-    /// callers can format them. The original collection is consumed
-    /// either way so the success path can move out of `self` without
-    /// re-cloning the documents.
-    pub fn into_result(self) -> Result<Self, Vec<String>> {
+    /// Number of warning diagnostics.
+    pub fn warning_count(&self) -> usize {
+        self.warnings().count()
+    }
+
+    /// Promote errors to a hard failure. Returns the collection, warnings
+    /// included, when [`SigmaCollection::has_errors`] is false; otherwise
+    /// returns every diagnostic, warnings included, so callers can report
+    /// them together. The collection is consumed either way so the success
+    /// path can move out of `self` without re-cloning the documents.
+    pub fn into_result(self) -> Result<Self, Vec<CollectionDiagnostic>> {
         if self.has_errors() {
-            Err(self.errors)
+            Err(self.diagnostics)
         } else {
             Ok(self)
         }

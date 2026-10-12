@@ -22,8 +22,8 @@ fn rule_yaml(header: &str, detection: &str) -> String {
 
 fn try_engine(yaml: &str) -> Result<Engine, String> {
     let collection = parse_sigma_yaml(yaml).map_err(|e| e.to_string())?;
-    if let Some(error) = collection.errors.first() {
-        return Err(error.clone());
+    if let Some(error) = collection.errors().next() {
+        return Err(error.to_string());
     }
     let mut engine = Engine::new();
     engine

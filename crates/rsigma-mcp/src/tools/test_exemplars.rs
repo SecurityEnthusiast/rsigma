@@ -150,7 +150,10 @@ fn check_collection(collection: &SigmaCollection) -> Result<(), LoadError> {
     if collection.has_errors() {
         return Err(LoadError::Content(format!(
             "rule collection contains parse errors: {:?}",
-            collection.errors
+            collection
+                .errors()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
         )));
     }
     Ok(())
@@ -212,7 +215,12 @@ fn load_rule_directory(root: &Path) -> Result<SigmaCollection, LoadError> {
         collection.rules.extend(parsed.rules);
         collection.correlations.extend(parsed.correlations);
         collection.filters.extend(parsed.filters);
-        collection.errors.extend(parsed.errors);
+        collection.diagnostics.extend(
+            parsed
+                .diagnostics
+                .into_iter()
+                .map(|diagnostic| diagnostic.with_path(&path)),
+        );
     }
     Ok(collection)
 }

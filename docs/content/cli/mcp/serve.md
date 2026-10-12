@@ -48,7 +48,7 @@ The global flags (`--log-format`, `--quiet`, …) are accepted but stdout stays 
 | `parse_rule` | Parse Sigma YAML (rules, correlations, filters) to AST JSON. |
 | `parse_condition` | Parse a condition expression to a parse-tree. |
 | `lint_rules` | Lint rules; findings carry rule id, severity, line, and fix availability. |
-| `validate_rules` | Parse + compile + correlation checks, optional pipelines and source resolution. |
+| `validate_rules` | Parse + compile + correlation checks, optional pipelines, source resolution, and `fail_level`. |
 | `evaluate_events` | Run events against rules (detections and correlations). |
 | `convert_rules` | Convert rules to a backend query (`postgres`/`lynxdb`/`fibratus` natively; other targets via sigma-cli with `--allow-sigma-cli`). |
 | `reverse_convert` | Reverse-convert a SIEM query (`dialect: lucene`) into a draft Sigma rule (YAML). |

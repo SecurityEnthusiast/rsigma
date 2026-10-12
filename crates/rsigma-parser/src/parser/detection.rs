@@ -4,6 +4,7 @@ use yaml_serde::Value;
 
 use crate::ast::*;
 use crate::condition::parse_condition;
+use crate::diagnostic::CollectionDiagnostic;
 use crate::error::{Result, SigmaParserError};
 use crate::fieldpath::{ends_with_unescaped, escape_brackets, first_unescaped};
 use crate::validate::{check_condition, check_detection, check_detection_item};
@@ -26,7 +27,10 @@ use super::{
 /// these so a single typo does not invalidate the whole document.
 ///
 /// Reference: pySigma rule.py SigmaRule.from_yaml / from_dict
-pub(super) fn parse_detection_rule(value: &Value, warnings: &mut Vec<String>) -> Result<SigmaRule> {
+pub(super) fn parse_detection_rule(
+    value: &Value,
+    warnings: &mut Vec<CollectionDiagnostic>,
+) -> Result<SigmaRule> {
     let m = value
         .as_mapping()
         .ok_or_else(|| SigmaParserError::InvalidRule("Expected a YAML mapping".into()))?;

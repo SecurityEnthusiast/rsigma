@@ -153,9 +153,12 @@ Parsed 0 documents from rules/
   Correlation rules: 0
   Filter rules:      0
   Parse errors:      1
+  Parse warnings:    0
   Compiled OK:       0
   Compile errors:    0
 ```
+
+Parse warnings, such as an invalid `status` or `level` that the parser ignores, do not fail the job. Add `--fail-level warning` to fail on them too, or rely on [`rule lint`](../cli/rule/lint.md), which reports them as errors.
 
 Add `-p <pipeline.yml>` to validate that your processing pipelines apply cleanly too:
 

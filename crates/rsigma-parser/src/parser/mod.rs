@@ -25,7 +25,8 @@ use serde::Deserialize;
 use yaml_serde::Value;
 
 use crate::ast::*;
-use crate::error::{Result, SigmaParserError};
+use crate::diagnostic::{CollectionDiagnostic, DiagnosticKind};
+use crate::error::{Result, SigmaParserError, SourceLocation};
 
 // =============================================================================
 // Public API
@@ -42,11 +43,26 @@ pub fn parse_sigma_yaml(yaml: &str) -> Result<SigmaCollection> {
     let mut global: Option<Value> = None;
     let mut previous: Option<Value> = None;
 
-    for doc in yaml_serde::Deserializer::from_str(yaml) {
+    for (index, doc) in yaml_serde::Deserializer::from_str(yaml).enumerate() {
+        let report = |collection: &mut SigmaCollection, diagnostic: CollectionDiagnostic| {
+            collection.diagnostics.push(diagnostic.with_document(index));
+        };
+
         let value: Value = match Value::deserialize(doc) {
             Ok(v) => v,
             Err(e) => {
-                collection.errors.push(format!("YAML parse error: {e}"));
+                let location = e.location().map(|loc| SourceLocation {
+                    line: u32::try_from(loc.line()).unwrap_or(u32::MAX),
+                    col: u32::try_from(loc.column()).unwrap_or(u32::MAX),
+                });
+                report(
+                    &mut collection,
+                    CollectionDiagnostic::error(
+                        DiagnosticKind::YamlSyntax,
+                        format!("YAML parse error: {e}"),
+                    )
+                    .with_location(location),
+                );
                 // A parse error leaves the YAML stream in an undefined state;
                 // the deserializer iterator may never terminate on malformed
                 // input, so we must stop iterating.
@@ -55,18 +71,26 @@ pub fn parse_sigma_yaml(yaml: &str) -> Result<SigmaCollection> {
         };
 
         let Some(mapping) = value.as_mapping() else {
-            collection
-                .errors
-                .push("Document is not a YAML mapping".to_string());
+            report(
+                &mut collection,
+                CollectionDiagnostic::error(
+                    DiagnosticKind::NotAMapping,
+                    "Document is not a YAML mapping",
+                ),
+            );
             continue;
         };
 
         // Check for collection action
-        if let Some(action_val) = mapping.get(Value::String("action".to_string())) {
+        let to_parse = if let Some(action_val) = mapping.get(Value::String("action".to_string())) {
             let Some(action) = action_val.as_str() else {
-                collection.errors.push(format!(
-                    "collection 'action' must be a string, got: {action_val:?}"
-                ));
+                report(
+                    &mut collection,
+                    CollectionDiagnostic::error(
+                        DiagnosticKind::CollectionAction,
+                        format!("collection 'action' must be a string, got: {action_val:?}"),
+                    ),
+                );
                 continue;
             };
             match action {
@@ -84,76 +108,61 @@ pub fn parse_sigma_yaml(yaml: &str) -> Result<SigmaCollection> {
                 }
                 "repeat" => {
                     // Merge current document onto the previous document
-                    if let Some(ref prev) = previous {
-                        let mut repeat_val = value.clone();
-                        if let Some(m) = repeat_val.as_mapping_mut() {
-                            m.remove(Value::String("action".to_string()));
-                        }
-                        let merged_repeat = deep_merge(prev.clone(), repeat_val)?;
-
-                        // Apply global template if present
-                        let final_val = if let Some(ref global_val) = global {
-                            deep_merge(global_val.clone(), merged_repeat)?
-                        } else {
-                            merged_repeat
-                        };
-
-                        previous = Some(final_val.clone());
-
-                        let mut doc_warnings: Vec<String> = Vec::new();
-                        let parsed = parse_document(&final_val, &mut doc_warnings);
-                        collection.errors.extend(doc_warnings);
-                        match parsed {
-                            Ok(doc) => match doc {
-                                SigmaDocument::Rule(rule) => collection.rules.push(*rule),
-                                SigmaDocument::Correlation(corr) => {
-                                    collection.correlations.push(corr)
-                                }
-                                SigmaDocument::Filter(filter) => collection.filters.push(filter),
-                            },
-                            Err(e) => {
-                                collection.errors.push(e.to_string());
-                            }
-                        }
-                    } else {
-                        collection
-                            .errors
-                            .push("'action: repeat' without a previous document".to_string());
+                    let Some(ref prev) = previous else {
+                        report(
+                            &mut collection,
+                            CollectionDiagnostic::error(
+                                DiagnosticKind::CollectionAction,
+                                "'action: repeat' without a previous document",
+                            ),
+                        );
+                        continue;
+                    };
+                    let mut repeat_val = value.clone();
+                    if let Some(m) = repeat_val.as_mapping_mut() {
+                        m.remove(Value::String("action".to_string()));
                     }
-                    continue;
+                    let merged_repeat = deep_merge(prev.clone(), repeat_val)?;
+
+                    // Apply global template if present
+                    if let Some(ref global_val) = global {
+                        deep_merge(global_val.clone(), merged_repeat)?
+                    } else {
+                        merged_repeat
+                    }
                 }
                 other => {
-                    collection
-                        .errors
-                        .push(format!("Unknown collection action: {other}"));
+                    report(
+                        &mut collection,
+                        CollectionDiagnostic::error(
+                            DiagnosticKind::CollectionAction,
+                            format!("Unknown collection action: {other}"),
+                        ),
+                    );
                     continue;
                 }
             }
-        }
-
-        // Merge with global template if present
-        let merged = if let Some(ref global_val) = global {
+        } else if let Some(ref global_val) = global {
+            // Merge with global template if present
             deep_merge(global_val.clone(), value)?
         } else {
             value
         };
 
         // Track previous document for `action: repeat`
-        previous = Some(merged.clone());
+        previous = Some(to_parse.clone());
 
         // Determine document type and parse
-        let mut doc_warnings: Vec<String> = Vec::new();
-        let parsed = parse_document(&merged, &mut doc_warnings);
-        collection.errors.extend(doc_warnings);
+        let mut doc_warnings = Vec::new();
+        let parsed = parse_document(&to_parse, &mut doc_warnings);
+        for warning in doc_warnings {
+            report(&mut collection, warning);
+        }
         match parsed {
-            Ok(doc) => match doc {
-                SigmaDocument::Rule(rule) => collection.rules.push(*rule),
-                SigmaDocument::Correlation(corr) => collection.correlations.push(corr),
-                SigmaDocument::Filter(filter) => collection.filters.push(filter),
-            },
-            Err(e) => {
-                collection.errors.push(e.to_string());
-            }
+            Ok(SigmaDocument::Rule(rule)) => collection.rules.push(*rule),
+            Ok(SigmaDocument::Correlation(corr)) => collection.correlations.push(corr),
+            Ok(SigmaDocument::Filter(filter)) => collection.filters.push(filter),
+            Err(e) => report(&mut collection, CollectionDiagnostic::document(&e)),
         }
     }
 
@@ -161,12 +170,21 @@ pub fn parse_sigma_yaml(yaml: &str) -> Result<SigmaCollection> {
 }
 
 /// Parse a single Sigma YAML file from a path.
+///
+/// Every diagnostic in the returned collection carries `path`.
 pub fn parse_sigma_file(path: &Path) -> Result<SigmaCollection> {
     let content = std::fs::read_to_string(path)?;
-    parse_sigma_yaml(&content)
+    let mut collection = parse_sigma_yaml(&content)?;
+    for diagnostic in &mut collection.diagnostics {
+        diagnostic.path = Some(path.to_path_buf());
+    }
+    Ok(collection)
 }
 
 /// Parse all Sigma YAML files from a directory (recursively).
+///
+/// A file that cannot be read or parsed at all is recorded as a
+/// [`DiagnosticKind::File`] error and the walk continues.
 pub fn parse_sigma_directory(dir: &Path) -> Result<SigmaCollection> {
     let mut collection = SigmaCollection::new();
 
@@ -185,10 +203,12 @@ pub fn parse_sigma_directory(dir: &Path) -> Result<SigmaCollection> {
                         collection.rules.extend(sub.rules);
                         collection.correlations.extend(sub.correlations);
                         collection.filters.extend(sub.filters);
-                        collection.errors.extend(sub.errors);
+                        collection.diagnostics.extend(sub.diagnostics);
                     }
                     Err(e) => {
-                        collection.errors.push(format!("{}: {e}", path.display()));
+                        collection
+                            .diagnostics
+                            .push(CollectionDiagnostic::file(&path, &e));
                     }
                 }
             }
@@ -207,7 +227,10 @@ pub fn parse_sigma_directory(dir: &Path) -> Result<SigmaCollection> {
 /// Parse a single YAML value into the appropriate Sigma document type.
 ///
 /// Reference: pySigma collection.py from_dicts — checks for 'correlation' and 'filter' keys
-fn parse_document(value: &Value, warnings: &mut Vec<String>) -> Result<SigmaDocument> {
+fn parse_document(
+    value: &Value,
+    warnings: &mut Vec<CollectionDiagnostic>,
+) -> Result<SigmaDocument> {
     let mapping = value
         .as_mapping()
         .ok_or_else(|| SigmaParserError::InvalidRule("Document is not a YAML mapping".into()))?;
@@ -317,15 +340,18 @@ pub(super) fn parse_logsource(value: &Value) -> Result<LogSource> {
 /// Parse a `related:` list. Surfaces invalid entries through
 /// `warnings` instead of silently dropping them so a typo in
 /// `type: derved` (a misspelt `derived`) shows up in
-/// `SigmaCollection.errors` rather than being absent without trace.
-pub(super) fn parse_related(value: Option<&Value>, warnings: &mut Vec<String>) -> Vec<Related> {
+/// `SigmaCollection.diagnostics` rather than being absent without trace.
+pub(super) fn parse_related(
+    value: Option<&Value>,
+    warnings: &mut Vec<CollectionDiagnostic>,
+) -> Vec<Related> {
     let Some(seq_val) = value else {
         return Vec::new();
     };
     let Some(seq) = seq_val.as_sequence() else {
-        warnings.push(format!(
+        warnings.push(metadata_warning(format!(
             "'related' must be a sequence of mappings, got: {seq_val:?}"
-        ));
+        )));
         return Vec::new();
     };
 
@@ -333,30 +359,32 @@ pub(super) fn parse_related(value: Option<&Value>, warnings: &mut Vec<String>) -
         .enumerate()
         .filter_map(|(i, item)| {
             let Some(m) = item.as_mapping() else {
-                warnings.push(format!("related[{i}] is not a mapping: {item:?}"));
+                warnings.push(metadata_warning(format!(
+                    "related[{i}] is not a mapping: {item:?}"
+                )));
                 return None;
             };
             let id = match get_str(m, "id") {
                 Some(s) => s.to_string(),
                 None => {
-                    warnings.push(format!("related[{i}] missing 'id'"));
+                    warnings.push(metadata_warning(format!("related[{i}] missing 'id'")));
                     return None;
                 }
             };
             let type_str = match get_str(m, "type") {
                 Some(s) => s,
                 None => {
-                    warnings.push(format!("related[{i}] missing 'type'"));
+                    warnings.push(metadata_warning(format!("related[{i}] missing 'type'")));
                     return None;
                 }
             };
             let relation_type = match type_str.parse() {
                 Ok(t) => t,
                 Err(_) => {
-                    warnings.push(format!(
+                    warnings.push(metadata_warning(format!(
                         "related[{i}] invalid type '{type_str}' (expected one of: \
                          derived, obsolete, merged, renamed, similar)"
-                    ));
+                    )));
                     return None;
                 }
             };
@@ -372,13 +400,13 @@ pub(super) fn parse_related(value: Option<&Value>, warnings: &mut Vec<String>) -
 pub(super) fn parse_enum_with_warn<T: std::str::FromStr>(
     raw: Option<&str>,
     field: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Vec<CollectionDiagnostic>,
 ) -> Option<T> {
     let raw = raw?;
     match raw.parse() {
         Ok(v) => Some(v),
         Err(_) => {
-            warnings.push(format!("invalid {field}: '{raw}'"));
+            warnings.push(metadata_warning(format!("invalid {field}: '{raw}'")));
             None
         }
     }
@@ -391,19 +419,23 @@ pub(super) fn parse_enum_with_warn<T: std::str::FromStr>(
 /// through `warnings` and treated as absent (resolving to the fixed floor).
 pub(super) fn parse_sigma_version(
     m: &yaml_serde::Mapping,
-    warnings: &mut Vec<String>,
+    warnings: &mut Vec<CollectionDiagnostic>,
 ) -> Option<u32> {
     let value = m.get(val_key("sigma-version"))?;
     match crate::version::major_from_value(value) {
         Some(major) => Some(major),
         None => {
-            warnings.push(format!(
+            warnings.push(metadata_warning(format!(
                 "invalid sigma-version: {value:?} (expected a major version integer like 3, \
                  or a release string like \"2.1.0\")"
-            ));
+            )));
             None
         }
     }
+}
+
+fn metadata_warning(message: String) -> CollectionDiagnostic {
+    CollectionDiagnostic::warning(DiagnosticKind::Metadata, message)
 }
 
 pub(super) fn val_key(s: &str) -> Value {

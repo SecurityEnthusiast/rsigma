@@ -9,7 +9,7 @@ use rsigma_eval::{CorrelationConfig, CorrelationEngine, Engine, Pipeline};
 use serde_json::{Value, json};
 
 use super::RsigmaMcp;
-use super::shared::json_result;
+use super::shared::{diagnostic_messages, json_result};
 
 /// Input for `validate_rules`.
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -26,13 +26,28 @@ pub struct ValidateInput {
     /// Resolve dynamic pipeline sources (file/command/HTTP) during validation.
     #[serde(default)]
     pub resolve_sources: bool,
+    /// Lowest parse diagnostic severity that makes `ok` false: `error`
+    /// (default) or `warning`.
+    #[serde(default)]
+    pub fail_level: FailLevel,
+}
+
+/// Lowest parse diagnostic severity that fails validation.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum FailLevel {
+    /// Fail on parse errors only.
+    #[default]
+    Error,
+    /// Fail on parse errors and parse warnings.
+    Warning,
 }
 
 #[tool_router(router = validate_rules_router, vis = "pub(crate)")]
 impl RsigmaMcp {
     /// Validate that Sigma rules parse and compile (with optional pipelines and source resolution).
     #[tool(
-        description = "Validate that Sigma rules parse and compile cleanly: parse, build the detection engine, and check correlation references. Optional `pipelines` and `resolve_sources` (resolve dynamic sources). Accepts inline `yaml` or a file/directory `path`."
+        description = "Validate that Sigma rules parse and compile cleanly: parse, build the detection engine, and check correlation references. Optional `pipelines`, `resolve_sources` (resolve dynamic sources), and `fail_level` (`error` by default; `warning` also fails on parse warnings such as an invalid `status`). Accepts inline `yaml` or a file/directory `path`."
     )]
     async fn validate_rules(
         &self,
@@ -75,7 +90,11 @@ impl RsigmaMcp {
             }
         }
 
-        let ok = collection.errors.is_empty()
+        let parse_failed = match input.fail_level {
+            FailLevel::Error => collection.has_errors(),
+            FailLevel::Warning => !collection.diagnostics.is_empty(),
+        };
+        let ok = !parse_failed
             && compile_errors.is_empty()
             && correlation_error.is_none()
             && source_errors.is_empty();
@@ -86,10 +105,12 @@ impl RsigmaMcp {
                 "detection_rules": collection.rules.len(),
                 "correlation_rules": collection.correlations.len(),
                 "filter_rules": collection.filters.len(),
-                "parse_errors": collection.errors.len(),
+                "parse_errors": collection.error_count(),
+                "parse_warnings": collection.warning_count(),
                 "compile_errors": compile_errors.len(),
             },
-            "parse_errors": collection.errors,
+            "parse_errors": diagnostic_messages(collection.errors()),
+            "parse_warnings": diagnostic_messages(collection.warnings()),
             "compile_errors": compile_errors,
             "correlation_error": correlation_error,
             "source_errors": source_errors,
@@ -129,6 +150,7 @@ mod tests {
                 path: None,
                 pipelines: vec![],
                 resolve_sources: false,
+                fail_level: FailLevel::Error,
             })
             .await
     }
@@ -141,6 +163,7 @@ mod tests {
                 path: None,
                 pipelines: vec![],
                 resolve_sources: false,
+                fail_level: FailLevel::Error,
             })
             .await
             .unwrap();
@@ -155,5 +178,48 @@ mod tests {
         let bad = validate(uncompilable).await.unwrap();
         assert_eq!(bad["ok"], false);
         assert!(!bad["compile_errors"].as_array().unwrap().is_empty());
+    }
+
+    async fn validate_at(yaml: &str, fail_level: FailLevel) -> Value {
+        handler()
+            .run_validate_rules(ValidateInput {
+                yaml: Some(yaml.to_string()),
+                path: None,
+                pipelines: vec![],
+                resolve_sources: false,
+                fail_level,
+            })
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn validate_rules_fail_level_decides_whether_warnings_fail() {
+        let warned = VALID_RULE.replace("status: test", "status: bogus");
+
+        let lenient = validate_at(&warned, FailLevel::Error).await;
+        assert_eq!(lenient["ok"], true);
+        assert_eq!(lenient["parse_errors"], json!([]));
+        assert_eq!(
+            lenient["parse_warnings"],
+            json!(["invalid status: 'bogus'"])
+        );
+        assert_eq!(lenient["summary"]["parse_errors"], 0);
+        assert_eq!(lenient["summary"]["parse_warnings"], 1);
+
+        let strict = validate_at(&warned, FailLevel::Warning).await;
+        assert_eq!(strict["ok"], false);
+
+        let clean = validate_at(VALID_RULE, FailLevel::Warning).await;
+        assert_eq!(clean["ok"], true);
+    }
+
+    #[test]
+    fn fail_level_defaults_to_error() {
+        let input: ValidateInput = serde_json::from_value(json!({ "yaml": "x" })).unwrap();
+        assert_eq!(input.fail_level, FailLevel::Error);
+        let input: ValidateInput =
+            serde_json::from_value(json!({ "yaml": "x", "fail_level": "warning" })).unwrap();
+        assert_eq!(input.fail_level, FailLevel::Warning);
     }
 }

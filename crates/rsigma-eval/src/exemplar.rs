@@ -279,7 +279,7 @@ fn run_detection(
         rules: vec![rule.clone()],
         correlations: Vec::new(),
         filters: collection.filters.clone(),
-        errors: Vec::new(),
+        diagnostics: Vec::new(),
     };
     let mut engine = Engine::new();
     if pipelines.is_empty() {
