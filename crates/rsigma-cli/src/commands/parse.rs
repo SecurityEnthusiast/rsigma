@@ -41,7 +41,7 @@ pub(crate) fn cmd_parse(args: ParseArgs, ctx: OutputCtx) {
     let ParseArgs { path, pretty } = args;
     match parse_sigma_file(&path) {
         Ok(collection) => {
-            crate::print_warnings(&collection.errors);
+            crate::print_warnings(&collection.diagnostics);
             emit_ast("rule parse", &ctx, &collection, pretty);
         }
         Err(e) => {
@@ -75,7 +75,7 @@ pub(crate) fn cmd_stdin(args: StdinArgs, ctx: OutputCtx) {
 
     match parse_sigma_yaml(&input) {
         Ok(collection) => {
-            crate::print_warnings(&collection.errors);
+            crate::print_warnings(&collection.diagnostics);
             emit_ast("rule stdin", &ctx, &collection, pretty);
         }
         Err(e) => {

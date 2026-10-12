@@ -85,7 +85,7 @@ level: low
         "first valid rule should be collected"
     );
     assert!(
-        !collection.errors.is_empty(),
+        collection.has_errors(),
         "second doc's error should be reported"
     );
 }
@@ -104,13 +104,13 @@ level: high
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(
-        !collection.errors.is_empty(),
+        collection.has_errors(),
         "missing correlation type should produce an error"
     );
     assert!(
-        collection.errors[0].contains("type"),
+        collection.diagnostics[0].message.contains("type"),
         "error message should mention 'type', got: {}",
-        collection.errors[0]
+        collection.diagnostics[0]
     );
 }
 
@@ -128,10 +128,10 @@ level: high
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(
-        !collection.errors.is_empty(),
+        collection.has_errors(),
         "missing timespan should produce an error"
     );
-    let err = &collection.errors[0];
+    let err = &collection.diagnostics[0].message;
     assert!(
         err.contains("timespan") || err.contains("timeframe"),
         "error should mention timespan/timeframe, got: {err}"

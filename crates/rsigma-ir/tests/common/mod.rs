@@ -65,8 +65,8 @@ pub fn engine_from(yaml: &str) -> Engine {
 /// contradiction fixtures that expect Err whichever layer rejects them.
 pub fn try_compile(yaml: &str) -> Result<(), String> {
     let collection = parse_sigma_yaml(yaml).expect("fixture YAML must parse");
-    if let Some(err) = collection.errors.first() {
-        return Err(err.clone());
+    if let Some(err) = collection.errors().next() {
+        return Err(err.to_string());
     }
     Engine::new()
         .add_collection(&collection)

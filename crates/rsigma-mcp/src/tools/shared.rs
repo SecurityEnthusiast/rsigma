@@ -14,13 +14,21 @@ use rmcp::{
 use rsigma_convert::Backend;
 use rsigma_eval::{MatchDetailLevel, Pipeline, parse_pipeline_file, resolve_builtin_pipeline};
 use rsigma_parser::{
-    LintWarning, SigmaCollection, parse_sigma_directory, parse_sigma_file, parse_sigma_yaml,
+    CollectionDiagnostic, LintWarning, SigmaCollection, parse_sigma_directory, parse_sigma_file,
+    parse_sigma_yaml,
 };
 use serde_json::{Value, json};
 
 use crate::input::{ensure_no_symlinks, resolve_confined_path};
 
 use super::RsigmaMcp;
+
+/// The messages of a run of collection diagnostics, in order.
+pub(crate) fn diagnostic_messages<'a>(
+    diagnostics: impl Iterator<Item = &'a CollectionDiagnostic>,
+) -> Vec<String> {
+    diagnostics.map(ToString::to_string).collect()
+}
 
 /// Input that accepts inline YAML xor a file path.
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]

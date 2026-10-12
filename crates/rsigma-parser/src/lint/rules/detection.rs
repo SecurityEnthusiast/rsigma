@@ -1554,7 +1554,7 @@ level: medium
         for (key, value) in cases {
             let yaml = field_rule(key, value);
             let parser_rejects = crate::parse_sigma_yaml(&yaml)
-                .map(|c| !c.errors.is_empty())
+                .map(|c| c.has_errors())
                 .unwrap_or(true);
             let lint_rejects = has_rule(&lint(&yaml), LintRule::IncompatibleModifiers);
             assert_eq!(lint_rejects, parser_rejects, "{key}: {value}");

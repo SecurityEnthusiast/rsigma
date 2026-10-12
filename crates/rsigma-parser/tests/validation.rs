@@ -21,15 +21,20 @@ fn parse_error(yaml: &str) -> String {
         collection.rules.is_empty(),
         "expected a parse error for:\n{yaml}"
     );
-    collection.errors.join("\n")
+    collection
+        .diagnostics
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn assert_parses(yaml: &str) {
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(
-        collection.errors.is_empty() && collection.rules.len() == 1,
+        collection.diagnostics.is_empty() && collection.rules.len() == 1,
         "expected a clean parse for:\n{yaml}\nerrors: {:?}",
-        collection.errors
+        collection.diagnostics
     );
 }
 
@@ -229,7 +234,12 @@ fn filter_rules_are_validated() {
 fn parse_error_any(yaml: &str) -> String {
     let collection = parse_sigma_yaml(yaml).unwrap();
     assert!(collection.is_empty(), "expected a parse error for:\n{yaml}");
-    collection.errors.join("\n")
+    collection
+        .diagnostics
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[test]

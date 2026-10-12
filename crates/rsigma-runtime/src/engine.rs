@@ -666,13 +666,22 @@ fn load_collection(path: &Path) -> Result<SigmaCollection, String> {
             .map_err(|e| format!("Error loading rule {}: {e}", path.display()))?
     };
 
-    if !collection.errors.is_empty() {
+    if collection.has_errors() {
         tracing::warn!(
-            count = collection.errors.len(),
+            count = collection.error_count(),
             "Parse errors while loading rules"
         );
-        for (i, err) in collection.errors.iter().take(3).enumerate() {
+        for (i, err) in collection.errors().take(3).enumerate() {
             tracing::warn!(index = i + 1, error = %err, "Rule parse error detail");
+        }
+    }
+    if collection.warning_count() > 0 {
+        tracing::warn!(
+            count = collection.warning_count(),
+            "Parse warnings while loading rules"
+        );
+        for (i, warning) in collection.warnings().take(3).enumerate() {
+            tracing::warn!(index = i + 1, warning = %warning, "Rule parse warning detail");
         }
     }
 

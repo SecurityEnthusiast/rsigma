@@ -4,7 +4,10 @@ use std::process;
 
 use clap::Args;
 use rsigma_eval::Engine;
-use rsigma_parser::{SigmaCollection, SigmaParserError, parse_sigma_directory, parse_sigma_file};
+use rsigma_parser::{
+    CollectionDiagnostic, SigmaCollection, SigmaParserError, parse_sigma_directory,
+    parse_sigma_file,
+};
 use serde::Serialize;
 
 use crate::output::{OutputCtx, OutputFormat, Tabular, render_report};
@@ -99,7 +102,9 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
             Err(SigmaParserError::Io(e)) => Err(SigmaParserError::Io(e)),
             Err(e) => {
                 let mut collection = SigmaCollection::new();
-                collection.errors.push(format!("{}: {e}", path.display()));
+                collection
+                    .diagnostics
+                    .push(CollectionDiagnostic::file(&path, &e));
                 Ok(collection)
             }
             ok => ok,
@@ -112,7 +117,7 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
             let rules = collection.rules.len();
             let correlations = collection.correlations.len();
             let filters = collection.filters.len();
-            let parse_errors = collection.errors.len();
+            let parse_errors = collection.diagnostics.len();
 
             let mut engine = Engine::new();
             for p in &pipelines {
@@ -135,8 +140,11 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
                 .collect();
             compile_errors.extend(validate_correlation_references(&collection));
 
-            let parse_error_msgs: Vec<String> =
-                collection.errors.iter().map(|e| e.to_string()).collect();
+            let parse_error_msgs: Vec<String> = collection
+                .diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect();
 
             let summary = ValidateSummary {
                 path: path.display().to_string(),
@@ -211,9 +219,9 @@ pub(crate) fn cmd_validate(args: ValidateArgs, ctx: OutputCtx) {
                 println!("  Compile errors:    {}", compile_errors.len());
 
                 if verbose {
-                    if !collection.errors.is_empty() {
+                    if !collection.diagnostics.is_empty() {
                         println!("\nParse errors:");
-                        for err in &collection.errors {
+                        for err in &collection.diagnostics {
                             println!("  - {err}");
                         }
                     }

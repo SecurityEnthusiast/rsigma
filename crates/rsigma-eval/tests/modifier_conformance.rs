@@ -23,8 +23,8 @@ fn try_engine_with(detection: &str, pipeline: Option<&str>) -> Result<Engine, St
         "title: t\nlogsource: {{category: test}}\ndetection:\n{detection}\n  condition: selection\n"
     );
     let collection = parse_sigma_yaml(&yaml).map_err(|e| e.to_string())?;
-    if let Some(error) = collection.errors.first() {
-        return Err(error.clone());
+    if let Some(error) = collection.errors().next() {
+        return Err(error.to_string());
     }
     let mut engine = Engine::new();
     if let Some(pipeline) = pipeline {

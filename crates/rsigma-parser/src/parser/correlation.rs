@@ -4,6 +4,7 @@ use yaml_serde::Value;
 
 use crate::ast::*;
 use crate::condition::parse_condition;
+use crate::diagnostic::CollectionDiagnostic;
 use crate::error::{Result, SigmaParserError};
 use crate::value::Timespan;
 
@@ -25,7 +26,7 @@ use super::{
 /// Reference: pySigma correlations.py SigmaCorrelationRule.from_dict
 pub(super) fn parse_correlation_rule(
     value: &Value,
-    warnings: &mut Vec<String>,
+    warnings: &mut Vec<CollectionDiagnostic>,
 ) -> Result<CorrelationRule> {
     let m = value
         .as_mapping()

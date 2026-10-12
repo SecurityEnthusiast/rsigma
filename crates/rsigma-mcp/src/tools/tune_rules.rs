@@ -176,7 +176,10 @@ impl RsigmaMcp {
         if collection.has_errors() {
             return Err(TuneLoadError::Content(format!(
                 "rule collection contains parse errors: {:?}",
-                collection.errors
+                collection
+                    .errors()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
             )));
         }
         Ok(collection)
@@ -276,7 +279,12 @@ fn load_rule_directory(root: &Path) -> Result<SigmaCollection, TuneLoadError> {
         collection.rules.extend(parsed.rules);
         collection.correlations.extend(parsed.correlations);
         collection.filters.extend(parsed.filters);
-        collection.errors.extend(parsed.errors);
+        collection.diagnostics.extend(
+            parsed
+                .diagnostics
+                .into_iter()
+                .map(|diagnostic| diagnostic.with_path(&path)),
+        );
     }
     Ok(collection)
 }

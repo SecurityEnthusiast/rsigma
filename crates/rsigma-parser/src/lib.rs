@@ -59,6 +59,7 @@
 pub mod ads;
 pub mod ast;
 pub mod condition;
+pub mod diagnostic;
 pub mod emit;
 pub mod error;
 pub mod exemplar;
@@ -83,8 +84,9 @@ pub use ast::{
     SelectorPattern, SigmaCollection, SigmaDocument, SigmaRule, Status, WindowMode,
 };
 pub use condition::parse_condition;
+pub use diagnostic::{CollectionDiagnostic, DiagnosticKind, DiagnosticSeverity};
 pub use emit::{emit_collection_yaml, emit_rule_yaml};
-pub use error::{Result, SigmaParserError, SourceLocation};
+pub use error::{Result, SigmaParserError, SigmaParserErrorKind, SourceLocation};
 pub use exemplar::{
     EXEMPLARS_KEY, Exemplar, ExemplarErrorKind, ExemplarPayload, ExemplarRuleKind,
     ExemplarShapeError, Expect, TimedEvent, correlation_exemplars, exemplars, exemplars_from_attrs,

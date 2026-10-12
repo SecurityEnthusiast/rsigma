@@ -1470,8 +1470,7 @@ correlation:
         assert!(collection.correlations.is_empty());
         assert!(
             collection
-                .errors
-                .iter()
+                .errors()
                 .any(|error| error.to_string().contains("requires 'field'"))
         );
     }

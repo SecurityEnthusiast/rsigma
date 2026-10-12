@@ -39,7 +39,11 @@ detection:
 level: low
 "#;
     let collection = parse_sigma_yaml(yaml).unwrap();
-    assert!(collection.errors.is_empty(), "{:?}", collection.errors);
+    assert!(
+        collection.diagnostics.is_empty(),
+        "{:?}",
+        collection.diagnostics
+    );
     let err = Engine::new().add_collection(&collection).unwrap_err();
     assert!(
         matches!(err, EvalError::InvalidRegex(_)),

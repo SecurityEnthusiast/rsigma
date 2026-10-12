@@ -9,7 +9,7 @@ use rsigma_eval::{CorrelationConfig, CorrelationEngine, Engine, Pipeline};
 use serde_json::{Value, json};
 
 use super::RsigmaMcp;
-use super::shared::json_result;
+use super::shared::{diagnostic_messages, json_result};
 
 /// Input for `validate_rules`.
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -75,7 +75,7 @@ impl RsigmaMcp {
             }
         }
 
-        let ok = collection.errors.is_empty()
+        let ok = collection.diagnostics.is_empty()
             && compile_errors.is_empty()
             && correlation_error.is_none()
             && source_errors.is_empty();
@@ -86,10 +86,10 @@ impl RsigmaMcp {
                 "detection_rules": collection.rules.len(),
                 "correlation_rules": collection.correlations.len(),
                 "filter_rules": collection.filters.len(),
-                "parse_errors": collection.errors.len(),
+                "parse_errors": collection.diagnostics.len(),
                 "compile_errors": compile_errors.len(),
             },
-            "parse_errors": collection.errors,
+            "parse_errors": diagnostic_messages(collection.diagnostics.iter()),
             "compile_errors": compile_errors,
             "correlation_error": correlation_error,
             "source_errors": source_errors,

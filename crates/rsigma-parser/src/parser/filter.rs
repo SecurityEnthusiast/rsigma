@@ -1,6 +1,7 @@
 use yaml_serde::Value;
 
 use crate::ast::*;
+use crate::diagnostic::CollectionDiagnostic;
 use crate::error::{Result, SigmaParserError};
 
 use super::detection::parse_detections;
@@ -18,7 +19,10 @@ use super::{
 /// `warnings` receives non-fatal issues (invalid `status` / `level`
 /// values, malformed `related:` entries); see
 /// [`parse_detection_rule`](super::detection::parse_detection_rule).
-pub(super) fn parse_filter_rule(value: &Value, warnings: &mut Vec<String>) -> Result<FilterRule> {
+pub(super) fn parse_filter_rule(
+    value: &Value,
+    warnings: &mut Vec<CollectionDiagnostic>,
+) -> Result<FilterRule> {
     let m = value
         .as_mapping()
         .ok_or_else(|| SigmaParserError::InvalidRule("Expected a YAML mapping".into()))?;

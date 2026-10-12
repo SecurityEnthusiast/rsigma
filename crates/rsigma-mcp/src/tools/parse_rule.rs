@@ -8,7 +8,7 @@ use rsigma_parser::parse_sigma_yaml;
 use serde_json::{Value, json};
 
 use super::RsigmaMcp;
-use super::shared::{SourceInput, json_result};
+use super::shared::{SourceInput, diagnostic_messages, json_result};
 
 #[tool_router(router = parse_rule_router, vis = "pub(crate)")]
 impl RsigmaMcp {
@@ -27,13 +27,14 @@ impl RsigmaMcp {
         let (source, _) = self.load_source(input.yaml.as_deref(), input.path.as_deref())?;
         Ok(match parse_sigma_yaml(&source) {
             Ok(collection) => json!({
-                // `parse_sigma_yaml` records syntax errors in `errors` rather
-                // than returning `Err`, so `ok` reflects whether parsing was clean.
-                "ok": collection.errors.is_empty(),
+                // `parse_sigma_yaml` records syntax errors as diagnostics
+                // rather than returning `Err`, so `ok` reflects whether parsing
+                // was clean.
+                "ok": collection.diagnostics.is_empty(),
                 "rule_count": collection.rules.len(),
                 "correlation_count": collection.correlations.len(),
                 "filter_count": collection.filters.len(),
-                "parse_errors": collection.errors,
+                "parse_errors": diagnostic_messages(collection.diagnostics.iter()),
                 "collection": collection,
             }),
             Err(e) => json!({ "ok": false, "error": e.to_string() }),
