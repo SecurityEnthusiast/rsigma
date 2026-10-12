@@ -239,3 +239,125 @@ fn validate_accepts_a_reference_to_a_rule_whose_name_equals_its_own_id() {
         .success()
         .stdout(predicate::str::contains("Compile errors:    0"));
 }
+
+fn warned_rule() -> tempfile::NamedTempFile {
+    temp_file(
+        ".yml",
+        &SIMPLE_RULE.replace("status: test", "status: bogus"),
+    )
+}
+
+#[test]
+fn validate_parse_warning_passes_by_default() {
+    let rule = warned_rule();
+    rsigma()
+        .args([
+            "rule",
+            "validate",
+            rule.path().to_str().unwrap(),
+            "--verbose",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Parse errors:      0"))
+        .stdout(predicate::str::contains("Parse warnings:    1"))
+        .stdout(predicate::str::contains(
+            "Parse warnings:\n  - invalid status: 'bogus'",
+        ))
+        .stdout(predicate::str::contains("Compiled OK:       1"));
+}
+
+#[test]
+fn validate_fail_level_warning_fails_on_parse_warning() {
+    let rule = warned_rule();
+    rsigma()
+        .args([
+            "rule",
+            "validate",
+            rule.path().to_str().unwrap(),
+            "--fail-level",
+            "warning",
+        ])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::contains("Parse warnings:    1"));
+}
+
+#[test]
+fn validate_fail_level_warning_passes_a_clean_rule() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    rsigma()
+        .args([
+            "rule",
+            "validate",
+            rule.path().to_str().unwrap(),
+            "--fail-level",
+            "warning",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn validate_fail_level_rejects_info() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    rsigma()
+        .args([
+            "rule",
+            "validate",
+            rule.path().to_str().unwrap(),
+            "--fail-level",
+            "info",
+        ])
+        .assert()
+        .code(predicate::ne(0))
+        .stderr(predicate::str::contains("invalid value 'info'"));
+}
+
+#[test]
+fn validate_json_reports_parse_warnings_separately() {
+    let rule = warned_rule();
+    let output = rsigma()
+        .args([
+            "--output-format",
+            "json",
+            "rule",
+            "validate",
+            rule.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["summary"]["parse_errors"], 0);
+    assert_eq!(report["summary"]["parse_warnings"], 1);
+    assert_eq!(report["parse_errors"], serde_json::json!([]));
+    assert_eq!(
+        report["parse_warnings"],
+        serde_json::json!(["invalid status: 'bogus'"])
+    );
+}
+
+#[test]
+fn validate_ndjson_marks_parse_warning_rows() {
+    let rule = warned_rule();
+    let output = rsigma()
+        .args([
+            "--output-format",
+            "ndjson",
+            "rule",
+            "validate",
+            rule.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let rows: Vec<serde_json::Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0]["status"], "parse_warning");
+    assert_eq!(rows[0]["errors"], "invalid status: 'bogus'");
+}
