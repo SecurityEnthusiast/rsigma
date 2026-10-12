@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### PostgreSQL JSONB rendering lives in its own module
+
+The PostgreSQL backend renders JSONB field paths and array object-scope matches (`field[any]`, `field[all]`, `field[all_or_empty]`, `field[none]`) in a private `jsonb` module, with its tests beside it and new unit tests for negative and leading indexes and for malformed bracket paths. Generated SQL is byte-identical for the SigmaHQ ruleset and for array rules, with and without a JSONB column.
+
 ### PostgreSQL correlation conversion lives in one module (#567)
 
 The PostgreSQL backend builds correlation queries in its `correlation` module, which now also holds the window-mode resolution and the per-type query selection that used to sit in the `Backend` impl. The aggregate and temporal query builders are private to that module. Generated SQL is byte-identical for every output format, window mode, and `correlation_method`.
