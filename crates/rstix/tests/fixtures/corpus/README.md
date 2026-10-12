@@ -4,12 +4,12 @@ Large ATT&CK bundles are **not committed** to the repository. Env-gated integrat
 
 | Location | Used when |
 |----------|-----------|
-| `RSTIX_ATTCK_BUNDLE` | Explicit path to a bundle file (**must exist** — test fails if missing) |
+| `RSTIX_ATTCK_BUNDLE` | Explicit path to a bundle file (**must exist:** test fails if missing) |
 | `tests/fixtures/corpus/enterprise-attack-19.2.json` | Default when the env var is unset (**skip** if missing) |
 
 ## Pinned release
 
-**`enterprise-attack-19.2.json`** — MITRE ATT&CK Enterprise STIX 2.1 (~51 MiB).
+**`enterprise-attack-19.2.json`:** MITRE ATT&CK Enterprise STIX 2.1 (~51 MiB).
 
 Download:
 

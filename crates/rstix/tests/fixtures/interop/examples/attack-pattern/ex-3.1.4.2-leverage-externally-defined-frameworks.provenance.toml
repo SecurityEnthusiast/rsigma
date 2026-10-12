@@ -16,12 +16,12 @@ description = "Wrap identity, malware, relationship, and attack-pattern objects 
 [[divergence_recorded]]
 site = "objects[1].id"
 defect = 21
-description = "Published malware id malware--1121ffbc-364f-857a-9987-92fbcff24ab has an 11-hex final UUID group (need 12). Not repaired — would invent a digit. Expected to fail STIX id parse."
+description = "Published malware id malware--1121ffbc-364f-857a-9987-92fbcff24ab has an 11-hex final UUID group (need 12). Not repaired, because that would invent a digit. Expected to fail STIX id parse."
 
 [[divergence_recorded]]
 site = "objects[2].id"
 defect = 21
-description = "Published relationship id relationship--11220001-3940-0405-20ff-1029b0bc922 has an 11-hex final UUID group (need 12). Not repaired — would invent a digit. Expected to fail STIX id parse."
+description = "Published relationship id relationship--11220001-3940-0405-20ff-1029b0bc922 has an 11-hex final UUID group (need 12). Not repaired, because that would invent a digit. Expected to fail STIX id parse."
 
 [[divergence_recorded]]
 site = "objects[2].source_ref"

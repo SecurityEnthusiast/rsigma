@@ -5,7 +5,7 @@
 1. **Legacy single-underscore names** bound to specific clap flags (`NATS_CREDS`, `RSIGMA_CONSUMER_GROUP`, `RSIGMA_TLS_KEY_PASSWORD`, …). These are how secrets stay out of process tables and shell history.
 2. **Uniform `RSIGMA_<SECTION>__<KEY>`** names that mirror every non-secret config-file key, using `__` as the nesting separator. See [Configuration](configuration.md#environment-layer) for the full scheme and examples.
 
-Every variable here has a corresponding `--flag` that takes precedence.
+Every variable in the table has a corresponding `--flag` that takes precedence, except `RAYON_NUM_THREADS`, which rayon reads directly and which has no CLI flag.
 
 ## Variables
 
@@ -20,7 +20,8 @@ Every variable here has a corresponding `--flag` that takes precedence.
 | `RSIGMA_MCP_AUTH_TOKEN` | string | unset | `mcp serve --http` | Static bearer token required on every HTTP request (`Authorization: Bearer <token>`). Equivalent to `--auth-token`. Secret: flag/env only, never read from config files. |
 | `RSIGMA_MCP_DAEMON_TOKEN` | string | unset | `mcp serve --daemon-url` | Bearer token the MCP server sends to the daemon (`Authorization: Bearer <token>`). Equivalent to `--daemon-token`. Secret: flag/env only, never read from config files. {{ added "0.22.0" }} |
 | `RSIGMA_CONSUMER_GROUP` | string | unset | `engine daemon` with `--input nats://` | NATS JetStream consumer group name. Equivalent to `--consumer-group`. Multiple daemons sharing the same group name load-balance across a single durable pull consumer. |
-| `RSIGMA_DETECT_INFLIGHT` | integer 1–8 | scales with rayon (1 on one worker, up to 5 on eight or more) | `engine daemon` | Maximum detection-only batches evaluated concurrently when the loaded rule set has no correlation rules. Sink and ack order stay sequential via a sequence-numbered reducer. Ignored (forced to 1) when correlation rules are present. |
+| `RAYON_NUM_THREADS` | integer | unset (rayon uses available parallelism) | `engine daemon` | Worker count for the rayon pool used by detection and formatted-input parsing. The daemon also uses this value, when set, as the worker count behind the default for `RSIGMA_DETECT_INFLIGHT`. See [Performance tuning](../guide/performance-tuning.md). |
+| `RSIGMA_DETECT_INFLIGHT` | integer 1-8 | scales with rayon (1 on one worker, up to 5 on eight or more) | `engine daemon` | Maximum detection-only batches evaluated concurrently when the loaded rule set has no correlation rules. Sink and ack order stay sequential via a sequence-numbered reducer. Ignored (forced to 1) when correlation rules are present. |
 | `RSIGMA_TLS_KEY_PASSWORD` | string | unset | `engine daemon` with `--tls-key` | Password for an encrypted TLS key. Currently rejected at startup with a clear error; decrypt the key first (`openssl rsa -in key.pem -out key-decrypted.pem`). |
 | `RSIGMA_SIGMA_CLI` | path | unset | `backend convert`, `mcp serve` (with `--allow-sigma-cli`) | Override path to the external `sigma` executable used for delegated conversion. |
 | `RSIGMA_HUNT_DSN` | string | unset | `hunt run` | PostgreSQL connection string for hunt execution. Equivalent to `--dsn`; keeps the password out of `ps aux` and shell history. Secret: flag/env only, never read from config files. {{ added "0.22.0" }} |

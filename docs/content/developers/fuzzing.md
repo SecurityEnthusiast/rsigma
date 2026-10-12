@@ -1,6 +1,6 @@
 # Fuzzing
 
-The workspace ships 25 [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuzz.html) harnesses under `fuzz/fuzz_targets/`. The `Fuzz` GitHub Actions workflow runs 19 of them weekly (Monday 03:00 UTC) on `libFuzzer`; specialized differential and subsystem targets remain manual.
+The workspace ships 27 [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuzz.html) harnesses under `fuzz/fuzz_targets/`. The `Fuzz` GitHub Actions workflow runs 21 of them weekly (Monday 03:00 UTC) on `libFuzzer`; specialized differential and subsystem targets remain manual.
 
 ## Harness inventory
 
@@ -17,6 +17,7 @@ The workspace ships 25 [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuz
 | `fuzz_alert_pipeline_config` | Alert-pipeline configuration parser. | 4096 |
 | `fuzz_input_formats` | The line-format parser (auto-detect, JSON, syslog, logfmt, CEF, plain). | 4096 |
 | `fuzz_rule_tune` | False-positive-driven rule tuning over JSON FP and TP corpora. | 65536 |
+| `fuzz_draft_groups` | Correlation draft grouping over grouped timed events (`draft_correlation`). | 65536 |
 | `fuzz_extract_jq` | jq extract language. | 4096 |
 | `fuzz_extract_jsonpath` | JSONPath extract language. | 4096 |
 | `fuzz_extract_cel` | CEL extract language. | 4096 |
@@ -26,6 +27,7 @@ The workspace ships 25 [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuz
 | `fuzz_lint_fix` | Linter auto-fix application and reparsing. Not in the weekly matrix; run manually. | (default) |
 | `fuzz_scorecard_promtext` | Detection scorecard Prometheus text parser. Not in the weekly matrix; run manually. | (default) |
 | `fuzz_disposition_record` | Disposition record parsing. Not in the weekly matrix; run manually. | (default) |
+| `fuzz_capture_spool` | Disposition capture spool documents (`parse_manifest`, `parse_provenance`, `parse_corpus_events`). | 65536 |
 | `fuzz_risk_config` | Risk configuration parsing. Not in the weekly matrix; run manually. | (default) |
 | `fuzz_lucene_frontend` | Lucene reverse-conversion frontend. Not in the weekly matrix; run manually. | (default) |
 | `fuzz_stix_pattern` | STIX pattern parsing. | 4096 |

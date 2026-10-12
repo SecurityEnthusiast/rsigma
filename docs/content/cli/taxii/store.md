@@ -16,7 +16,7 @@ Use `--bundle -` to read bundle JSON from stdin.
 
 ## Description
 
-`taxii store` parses a STIX bundle from disk (or stdin) and imports it with [`FsStore::import_bundle`](../../library/rstix.md#rstix-graph-marking-store). Validation uses the same **`Validator::producer_strict()`** profile as [`taxii sync`](sync.md) — per-object validation before import, References phase skipped (appropriate for large bundles where refs resolve after the full import).
+`taxii store` parses a STIX bundle from disk (or stdin) and imports it with [`FsStore::import_bundle`](../../library/rstix.md#rstix-graph-marking-store). Validation uses the same **`Validator::producer_strict()`** profile as [`taxii sync`](sync.md), per-object validation before import, References phase skipped (appropriate for large bundles where refs resolve after the full import).
 
 Re-running against the same store is idempotent: unchanged objects increment `objects_deduplicated` rather than `objects_added`.
 
@@ -88,6 +88,6 @@ rsigma engine daemon -r rules/ \
 
 ## See also
 
-- [`taxii sync`](sync.md) — paginated TAXII collection ingest
+- [`taxii sync`](sync.md): paginated TAXII collection ingest
 - [Enrichers: STIX local store lookup](../../guide/enrichers.md#stix-local-stix-store-lookup)
 - [Feature flags: `taxii-sync`](../../reference/feature-flags.md#rsigma-cli)

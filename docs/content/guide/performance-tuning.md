@@ -121,7 +121,7 @@ These knobs only matter for the streaming daemon, not for `engine eval`.
 |------|---------|--------|
 | `--buffer-size N` | `10000` | Bounded mpsc capacity for both source→engine and engine→sink queues. Higher values absorb burstier input; lower values apply back-pressure sooner. Watch `rsigma_back_pressure_events_total` to see whether the queues are filling. |
 | `--batch-size N` | `128` | Maximum events per detection batch, capped at `--buffer-size`. The batch is the unit `Engine::evaluate_batch` fans across rayon. The published SigmaHQ baseline uses 512. |
-| `RSIGMA_DETECT_INFLIGHT` | scales with rayon (1–5) | How many detection-only batches may evaluate at once when the rule set has no correlation rules. A sequence-numbered reducer restores sink/ack order. Correlation engines ignore this and stay at 1. Cap is 8. |
+| `RSIGMA_DETECT_INFLIGHT` | scales with rayon (1-5) | How many detection-only batches may evaluate at once when the rule set has no correlation rules. A sequence-numbered reducer restores sink/ack order. Correlation engines ignore this and stay at 1. Cap is 8. |
 
 A typical high-throughput configuration:
 
@@ -190,13 +190,13 @@ Window modes (`sliding`/`tumbling`/`session`) have identical per-event cost; the
 
 Two workload shapes deserve attention:
 
-- **`value_count` with high-cardinality values.** Every `(timestamp, value)` pair is retained for the window, and the distinct count is recomputed per event over the whole window — O(window size) per event. At 1,800 distinct values per window, measured throughput drops from ~1.1M to 63K events/s. CPU collapses before memory does. Prefer `event_count` where distinctness is not actually required, shorten the window, or set `--max-group-entries` to bound the retained pairs.
+- **`value_count` with high-cardinality values.** Every `(timestamp, value)` pair is retained for the window, and the distinct count is recomputed per event over the whole window: O(window size) per event. At 1,800 distinct values per window, measured throughput drops from ~1.1M to 63K events/s. CPU collapses before memory does. Prefer `event_count` where distinctness is not actually required, shorten the window, or set `--max-group-entries` to bound the retained pairs.
 - **Group-key cardinality floods.** Under cap pressure the stalest groups are evicted first, so a burst of unique keys can push a slow-burning session out of state before it completes. The eviction warning in the log is the tripwire; raise `--max-state-entries` if the warning fires during legitimate traffic.
 
 Watch:
 
-- `rsigma_correlation_state_entries` (Prometheus gauge) — current size.
-- `tracing` warnings tagged `rsigma_eval::correlation_engine` (the `correlation memory pressure` span) — eviction events.
+- `rsigma_correlation_state_entries` (Prometheus gauge): current size.
+- `tracing` warnings tagged `rsigma_eval::correlation_engine` (the `correlation memory pressure` span): eviction events.
 
 Tune by:
 

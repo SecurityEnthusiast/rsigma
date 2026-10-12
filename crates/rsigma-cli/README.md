@@ -97,7 +97,7 @@ The session enforces `default_transaction_read_only` and a statement timeout; th
 
 Persist objects under a local [`FsStore`](https://rsigma.io/library/rstix/#rstix-graph-marking-store) directory. Requires the **`taxii-sync`** feature (included in prebuilt `--all-features` binaries). Both commands use **`Validator::producer_strict()`** validate-on-ingest; default **`--strict`** exits **1** when validation rejects objects. Re-import is idempotent (`objects_deduplicated`).
 
-**Network ingest** — paginated TAXII collection fetch (`--limit`, default **64**):
+**Network ingest:** paginated TAXII collection fetch (`--limit`, default **64**):
 
 ```bash
 rsigma taxii sync \
@@ -108,7 +108,7 @@ rsigma taxii sync \
   --allow-custom
 ```
 
-**Local bundle file** — air-gap, MITRE ATT&CK JSON releases, fixtures (`--allow-custom` for `x-mitre-*` types):
+**Local bundle file:** air-gap, MITRE ATT&CK JSON releases, fixtures (`--allow-custom` for `x-mitre-*` types):
 
 ```bash
 rsigma taxii store \
@@ -117,9 +117,9 @@ rsigma taxii store \
   --allow-custom
 ```
 
-For TAXII feeds that require auth, pass `--bearer-token`, `--basic-user` with `--basic-password` (or `RSIGMA_TAXII_BASIC_PASSWORD`), or `--api-key` — at most one method. See [taxii sync](https://rsigma.io/cli/taxii/sync/) and [taxii store](https://rsigma.io/cli/taxii/store/).
+For TAXII feeds that require auth, pass `--bearer-token`, `--basic-user` with `--basic-password` (or `RSIGMA_TAXII_BASIC_PASSWORD`), or `--api-key`. At most one method. See [taxii sync](https://rsigma.io/cli/taxii/sync/) and [taxii store](https://rsigma.io/cli/taxii/store/).
 
-Point the daemon at the same directory with **`--stix-store`** and a `type: stix` enricher (`stix-enrich` feature) to attach store intel to firings — see [Enrichers](https://rsigma.io/guide/enrichers/#stix-local-stix-store-lookup).
+Point the daemon at the same directory with **`--stix-store`** and a `type: stix` enricher (`stix-enrich` feature) to attach store intel to firings. See [Enrichers](https://rsigma.io/guide/enrichers/#stix-local-stix-store-lookup).
 
 ### `config`: YAML configuration
 
@@ -507,14 +507,14 @@ The per-rule labeled counters (`_by_rule_total`) enable per-rule alerting in Gra
 
 **Logging:** structured JSON to stderr, configurable via `RUST_LOG` environment variable (default: `info`). Useful filter targets:
 
-- `RUST_LOG=info,tower_http=debug` — HTTP API access logs (method, URI, status, latency) for every request to `/api/v1/*`, `/healthz`, `/metrics`.
-- `RUST_LOG=info,rsigma=debug` — verbose batch processing (`Batch processed` events with `batch_size`, `matches`, `elapsed_ms`), DLQ routing, source resolution timing, state snapshot duration, and OTLP per-request fields.
-- `RUST_LOG=info,rsigma_runtime::sources=debug` — dynamic source resolution and refresh scheduler details.
-- `RUST_LOG=info,rsigma_eval=debug` — correlation engine internals (chain depth limits, hard-cap eviction warnings already emit at `warn`).
+- `RUST_LOG=info,tower_http=debug`: HTTP API access logs (method, URI, status, latency) for every request to `/api/v1/*`, `/healthz`, `/metrics`.
+- `RUST_LOG=info,rsigma=debug`: verbose batch processing (`Batch processed` events with `batch_size`, `matches`, `elapsed_ms`), DLQ routing, source resolution timing, state snapshot duration, and OTLP per-request fields.
+- `RUST_LOG=info,rsigma_runtime::sources=debug`: dynamic source resolution and refresh scheduler details.
+- `RUST_LOG=info,rsigma_eval=debug`: correlation engine internals (chain depth limits, hard-cap eviction warnings already emit at `warn`).
 
-The `tracing` spans installed on hot paths (batch processing, source resolution, OTLP ingest, rule loading) double as profiling hooks consumable by `tokio-console` or `tracing-timing` without code changes—just swap in the corresponding subscriber layer.
+The `tracing` spans installed on hot paths (batch processing, source resolution, OTLP ingest, rule loading) double as profiling hooks consumable by `tokio-console` or `tracing-timing` without code changes. Swap in the corresponding subscriber layer.
 
-**CLI subcommand logging:** non-daemon subcommands (everything outside `rsigma engine daemon` — that is, `rsigma engine eval`, the `rsigma rule *` group, `rsigma backend *`, `rsigma pipeline resolve`) default to human-readable stdout/stderr output only. Pass the global `--log-format json` (or `--log-format text`) to additionally install a tracing subscriber on stderr for CI/log aggregation use cases. Verbosity follows `RUST_LOG` (default `info`). Human-readable output is unchanged when the flag is set.
+**CLI subcommand logging:** non-daemon subcommands (everything outside `rsigma engine daemon`, that is, `rsigma engine eval`, the `rsigma rule *` group, `rsigma backend *`, `rsigma pipeline resolve`) default to human-readable stdout/stderr output only. Pass the global `--log-format json` (or `--log-format text`) to additionally install a tracing subscriber on stderr for CI/log aggregation use cases. Verbosity follows `RUST_LOG` (default `info`). Human-readable output is unchanged when the flag is set.
 
 **State persistence:** when `--state-db` is set, correlation state (window entries, suppression timestamps, event buffers) is persisted to a SQLite database. State is loaded on startup, saved periodically (default every 30s, configurable via `--state-save-interval`), and saved on graceful shutdown. This allows correlation windows to survive daemon restarts. For example, an `event_count` correlation that saw 2 of 3 required events before a restart will resume from 2 after restarting. The database uses WAL journal mode and stores a single JSON snapshot row. Correlation entries are keyed by stable rule identifiers (id/name), so state survives rule reloads even if internal ordering changes.
 
@@ -1715,7 +1715,7 @@ The enrichment pipeline reports six Prometheus metrics:
 |---|---|---|
 | `rsigma_enrichment_total` | `enricher_id`, `kind`, `status` | Per-call outcome counter; `status` is `success` / `skip` / `error` / `timeout` / `drop` |
 | `rsigma_enrichment_duration_seconds` | `enricher_id`, `kind` | Per-enricher latency histogram |
-| `rsigma_enrichment_queue_depth` | – | Pending enrichment calls (sum across both kinds) |
+| `rsigma_enrichment_queue_depth` | none | Pending enrichment calls (sum across both kinds) |
 | `rsigma_enrichment_http_cache_hits_total` | `enricher_id` | HTTP enricher response-cache hits |
 | `rsigma_enrichment_http_cache_misses_total` | `enricher_id` | HTTP enricher response-cache misses |
 | `rsigma_enrichment_http_cache_expirations_total` | `enricher_id` | HTTP enricher response-cache entries evicted on expiry |

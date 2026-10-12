@@ -1,6 +1,6 @@
 # rsigma-runtime
 
-Streaming runtime for [rsigma](https://github.com/timescale/rsigma) — input format adapters, batch log processing, hot-reload, dynamic source resolution, and pluggable metrics.
+Streaming runtime for [rsigma](https://github.com/timescale/rsigma), input format adapters, batch log processing, hot-reload, dynamic source resolution, and pluggable metrics.
 
 ## Features
 

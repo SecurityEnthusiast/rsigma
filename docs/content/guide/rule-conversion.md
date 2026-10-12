@@ -359,7 +359,7 @@ rsigma backend convert rules/ -t lynxdb -p pipeline.yml
 
 ## Fibratus
 
-The Fibratus backend produces Fibratus rule YAML — the format consumed by [Fibratus](https://github.com/rabbitstack/fibratus), an Apache-2.0 kernel-event detection and EDR engine. Unlike the other two backends, Fibratus is a runtime sensor rather than a log store, so the converted rules drop directly into a Fibratus installation's `Rules/` directory and the upstream loader runs them in-place.
+The Fibratus backend produces Fibratus rule YAML, the format consumed by [Fibratus](https://github.com/rabbitstack/fibratus), an Apache-2.0 kernel-event detection and EDR engine. Unlike the other two backends, Fibratus is a runtime sensor rather than a log store, so the converted rules drop directly into a Fibratus installation's `Rules/` directory and the upstream loader runs them in-place.
 
 | Sigma feature | Fibratus syntax |
 |---------------|------------------|

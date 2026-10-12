@@ -44,11 +44,10 @@ rsigma config schema > /tmp/rsigma.schema.json
 check-jsonschema --schemafile /tmp/rsigma.schema.json rsigma.yaml
 ```
 
-Publish the schema for editor consumption alongside a release:
+The docs site publishes that schema at <https://rsigma.io/rsigma.schema.json>. [`config init`](init.md), the config template, and the systemd example already point `yaml-language-server` at that URL. The file in the repository is `docs/rsigma.schema.json`, copied to the site root when the docs build. It is the stdout of `rsigma config schema` from an `--all-features` build, which is how the release archives and the container image are built. Regenerate it when the config types change:
 
 ```bash
-rsigma config schema > rsigma.schema.json
-# Upload to a stable URL referenced by the `$schema` header in the template.
+cargo run -p rsigma --all-features -- config schema > docs/rsigma.schema.json
 ```
 
 ## See also

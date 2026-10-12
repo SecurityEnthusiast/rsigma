@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/timescale/rsigma/actions/workflows/ci.yml/badge.svg)](https://github.com/timescale/rsigma/actions/workflows/ci.yml)
 
-`rsigma-lsp` is a [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) (LSP) server that brings real-time [Sigma](https://github.com/SigmaHQ/sigma) rule development support to any editor — VSCode, Neovim, Helix, Zed, Emacs, and more. Built on the same parser, linter, and compiler as the CLI.
+`rsigma-lsp` is a [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) (LSP) server that brings real-time [Sigma](https://github.com/SigmaHQ/sigma) rule development support to any editor (VSCode, Neovim, Helix, Zed, Emacs, and more). Built on the same parser, linter, and compiler as the CLI.
 
 This binary is part of [rsigma].
 
@@ -27,7 +27,7 @@ cargo install --path crates/rsigma-lsp
 
 Diagnostics run through three layers, each adding errors from a different stage:
 
-### Layer 1 — Lint
+### Layer 1: Lint
 
 Runs all 90 lint rules from `rsigma-parser` (Sigma spec v2.1.0). Loads `.rsigma-lint.yml` config from ancestor directories and respects inline `# rsigma-disable` comments.
 
@@ -40,7 +40,7 @@ Runs all 90 lint rules from `rsigma-parser` (Sigma spec v2.1.0). Loads `.rsigma-
 
 Diagnostic `code`: the lint rule name (e.g. `missing_title`, `invalid_level`).
 
-### Layer 2 — Parse errors
+### Layer 2: Parse errors
 
 YAML and condition expression parse failures from `rsigma-parser`.
 
@@ -50,7 +50,7 @@ YAML and condition expression parse failures from `rsigma-parser`.
 | Code | `parse_error` |
 | Range | Extracted from `"at line X column Y"` in the error message, or falls back to the first content line |
 
-### Layer 3 — Compile errors
+### Layer 3: Compile errors
 
 Per-rule compilation errors from `rsigma-eval` (unknown selections, invalid modifier combos).
 

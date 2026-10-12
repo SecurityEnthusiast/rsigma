@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Documentation corrections (#558)
+
+The docs site publishes the config JSON Schema at `/rsigma.schema.json`, the URL the config template and deployment units already reference. The fuzzing guide lists all 27 harnesses, including the 21 the weekly workflow runs. `RAYON_NUM_THREADS` is documented with the other environment variables. The Prometheus catalogue size is 95 metric names, 90 of them registered without a feature gate. Prose that used an em dash, including older changelog entries and crate descriptions, now uses a comma, a colon, or a separate sentence. Characters that belong to the windash set are unchanged.
+
 ### Dependency follow-up (#556)
 
 Rolls up the compatible Dependabot PRs that opened after #550, with `Cargo.lock` regenerated against current `main`. Rust: `rmcp` 3.3.0 to 3.5.0 (#555), which renames the deprecated `ServerInfo` alias to `ServerConfig` in the MCP server handler, and `tokio-rustls` 0.26.5 to 0.26.6 (#554). CI: `taiki-e/install-action` v2.87.21 to v2.87.22, repinned by commit SHA (#553). VS Code: `@types/vscode` 1.138.0 to 1.140.0 (#552). Held back: `yamlpath` 1.30.1 (#495) and `yamlpatch` 1.30.1 (#494) require rustc 1.97 through `tree-sitter-iter`, above the 1.96.0 MSRV; `tikv-jemallocator` 0.7.0 (#425) remains excluded after the measured musl daemon throughput regression.
@@ -398,7 +402,7 @@ Workspace `rust-version` and `rust-toolchain.toml` move from 1.88.0 to 1.95.0. T
 
 ### rstix: TAXII 2.1 TXC interop self-certification (C-1) (#451, thanks to @SecurityEnthusiast)
 
-Adds an OASIS TAXII 2.1 Interoperability CSD01 (2022-03-30) **TXC** self-certification suite: all **39 Mandatory** §4.1 Table 51 rows as automated scenarios (wiremock mock TXS + local rustls mTLS for §3.1.3), with the **5 Optional** §3.13.2 rows as `REPORT_ONLY`. Scenarios assert CSD01 Tables 2–50 depth (`User-Agent`, `WWW-Authenticate` challenges, absolute/relative `api_roots`, collection id ordering, date-added headers, versions pagination via `added_after`, Status Table 28, envelope/Status `x_*` via `TaxiiEnvelope::with_custom`). Three-layer report gate matches STIX interop (export invariants, committed `gate-expectations.json`, `scripts/taxii-interop-report-gate.py`). CI job `rstix TAXII TXC interop self-certification` gates the package. Also fixes bugs the suite surfaced: preserve `added_after` when clock skew is unset (all three `with_clock_skew_*` helpers); pin rustls `ring` for mTLS when `ring` and `aws-lc-rs` are both linked; run scenarios in registry/section order (not lexicographic `test_id`); mint §3.1.3 PEMs in-process with `rcgen` so CI does not depend on gitignored `taxii-live` certs. Channels (TAXII §6 RESERVED) and TXS persona remain out of scope.
+Adds an OASIS TAXII 2.1 Interoperability CSD01 (2022-03-30) **TXC** self-certification suite: all **39 Mandatory** §4.1 Table 51 rows as automated scenarios (wiremock mock TXS + local rustls mTLS for §3.1.3), with the **5 Optional** §3.13.2 rows as `REPORT_ONLY`. Scenarios assert CSD01 Tables 2-50 depth (`User-Agent`, `WWW-Authenticate` challenges, absolute/relative `api_roots`, collection id ordering, date-added headers, versions pagination via `added_after`, Status Table 28, envelope/Status `x_*` via `TaxiiEnvelope::with_custom`). Three-layer report gate matches STIX interop (export invariants, committed `gate-expectations.json`, `scripts/taxii-interop-report-gate.py`). CI job `rstix TAXII TXC interop self-certification` gates the package. Also fixes bugs the suite surfaced: preserve `added_after` when clock skew is unset (all three `with_clock_skew_*` helpers); pin rustls `ring` for mTLS when `ring` and `aws-lc-rs` are both linked; run scenarios in registry/section order (not lexicographic `test_id`); mint §3.1.3 PEMs in-process with `rcgen` so CI does not depend on gitignored `taxii-live` certs. Channels (TAXII §6 RESERVED) and TXS persona remain out of scope.
 
 **Public API (breaking vs 0.21.0):**
 - `parse_www_authenticate` now keeps auth-params attached to their challenge (RFC 7235 / CSD01 Table 2). Callers that matched on `challenges.len()` or per-challenge `scheme` for multi-challenge headers will see fewer, correct challenges.
@@ -422,9 +426,9 @@ VS Code extension transitive security updates in `editors/vscode`: `undici` 7.29
 
 ### rstix: STIX interop self-certification CI gate (#440)
 
-CI runs a dedicated `rstix STIX interop self-certification` job that executes the full interop suite (every `TESTED` manifest row), stamps `generated_at` into `summary.json`, fails on a missing/stale/incomplete report via `scripts/interop-report-gate.py`, and uploads `target/interop-report/` (CSD01 §4.2 Tables 55/56, traceability CSV, risks). The gate validates artifact **content** (checklist cell results, traceability CSV row order and outcomes) against committed `gate-expectations.json`, not only file presence and row counts. Export invariants in the harness panic before writing a hollow report. That package is the operational SXP/SXC **self-certification** evidence against Interoperability **CSD01** — not an OASIS-issued certificate, and not a §4.1 product-persona claim.
+CI runs a dedicated `rstix STIX interop self-certification` job that executes the full interop suite (every `TESTED` manifest row), stamps `generated_at` into `summary.json`, fails on a missing/stale/incomplete report via `scripts/interop-report-gate.py`, and uploads `target/interop-report/` (CSD01 §4.2 Tables 55/56, traceability CSV, risks). The gate validates artifact **content** (checklist cell results, traceability CSV row order and outcomes) against committed `gate-expectations.json`, not only file presence and row counts. Export invariants in the harness panic before writing a hollow report. That package is the operational SXP/SXC **self-certification** evidence against Interoperability **CSD01**. It is not an OASIS-issued certificate, and not a §4.1 product-persona claim.
 
-### rstix: OASIS §3.3–§3.21 interop use-case tests (#438)
+### rstix: OASIS §3.3-§3.21 interop use-case tests (#438)
 
 Completes the remaining OASIS STIX 2.1 Interoperability CSD01 use-case modules beyond §3.1 Attack Pattern and §3.2 Campaign. Adds Producer/Consumer/example tests and manifest TESTED rows for Confidence, Course of Action, Data Markings, Grouping, Indicator, Infrastructure, Intrusion Set, Location, Malware Analysis, Malware, Note, Observed Data, Opinion, Report, Sighting, Threat Actor, Tool, Versioning, and Vulnerability (**21/21** use cases; **506** TESTED rows: 9 harness + 18 §2.3 + 479 use-case). `REQ-CHK-SXP-3.12` and `REQ-CHK-SXP-3.16` stay **BLOCKED** on published defects 19 and 16. Not OASIS SXP/SXC certification.
 
@@ -446,7 +450,7 @@ Aligns the published docmd site with current CLI flags, daemon auth and HTTP beh
 
 ### rstix: OASIS §3.2 Campaign interop use-case tests (#433)
 
-- Adds `tests/interop/use_cases/campaign/` covering §3.2.1–§3.2.6 against normative §3.2.3 fixtures and non-gating `examples/campaign/` data.
+- Adds `tests/interop/use_cases/campaign/` covering §3.2.1-§3.2.6 against normative §3.2.3 fixtures and non-gating `examples/campaign/` data.
 - §3.2.1 description scope is **TESTED**: normative fixtures expose typed Campaign “Green Group Attacks Against Finance”.
 - Producer `REQ-3.2-P-01`..`P-11`, Consumer `REQ-3.2-C-01`..`C-05`, checklist `REQ-CHK-SXP-3.2` / `REQ-CHK-SXC-3.2`, examples `REQ-3.2-EX-4.1` / `EX-4.2`.
 - Table 4 CSD01 typo (`type` = `threat-actor`) is documented; tests enforce STIX §4.2 `campaign`.
@@ -527,10 +531,10 @@ A wrong type prefix on a typed reference is now reported as such. `created_by_re
 
 ### rstix: OASIS §3.1 Attack Pattern interop use-case tests (#413)
 
-- Adds `tests/interop/use_cases/attack_pattern/` covering §3.1.1–§3.1.7 against normative §3.1.3 fixtures and non-gating `examples/attack-pattern/` data.
+- Adds `tests/interop/use_cases/attack_pattern/` covering §3.1.1-§3.1.7 against normative §3.1.3 fixtures and non-gating `examples/attack-pattern/` data.
 - §3.1.1 description scope is **TESTED** (not `REPORT_ONLY`): normative fixtures must expose typed Attack Pattern TTPs including the doc’s “Spear Phishing” example.
 - Producer `REQ-3.1-P-01`..`P-13`, Consumer `REQ-3.1-C-01`..`C-05`, checklist `REQ-CHK-SXC-3.1` / `REQ-CHK-SXP-3.1`, examples `REQ-3.1-EX-4.1` / `EX-4.2` / `EX-7.1`.
-- `ex-3.1.4.2` retains published truncated UUID ids (defect 21) and asserts parse rejection — no invented digits.
+- `ex-3.1.4.2` retains published truncated UUID ids (defect 21) and asserts parse rejection. No invented digits.
 - Each requirement row carries evidence distinct from its siblings: `P-04` runs `AttackPattern::validate` plus a strict bundle report instead of repeating the `P-01` gate, `C-04` reads fields through `QueryableStixObject` and validates typed leaves, and `REQ-CHK-SXC-3.1` closes `created_by_ref` to a typed Identity rather than re-validating producer data. `P-05` asserts the wire `type`, `P-11` and `P-12` require exactly three subsecond digits, and `EX-4.2` matches `ParseError::InvalidStixId(InvalidUuid)` instead of substring-matching the error text.
 - Adds `ParseError::InvalidStixId` so truncated or otherwise invalid STIX ids survive the serde boundary as typed errors (same tagging approach as `ModelError`).
 - Not OASIS SXP/SXC certification (**1/21** use cases).
@@ -666,16 +670,16 @@ Rolls up six open Dependabot PRs into a single merge. Rust (workspace `Cargo.loc
 
 ### rstix: STIX 2.1 wire conformance closure (#388)
 
-- **T0 MUST enforcement** — non-empty SDO `name` and grouping `context`; non-empty report, grouping, note, and opinion `object_refs`; `malware-analysis` time ordering; IPv4/IPv6/MAC address format; RFC 3986 URL validation; hash map keys in `HASH_ALGORITHM_ENUM` or `x_` extension form with known-algorithm value formats; artifact `encryption_algorithm` closed vocabulary aligned with STIX 2.1 §10.4.
-- **Open vocabulary (`*-ov`) at parse** — `grouping.context`, `malware-analysis.result`, and `windows-pebinary-ext.pe_type` accept any string at parse (STIX §2.14); suggested-vocabulary membership is reported as `STIX-I0001` (Info) and does not fail `Validator::interop_strict()`.
-- **`object_refs` / `language-content` refs** — bundle ref kind checks accept any STIX Object (SDO, SCO, SRO, Meta), not only SDO/SCO.
-- **Open vocabulary tables** — `vocab/open.rs` regenerated from normative STIX 2.1 §10 value tables.
-- **Validation Pipeline** — `STIX-I0001` open-vocabulary extensions default to Info severity (spec-legal custom values pass `interop_strict`); `STIX-I0002` relationship matrix remains Warning (fails `interop_strict`).
-- **Tests** — negative fixtures wired in `tests/spec.rs`; encryption moved from T1 warning to T0 parse error; pattern eval fixtures updated for valid hash values.
-- **§7.1.1 language-content** — keys for properties that do not exist on the target object are silently ignored at parse and validation (removed over-strict `LanguageContentFieldUnknown` rejection and advisory warnings); `object_modified` mismatch and translation mirroring for existing target fields remain MUST at parse.
-- **Unmodeled top-level properties** — restore bundle capture in `common.extra` / `Bundle::extra_properties()` instead of rejecting non-`x_` keys at parse (removed `UnknownTopLevelProperty`).
-- **§7.2.3 granular selectors** — selectors MUST resolve on object wire JSON at parse (unchanged).
-- **Docs** — README, library docs, plan audit files, and cursor rules aligned with MUST vs SHOULD vs ignore tiers.
+- **T0 MUST enforcement:** non-empty SDO `name` and grouping `context`; non-empty report, grouping, note, and opinion `object_refs`; `malware-analysis` time ordering; IPv4/IPv6/MAC address format; RFC 3986 URL validation; hash map keys in `HASH_ALGORITHM_ENUM` or `x_` extension form with known-algorithm value formats; artifact `encryption_algorithm` closed vocabulary aligned with STIX 2.1 §10.4.
+- **Open vocabulary (`*-ov`) at parse:** `grouping.context`, `malware-analysis.result`, and `windows-pebinary-ext.pe_type` accept any string at parse (STIX §2.14); suggested-vocabulary membership is reported as `STIX-I0001` (Info) and does not fail `Validator::interop_strict()`.
+- **`object_refs` / `language-content` refs:** bundle ref kind checks accept any STIX Object (SDO, SCO, SRO, Meta), not only SDO/SCO.
+- **Open vocabulary tables:** `vocab/open.rs` regenerated from normative STIX 2.1 §10 value tables.
+- **Validation Pipeline:** `STIX-I0001` open-vocabulary extensions default to Info severity (spec-legal custom values pass `interop_strict`); `STIX-I0002` relationship matrix remains Warning (fails `interop_strict`).
+- **Tests:** negative fixtures wired in `tests/spec.rs`; encryption moved from T1 warning to T0 parse error; pattern eval fixtures updated for valid hash values.
+- **§7.1.1 language-content:** keys for properties that do not exist on the target object are silently ignored at parse and validation (removed over-strict `LanguageContentFieldUnknown` rejection and advisory warnings); `object_modified` mismatch and translation mirroring for existing target fields remain MUST at parse.
+- **Unmodeled top-level properties:** restore bundle capture in `common.extra` / `Bundle::extra_properties()` instead of rejecting non-`x_` keys at parse (removed `UnknownTopLevelProperty`).
+- **§7.2.3 granular selectors:** selectors MUST resolve on object wire JSON at parse (unchanged).
+- **Docs:** README, library docs, plan audit files, and cursor rules aligned with MUST vs SHOULD vs ignore tiers.
 
 ### Documentation site analytics and privacy controls (#392)
 
@@ -692,16 +696,16 @@ Rolls up six open Dependabot PRs into a single merge. Rust (workspace `Cargo.loc
 
 ### rstix: TAXII collection ingest (`taxii-store` feature) (#387)
 
-- **`taxii-store`** — meta-feature (`taxii` + `store`).
-- **`ingest_collection`** / **`ingest_collection_with_bundle_id`** — paginated fetch with per-page `StixStore::import_objects` (bounded memory); merged `ImportReport` with final ref audit against the store.
-- **`IngestError`** — wraps `TaxiiError` and `StoreError`.
-- **TAXII capability checks** — with `CapabilityPolicy::Enforce`, collection `media_types` may include `application/taxii+json` or STIX 2.1 types; absent `media_types` defaults to `application/stix+json` (TAXII §5.2.1); API Root `max_content_length` must be a JSON integer > 0 (strict parse, no string coercion).
-- **`StixStore::import_bundle`** — unresolved refs are reported only when the target id is missing from both the imported bundle and the store (incremental TAXII ingest).
+- **`taxii-store`:** meta-feature (`taxii` + `store`).
+- **`ingest_collection`** / **`ingest_collection_with_bundle_id`:** paginated fetch with per-page `StixStore::import_objects` (bounded memory); merged `ImportReport` with final ref audit against the store.
+- **`IngestError`:** wraps `TaxiiError` and `StoreError`.
+- **TAXII capability checks:** with `CapabilityPolicy::Enforce`, collection `media_types` may include `application/taxii+json` or STIX 2.1 types; absent `media_types` defaults to `application/stix+json` (TAXII §5.2.1); API Root `max_content_length` must be a JSON integer > 0 (strict parse, no string coercion).
+- **`StixStore::import_bundle`:** unresolved refs are reported only when the target id is missing from both the imported bundle and the store (incremental TAXII ingest).
 
 ### rstix: TAXII DANE DNSSEC validation (`taxii` feature) (#381)
 
-- **`TaxiiClientConfig::dane_require_dnssec`** — default `true` when `ServerTrustPolicy::Dane`; DNSSEC-validates TLSA prefetch and SRV discovery (TAXII §8.5.2 SHOULD). Set `false` for unsigned lab DNS only.
-- **`DnsLookupOptions`** — `validate_dnssec` on `resolve_*_with_options` helpers (default `false` for standalone calls).
+- **`TaxiiClientConfig::dane_require_dnssec`:** default `true` when `ServerTrustPolicy::Dane`; DNSSEC-validates TLSA prefetch and SRV discovery (TAXII §8.5.2 SHOULD). Set `false` for unsigned lab DNS only.
+- **`DnsLookupOptions`:** `validate_dnssec` on `resolve_*_with_options` helpers (default `false` for standalone calls).
 
 [v0.20.0...v0.21.0](https://github.com/timescale/rsigma/compare/v0.20.0...v0.21.0)
 
@@ -718,25 +722,25 @@ RSigma v0.20.0 is the "intermediate representation, reverse conversion, and rsti
 
 ### rstix: TAXII 2.1 Client (`taxii` feature) (#373)
 
-- **`taxii`** — async HTTP client for TAXII 2.1 endpoint groups (discovery, API Root, collections, objects, manifest, versions, status). **Channels (§6) are RESERVED in the spec and not implemented.** Includes DNS SRV via `_taxii2._tcp` and `TaxiiClientConfig::dns_nameserver()` for custom resolvers.
-- **Wire format** — `TaxiiEnvelope` for object exchange (not `Bundle`); `Accept` / `Content-Type: application/taxii+json;version=2.1` on every request; manifest requests also accept STIX JSON; trailing-slash URL rules; HTTPS enforced by default (`allow_insecure_http` for tests); `max_content_length` enforced before POST.
-- **Pagination** — `TaxiiPaged<T>` returns page bodies plus `X-TAXII-Date-Added-First` / `Last` headers; cursor + header fallback on objects, manifest, object-by-id, and versions streams.
-- **Auth** — `BearerAuth`, `BasicAuth`, `ApiKeyHeader` via `TaxiiAuthProvider`; secrets use `secrecy::SecretString` with redacted `Debug`.
-- **Resilience** — `RetryPolicy` (503/429/network with backoff, honoring `Retry-After` on 503/429); full `TaxiiError` mapping including HTTP 415; optional `PreflightPolicy` for client-side permission guards.
-- **mTLS** — `ClientCertificate::from_pem` and `ClientCertificate::from_pkcs12_der` (pure-Rust PKCS#12 via `p12-keystore`) embedded in `build_rustls_config`; single rustls TLS stack.
-- **Live harness fixes** — DANE TLSA prefetch honors `dns_nameserver()`.
-- **Tests** — `cargo test -p rstix --features taxii --test taxii_client`. Optional live harness: [`tests/taxii-live/README.md`](crates/rstix/tests/taxii-live/README.md) (TLS, mTLS, PKCS#12 mTLS, SRV, TLS 1.3, DANE).
-- **Conformance** — TLS 1.2+, required success `Content-Type`, strict pagination headers, RFC 2782 SRV weighted selection, HTTP 416 stream recovery, HTTP `Date` clock skew for `added_after`, `WWW-Authenticate` parsing, API Root/collection capability checks, POST auto-poll (`PostSubmitPolicy`), optional SPKI pinning and DANE (`ServerTrustPolicy`), `TaxiiDiscovery::default_api_root()`, optional `StatusDetail.version`.
+- **`taxii`:** async HTTP client for TAXII 2.1 endpoint groups (discovery, API Root, collections, objects, manifest, versions, status). **Channels (§6) are RESERVED in the spec and not implemented.** Includes DNS SRV via `_taxii2._tcp` and `TaxiiClientConfig::dns_nameserver()` for custom resolvers.
+- **Wire format:** `TaxiiEnvelope` for object exchange (not `Bundle`); `Accept` / `Content-Type: application/taxii+json;version=2.1` on every request; manifest requests also accept STIX JSON; trailing-slash URL rules; HTTPS enforced by default (`allow_insecure_http` for tests); `max_content_length` enforced before POST.
+- **Pagination:** `TaxiiPaged<T>` returns page bodies plus `X-TAXII-Date-Added-First` / `Last` headers; cursor + header fallback on objects, manifest, object-by-id, and versions streams.
+- **Auth:** `BearerAuth`, `BasicAuth`, `ApiKeyHeader` via `TaxiiAuthProvider`; secrets use `secrecy::SecretString` with redacted `Debug`.
+- **Resilience:** `RetryPolicy` (503/429/network with backoff, honoring `Retry-After` on 503/429); full `TaxiiError` mapping including HTTP 415; optional `PreflightPolicy` for client-side permission guards.
+- **mTLS:** `ClientCertificate::from_pem` and `ClientCertificate::from_pkcs12_der` (pure-Rust PKCS#12 via `p12-keystore`) embedded in `build_rustls_config`; single rustls TLS stack.
+- **Live harness fixes:** DANE TLSA prefetch honors `dns_nameserver()`.
+- **Tests:** `cargo test -p rstix --features taxii --test taxii_client`. Optional live harness: [`tests/taxii-live/README.md`](crates/rstix/tests/taxii-live/README.md) (TLS, mTLS, PKCS#12 mTLS, SRV, TLS 1.3, DANE).
+- **Conformance:** TLS 1.2+, required success `Content-Type`, strict pagination headers, RFC 2782 SRV weighted selection, HTTP 416 stream recovery, HTTP `Date` clock skew for `added_after`, `WWW-Authenticate` parsing, API Root/collection capability checks, POST auto-poll (`PostSubmitPolicy`), optional SPKI pinning and DANE (`ServerTrustPolicy`), `TaxiiDiscovery::default_api_root()`, optional `StatusDetail.version`.
 
 ### Reverse conversion: SIEM queries to Sigma YAML (#348, #371)
 
 A pluggable reverse-conversion framework, the mirror of the forward `Backend` engine: a query dialect is parsed into the intermediate representation, raised to a Sigma rule, and emitted as YAML. Elastic Lucene ships as the reference frontend.
 
-- **`rsigma-parser`** — new `emit_rule_yaml` / `emit_collection_yaml`, the inverse of `parse_sigma_yaml`. The emitter is a deterministic canonical form (named detections, logsource custom fields, and custom attributes are sorted), reconstructs `field|modifier` keys, escapes literal wildcards in values while leaving `re`/`cidr`/`fieldref` values raw, and renders the condition from `ConditionExpr`. An empty logsource is emitted as `{}` so it re-parses.
-- **`rsigma-ir`** — new `raise_rule` (`IrRule` to `SigmaRule`), the inverse of `lower_rule`: it reconstructs the modifiers each `IrMatcher` variant implies, collapses homogeneous value lists, keeps conditions selector-preserving, and rejects numeric dynamic-source references. The canonical `ir_pattern_to_sigma` moved here (re-exported from `rsigma-convert`).
-- **`rsigma-convert`** — new `reverse` module: a `Frontend` trait plus a `QueryDialect` table drive a shared tokenizer and precedence-climbing boolean parser, and `assemble_rule` turns a boolean tree of leaves into named Sigma selections and a condition (AND-merged selections, same-field OR value lists, negated branches as filters). `reverse_collection` converts a batch, collecting per-query errors. The `LuceneFrontend` parses the Lucene / Elasticsearch `query_string` subset (`field:value` with wildcards, quoted phrases, `/regex/`, `[a TO b]` / `{a TO b}` ranges, comparison shorthand, `field:(a OR b)` groups, `_exists_`, keyword terms, and `AND`/`OR`/`NOT` with grouping) and rejects boosting, fuzzy/proximity, and non-numeric ranges with a structured error.
-- **`rsigma` CLI** — new `rsigma rule reverse --from <dialect>` (a single entry point for every dialect, mirroring `backend convert --target`) reads queries from an inline argument, from `--file` (repeatable, files or directories: each file is one query, a directory contributes every query file it holds), or from stdin, takes `--title`/`--id`/`--level`/`--status` and `--logsource-*` hints a query cannot carry, and prints Sigma YAML (or writes it with `-o`; a directory `-o` receives one `<name>.yml` per query, batch runs title each rule from its file name). Each emitted rule is parsed back before printing, so a rule that would not round-trip never reaches the operator.
-- **`rsigma-mcp`** — new `reverse_convert` tool (with a `dialect` parameter) exposes reverse conversion over MCP, returning the drafted YAML or an error envelope for inexpressible constructs (13 tools total).
+- **`rsigma-parser`:** new `emit_rule_yaml` / `emit_collection_yaml`, the inverse of `parse_sigma_yaml`. The emitter is a deterministic canonical form (named detections, logsource custom fields, and custom attributes are sorted), reconstructs `field|modifier` keys, escapes literal wildcards in values while leaving `re`/`cidr`/`fieldref` values raw, and renders the condition from `ConditionExpr`. An empty logsource is emitted as `{}` so it re-parses.
+- **`rsigma-ir`:** new `raise_rule` (`IrRule` to `SigmaRule`), the inverse of `lower_rule`: it reconstructs the modifiers each `IrMatcher` variant implies, collapses homogeneous value lists, keeps conditions selector-preserving, and rejects numeric dynamic-source references. The canonical `ir_pattern_to_sigma` moved here (re-exported from `rsigma-convert`).
+- **`rsigma-convert`:** new `reverse` module: a `Frontend` trait plus a `QueryDialect` table drive a shared tokenizer and precedence-climbing boolean parser, and `assemble_rule` turns a boolean tree of leaves into named Sigma selections and a condition (AND-merged selections, same-field OR value lists, negated branches as filters). `reverse_collection` converts a batch, collecting per-query errors. The `LuceneFrontend` parses the Lucene / Elasticsearch `query_string` subset (`field:value` with wildcards, quoted phrases, `/regex/`, `[a TO b]` / `{a TO b}` ranges, comparison shorthand, `field:(a OR b)` groups, `_exists_`, keyword terms, and `AND`/`OR`/`NOT` with grouping) and rejects boosting, fuzzy/proximity, and non-numeric ranges with a structured error.
+- **`rsigma` CLI:** new `rsigma rule reverse --from <dialect>` (a single entry point for every dialect, mirroring `backend convert --target`) reads queries from an inline argument, from `--file` (repeatable, files or directories: each file is one query, a directory contributes every query file it holds), or from stdin, takes `--title`/`--id`/`--level`/`--status` and `--logsource-*` hints a query cannot carry, and prints Sigma YAML (or writes it with `-o`; a directory `-o` receives one `<name>.yml` per query, batch runs title each rule from its file name). Each emitted rule is parsed back before printing, so a rule that would not round-trip never reaches the operator.
+- **`rsigma-mcp`:** new `reverse_convert` tool (with a `dialect` parameter) exposes reverse conversion over MCP, returning the drafted YAML or an error envelope for inexpressible constructs (13 tools total).
 
 ### Deterministic bloom pre-filter seeding
 
@@ -744,12 +748,12 @@ The engine's per-field substring bloom pre-filter seeded its hasher from ahash's
 
 ### Intermediate representation crate and IR-backed compile (#360, #362, #363, #364, #368, #370)
 
-- **`rsigma-ir`** — new sync-only crate with HIR types (`IrRule`, `IrDetection`, `IrMatcher`, `IrCondition`, `IrCorrelation`, `IrFilter`) and `lower_rule` / `lower_*` that resolve modifiers before eval. Quantified selectors are preserved so evaluation stays count-based. The matcher model is faithful and lossless: string matches keep a wildcard-aware, original-case `IrPattern` and encoding modifiers stay explicit as `IrEncoding` steps, so lowering never lowercases, compiles regexes, or expands encodings.
-- **`rsigma-eval`** — `compile_rule` routes through `lower_rule` → `compile_to_compiled`, which performs the physical work (lowercasing, regex/aho-corasick, encoding expansion). Public physical API (`CompiledRule`, `evaluate_rule`, `Engine`) is unchanged.
-- **`rsigma-ir` HIR cache** — all HIR types derive `serde::{Serialize, Deserialize}` (and the embedded `rsigma-parser` types gained `Deserialize`), so a lowered rule set round-trips. A new `cache` module serializes a slice of `IrRule` to a versioned, self-describing blob (a `HirCacheHeader` with `HIR_SCHEMA_VERSION` plus the rules) via `encode_rules` / `decode_rules`, with `to_json` for a debug export. `decode_rules` version-checks the header before decoding the rules. CBOR is the binary format because the embedded `LogSource`'s `#[serde(flatten)]` map has an unknown length that fixed-layout encoders reject.
-- **`rsigma-eval` restart cache** — `Engine::save_hir` / `Engine::load_hir` persist and reload the engine's lowered rules through the HIR cache, so a warm start skips parse, pipeline, and lowering. The engine retains the post-pipeline HIR for rules added via the parsed-rule paths; filter injections and precompiled rules are not captured, so re-apply filters after `load_hir`.
-- **`rsigma-ir`** — opt-in, semantics-preserving HIR optimization passes in `optimize`: `flatten_condition` (merge nested same-kind boolean groups, collapse `Not(Not)`, unwrap single-child groups, drop idempotent duplicate siblings), `eliminate_dead_detections` (prune detections no condition can reference, honoring `them`/glob selector patterns and recursing into `Conditional`), and `common_subexpressions` (a non-mutating report of repeated detection items). `optimize_rule` runs the structural passes in order. The passes are not run by the default eval or convert paths, so compiled-matcher behavior and byte-identical backend output are unchanged; a differential test confirms each pass preserves the match decision and the set of matched selections and fields.
-- **`rsigma-convert`** — the `Backend` trait is IR-native end to end. A rule is lowered to `IrRule` once and both detection and condition walks run over the HIR (`convert_rule_via_ir` → `convert_ir_detection` / `convert_ir_detection_item`). Value leaves take the faithful HIR (`convert_field_str` over `IrStrOp` + wildcard-aware `IrPattern`, `convert_field_regex` with `RegexFlags`, `convert_field_compare_op` with `CompareOp`, `convert_keyword_str` / `convert_keyword_num`) instead of `SigmaString` / `Modifier`, so a backend never touches `rsigma-parser` to emit a value match. PostgreSQL, LynxDB, and Fibratus golden outputs are byte-identical.
+- **`rsigma-ir`:** new sync-only crate with HIR types (`IrRule`, `IrDetection`, `IrMatcher`, `IrCondition`, `IrCorrelation`, `IrFilter`) and `lower_rule` / `lower_*` that resolve modifiers before eval. Quantified selectors are preserved so evaluation stays count-based. The matcher model is faithful and lossless: string matches keep a wildcard-aware, original-case `IrPattern` and encoding modifiers stay explicit as `IrEncoding` steps, so lowering never lowercases, compiles regexes, or expands encodings.
+- **`rsigma-eval`:** `compile_rule` routes through `lower_rule` → `compile_to_compiled`, which performs the physical work (lowercasing, regex/aho-corasick, encoding expansion). Public physical API (`CompiledRule`, `evaluate_rule`, `Engine`) is unchanged.
+- **`rsigma-ir` HIR cache:** all HIR types derive `serde::{Serialize, Deserialize}` (and the embedded `rsigma-parser` types gained `Deserialize`), so a lowered rule set round-trips. A new `cache` module serializes a slice of `IrRule` to a versioned, self-describing blob (a `HirCacheHeader` with `HIR_SCHEMA_VERSION` plus the rules) via `encode_rules` / `decode_rules`, with `to_json` for a debug export. `decode_rules` version-checks the header before decoding the rules. CBOR is the binary format because the embedded `LogSource`'s `#[serde(flatten)]` map has an unknown length that fixed-layout encoders reject.
+- **`rsigma-eval` restart cache:** `Engine::save_hir` / `Engine::load_hir` persist and reload the engine's lowered rules through the HIR cache, so a warm start skips parse, pipeline, and lowering. The engine retains the post-pipeline HIR for rules added via the parsed-rule paths; filter injections and precompiled rules are not captured, so re-apply filters after `load_hir`.
+- **`rsigma-ir`:** opt-in, semantics-preserving HIR optimization passes in `optimize`: `flatten_condition` (merge nested same-kind boolean groups, collapse `Not(Not)`, unwrap single-child groups, drop idempotent duplicate siblings), `eliminate_dead_detections` (prune detections no condition can reference, honoring `them`/glob selector patterns and recursing into `Conditional`), and `common_subexpressions` (a non-mutating report of repeated detection items). `optimize_rule` runs the structural passes in order. The passes are not run by the default eval or convert paths, so compiled-matcher behavior and byte-identical backend output are unchanged; a differential test confirms each pass preserves the match decision and the set of matched selections and fields.
+- **`rsigma-convert`:** the `Backend` trait is IR-native end to end. A rule is lowered to `IrRule` once and both detection and condition walks run over the HIR (`convert_rule_via_ir` → `convert_ir_detection` / `convert_ir_detection_item`). Value leaves take the faithful HIR (`convert_field_str` over `IrStrOp` + wildcard-aware `IrPattern`, `convert_field_regex` with `RegexFlags`, `convert_field_compare_op` with `CompareOp`, `convert_keyword_str` / `convert_keyword_num`) instead of `SigmaString` / `Modifier`, so a backend never touches `rsigma-parser` to emit a value match. PostgreSQL, LynxDB, and Fibratus golden outputs are byte-identical.
 
 ### Dependency bumps (#354, #357)
 
@@ -757,16 +761,16 @@ Rolls up the open Dependabot PRs into a single merge. Rust (workspace `Cargo.loc
 
 ### rstix: serde-gate wire-format validator dependencies (#352)
 
-- **Wire MUST at parse (DD-DM-001)** — STIX §6.4 / §6.5 / §6.15 require well-formed `domain-name`, `email-addr`, and `url` values; rstix rejects malformed values at default `serde` parse rather than accepting them and reporting later. Documented in [`crates/rstix/README.md`](crates/rstix/README.md#dd-dm-001--wire-must-at-parse).
-- **`idna`, `url`, `email_address`, `base64`, `encoding_rs`** — optional deps enabled by the `serde` feature (`base64` also under `pattern`); `--no-default-features` builds omit them. Default `serde` parse still enforces **DD-DM-001** unchanged.
-- **`pattern` implies `serde`** — Pattern Engine evaluation uses `Bundle`, `StixObject`, and typed SCO/SDO types that live behind the `serde` feature; `--no-default-features --features pattern` now compiles. CI adds a lean-feature matrix for `--no-default-features` on `rstix`.
+- **Wire MUST at parse (DD-DM-001):** STIX §6.4 / §6.5 / §6.15 require well-formed `domain-name`, `email-addr`, and `url` values; rstix rejects malformed values at default `serde` parse rather than accepting them and reporting later. Documented in [`crates/rstix/README.md`](crates/rstix/README.md#dd-dm-001--wire-must-at-parse).
+- **`idna`, `url`, `email_address`, `base64`, `encoding_rs`:** optional deps enabled by the `serde` feature (`base64` also under `pattern`); `--no-default-features` builds omit them. Default `serde` parse still enforces **DD-DM-001** unchanged.
+- **`pattern` implies `serde`:** Pattern Engine evaluation uses `Bundle`, `StixObject`, and typed SCO/SDO types that live behind the `serde` feature; `--no-default-features --features pattern` now compiles. CI adds a lean-feature matrix for `--no-default-features` on `rstix`.
 
 ### rstix STIX 2.1 spec-exact closure with Graph + Marking + Store (`graph`, `marking`, `store` features) (#327)
 
 - **Wire MUST at parse (Decision A):** `domain-name`, `email-addr`, and `url` values use IDNA / RFC 5322 / RFC 3986 validation at the default `serde` boundary (`idna`, `email_address`, `url` are required dependencies).
 - **SCO `*_enc` (§3.1 / §3.9.1):** IANA charset validation and `_enc`-without-base pairing on spec-defined `file.name_enc` and `directory.path_enc`, plus any `_enc` keys in `common.extra`; negative fixtures in `tests/fixtures/spec/sco/`.
 - **Spec-audit closure:** observed-data deprecated `objects` with embedded SRO; standalone unknown top-level keys via `common.extra`; granular selector semantics, language-content nested rules, STIX-W0031, and location ISO 3166 / region-ov via `Bundle::validate()`.
-- **Serialization conventions:** wire-facing JSON property bags use `BTreeMap` (stable key order for strict round-trip and JCS); internal STIX-id indexes use `HashMap` — aligned with PR #213 review (`ExtensionMap`, `LanguageContent.contents`, `common.extra`).
+- **Serialization conventions:** wire-facing JSON property bags use `BTreeMap` (stable key order for strict round-trip and JCS); internal STIX-id indexes use `HashMap`, aligned with PR #213 review (`ExtensionMap`, `LanguageContent.contents`, `common.extra`).
 - **Language-content (§7.1.1):** recursive object mirroring, `""` list placeholders, unknown target fields silently ignored (no advisory).
 - **Granular markings:** selector resolution on custom object wire JSON; custom objects validated in the pipeline schema phase.
 - **Email-message (§6.6):** RFC 2047 encoded-word decoding on ingest for header string fields.
@@ -776,23 +780,23 @@ Adds three independent modules for Graph + Marking + Store:
 
 **Graph** (`graph` feature):
 
-* **`StixGraph::from_bundle`** — indexes SRO `relationship` edges and all typed `_ref` / `_refs` properties (including nested SCO extension refs); duplicate object ids rejected with `GraphError::DuplicateObjectId`.
-* **`EdgeTraversal`** — plan-style chain: `from(id).out_edges_matching(pred).targets_as::<T>()`.
-* **`RelationshipExpander`** — multi-hop expansion from any start node (`expand_from`) or an [`IndicatorId`](core::IndicatorId) (`expand_from_indicator`); collects identity, infrastructure, indicator, malware, threat-actor, campaign, attack-pattern, course-of-action, and vulnerability summaries.
-* **`SroEdgePayload`** — typed access to underlying `relationship` or `sighting` SRO on graph edges; sighting edges indexed with type `"sighting"`.
-* **`in_refs` / incoming SRO traversal** — bidirectional graph walking on SRO and inlined ref edges.
-* **`model/ref_paths`** — path-aware ref inventory shared with bundle ref validation.
+* **`StixGraph::from_bundle`:** indexes SRO `relationship` edges and all typed `_ref` / `_refs` properties (including nested SCO extension refs); duplicate object ids rejected with `GraphError::DuplicateObjectId`.
+* **`EdgeTraversal`:** plan-style chain: `from(id).out_edges_matching(pred).targets_as::<T>()`.
+* **`RelationshipExpander`:** multi-hop expansion from any start node (`expand_from`) or an [`IndicatorId`](core::IndicatorId) (`expand_from_indicator`); collects identity, infrastructure, indicator, malware, threat-actor, campaign, attack-pattern, course-of-action, and vulnerability summaries.
+* **`SroEdgePayload`:** typed access to underlying `relationship` or `sighting` SRO on graph edges; sighting edges indexed with type `"sighting"`.
+* **`in_refs` / incoming SRO traversal:** bidirectional graph walking on SRO and inlined ref edges.
+* **`model/ref_paths`:** path-aware ref inventory shared with bundle ref validation.
 
 **Marking** (`marking` feature):
 
-* **`TlpV2Level`** — all five predefined TLP 2.0 UUIDs; `TLP:AMBER+STRICT` vs `TLP:AMBER` with distinct `permits_disclosure`.
-* **`MarkingResolver`** — `effective_for_object` (most restrictive), `effective_for_property` / `effective_for_selector` (granular selectors with JSON path resolution), `permits_disclosure(audience)`, and `EffectiveMarking::language_tags` for granular language markings.
+* **`TlpV2Level`:** all five predefined TLP 2.0 UUIDs; `TLP:AMBER+STRICT` vs `TLP:AMBER` with distinct `permits_disclosure`.
+* **`MarkingResolver`:** `effective_for_object` (most restrictive), `effective_for_property` / `effective_for_selector` (granular selectors with JSON path resolution), `permits_disclosure(audience)`, and `EffectiveMarking::language_tags` for granular language markings.
 
 **Store** (`store` feature):
 
 * **`StixStore`** trait (object-safe) + **`MemoryStore`** with versioned SDO/SRO storage, full-text search index, `delete`, and `export_bundle`.
-* **`FsStore`** (`store-fs` feature) — filesystem-backed durability with JSON object files under a store root.
-* **SCO asserted-id preservation** — store key is source id; UUIDv5 fingerprint reported via **`FingerprintConflict`** in **`ImportReport`**.
+* **`FsStore`** (`store-fs` feature): filesystem-backed durability with JSON object files under a store root.
+* **SCO asserted-id preservation:** store key is source id; UUIDv5 fingerprint reported via **`FingerprintConflict`** in **`ImportReport`**.
 * **`StixQuery`** builder for typed store queries with pagination (`QueryCursor` / `next_cursor`), type-indexed scans, **`text_search`**, SCO content updates, and `StoreError::InvalidQuery` for out-of-range cursors.
 
 ### Cloud Schema Signature Bundle (#318)
@@ -821,13 +825,13 @@ The `rstix` STIX 2.1 library now ships as part of the release. `publish.yml` pub
 
 ### rstix Validation Pipeline: conformance corpus and diagnostic coverage (`validate` feature) (#315)
 
-Closes Validation Pipeline conformance work for phases 1–4:
+Closes Validation Pipeline conformance work for phases 1-4:
 
-* **Per-code coverage** — `tests/validate_diagnostic_coverage.rs` asserts one integration case per `DiagnosticCode::ALL` entry (39 codes).
-* **Conformance corpus** — `validate_conformance.rs` gates `conformance/` plus `validation/bundle-*.json` negatives under `interop_strict`.
-* **Parse bridge** — all `ParseError` variants and mapped `ModelError` messages emit structured diagnostics; model invariants use tagged serde payloads (`model/serde_error.rs`) so validation never downgrades to `STIX-E0001` (reserved for JSON syntax/EOF).
-* **Wire-format validators** — lightweight checks at parse; strict IDNA / RFC 5322 / WHATWG checks gated behind `validate` (optional `idna`, `email_address`, `url` deps) as pipeline `STIX-I0002` findings.
-* **Model mapping** — exhaustive `ModelError` → `STIX-E/W/I/H` code mapping in `validate/model_mapping.rs`.
+* **Per-code coverage:** `tests/validate_diagnostic_coverage.rs` asserts one integration case per `DiagnosticCode::ALL` entry (39 codes).
+* **Conformance corpus:** `validate_conformance.rs` gates `conformance/` plus `validation/bundle-*.json` negatives under `interop_strict`.
+* **Parse bridge:** all `ParseError` variants and mapped `ModelError` messages emit structured diagnostics; model invariants use tagged serde payloads (`model/serde_error.rs`) so validation never downgrades to `STIX-E0001` (reserved for JSON syntax/EOF).
+* **Wire-format validators:** lightweight checks at parse; strict IDNA / RFC 5322 / WHATWG checks gated behind `validate` (optional `idna`, `email_address`, `url` deps) as pipeline `STIX-I0002` findings.
+* **Model mapping:** exhaustive `ModelError` → `STIX-E/W/I/H` code mapping in `validate/model_mapping.rs`.
 
 ### Docmd site branding (#314)
 
@@ -884,39 +888,39 @@ Adds opt-in bearer-token authentication with `resource:action` permissions to th
 
 Implements the full validation check set behind `validate`:
 
-* **All twelve checks** — schema, ID structure, property types, open vocabulary, pattern parse/semantic, references, cross-object semantics, extension resolution, and TLP marking computation are wired through the dispatcher (no `STIX-I0020` stubs).
-* **Shared helpers** — `model_bridge`, `object_validate`, `semantic`, and `wire` modules map `ModelError` / wire JSON to pipeline diagnostics; overlapping `Bundle::validate()` findings migrate to `STIX-E/W/I` codes per DD-VP-001.
-* **Pattern split** — `Pattern::parse_ast` and `Pattern::type_check_ast` expose parse-only vs type-check phases for `STIX-E0010` / `STIX-E0011`.
-* **Integration tests** — validation fixtures assert `STIX-W0031`, `STIX-E0024`, `STIX-I0002`, and `STIX-W0010` through `Validator::consumer_strict()`.
-* **Conformance harness hardening** — conformance tests are locked to bundled in-repo fixtures for deterministic CI (no external env override path).
+* **All twelve checks:** schema, ID structure, property types, open vocabulary, pattern parse/semantic, references, cross-object semantics, extension resolution, and TLP marking computation are wired through the dispatcher (no `STIX-I0020` stubs).
+* **Shared helpers:** `model_bridge`, `object_validate`, `semantic`, and `wire` modules map `ModelError` / wire JSON to pipeline diagnostics; overlapping `Bundle::validate()` findings migrate to `STIX-E/W/I` codes per DD-VP-001.
+* **Pattern split:** `Pattern::parse_ast` and `Pattern::type_check_ast` expose parse-only vs type-check phases for `STIX-E0010` / `STIX-E0011`.
+* **Integration tests:** validation fixtures assert `STIX-W0031`, `STIX-E0024`, `STIX-I0002`, and `STIX-W0010` through `Validator::consumer_strict()`.
+* **Conformance harness hardening:** conformance tests are locked to bundled in-repo fixtures for deterministic CI (no external env override path).
 
 ### rstix Validation Pipeline scaffold (`validate` feature) (#297)
 
 Adds the profile-based **Validation Pipeline** module behind the optional `validate` feature (implies `serde` + `pattern`):
 
-* **`Validator` / `ValidatorBuilder`** — four named profiles (`consumer_permissive`, `consumer_strict`, `producer_strict`, `interop_strict`) and custom check selection.
-* **`Diagnostic` / `DiagnosticCode` / `Severity`** — structured `STIX-E/W/I/H` taxonomy with `ValidationReport::is_valid()` (no Error-severity diagnostics).
-* **Raw JSON entry** — `validate_json_str` / `validate_json_value` emit `STIX-E0001` on malformed JSON (line/column span) instead of panicking or failing only at deserialize.
-* **Check dispatcher** — all twelve `ValidationPhase` variants wired; remaining check implementations follow in a later release.
-* **Leniency** — `ValidationReport::is_valid()` respects profile policy (`Standard` vs `Zero` for interop); `STIX-H0001` hint taxonomy wired.
-* **Type discrimination scaffold** — non-bundle JSON roots emit `STIX-E0002` with `property_path` / `fix_suggestion`; `ValidatorBuilder::with_allow_custom` and `with_parse_options` expose parse policy.
-* **Stub visibility** — not-yet-implemented checks emit informational `STIX-I0020`; profile rustdoc and [`Validator::implemented_phases`] document current coverage.
-* **DD-VP-001** — documents the boundary between advisory `Bundle::validate()` (`model::ValidationReport`) and `validate::Validator`.
-* **`fuzz_rstix_validate_json`** — libFuzzer target over `Validator::validate_json_str`; seeds in `fuzz/seeds/fuzz_rstix_validate_json/`.
+* **`Validator` / `ValidatorBuilder`:** four named profiles (`consumer_permissive`, `consumer_strict`, `producer_strict`, `interop_strict`) and custom check selection.
+* **`Diagnostic` / `DiagnosticCode` / `Severity`:** structured `STIX-E/W/I/H` taxonomy with `ValidationReport::is_valid()` (no Error-severity diagnostics).
+* **Raw JSON entry:** `validate_json_str` / `validate_json_value` emit `STIX-E0001` on malformed JSON (line/column span) instead of panicking or failing only at deserialize.
+* **Check dispatcher:** all twelve `ValidationPhase` variants wired; remaining check implementations follow in a later release.
+* **Leniency:** `ValidationReport::is_valid()` respects profile policy (`Standard` vs `Zero` for interop); `STIX-H0001` hint taxonomy wired.
+* **Type discrimination scaffold:** non-bundle JSON roots emit `STIX-E0002` with `property_path` / `fix_suggestion`; `ValidatorBuilder::with_allow_custom` and `with_parse_options` expose parse policy.
+* **Stub visibility:** not-yet-implemented checks emit informational `STIX-I0020`; profile rustdoc and [`Validator::implemented_phases`] document current coverage.
+* **DD-VP-001:** documents the boundary between advisory `Bundle::validate()` (`model::ValidationReport`) and `validate::Validator`.
+* **`fuzz_rstix_validate_json`:** libFuzzer target over `Validator::validate_json_str`; seeds in `fuzz/seeds/fuzz_rstix_validate_json/`.
 
 ### rstix Pattern Engine: canonical printer, Indicator wiring, and pattern semantics (#296)
 
 Adds the remaining `pattern` feature pieces for STIX indicator patterns and closes §9.6.1 evaluation semantics:
 
-* **`Pattern::canonical` / `Display`** — AST → canonical STIX pattern string; parse → print → parse preserves semantics (§9.8 fixture round-trips).
-* **`IndicatorPattern::Stix { parsed }`** — STIX indicators deserialize with `Pattern::parse(raw)` when `pattern` is enabled; invalid patterns fail at deserialize time.
-* **`IndicatorPattern::evaluate` / `evaluate_observed_data`** — delegate to the parsed pattern for STIX indicators; `NonStixPattern` for YARA/Snort/etc.
-* **`IndicatorBuilder`** — fluent programmatic construction of indicators (`stix_pattern`, `external_pattern`, `valid_from`, kill-chain phases); STIX patterns parse and type-check at `build()` when `pattern` is enabled; runs [`Indicator::validate`]. Design decision [DD-PE-001](docs/library/rstix.md#dd-pe-001--indicatorbuilder-validates-at-build-not-in-setters) documents why validation runs at `build()` rather than in setters.
-* **`fuzz_stix_pattern`** — libFuzzer target over parse + canonical print; seeds in `fuzz/seeds/fuzz_stix_pattern/` (§9.8 fixture lines).
-* **`LIKE` / `MATCHES` NFC normalization** — pattern constants and string property haystacks NFC-normalized before comparison.
-* **`MATCHES` PCRE DOTALL** — regex compilation enables `.` across newlines per §9.6.1.
-* **`evaluate()` with `at: None`** — non-temporal patterns accept observations without timestamps; temporal patterns still return `MissingTimestamp`.
-* **Absent optional `_ref` properties** — comparisons do not match; `EXISTS` is false; dangling or non-SCO targets still return `RefResolution`.
+* **`Pattern::canonical` / `Display`:** AST → canonical STIX pattern string; parse → print → parse preserves semantics (§9.8 fixture round-trips).
+* **`IndicatorPattern::Stix { parsed }`:** STIX indicators deserialize with `Pattern::parse(raw)` when `pattern` is enabled; invalid patterns fail at deserialize time.
+* **`IndicatorPattern::evaluate` / `evaluate_observed_data`:** delegate to the parsed pattern for STIX indicators; `NonStixPattern` for YARA/Snort/etc.
+* **`IndicatorBuilder`:** fluent programmatic construction of indicators (`stix_pattern`, `external_pattern`, `valid_from`, kill-chain phases); STIX patterns parse and type-check at `build()` when `pattern` is enabled; runs [`Indicator::validate`]. Design decision [DD-PE-001](docs/library/rstix.md#dd-pe-001--indicatorbuilder-validates-at-build-not-in-setters) documents why validation runs at `build()` rather than in setters.
+* **`fuzz_stix_pattern`:** libFuzzer target over parse + canonical print; seeds in `fuzz/seeds/fuzz_stix_pattern/` (§9.8 fixture lines).
+* **`LIKE` / `MATCHES` NFC normalization:** pattern constants and string property haystacks NFC-normalized before comparison.
+* **`MATCHES` PCRE DOTALL:** regex compilation enables `.` across newlines per §9.6.1.
+* **`evaluate()` with `at: None`:** non-temporal patterns accept observations without timestamps; temporal patterns still return `MissingTimestamp`.
+* **Absent optional `_ref` properties:** comparisons do not match; `EXISTS` is false; dangling or non-SCO targets still return `RefResolution`.
 
 ### De-flaked the TLS misconfiguration E2E tests on macOS (#295)
 
@@ -966,19 +970,19 @@ Rolls up the open Dependabot PRs into a single merge, regenerating the lockfiles
 
 Turns exemplar events into a complete draft Sigma rule, the detection-authoring sibling of schema signature discovery: feed the malicious or noteworthy events (optionally contrasted against a baseline corpus of normal traffic) and get back paste-ready standard Sigma YAML to review, edit, and commit. The tool proposes, a human decides; metadata stays as explicit `TODO` placeholders.
 
-* **Drafting core** — a new `rsigma_eval::rule_draft` module profiles every field across the exemplars, drops volatile fields (timestamp-shaped names and values, UUID/GUID shapes, per-event counters, high-entropy unique values), scores the survivors by value stability times baseline rarity, infers a value form and modifier per field (plain equals, OR value list, `endswith`/`startswith` from a shared path tail/prefix, `contains`/`contains|all` from shared tokens with a minimum token length and baseline-generic rejection), escapes literal Sigma wildcards in observed values, splits exemplar variants into `selection_*` groups with `1 of selection_*` when the split is earned, and infers the logsource from the built-in schema classifier (a shared Sysmon EventID maps to its Sigma category). The core is pure and deterministic: the rule `id` is caller-supplied and repeated runs are byte-identical.
-* **Verified before emitted** — the draft is parsed and compiled through the real evaluation engine and must match every exemplar (fields that break the match are dropped, bounded by a minimum-field floor; below it the command errors instead of emitting an over-broad rule), the lint catalogue runs over the YAML with findings surfaced as warnings, and the baseline hit count and rate are reported as the estimated false-positive rate.
-* **`rule draft`** — the offline command: exemplars via inline JSON, `@file` NDJSON, `@file.evtx` (with the `evtx` feature), or stdin, plus `--baseline @file`. Flags: `--max-fields`, `--min-prevalence`, `--include-field`/`--exclude-field`, `--logsource-category`/`--logsource-product`/`--logsource-service`, `--title`, `--skip-baseline-eval`, and `--emit yaml|report` (default `yaml` prints the rule with the field report on stderr; `report` renders the full analysis through the global output formats). The UUIDv4 `id` is generated at the CLI layer.
-* **Docs** — a new `rule draft` CLI page and a Drafting Rules from Logs guide, including the schema-native note: the draft uses the exemplars' native field names, so evaluate it without a mapping pipeline.
+* **Drafting core:** a new `rsigma_eval::rule_draft` module profiles every field across the exemplars, drops volatile fields (timestamp-shaped names and values, UUID/GUID shapes, per-event counters, high-entropy unique values), scores the survivors by value stability times baseline rarity, infers a value form and modifier per field (plain equals, OR value list, `endswith`/`startswith` from a shared path tail/prefix, `contains`/`contains|all` from shared tokens with a minimum token length and baseline-generic rejection), escapes literal Sigma wildcards in observed values, splits exemplar variants into `selection_*` groups with `1 of selection_*` when the split is earned, and infers the logsource from the built-in schema classifier (a shared Sysmon EventID maps to its Sigma category). The core is pure and deterministic: the rule `id` is caller-supplied and repeated runs are byte-identical.
+* **Verified before emitted:** the draft is parsed and compiled through the real evaluation engine and must match every exemplar (fields that break the match are dropped, bounded by a minimum-field floor; below it the command errors instead of emitting an over-broad rule), the lint catalogue runs over the YAML with findings surfaced as warnings, and the baseline hit count and rate are reported as the estimated false-positive rate.
+* **`rule draft`:** the offline command: exemplars via inline JSON, `@file` NDJSON, `@file.evtx` (with the `evtx` feature), or stdin, plus `--baseline @file`. Flags: `--max-fields`, `--min-prevalence`, `--include-field`/`--exclude-field`, `--logsource-category`/`--logsource-product`/`--logsource-service`, `--title`, `--skip-baseline-eval`, and `--emit yaml|report` (default `yaml` prints the rule with the field report on stderr; `report` renders the full analysis through the global output formats). The UUIDv4 `id` is generated at the CLI layer.
+* **Docs:** a new `rule draft` CLI page and a Drafting Rules from Logs guide, including the schema-native note: the draft uses the exemplars' native field names, so evaluate it without a mapping pipeline.
 
 ### Schema signature discovery (#285)
 
 Turns the unknown-schema signal the schema tooling surfaces into ranked candidate declarative signatures, so operators stop hand-writing every signature from scratch. Pure-Rust, glass-box mining (clustering plus discriminative feature selection); the output is the same `schemas:` YAML the classifier already consumes, so every proposed predicate is human-readable and reviewable. Additive and opt-in throughout; no black-box model, and nothing is applied automatically.
 
-* **Mining core** — a new `rsigma_eval::schema_discovery` module clusters unrecognized events by field-key shape, selects the fields (and low-cardinality, non-sensitive values) that discriminate each cluster with a value-based diversity guard and cardinality-weighted scoring, validates proposals against the built-ins, and renders a paste-ready `schemas:` block that round-trips through `parse_schema_signatures`.
-* **`engine discover-schemas`** — an offline command that mines a JSON/NDJSON corpus (excluding events an existing built-in or `--schema-config` signature already recognizes) and prints ranked candidates plus the YAML. Flags: `--schema-config`, `--min-support`, `--similarity`, `--max-candidates`, `--max-predicates`, `--no-value-markers`, `--emit yaml|report`, and `--dry-run` (reclassify the corpus with the proposals loaded and report the before/after per-schema counts).
-* **Live daemon surface** — a new `--discover-schemas` flag (implies `--observe-schemas`) enables a separate, redacted, keys-only sampler of unrecognized events, and `GET /api/v1/schemas/suggestions` mines it into presence-only candidate signatures. A new `rsigma_unknown_schema_clusters` gauge tracks how many distinct schemas discovery would propose, refreshed cheaply via a clustering-only count so `/metrics` and `GET /api/v1/schemas` never re-run the full mining pipeline. `DELETE /api/v1/schemas` resets the observer and refreshes the capped discovery sample without a restart. The shipped `unknown_shapes` semantics are unchanged.
-* **Docs** — a new `engine discover-schemas` CLI page and schema-routing guide section, plus updates to the daemon CLI, HTTP API, and metrics references.
+* **Mining core:** a new `rsigma_eval::schema_discovery` module clusters unrecognized events by field-key shape, selects the fields (and low-cardinality, non-sensitive values) that discriminate each cluster with a value-based diversity guard and cardinality-weighted scoring, validates proposals against the built-ins, and renders a paste-ready `schemas:` block that round-trips through `parse_schema_signatures`.
+* **`engine discover-schemas`:** an offline command that mines a JSON/NDJSON corpus (excluding events an existing built-in or `--schema-config` signature already recognizes) and prints ranked candidates plus the YAML. Flags: `--schema-config`, `--min-support`, `--similarity`, `--max-candidates`, `--max-predicates`, `--no-value-markers`, `--emit yaml|report`, and `--dry-run` (reclassify the corpus with the proposals loaded and report the before/after per-schema counts).
+* **Live daemon surface:** a new `--discover-schemas` flag (implies `--observe-schemas`) enables a separate, redacted, keys-only sampler of unrecognized events, and `GET /api/v1/schemas/suggestions` mines it into presence-only candidate signatures. A new `rsigma_unknown_schema_clusters` gauge tracks how many distinct schemas discovery would propose, refreshed cheaply via a clustering-only count so `/metrics` and `GET /api/v1/schemas` never re-run the full mining pipeline. `DELETE /api/v1/schemas` resets the observer and refreshes the capped discovery sample without a restart. The shipped `unknown_shapes` semantics are unchanged.
+* **Docs:** a new `engine discover-schemas` CLI page and schema-routing guide section, plus updates to the daemon CLI, HTTP API, and metrics references.
 
 ### Docs
 
@@ -988,30 +992,30 @@ Turns the unknown-schema signal the schema tooling surfaces into ranked candidat
 
 Extends the shipped schema routing and logsource-aware evaluation with richer signatures, schema-derived logsource correctness, authoring tooling, and hardening. All additive and opt-in; existing schema configs and `--logsource-*` invocations behave identically.
 
-* **Schema-derived logsource pruning** — a recognized schema now supplies an event's logsource for conflict-based pruning even when the event carries no explicit `product`/`service`/`category` field, so a Sysmon-classified event prunes Cisco/Linux rules instead of false-positive matching on a mapped field. Built-in implied logsources for the platform-locked `sysmon`, `windows_eventlog`, `ecs_windows`, and `ecs_linux` schemas, overridable per binding with a `logsource:` block. Resolved per event in `SchemaRouter` (explicit fields, then the schema's implied logsource) and fed to a new conflict-based `Engine::evaluate_pruned`.
-* **ECS platform specializations and schema aliases** — built-in `ecs_windows`/`ecs_linux` signatures recognize ECS events carrying a platform marker and carry the platform for pruning, while aliasing to `ecs` so existing `ecs` bindings still match them. A general `routing.aliases` map lets an event classified as one schema route as another, so one binding covers a family of related schemas.
-* **Richer signature predicates** — numeric comparisons (`gt`/`gte`/`lt`/`lte`), set membership (`in`), cross-field equality (`field_equals_field`), and recursive boolean groups (`not`/`any`/`all`) so a signature can express OR/NOT and value ranges, not only AND of string/presence forms.
-* **Custom logsource dimensions** — `logsource_compatible` and `LogSourceExtractor` handle arbitrary `LogSource.custom` dimensions; the `--logsource-field-map` / `--event-logsource` flags and config block accept `custom.<name>=...` entries.
-* **`engine classify` tooling** — `--explain` shows per-predicate pass/fail for the matched signature (or the closest near-miss for an unknown event), `--check` statically validates a schema config (unreachable signatures, unknown or duplicate bindings, missing pipeline files) and exits non-zero on findings, and a routing section triggers a per-event routing dry-run.
-* **Hardening and visibility** — ambiguous classifications (two different-name signatures tied at the winning specificity) are surfaced in `engine classify` and the `rsigma_events_ambiguous_schema_total` counter; the schema observer samples bounded, redacted field-key shapes of unknown events; `GET /api/v1/schemas` gains `unknown_shapes` and a per-schema `routing_pruning` summary; and new `rsigma_schema_rules_eligible{schema}` / `rsigma_schema_rules_pruned{schema}` gauges plus an `engine eval` end-of-run summary report per-schema pruning.
-* **Per-schema rule partitioning (gated, opt-in)** — `--schema-partition-rules` (or `schema.partition_rules`) compiles each platform-locked per-schema engine with only the rules whose product can apply, cutting the N-copies memory cost. Conservative and safe by construction: the default set and any set reachable by a cross-platform schema or whose pipelines rewrite product keep the full ruleset. Off by default; validate against your corpus before enabling.
-* **Docs** — a new Schema Signatures reference enumerating every predicate form and its semantics, plus updates across the schema-routing and logsource-routing guides, the classify page, and the configuration, metrics, HTTP API, and library references.
+* **Schema-derived logsource pruning:** a recognized schema now supplies an event's logsource for conflict-based pruning even when the event carries no explicit `product`/`service`/`category` field, so a Sysmon-classified event prunes Cisco/Linux rules instead of false-positive matching on a mapped field. Built-in implied logsources for the platform-locked `sysmon`, `windows_eventlog`, `ecs_windows`, and `ecs_linux` schemas, overridable per binding with a `logsource:` block. Resolved per event in `SchemaRouter` (explicit fields, then the schema's implied logsource) and fed to a new conflict-based `Engine::evaluate_pruned`.
+* **ECS platform specializations and schema aliases:** built-in `ecs_windows`/`ecs_linux` signatures recognize ECS events carrying a platform marker and carry the platform for pruning, while aliasing to `ecs` so existing `ecs` bindings still match them. A general `routing.aliases` map lets an event classified as one schema route as another, so one binding covers a family of related schemas.
+* **Richer signature predicates:** numeric comparisons (`gt`/`gte`/`lt`/`lte`), set membership (`in`), cross-field equality (`field_equals_field`), and recursive boolean groups (`not`/`any`/`all`) so a signature can express OR/NOT and value ranges, not only AND of string/presence forms.
+* **Custom logsource dimensions:** `logsource_compatible` and `LogSourceExtractor` handle arbitrary `LogSource.custom` dimensions; the `--logsource-field-map` / `--event-logsource` flags and config block accept `custom.<name>=...` entries.
+* **`engine classify` tooling:** `--explain` shows per-predicate pass/fail for the matched signature (or the closest near-miss for an unknown event), `--check` statically validates a schema config (unreachable signatures, unknown or duplicate bindings, missing pipeline files) and exits non-zero on findings, and a routing section triggers a per-event routing dry-run.
+* **Hardening and visibility:** ambiguous classifications (two different-name signatures tied at the winning specificity) are surfaced in `engine classify` and the `rsigma_events_ambiguous_schema_total` counter; the schema observer samples bounded, redacted field-key shapes of unknown events; `GET /api/v1/schemas` gains `unknown_shapes` and a per-schema `routing_pruning` summary; and new `rsigma_schema_rules_eligible{schema}` / `rsigma_schema_rules_pruned{schema}` gauges plus an `engine eval` end-of-run summary report per-schema pruning.
+* **Per-schema rule partitioning (gated, opt-in):** `--schema-partition-rules` (or `schema.partition_rules`) compiles each platform-locked per-schema engine with only the rules whose product can apply, cutting the N-copies memory cost. Conservative and safe by construction: the default set and any set reachable by a cross-platform schema or whose pipelines rewrite product keep the full ruleset. Off by default; validate against your corpus before enabling.
+* **Docs:** a new Schema Signatures reference enumerating every predicate form and its semantics, plus updates across the schema-routing and logsource-routing guides, the classify page, and the configuration, metrics, HTTP API, and library references.
 
-### rstix Pattern Engine: evaluation (Levels 1–3) (#276)
+### rstix Pattern Engine: evaluation (Levels 1-3) (#276)
 
 Adds STIX pattern evaluation to the `pattern` feature:
 
-* **`Pattern::evaluate`** — match a parsed pattern against timestamped observations (Levels 2–3: `AND`, `OR`, `FOLLOWEDBY`, `WITHIN`, `REPEATS`, `START`/`STOP`).
-* **`Pattern::matches_single`** — Level 1 shortcut for a single top-level observation against one SCO.
-* **`Pattern::evaluate_observed_data`** — build `ObservationContext` from `observed-data.object_refs` and evaluate against a bundle.
-* **`ObservationContext` / `TimestampedObservation`** — evaluation context with optional bundle for `_ref` dereference.
-* **`Pattern::matches_single_with_bundle`** — Level 1 evaluation with optional bundle for `_ref` dereference.
-* **`CustomSco`** — vendor/custom SCO types deserialize and evaluate (e.g. `x-usb-device` paths).
-* **`TimestampedObservation::at`** — `Option<StixTimestamp>`; temporal patterns return `MissingTimestamp` when any observation lacks a timestamp.
-* **Object-path resolver** — full §9.8 paths: extension `sections[*].entropy`, ref lists `resolves_to_refs[*].value`, `body_multipart[*].body_raw_ref.name`, `dst_ref.type`/`value`, binary `payload_bin`, `EXISTS` on registry `values`, nested custom properties.
-* **`pattern::security`** — regex compile size limit (1 MiB) enforced during `MATCHES` evaluation.
-* **Observed-data** — embedded SRO members in deprecated `objects` are skipped (not an error).
-* **Tests** — manifest-driven SCO field coverage (`tests/pattern_eval_sco_fields.rs`, 276 cases), per-operator eval (`tests/pattern_eval_operators.rs`), every `PatternMatchError` path (`tests/pattern_eval_errors.rs`), §9.8 spec eval (`tests/pattern_spec_eval.rs`); 447 tests pass with `pattern,serde`.
+* **`Pattern::evaluate`:** match a parsed pattern against timestamped observations (Levels 2-3: `AND`, `OR`, `FOLLOWEDBY`, `WITHIN`, `REPEATS`, `START`/`STOP`).
+* **`Pattern::matches_single`:** Level 1 shortcut for a single top-level observation against one SCO.
+* **`Pattern::evaluate_observed_data`:** build `ObservationContext` from `observed-data.object_refs` and evaluate against a bundle.
+* **`ObservationContext` / `TimestampedObservation`:** evaluation context with optional bundle for `_ref` dereference.
+* **`Pattern::matches_single_with_bundle`:** Level 1 evaluation with optional bundle for `_ref` dereference.
+* **`CustomSco`:** vendor/custom SCO types deserialize and evaluate (e.g. `x-usb-device` paths).
+* **`TimestampedObservation::at`:** `Option<StixTimestamp>`; temporal patterns return `MissingTimestamp` when any observation lacks a timestamp.
+* **Object-path resolver:** full §9.8 paths: extension `sections[*].entropy`, ref lists `resolves_to_refs[*].value`, `body_multipart[*].body_raw_ref.name`, `dst_ref.type`/`value`, binary `payload_bin`, `EXISTS` on registry `values`, nested custom properties.
+* **`pattern::security`:** regex compile size limit (1 MiB) enforced during `MATCHES` evaluation.
+* **Observed-data:** embedded SRO members in deprecated `objects` are skipped (not an error).
+* **Tests:** manifest-driven SCO field coverage (`tests/pattern_eval_sco_fields.rs`, 276 cases), per-operator eval (`tests/pattern_eval_operators.rs`), every `PatternMatchError` path (`tests/pattern_eval_errors.rs`), §9.8 spec eval (`tests/pattern_spec_eval.rs`); 447 tests pass with `pattern,serde`.
 
 Canonical printer, `IndicatorPattern::Stix { ast }` serde wiring, and `fuzz_stix_pattern` remain in the next Pattern Engine slice.
 
@@ -1029,14 +1033,14 @@ RSigma v0.18.0 is the "post-engine alerting and detection lifecycle" release: th
 * `rstix` (threat-intel library, not yet independently releasable): completes the STIX 2.1 data model and serialization (#248, #254, #265, #268) and adds a pattern engine that parses and type-checks STIX patterning Levels 1-3 (#272), thanks to @SecurityEnthusiast.
 * Fixes, security, and dependencies: jq `halt`/`halt_error` can no longer terminate the process (#247); a transitive `anyhow` bump clears RUSTSEC-2026-0190 (#271); a rolled-up dependency bump (#257); and the CI/CD guide documents `rsigma-action` (#260).
 
-### rstix Pattern Engine: parse and type-check (Levels 1–3) (#272)
+### rstix Pattern Engine: parse and type-check (Levels 1-3) (#272)
 
-Adds the `pattern` feature to `rstix` with a hand-written lexer, recursive-descent parser for STIX patterning Levels 1–3, and an SCO schema type-checker for all 18 cyber-observable types:
+Adds the `pattern` feature to `rstix` with a hand-written lexer, recursive-descent parser for STIX patterning Levels 1-3, and an SCO schema type-checker for all 18 cyber-observable types:
 
-* **`Pattern::parse`** — lex, parse, and type-check a pattern string; returns `PatternError` with byte offset (lex/parse) or path (type-check).
-* **Grammar** — single observations, top-level `AND` / `OR` / `FOLLOWEDBY`, and Level 3 `WITHIN`, `REPEATS`, and `START`/`STOP` qualifiers.
-* **Type-checker** — validates property paths (including `extensions.'…'`, `_ref.type`, dictionary dot keys, custom SCO types), comparison operators, and constant types against per-SCO schemas.
-* **Tests** — STIX §9.8 fixture files under `tests/fixtures/pattern/`, acceptance test modules, gap-table regression coverage.
+* **`Pattern::parse`:** lex, parse, and type-check a pattern string; returns `PatternError` with byte offset (lex/parse) or path (type-check).
+* **Grammar:** single observations, top-level `AND` / `OR` / `FOLLOWEDBY`, and Level 3 `WITHIN`, `REPEATS`, and `START`/`STOP` qualifiers.
+* **Type-checker:** validates property paths (including `extensions.'…'`, `_ref.type`, dictionary dot keys, custom SCO types), comparison operators, and constant types against per-SCO schemas.
+* **Tests:** STIX §9.8 fixture files under `tests/fixtures/pattern/`, acceptance test modules, gap-table regression coverage.
 
 Evaluation, canonical printer, and `IndicatorPattern` AST wiring are **deferred** to later Pattern Engine work (documented in `crates/rstix/README.md` and `docs/library/rstix.md`).
 
@@ -1066,11 +1070,11 @@ A data-aware diagnostics suite that answers questions static tooling structurall
 
 Closes the **Data Model + Serialization** phase for `rstix` with semantic validation, spec-audit alignment on MUST vs SHOULD rules, and remaining model gaps:
 
-* **`Bundle::validate()`** — returns `ValidationReport` with advisory warnings: STIX-W0031 (TLP v1 encoding), SCO deterministic id mismatch, granular-marking selector semantics, language-content field/type/list-length checks, ISO 3166-1 alpha-2 country codes, region open vocabulary, CAPEC/CVE external references, relationship endpoint matrix, and encryption-algorithm closed vocabulary. Parse remains permissive for these SHOULD-level rules.
-* **Removed `Bundle::raw_object()`** — unmodeled properties round-trip via `extra_properties` and `common.extra` only.
-* **`ObservedDataEmbeddedObject`** — deprecated observed-data `objects` map accepts embedded SCO or SRO members.
-* **`common.extra`** on `SdoSroCommonProps` / `ScoCommonProps` — captures unknown top-level keys on standalone leaf deserialize; drained into bundle `extra_properties` during bundle parse.
-* **`email-message`** — added `subject_enc` and `body_enc` fields (STIX §6.6.2).
+* **`Bundle::validate()`:** returns `ValidationReport` with advisory warnings: STIX-W0031 (TLP v1 encoding), SCO deterministic id mismatch, granular-marking selector semantics, language-content field/type/list-length checks, ISO 3166-1 alpha-2 country codes, region open vocabulary, CAPEC/CVE external references, relationship endpoint matrix, and encryption-algorithm closed vocabulary. Parse remains permissive for these SHOULD-level rules.
+* **Removed `Bundle::raw_object()`:** unmodeled properties round-trip via `extra_properties` and `common.extra` only.
+* **`ObservedDataEmbeddedObject`:** deprecated observed-data `objects` map accepts embedded SCO or SRO members.
+* **`common.extra`** on `SdoSroCommonProps` / `ScoCommonProps`: captures unknown top-level keys on standalone leaf deserialize; drained into bundle `extra_properties` during bundle parse.
+* **`email-message`:** added `subject_enc` and `body_enc` fields (STIX §6.6.2).
 * **Tests:** `tests/validation.rs` with negative fixtures under `tests/fixtures/validation/`.
 
 ### STIX domain objects, bundle parse, and reference validation (`rstix`) (#265)
@@ -1079,8 +1083,8 @@ The **Data Model + Serialization** phase adds the full STIX 2.1 domain-object la
 
 * **19 SDO types** under `model::sdo` with `SdoObject` enum dispatch, per-field rustdoc, `IndicatorPattern` and `ObservedDataForm` enums, typed ref unions, and strict `"type"` deserialize on every leaf type.
 * **`StixObject`** top-level enum (SDO / SCO / SRO / Meta / Custom) with `QueryableStixObject` delegation and `x_*` top-level property capture during bundle parse.
-* **`Bundle::parse`** / `parse_bundle()` — typed bundle container, duplicate-id rejection, bundle-scoped reference existence and kind checks, relationship matrix validation, `x_*` merge on serialize, bundle id/`spec_version` rules (STIX §8), and `extra_properties()` for vendor extensions.
-* **`model/validate.rs`** — shared validators for common props, ref kinds, relationship endpoints (55 STIX 2.1 matrix entries), CAPEC/CVE external refs, and SCO format checks.
+* **`Bundle::parse`** / `parse_bundle()`: typed bundle container, duplicate-id rejection, bundle-scoped reference existence and kind checks, relationship matrix validation, `x_*` merge on serialize, bundle id/`spec_version` rules (STIX §8), and `extra_properties()` for vendor extensions.
+* **`model/validate.rs`:** shared validators for common props, ref kinds, relationship endpoints (55 STIX 2.1 matrix entries), CAPEC/CVE external refs, and SCO format checks.
 * **Fixtures and tests:** rich spec-based fixtures for all 19 SDOs, bundle integration tests, 304 crate tests with `roundtrip_strict` coverage.
 
 Spec-audit alignment: removed stricter-than-spec empty-name and empty-collection checks; added missing ref-kind, meta-object, extension, and bundle rules documented in the crate README invariant table.
@@ -1353,12 +1357,12 @@ A new `rsigma rule coverage` subcommand maps a rule set onto MITRE ATT&CK. It re
 - **Config.** A `coverage` section (`atomics`, `baseline`, `targets`, `fail_on_gaps`) flows through `rsigma config init/validate/show/schema`, the `RSIGMA_COVERAGE__*` environment layer, `--config`, and `--dry-run`.
 - **Internal.** The multi-path rule loader shared with `backend convert` moved into a crate-level helper so the two commands cannot drift on rule loading.
 
-### `rstix`: Phase 2 — STIX relationship and sighting objects (#220)
+### `rstix`: Phase 2: STIX relationship and sighting objects (#220)
 
 Phase 2 adds typed STIX relationship and sighting objects (not releasable on its own until `StixObject` dispatch and `Bundle` parsing land).
 
-- **`model::sro`:** `Relationship` (STIX §5.1 — common properties via `SdoSroCommonProps` plus `relationship_type`, `source_ref`, `target_ref`, optional `description`, `start_time`, `stop_time`; `RelSourceRef` / `RelTargetRef` type aliases; charset and `stop_time` later than `start_time` enforced at deserialize), `Sighting` (STIX §5.2 — common properties plus sighting-specific fields including `description`, `first_seen`, `last_seen`, `count`, `summary`, `sighting_of_ref`, `ObservedDataId` for `observed_data_refs`, and `WhereSightedRef` for identity or location in `where_sighted_refs`; `SightingOfRef` type alias; `Sighting::COUNT_MAX`; count range and `last_seen` ≥ `first_seen` enforced at deserialize), and the `SroObject` enum (`#[non_exhaustive]`). Reference-target rules for `source_ref`, `target_ref`, and `sighting_of_ref` are documented in rustdoc and deferred until bundle-level typed parsing.
-- **Deserialize:** `model::type_check` hoisted from `model::meta` for shared `"type"` validation; each SRO type rejects mismatched JSON `"type"` in a single serde pass (`ModelError::UnexpectedObjectType`); no intermediate `serde_json::Value` parse. Leaf SRO and `model::meta` types require JSON `"type"` — a missing `"type"` field is a serde error, not silently defaulted.
+- **`model::sro`:** `Relationship` (STIX §5.1, common properties via `SdoSroCommonProps` plus `relationship_type`, `source_ref`, `target_ref`, optional `description`, `start_time`, `stop_time`; `RelSourceRef` / `RelTargetRef` type aliases; charset and `stop_time` later than `start_time` enforced at deserialize), `Sighting` (STIX §5.2, common properties plus sighting-specific fields including `description`, `first_seen`, `last_seen`, `count`, `summary`, `sighting_of_ref`, `ObservedDataId` for `observed_data_refs`, and `WhereSightedRef` for identity or location in `where_sighted_refs`; `SightingOfRef` type alias; `Sighting::COUNT_MAX`; count range and `last_seen` ≥ `first_seen` enforced at deserialize), and the `SroObject` enum (`#[non_exhaustive]`). Reference-target rules for `source_ref`, `target_ref`, and `sighting_of_ref` are documented in rustdoc and deferred until bundle-level typed parsing.
+- **Deserialize:** `model::type_check` hoisted from `model::meta` for shared `"type"` validation; each SRO type rejects mismatched JSON `"type"` in a single serde pass (`ModelError::UnexpectedObjectType`); no intermediate `serde_json::Value` parse. Leaf SRO and `model::meta` types require JSON `"type"`, a missing `"type"` field is a serde error, not silently defaulted.
 - **`QueryableStixObject`:** `QueryValue::Id` added; `get_field` exposes reference fields on SRO and meta types (for example `source_ref`, `sighting_of_ref`, `created_by_ref`).
 - **Tests:** `roundtrip_strict` minimal and rich fixtures under `tests/fixtures/spec/sro/`; negative fixtures for relationship type charset, time ordering, sighting count range, `where_sighted_refs` typing, cross-type `"type"` rejects, and missing `"type"`; unit coverage for `SroObject` and `MetaObject` `QueryableStixObject` delegation.
 - **Docs:** SRO invariant decisions in `crates/rstix/README.md` and `docs/library/rstix.md`.
@@ -1390,11 +1394,11 @@ A new `rsigma rule backtest` subcommand replays an event corpus against a rulese
 - **Config.** A `backtest` section (`rules`, `corpus`, `expectations`, `unexpected`, `pipelines`, and the syslog input knobs) flows through `rsigma config init/validate/show/schema`, the `RSIGMA_BACKTEST__*` environment layer, `--config`, and `--dry-run`.
 - **Internal.** The format-aware eval stream loop moved into a shared `commands::eval_stream` module so `engine eval` and `rule backtest` cannot drift on input parsing; eval behavior is unchanged.
 
-### `rstix`: Phase 2 — STIX meta objects (#213)
+### `rstix`: Phase 2: STIX meta objects (#213)
 
 Phase 2 adds STIX meta objects (not releasable on its own until `StixObject` dispatch and `Bundle` parsing land).
 
-- **`model::meta`:** `MarkingDefinition` (STIX §7.2.1 optional common properties — `created_by_ref`, `external_references`, `object_marking_refs`, `granular_markings`; legacy TLP 1.x and current TLP 2.0 encodings; `IS_NON_VERSIONABLE` / `is_non_versionable()`; nine TLP UUID constants), `ExtensionDefinition` (`created_by_ref` required per §7.2.2), `LanguageContent` (`contents` as nested `BTreeMap` for stable JSON key order), and the `MetaObject` enum (`#[non_exhaustive]`).
+- **`model::meta`:** `MarkingDefinition` (STIX §7.2.1 optional common properties, `created_by_ref`, `external_references`, `object_marking_refs`, `granular_markings`; legacy TLP 1.x and current TLP 2.0 encodings; `IS_NON_VERSIONABLE` / `is_non_versionable()`; nine TLP UUID constants), `ExtensionDefinition` (`created_by_ref` required per §7.2.2), `LanguageContent` (`contents` as nested `BTreeMap` for stable JSON key order), and the `MetaObject` enum (`#[non_exhaustive]`).
 - **Deserialize:** each meta type validates JSON `"type"` against `TYPE_NAME` in a single serde pass (`ModelError::UnexpectedObjectType`); no intermediate `serde_json::Value` parse.
 - **Tests:** `roundtrip_strict` for complete types (meta objects, `ExternalReference`, `GranularMarking`, `ExtensionMap`); subset `roundtrip` for `SdoSroCommonProps` / `ScoCommonProps` fixtures that carry unmodeled SDO keys. Fixtures under `tests/fixtures/spec/meta/` include minimal TLP markings, a rich marking-def with common properties, and cross-type reject coverage. Unit pins for all nine TLP ids.
 - **Docs:** STIX object model version vs TLP marking encoding in `crates/rstix/README.md` and `docs/library/rstix.md`.
@@ -1470,11 +1474,11 @@ Three correctness fixes to the `fibratus_windows` pipeline shipped in #191, foun
 - **Thread events.** `create_remote_thread` maps `TargetImage` -> `evt.arg[exe]`, so a rule that scopes the injected-into process converts rather than dropping the field.
 - **Registry event scoping.** The `registry_event` logsource category now prepends an `evt.category = 'registry'` discriminator as its first condition, the same treatment the other categories already get. Fibratus rejects a rule at load time when it has no event-type scoping by name or category, so without this the converted `registry_event` rules would not load.
 
-### `rstix`: Phase 2 — model skeleton and common properties (#201)
+### `rstix`: Phase 2: model skeleton and common properties (#201)
 
 Phase 2 (Data Model + Serialization) adds the model skeleton and common property containers. This work is not releasable on its own.
 
-- **`model` module:** `ModelError` and `model::common` property containers — `SdoSroCommonProps` (required `spec_version`, `created`, `modified`; `confidence` as `Option<Confidence>`), `ScoCommonProps` (SCO-only fields), `ExternalReference` (STIX §2.5.2: non-empty `source_name` plus at least one of `description`, `url`, or `external_id` enforced on construction and deserialization), `GranularMarking` (`marking_ref` XOR `lang`; non-empty `selectors`), and `ExtensionMap` / `ExtensionType`.
+- **`model` module:** `ModelError` and `model::common` property containers, `SdoSroCommonProps` (required `spec_version`, `created`, `modified`; `confidence` as `Option<Confidence>`), `ScoCommonProps` (SCO-only fields), `ExternalReference` (STIX §2.5.2: non-empty `source_name` plus at least one of `description`, `url`, or `external_id` enforced on construction and deserialization), `GranularMarking` (`marking_ref` XOR `lang`; non-empty `selectors`), and `ExtensionMap` / `ExtensionType`.
 - **Leaf-type serde:** `serde_impls/` for `StixId`, timestamps, and `Confidence`; typed-ID serde in the `define_typed_id!` macro; inline `LanguageTag` serde.
 - **Tests:** fixture-backed integration tests in `tests/spec.rs` (`tests/fixtures/spec/common/`); core serde unit tests in `src/core/`.
 
@@ -1491,9 +1495,9 @@ The correlation engine's memory bounds are now fully operator-configurable. Prev
 
 Two new benchmark surfaces for the correlation window modes shipped in #192, prompted by the [SEP #214](https://github.com/SigmaHQ/sigma-specification/issues/214) discussion on memory becoming the bottleneck in stateful window correlation (high-cardinality group keys, long-lived sessions).
 
-- **`correlation_window_modes` Criterion group** (`cargo bench -p rsigma-eval --bench correlation -- correlation_window_modes`): sliding vs tumbling vs session on an identical `event_count` workload. All three modes run at ~1.4-1.5 Melem/s — the window decision in `apply_window_open` is O(1), so declaring `window: session` is free at evaluation time.
-- **`correlation_memory` bench target** (`cargo bench -p rsigma-eval --bench correlation_memory`): not a Criterion suite — it installs a counting global allocator and reports peak/settled heap deltas, which Criterion cannot observe. Three scenario families: high-cardinality session keys against the `max_state_entries` cap (1M unique keys held to a 39.8 MiB peak by stalest-first eviction; ~256 B per live session group uncapped), long-lived chatty sessions (8 B per in-window `event_count` event; `value_count` with distinct strings costs ~92 B per event and drops to 63 Kelem/s at 1,800 distinct values per window because the distinct count is recomputed per event), and a three-mode comparison on identical load (identical memory and throughput).
-- **Documentation**: results recorded in `BENCHMARKS.md` (new Window Modes and Window-Mode Memory Stress sections plus Key Observations); the Performance Tuning guide's correlation-memory section now documents what the cap does and does not bound, per-event state costs by correlation type, the `value_count` distinct-count hot spot, and the cardinality-flood eviction caveat — and fixes a long-standing inaccuracy (the `max_state_entries` cap is global across all correlation rules, not per rule). The streaming-detection guide links the window-mode semantics to the measured numbers, and the developer testing guide documents the non-Criterion bench target.
+- **`correlation_window_modes` Criterion group** (`cargo bench -p rsigma-eval --bench correlation -- correlation_window_modes`): sliding vs tumbling vs session on an identical `event_count` workload. All three modes run at ~1.4-1.5 Melem/s, the window decision in `apply_window_open` is O(1), so declaring `window: session` is free at evaluation time.
+- **`correlation_memory` bench target** (`cargo bench -p rsigma-eval --bench correlation_memory`): not a Criterion suite. It installs a counting global allocator and reports peak/settled heap deltas, which Criterion cannot observe. Three scenario families: high-cardinality session keys against the `max_state_entries` cap (1M unique keys held to a 39.8 MiB peak by stalest-first eviction; ~256 B per live session group uncapped), long-lived chatty sessions (8 B per in-window `event_count` event; `value_count` with distinct strings costs ~92 B per event and drops to 63 Kelem/s at 1,800 distinct values per window because the distinct count is recomputed per event), and a three-mode comparison on identical load (identical memory and throughput).
+- **Documentation**: results recorded in `BENCHMARKS.md` (new Window Modes and Window-Mode Memory Stress sections plus Key Observations); the Performance Tuning guide's correlation-memory section now documents what the cap does and does not bound, per-event state costs by correlation type, the `value_count` distinct-count hot spot, and the cardinality-flood eviction caveat, and fixes a long-standing inaccuracy (the `max_state_entries` cap is global across all correlation rules, not per rule). The streaming-detection guide links the window-mode semantics to the measured numbers, and the developer testing guide documents the non-Criterion bench target.
 
 ### Dependency and security bumps (#206)
 
