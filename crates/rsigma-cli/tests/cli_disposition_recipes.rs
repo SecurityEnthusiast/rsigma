@@ -10,6 +10,8 @@
 //! records with the expected verdicts and identities. Docs that embed the exact
 //! tested files therefore cannot drift from what the engine accepts.
 
+#![cfg(feature = "daemon")]
+
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
