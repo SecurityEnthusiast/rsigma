@@ -14,7 +14,7 @@ rsigma taxii sync --server <URL> --collection <ID> --store <DIR> [OPTIONS]
 
 ## Description
 
-`taxii sync` calls [`ingest_collection_with_bundle_id`](../../library/rstix.md#rstix-taxii-client) with **`IngestOptions::producer_strict()`** — per-object validation before import, References phase skipped for paginated pages (see [validate-on-ingest](../../library/rstix.md#rstix-taxii-client)). The TAXII client fetches **one page at a time** (`--limit`, default **64**); forward references across pages resolve after the full collection is imported.
+`taxii sync` calls [`ingest_collection_with_bundle_id`](../../library/rstix.md#rstix-taxii-client) with **`IngestOptions::producer_strict()`:** per-object validation before import, References phase skipped for paginated pages (see [validate-on-ingest](../../library/rstix.md#rstix-taxii-client)). The TAXII client fetches **one page at a time** (`--limit`, default **64**); forward references across pages resolve after the full collection is imported.
 
 When `--api-root` is omitted, the client runs TAXII discovery and uses the server-declared default API root. Pass `--api-root` explicitly when the feed uses a non-default root.
 
@@ -119,6 +119,6 @@ Pin a specific ATT&CK release by changing the API root (collection ids stay the 
 
 ## See also
 
-- [`taxii store`](store.md) — import a local STIX bundle JSON file (air-gap, ATT&CK releases, fixtures)
+- [`taxii store`](store.md): import a local STIX bundle JSON file (air-gap, ATT&CK releases, fixtures)
 - [rstix TAXII client](../../library/rstix.md#rstix-taxii-client)
 - [Feature flags: `taxii-sync`](../../reference/feature-flags.md#rsigma-cli)

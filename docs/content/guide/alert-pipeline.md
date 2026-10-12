@@ -137,11 +137,11 @@ A selector that resolves to nothing contributes an explicit null marker to the f
 
 The dedup stage exposes (see [Metrics](../reference/metrics.md)):
 
-- `rsigma_dedup_results_total{action}` — outcomes (`emitted`, `folded`, `repeat`, `resolved`).
-- `rsigma_dedup_store_entries` — active alerts currently tracked.
-- `rsigma_dedup_evictions_total` — alerts evicted after resolving.
-- `rsigma_dedup_summaries_emitted_total` — `repeat` plus `resolved` records emitted.
-- `rsigma_alert_pipeline_duration_seconds` — stage duration.
+- `rsigma_dedup_results_total{action}`: outcomes (`emitted`, `folded`, `repeat`, `resolved`).
+- `rsigma_dedup_store_entries`: active alerts currently tracked.
+- `rsigma_dedup_evictions_total`: alerts evicted after resolving.
+- `rsigma_dedup_summaries_emitted_total`: `repeat` plus `resolved` records emitted.
+- `rsigma_alert_pipeline_duration_seconds`: stage duration.
 
 ### Relationship to `rsigma.suppress`
 
@@ -217,10 +217,10 @@ See [`engine incidents export`](../cli/engine/incidents-export.md) and [HTTP API
 
 ### Metrics
 
-- `rsigma_incidents_open` — open incidents currently tracked.
-- `rsigma_incidents_emitted_total{trigger}` — incident emissions by trigger.
-- `rsigma_incident_results_total` — total incident records emitted.
-- `rsigma_incident_overmerge_total{guard}` — entity-graph guard hits (`stop_value` / `cardinality_ceiling`).
+- `rsigma_incidents_open`: open incidents currently tracked.
+- `rsigma_incidents_emitted_total{trigger}`: incident emissions by trigger.
+- `rsigma_incident_results_total`: total incident records emitted.
+- `rsigma_incident_overmerge_total{guard}`: entity-graph guard hits (`stop_value` / `cardinality_ceiling`).
 
 ## See also
 

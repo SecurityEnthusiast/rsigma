@@ -69,12 +69,12 @@ webhooks:
 
 | Field | Required | Default | Notes |
 |-------|----------|---------|-------|
-| `id` | yes | — | Stable identifier; the `webhook_id` metric label and the per-sink delivery label. Must be unique across all webhook files. |
-| `kind` | yes | — | `detection` or `correlation`. Filters which result-body variant the webhook fires on. |
-| `url` | yes | — | Target URL template. |
+| `id` | yes | none | Stable identifier; the `webhook_id` metric label and the per-sink delivery label. Must be unique across all webhook files. |
+| `kind` | yes | none | `detection` or `correlation`. Filters which result-body variant the webhook fires on. |
+| `url` | yes | none | Target URL template. |
 | `method` | no | `POST` | Any valid HTTP method. |
-| `headers` | no | — | Header templates. Values are rendered per result. |
-| `body` | no | — | Body template, rendered with JSON-string escaping (see below). |
+| `headers` | no | none | Header templates. Values are rendered per result. |
+| `body` | no | none | Body template, rendered with JSON-string escaping (see below). |
 | `timeout` | no | `10s` | Per-request timeout (humantime: `5s`, `500ms`). |
 | `retry.attempts` | no | `3` | Total tries, one initial plus retries. |
 | `retry.backoff` | no | `1s` | Exponential backoff base. |
@@ -83,11 +83,11 @@ webhooks:
 | `scope.rules` / `scope.tags` / `scope.levels` | no | unrestricted | Same axes as enricher [scopes](enrichers.md); each populated axis must match. |
 | `queue_size` | no | `1024` | Bounded queue depth between the dispatcher and the worker. |
 | `tls.ca` / `tls.client_cert` / `tls.client_key` | no | system roots | PEM file paths. `ca` trusts a private CA in addition to the system roots; `client_cert` and `client_key` (set together) enable mutual TLS. See [TLS to internal endpoints](#tls-to-internal-endpoints). |
-| `signing.secret_env` | yes (if signing) | — | Environment variable holding the HMAC key. The secret is never stored in the YAML. |
+| `signing.secret_env` | yes (if signing) | none | Environment variable holding the HMAC key. The secret is never stored in the YAML. |
 | `signing.secret_encoding` | no | `utf8` | `utf8` (raw bytes) or `base64` (decoded, stripping an optional `whsec_` prefix) for a svix-issued secret. |
 | `signing.scheme` | no | `standard` | `standard` (Standard Webhooks), `github` (`X-Hub-Signature-256`), or `custom`. See [Signing requests](#signing-requests). |
-| `signing.rotate_secret_env` | no | — | A second key (another env var) emitted as an extra signature during rotation. Not supported by `github`. |
-| `signing.custom.*` | no | — | Custom-scheme knobs: `algorithm`, `encoding`, `signature_header`, `value_format`, `signed_payload`, `timestamp_header`, `id_header`. |
+| `signing.rotate_secret_env` | no | none | A second key (another env var) emitted as an extra signature during rotation. Not supported by `github`. |
+| `signing.custom.*` | no | none | Custom-scheme knobs: `algorithm`, `encoding`, `signature_header`, `value_format`, `signed_payload`, `timestamp_header`, `id_header`. |
 
 The `retry.*` and `queue_size` settings override the daemon's global `--sink-*` delivery defaults for this webhook only.
 

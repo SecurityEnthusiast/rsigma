@@ -118,7 +118,7 @@ The auto-fix implementation is enabled by the default `fix` feature. Disable def
 ## Parsing
 
 - **Multi-document YAML**: `---` separators, `action: global/reset/repeat` for rule templates
-- **Condition expressions**: PEG grammar (pest) with Pratt parsing and correct operator precedence (`NOT` > `AND` > `OR`). Supports `and`, `or`, `not`, `1 of`, `all of`, `any of`, `N of`, parenthesized groups, wildcard patterns — `them` excludes `_`-prefixed identifiers per spec
+- **Condition expressions**: PEG grammar (pest) with Pratt parsing and correct operator precedence (`NOT` > `AND` > `OR`). Supports `and`, `or`, `not`, `1 of`, `all of`, `any of`, `N of`, parenthesized groups, wildcard patterns: `them` excludes `_`-prefixed identifiers per spec
 - **Value types**: strings with wildcards (`*`, `?`), escape sequences (`\*`, `\?`, `\\`), integers, floats, booleans, null
 - **Timespan parsing**: `15s`, `30m`, `1h`, `7d`, `1w`, `1M`, `1y`
 - **Logsource**: `category`, `product`, `service`, `definition`, custom fields. Detection and filter rules must have a `logsource` that sets at least one of `category`, `product`, or `service`.
@@ -130,9 +130,9 @@ The auto-fix implementation is enabled by the default `fix` feature. Disable def
 2. Non-mapping documents are skipped; errors are accumulated in `collection.errors`.
 3. YAML parse errors stop iteration (the deserializer may not recover from malformed input).
 4. **Collection actions:**
-   - `action: global` — store document as a template; remove `action` key; do not produce a rule.
-   - `action: reset` — clear the global template.
-   - `action: repeat` — merge current document onto the previous document; apply global template if present; parse the merged result. Error if no previous document exists.
+   - `action: global`: store document as a template; remove `action` key; do not produce a rule.
+   - `action: reset`: clear the global template.
+   - `action: repeat`: merge current document onto the previous document; apply global template if present; parse the merged result. Error if no previous document exists.
 5. **Merge order:** For normal documents: `merged = deep_merge(global, value)`. For repeat: `merged = deep_merge(global, deep_merge(previous, repeat_doc))`.
 6. **`deep_merge`:** Recursive. Source mappings override destination keys; non-mapping source replaces destination entirely.
 7. **Previous tracking:** Updated after each non-action document and after each repeat. Repeat chains from the *last* document, not the original.
@@ -162,7 +162,7 @@ The full PEG grammar is defined in [`src/sigma.pest`](src/sigma.pest). It implem
 
 | Precedence (highest first) | Operator | Associativity |
 |---------------------------|----------|---------------|
-| 1 | `not` (prefix) | — |
+| 1 | `not` (prefix) | none |
 | 2 | `and` (infix) | Left |
 | 3 | `or` (infix) | Left |
 
@@ -212,18 +212,18 @@ The parser recognizes 30 modifier variants, some with aliases:
 
 | Category | Modifiers | Aliases |
 |----------|-----------|---------|
-| String matching | `contains`, `startswith`, `endswith` | — |
-| Value linking | `all` | — |
+| String matching | `contains`, `startswith`, `endswith` | none |
+| Value linking | `all` | none |
 | Encoding | `base64`, `base64offset`, `wide`, `utf16be`, `utf16`, `windash` | `utf16le` → `wide` |
-| Pattern | `re`, `cidr` | — |
-| Case | `cased` | — |
-| Existence | `exists` | — |
-| Placeholder | `expand` | — |
+| Pattern | `re`, `cidr` | none |
+| Case | `cased` | none |
+| Existence | `exists` | none |
+| Placeholder | `expand` | none |
 | Field reference | `fieldref` | May be followed by one of `contains`, `startswith`, or `endswith`, and by `neq`. The value must not contain wildcards. |
-| Numeric comparison | `gt`, `gte`, `lt`, `lte` | — |
+| Numeric comparison | `gt`, `gte`, `lt`, `lte` | none |
 | Inequality | `neq` | Negates the whole item, so a list matches when the field equals none of the values. Combines with string modifiers, `re`, `cidr`, and `fieldref`. |
 | Regex flags | `i`, `m`, `s` | `ignorecase` → `i`, `multiline` → `m`, `dotall` → `s` |
-| Timestamp parts | `minute`, `hour`, `day`, `week`, `month`, `year` | — |
+| Timestamp parts | `minute`, `hour`, `day`, `week`, `month`, `year` | none |
 
 Each modifier may appear once per key; a repeated modifier such as `field|neq|neq` is a `DuplicateModifier` error.
 
@@ -245,7 +245,7 @@ When the `re` modifier is present, string values are parsed with `SigmaValue::fr
 ### Correlation Conditions
 
 - **Threshold (mapping):** `{ gte: 100 }` or `{ gt: 10, lte: 100, field: "TargetUser" }`. Operators: `lt`, `lte`, `gt`, `gte`, `eq`, `neq`. Values must be numeric.
-- **Extended (string):** `"rule_a and rule_b"` for temporal types — parsed as a boolean expression over rule references.
+- **Extended (string):** `"rule_a and rule_b"` for temporal types: parsed as a boolean expression over rule references.
 - **Default (temporal, no condition):** `Threshold { predicates: [(Gte, N)], field: None }`, where `N` is the number of distinct entries in `rules`, so every referenced rule must match within the timespan. A temporal correlation with neither a condition nor any rules is a parse error.
 - **Timeframe/timespan:** The parser accepts both `timeframe` and `timespan` keys.
 - **Custom attributes:** Both detection and correlation rules expose a unified `custom_attributes` map (`HashMap<String, yaml_serde::Value>`). It merges (a) any arbitrary top-level YAML key that is not part of the Sigma schema, (b) entries of the optional top-level `custom_attributes:` mapping (explicit block wins over arbitrary keys of the same name), and (c) values set by pipeline `SetCustomAttribute` transformations (applied last, last-write-wins). Engines read `rsigma.*` extensions (`rsigma.suppress`, `rsigma.action`, `rsigma.correlation_event_mode`, etc.) from this map.
@@ -267,7 +267,7 @@ The `rsigma.*` spelling wins when both are present. Either spelling maps to `Cor
 
 ## Filter Rules
 
-Filter rules inject exclusion conditions into referenced detection rules — enables centralized tuning without modifying original rule files. See the [Sigma Filters Specification](https://sigmahq.io/sigma-specification/specification/sigma-filters-specification.html) for the full standard.
+Filter rules inject exclusion conditions into referenced detection rules, enables centralized tuning without modifying original rule files. See the [Sigma Filters Specification](https://sigmahq.io/sigma-specification/specification/sigma-filters-specification.html) for the full standard.
 
 Per the spec, `selection`, `condition`, and `rules` all live inside the `filter` section:
 

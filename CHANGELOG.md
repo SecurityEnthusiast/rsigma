@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Documentation corrections
+
+The docs site publishes the config JSON Schema at `/rsigma.schema.json`, the URL the config template and deployment units already reference. The fuzzing guide lists all 27 harnesses, including the 21 the weekly workflow runs. `RAYON_NUM_THREADS` is documented with the other environment variables. The Prometheus catalogue size is 95 metric names, 90 of them registered without a feature gate. Prose that used an em dash now uses a comma, a colon, or a separate sentence. Characters that belong to the windash set are unchanged.
+
 ### Dependency follow-up (#556)
 
 Rolls up the compatible Dependabot PRs that opened after #550, with `Cargo.lock` regenerated against current `main`. Rust: `rmcp` 3.3.0 to 3.5.0 (#555), which renames the deprecated `ServerInfo` alias to `ServerConfig` in the MCP server handler, and `tokio-rustls` 0.26.5 to 0.26.6 (#554). CI: `taiki-e/install-action` v2.87.21 to v2.87.22, repinned by commit SHA (#553). VS Code: `@types/vscode` 1.138.0 to 1.140.0 (#552). Held back: `yamlpath` 1.30.1 (#495) and `yamlpatch` 1.30.1 (#494) require rustc 1.97 through `tree-sitter-iter`, above the 1.96.0 MSRV; `tikv-jemallocator` 0.7.0 (#425) remains excluded after the measured musl daemon throughput regression.

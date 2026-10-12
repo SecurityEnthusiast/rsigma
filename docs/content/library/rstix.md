@@ -79,7 +79,7 @@ The optional **`pattern`** feature adds the full STIX patterning engine.
 flowchart LR
     subgraph PE ["Pattern Engine (`pattern`) feature"]
         SRC["Pattern string"] --> LEX["Lexer"]
-        LEX --> PAR["Parser<br/>Levels 1–3"]
+        LEX --> PAR["Parser<br/>Levels 1-3"]
         PAR --> AST["PatternAst"]
         AST --> TCK["SCO type checker"]
         TCK --> PAT["Pattern<br/>(validated)"]
@@ -98,7 +98,7 @@ flowchart LR
 | Lexer | Tokenizer; 64 KiB input cap | Done |
 | Parser | Recursive-descent parser | Done |
 | SCO type checker | SCO schema + extension paths | Done |
-| Evaluator | Level 1–3 evaluation | Done |
+| Evaluator | Level 1-3 evaluation | Done |
 | Observation context | `ObservationContext`, observed-data builder | Done |
 | Regex safety | Regex compile size limit + PCRE DOTALL for `MATCHES` | Done |
 | Path resolver | Object-path resolution, CIDR, `_ref` via bundle | Done |
@@ -119,7 +119,7 @@ Build with `cargo build -p rstix --features pattern`.
 
 ### In scope (Pattern Engine (complete))
 
-Lexer, Level 1–3 parser, SCO schema type-checker (18 built-in + custom types), `Pattern::parse`, `Pattern::evaluate`, `matches_single`, `matches_single_with_bundle`, `evaluate_observed_data`, `Pattern::canonical`, `IndicatorPattern` STIX AST wiring at deserialize, `IndicatorPattern::evaluate`, `IndicatorBuilder`, `ObservationContext`, full §9 comparison and temporal semantics, manifest-driven SCO field tests (`tests/pattern_eval_sco_fields.rs`, 276 cases), spec §9.8 parse/print round-trip tests, `fuzz_stix_pattern`.
+Lexer, Level 1-3 parser, SCO schema type-checker (18 built-in + custom types), `Pattern::parse`, `Pattern::evaluate`, `matches_single`, `matches_single_with_bundle`, `evaluate_observed_data`, `Pattern::canonical`, `IndicatorPattern` STIX AST wiring at deserialize, `IndicatorPattern::evaluate`, `IndicatorBuilder`, `ObservationContext`, full §9 comparison and temporal semantics, manifest-driven SCO field tests (`tests/pattern_eval_sco_fields.rs`, 276 cases), spec §9.8 parse/print round-trip tests, `fuzz_stix_pattern`.
 
 Grammar authority: **STIX Specification §9**. Internal storage uses `PatternAst` after type-check.
 
@@ -193,7 +193,7 @@ let report = ingest_collection_with_bundle_id(
 ).await?;
 ```
 
-Default ingest does not validate. With `validate`, each object is checked as a one-object synthetic bundle; use `IngestOptions::producer_strict()` (skips References). `interop_strict` is zero-leniency and still closed-bundle on refs — not for paginated ingest. Invalid objects are rejected by default when a validator is attached. Unresolved refs are audited after all pages against the store.
+Default ingest does not validate. With `validate`, each object is checked as a one-object synthetic bundle; use `IngestOptions::producer_strict()` (skips References). `interop_strict` is zero-leniency and still closed-bundle on refs, not for paginated ingest. Invalid objects are rejected by default when a validator is attached. Unresolved refs are audited after all pages against the store.
 
 ```bash
 cargo test -p rstix --features taxii-store --test taxii_store --locked
@@ -285,7 +285,7 @@ SDO/SRO/SCO families (19 SDOs, 2 SROs, 18 SCOs + 12 extensions), `IndicatorPatte
 | Symbol | Role |
 | ------ | ---- |
 | `Pattern`, `PatternAst`, `PatternScoType` | STIX §9 parse and type-check at crate root. |
-| `Pattern::evaluate`, `matches_single`, `matches_single_with_bundle`, `evaluate_observed_data` | Level 1–3 evaluation. |
+| `Pattern::evaluate`, `matches_single`, `matches_single_with_bundle`, `evaluate_observed_data` | Level 1-3 evaluation. |
 | `pattern::ObservationContext`, `pattern::TimestampedObservation` | Evaluation context. |
 | `PatternError`, `PatternMatchError` | Lex/parse/type-check/match errors. |
 
@@ -530,7 +530,7 @@ All twelve pipeline checks are implemented. The conformance harness (`tests/fixt
 | Feature | Purpose |
 | ------- | ------- |
 | `serde` (default) | Bundle parsing, serialization, advisory validation. |
-| `pattern` | STIX pattern lexer, Level 1–3 parser, type-checker, and evaluator. |
+| `pattern` | STIX pattern lexer, Level 1-3 parser, type-checker, and evaluator. |
 | `validate` | Profile-based Validation Pipeline (`Validator`, structured diagnostics, conformance corpus). |
 | `graph` | Property graph over parsed bundles (`StixGraph`, `RelationshipExpander`). |
 | `marking` | TLP and statement marking resolution (`MarkingResolver`, granular selectors). |

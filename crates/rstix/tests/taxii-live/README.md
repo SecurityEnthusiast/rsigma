@@ -32,9 +32,9 @@ No environment variables. URLs and cert paths are defined in `tests/taxii_live.r
 | Listener | URL |
 | -------- | --- |
 | TLS | `https://127.0.0.1:8443` |
-| mTLS | `https://localhost:8444` (use `localhost`, not the IP — Caddy strict SNI) |
+| mTLS | `https://localhost:8444` (use `localhost`, not the IP: Caddy strict SNI) |
 | TLS 1.3 only | `https://127.0.0.1:8445` |
-| DANE | `https://dane.taxii.test:8443` (TLSA via CoreDNS; live test uses `dane_require_dnssec(false)` — unsigned zone) |
+| DANE | `https://dane.taxii.test:8443` (TLSA via CoreDNS; live test uses `dane_require_dnssec(false)`: unsigned zone) |
 | SRV | `_taxii2._tcp.taxii.test` via CoreDNS `127.0.0.1:5353` |
 
 ## Commands

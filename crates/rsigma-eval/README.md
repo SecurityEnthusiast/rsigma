@@ -160,7 +160,7 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 ## Detection Engine
 
 - **Witness-based candidate index**: every rule is analyzed into witnesses, necessary conditions of which at least one holds on any event the rule can match, drawn from exact values, substring needles, keywords, mandatory regex literals, and field presence. The index inverts that relation over a per-field presence list and exact-value map, one Aho-Corasick automaton per field for substring needles, and one keyword automaton scanned against every string value. Rules with no sound witness, chiefly those whose only required branch is negated, are evaluated against every event. Candidates come back in ascending rule order.
-- **Compiled matchers**: optimized matching for all 30 modifier combinations — exact, contains, startswith, endswith, regex, CIDR, numeric comparison, base64 offset (3 alignment variants), windash expansion (5 replacement characters), field references, placeholder expansion, timestamp part extraction
+- **Compiled matchers**: optimized matching for all 30 modifier combinations: exact, contains, startswith, endswith, regex, CIDR, numeric comparison, base64 offset (3 alignment variants), windash expansion (5 replacement characters), field references, placeholder expansion, timestamp part extraction
 - **Logsource-aware evaluation**: opt-in `LogSourceExtractor` plus conflict-based pruning (`set_logsource_extractor`) skips rules whose `product`/`service`/`category` (and custom dimensions) conflict with the event's logsource, backed by a product-partitioned rule index; off by default and fail-open
 - **Schema classification and routing**: `SchemaClassifier` recognizes an event's schema from declarative field predicates (`explain`/`classify_with_ambiguity` for tuning), and `SchemaRouter` routes each event to its schema's pipeline engine, derives the event's logsource from the recognized schema for pruning, and feeds one shared correlation store
 - **Condition tree evaluation**: short-circuit boolean logic, selector patterns with quantifiers (`1 of selection_*`, `all of them`)
@@ -189,12 +189,12 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 | `NumericEq/Gt/Gte/Lt/Lte` | `\|gt`, `\|gte`, etc. | f64 comparison |
 | `Exists` | `\|exists` | Field presence; a field set to null is present. Accepts `true`/`yes`/`false`/`no` as values |
 | `FieldRef` | `\|fieldref` | Compares against another field. Optional `\|contains`, `\|startswith`, or `\|endswith` after `\|fieldref`. Case-insensitive unless `\|cased`. |
-| `Null` | — | Matches null or missing values |
-| `BoolEq` | — | Boolean equality |
+| `Null` | - | Matches null or missing values |
+| `BoolEq` | - | Boolean equality |
 | `Expand` | `\|expand` | Placeholders left unresolved by the pipeline, filled from event fields at match time; honors `\|contains`, `\|startswith`, and `\|endswith` |
 | `TimestampPart` | `\|minute`, `\|hour`, `\|day`, `\|week`, `\|month`, `\|year` | Extract timestamp component, match inner value |
 | `Not` | `\|neq` | Wraps inner matcher with negation; matches a missing field unless the inner matcher does |
-| `AnyOf` / `AllOf` | — | Multiple values combined (OR / AND with `\|all`) |
+| `AnyOf` / `AllOf` | - | Multiple values combined (OR / AND with `\|all`) |
 
 ### Value Coercion
 
@@ -212,11 +212,11 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 
 ### Selector Pattern Matching
 
-- `*` — matches any detection name.
-- `selection_*` — prefix match.
-- `*_filter` — suffix match.
-- `exact` — exact match.
-- `them` — matches all names except those starting with `_`.
+- `*`: matches any detection name.
+- `selection_*`: prefix match.
+- `*_filter`: suffix match.
+- `exact`: exact match.
+- `them`: matches all names except those starting with `_`.
 - A pattern that does not start with `_` also skips names starting with `_`.
 - A selector that matches no name is a compile error.
 
@@ -416,7 +416,7 @@ Condition semantics follow pySigma:
 | `field_name_prefix` | `prefix` | Add a prefix to all field names |
 | `field_name_suffix` | `suffix` | Add a suffix to all field names |
 | `field_name_transform` | `transform_func`, `mapping`, `apply_keyword` (only `false`) | Case transformation (see below) |
-| `drop_detection_item` | — | Remove matching detection items |
+| `drop_detection_item` | none | Remove matching detection items |
 | `add_condition` | `conditions: {k: v \| [v1, v2, ...]}`, `negated` (default: `false`), `name`, `template` (default: `false`) | Inject additional detection conditions; list values are OR-linked. `name` names the added detection and must not collide with an existing one; `template: true` substitutes `$category`, `$product`, and `$service` in string values |
 | `change_logsource` | `category`, `product`, `service` | Modify logsource fields |
 | `replace_string` | `regex`, `replacement`, `skip_special` (default: `false`), `interpret_special` (default: `false`) | Regex-based string replacement (`skip_special` preserves wildcards; `interpret_special` parses wildcards in the replaced text) |
@@ -459,8 +459,8 @@ Condition semantics follow pySigma:
 | `contains_detection_item` | `field`, `value` (optional) |
 | `processing_item_applied` | `processing_item_id` |
 | `processing_state` | `key`, `val`, `op` (`eq`/`ne`/`gte`/`gt`/`lte`/`lt`) |
-| `is_sigma_rule` | — |
-| `is_sigma_correlation_rule` | — |
+| `is_sigma_rule` | none |
+| `is_sigma_correlation_rule` | none |
 | `rule_attribute` | `attribute` (`level`/`status`/`author`/`title`/`id`/`date`/`description`), `value` |
 | `tag` | `tag` |
 
@@ -487,7 +487,7 @@ Condition semantics follow pySigma:
 | Type | Fields | Defaults |
 |------|--------|----------|
 | `concat` | `separator`, `prefix`, `suffix` | `" "`, `""`, `""` |
-| `json` | `indent` | — |
+| `json` | `indent` | none |
 | `template` | `template` | `""` |
 
 Finalizers are stored in the pipeline and not executed in eval mode. Each finalizer has an `apply()` method used by `rsigma-convert` backends to transform a `Vec<String>` of queries into a single output string.
@@ -651,7 +651,7 @@ let matches = engine.evaluate(&event);
 
 `field_name_mapping` also accepts a list of alternatives, matching pySigma's
 `FieldMappingTransformation`. The matched detection item is expanded into an
-OR over the alternatives — when the surrounding `AllOf` selection has other
+OR over the alternatives, when the surrounding `AllOf` selection has other
 items, they're preserved across each branch via a Cartesian expansion so the
 `AND` / `OR` semantics stay correct:
 
