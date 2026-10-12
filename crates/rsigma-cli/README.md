@@ -165,20 +165,22 @@ rsigma rule parse rule.yml --pretty | less  # pretty JSON through a pipe
 
 ### `rule validate`: Validate a rule file or a directory of rules
 
-Parse and compile a rule file, or all rules in a directory, reporting errors.
+Parse and compile a rule file, or all rules in a directory, reporting errors. Parse warnings, such as an invalid `status` or `level` that the parser ignores, are counted separately and do not fail validation unless `--fail-level warning` is set.
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `path` | positional | required | Sigma YAML file, or directory searched recursively for Sigma YAML files |
-| `--verbose` / `-v` | flag | `false` | Show details for each file (parse errors, compile errors) |
+| `--verbose` / `-v` | flag | `false` | Show details for each file (parse errors, parse warnings, compile errors) |
 | `--pipeline` / `-p` | repeatable | `[]` | Processing pipeline YAML file(s) to apply before compilation |
 | `--resolve-sources` | flag | `false` | Also resolve dynamic pipeline sources during validation. Sources must be reachable (file/command/HTTP) for validation to pass |
 | `--source` | repeatable | `[]` | External source file(s) or directory to load alongside pipeline-declared sources (for validating pipelines that reference external sources) |
+| `--fail-level` | `error`\|`warning` | `error` | Lowest parse diagnostic severity that exits `2`; `warning` also fails on parse warnings |
 
 ```bash
 rsigma rule validate path/to/rules/ -v              # verbose output
 rsigma rule validate path/to/rule.yml               # validate a single file
 rsigma rule validate rules/ -p pipelines/ecs.yml    # validate with pipeline
+rsigma rule validate rules/ --fail-level warning    # CI: fail on parse warnings too
 rsigma rule validate rules/ -p dynamic.yml --resolve-sources  # validate + test source resolution
 rsigma rule validate rules/ -p pipe.yml --source sources.yml --resolve-sources  # validate with external sources
 ```

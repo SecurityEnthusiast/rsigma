@@ -4,6 +4,23 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Parse warnings are reported apart from parse errors
+
+The parser keeps a rule whose `status` or `level` is outside the allowed set, or whose `related` entries or `sigma-version` are malformed, and ignores the invalid value. It reported those problems in the same list as documents it dropped, so `rule validate` exited `2` and the MCP `validate_rules` and `parse_rule` tools returned `ok: false` for a rule that parsed and compiled. These are now parse warnings, reported next to parse errors but not failing validation by default.
+
+- `rule validate` prints a `Parse warnings:` count, lists them under their own heading with `--verbose`, adds `parse_warnings` and `summary.parse_warnings` to the JSON envelope, and emits `parse_warning` rows in NDJSON and table output. The new `--fail-level warning` flag also exits `2` on parse warnings; the default, `error`, matches `rule lint --fail-level`.
+- MCP `validate_rules` takes an optional `fail_level` input (`error` or `warning`) and returns `parse_warnings` next to `parse_errors`, which now holds only errors. `parse_rule` also returns `parse_warnings` and sets `ok` from errors only. `test_exemplars` and `tune_rules` reject a rule collection only on errors.
+- `engine eval`, `engine daemon`, and the other commands that load rules report the count of parse warnings separately from parse errors.
+
+In `rsigma-parser`, `SigmaCollection::diagnostics` replaces `SigmaCollection::errors`. Each `CollectionDiagnostic` carries a `kind` (`DiagnosticKind`), a `severity` (`DiagnosticSeverity`), the message, the zero-based index of the YAML document, the file path when the collection was read from disk, and the line and column for YAML syntax and condition errors. Its `Display` prints the same text as the old string. `SigmaCollection` gains `warning_count()`, `errors()`, and `warnings()`, and `SigmaParserError::kind()` returns the variant as a `SigmaParserErrorKind`.
+
+Breaking changes:
+
+- `SigmaCollection::errors` is now `SigmaCollection::diagnostics: Vec<CollectionDiagnostic>`. Call `.to_string()` or read `.message` where code used the string, or match on `kind` and `severity`. `into_result()` returns `Vec<CollectionDiagnostic>` on `Err`.
+- `has_errors()`, `error_count()`, and `into_result()` no longer count warnings. Check `diagnostics.is_empty()` to keep treating a warning as a failure.
+- `rule validate` exits `0`, and MCP `validate_rules` and `parse_rule` return `ok: true`, for rules that only have parse warnings. Pass `--fail-level warning` or `fail_level: warning` to keep failing on them in CI. `rule lint` still reports an invalid `status` or `level` as an `invalid_status` or `invalid_level` error.
+- Consumers of `rule validate` JSON and MCP `parse_errors` read warnings from `parse_warnings`, and consumers of NDJSON or table rows see them with the `parse_warning` status.
+
 ### Lint and the parser agree on modifiers and conditions (#565)
 
 `incompatible_modifiers` and `condition_references_unknown` now run the parser's own validators instead of separate copies, so `rule lint`, the LSP, and the MCP `lint_rules` tool flag exactly the modifier chains and condition references that `rule validate` rejects. Lint used to accept chains the parser rejects, such as `wide|utf16be`, `base64|base64offset`, `base64|re`, `i|re`, and `exists|cased`, and it missed a selector such as `1 of filter_*` that matches no detection. It also split a condition that does not parse into words and reported each word as an unknown identifier. Such a condition is now reported once by the new `invalid_condition` lint, an error that carries the parser's message and location. Each unresolved identifier or selector gets its own `condition_references_unknown` finding with the parser's wording. On the SigmaHQ corpus, the only change is in four files under `unsupported/`, whose 39 word-by-word findings become one `invalid_condition` each.

@@ -15,6 +15,7 @@ This library is part of [rsigma].
 | `parse_sigma_yaml(yaml: &str)` | Parse a multi-document YAML string into a `SigmaCollection` |
 | `parse_sigma_file(path: &Path)` | Parse a single YAML file |
 | `parse_sigma_directory(dir: &Path)` | Recursively parse all `.yml`/`.yaml` files in a directory |
+| `SigmaCollection::diagnostics` | Every parse error and parse warning as a `CollectionDiagnostic`; `has_errors()`, `error_count()`, `warning_count()`, `errors()`, `warnings()`, and `into_result()` separate the two |
 | `parse_condition(input: &str)` | Parse a condition expression string into a `ConditionExpr` |
 | `parse_field_spec(key: &str)` | Parse a field specification like `"CommandLine\|contains\|all"` into a `FieldSpec` |
 
@@ -127,7 +128,7 @@ The auto-fix implementation is enabled by the default `fix` feature. Disable def
 ### Multi-Document Behavior
 
 1. `yaml_serde::Deserializer` yields documents separated by `---`.
-2. Non-mapping documents are skipped; errors are accumulated in `collection.errors`.
+2. Non-mapping documents are skipped; problems are accumulated in `collection.diagnostics` (see [Collection Diagnostics](#collection-diagnostics)).
 3. YAML parse errors stop iteration (the deserializer may not recover from malformed input).
 4. **Collection actions:**
    - `action: global`: store document as a template; remove `action` key; do not produce a rule.
@@ -457,7 +458,7 @@ The `schema_violation` lint rule optionally validates rules against a JSON schem
 
 ## Directory Parsing and Linting
 
-- **`parse_sigma_directory`:** Recursively walks directories; only processes `.yml`/`.yaml` files. File-level parse errors are accumulated in `collection.errors` (not fatal). Sub-collections (rules, correlations, filters) are merged.
+- **`parse_sigma_directory`:** Recursively walks directories; only processes `.yml`/`.yaml` files. A file that cannot be read is recorded as a `DiagnosticKind::File` error (not fatal), and every diagnostic carries the path of its file. Sub-collections (rules, correlations, filters) are merged.
 - **`lint_yaml_directory`:** Skips hidden directories (`.` prefix). Canonicalizes paths to detect symlink cycles. Sorts entries by path for deterministic output. Runs a two-pass directory-global rule index so cross-document reference checks (`sigma_version_mismatch`, `unknown_rule_reference`) resolve rules (by `id` or `name`) across sibling files.
 
 ## Error Types
@@ -478,6 +479,34 @@ The `schema_violation` lint rule optionally validates rules against a JSON schem
 | `InvalidValue` | Invalid value in detection |
 | `InvalidAction` | Unknown collection action |
 | `Io` | File read error |
+| `MergeTooDeep` | An `action: global` or `action: repeat` merge exceeds the nesting limit |
+| `ConditionTooLong` | A condition string exceeds the length limit |
+
+`SigmaParserError::kind()` returns the variant as a payload-free `SigmaParserErrorKind`.
+
+### Collection Diagnostics
+
+`parse_sigma_yaml`, `parse_sigma_file`, and `parse_sigma_directory` return `Ok` with every document that parsed, and record each problem in `SigmaCollection::diagnostics` as a `CollectionDiagnostic`:
+
+| Field | Meaning |
+|-------|---------|
+| `kind` | `YamlSyntax`, `NotAMapping`, `CollectionAction`, `Document(SigmaParserErrorKind)`, `Metadata`, or `File(SigmaParserErrorKind)` |
+| `severity` | `Error` when a document, file, or the rest of the stream was dropped; `Warning` when a document was kept with an invalid `status`, `level`, `related` entry, or `sigma-version` ignored |
+| `message` | The text `Display` prints |
+| `document` | Zero-based index of the YAML document in its file or string |
+| `path` | The file, when the collection was read from disk |
+| `location` | Line and column, for YAML syntax and condition errors |
+
+`has_errors()`, `error_count()`, and `into_result()` count only errors, so a collection with warnings alone is a success. `warning_count()` counts the rest, and `errors()` and `warnings()` iterate over each.
+
+```rust
+use rsigma_parser::{DiagnosticSeverity, parse_sigma_yaml};
+
+let collection = parse_sigma_yaml("title: T\nstatus: draft\nlogsource:\n  category: test\ndetection:\n  sel:\n    a: b\n  condition: sel\n")?;
+assert_eq!(collection.rules.len(), 1);
+assert!(!collection.has_errors());
+assert_eq!(collection.diagnostics[0].severity, DiagnosticSeverity::Warning);
+```
 
 ## Compatibility
 
