@@ -3,9 +3,304 @@ use std::collections::{BTreeMap, HashMap};
 use rsigma_eval::pipeline::state::PipelineState;
 use rsigma_parser::*;
 
+use crate::backend::Backend;
 use crate::error::{ConvertError, Result};
 
 impl super::PostgresBackend {
+    /// Convert a correlation rule into its aggregate query, choosing the
+    /// sliding, tumbling, or session strategy from [`Self::resolve_window_mode`].
+    pub(super) fn convert_correlation(
+        &self,
+        rule: &CorrelationRule,
+        output_format: &str,
+        pipeline_state: &PipelineState,
+        warnings: &mut Vec<String>,
+    ) -> Result<Vec<String>> {
+        let table = self.resolve_table(&rule.custom_attributes, &pipeline_state.state)?;
+        let ts = &self.timestamp_field;
+        let use_time_bucket =
+            output_format == "timescaledb" || output_format == "continuous_aggregate";
+
+        let mut group_by_cols: Vec<String> = rule
+            .group_by
+            .iter()
+            .map(|g| self.field_expr(g))
+            .collect::<Result<_>>()?;
+        if use_time_bucket {
+            group_by_cols.insert(0, format!("time_bucket('1 hour', {ts})"));
+        }
+        let group_by_clause = if group_by_cols.is_empty() {
+            String::new()
+        } else {
+            format!(" GROUP BY {}", group_by_cols.join(", "))
+        };
+        let group_by_select = if group_by_cols.is_empty() {
+            String::new()
+        } else {
+            format!("{}, ", group_by_cols.join(", "))
+        };
+
+        let window_secs = rule.timespan.seconds;
+        let having_clause = self.build_having_clause(&rule.condition)?;
+
+        let field_from_condition = match &rule.condition {
+            CorrelationCondition::Threshold { field, .. } => {
+                field.as_ref().and_then(|f| f.first().cloned())
+            }
+            _ => None,
+        };
+        let value_field = field_from_condition.as_deref().or_else(|| {
+            rule.aliases
+                .first()
+                .and_then(|a| a.mapping.values().next().map(|s| s.as_str()))
+        });
+
+        // Build per-rule table mapping from _rule_tables injected by convert_collection
+        let rule_tables: HashMap<String, String> = pipeline_state
+            .state
+            .get("_rule_tables")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let temporal = matches!(
+            rule.correlation_type,
+            CorrelationType::Temporal | CorrelationType::TemporalOrdered
+        );
+
+        // Per-rule converted queries for CTE-based pre-filtering, present when
+        // converting a collection. Temporal types filter on `rule_name` instead.
+        let rule_queries: Option<HashMap<String, String>> = pipeline_state
+            .state
+            .get("_rule_queries")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let (cte_prefix, source_table, time_filter) = if temporal {
+            Default::default()
+        } else {
+            self.build_correlation_source(
+                &rule.rules,
+                rule_queries.as_ref(),
+                &table,
+                ts,
+                window_secs,
+            )?
+        };
+
+        // The windowing strategy (sliding/tumbling/session). The
+        // `correlation_method` option is the converting user's explicit choice
+        // (pySigma-style) and overrides the rule's own `window` hint; otherwise
+        // the rule's `window` is used. `sliding` (the default, also what an
+        // absent `window` resolves to) preserves the existing per-output_format
+        // behavior, so existing rules are unaffected. `tumbling` and `session`
+        // are opt-in.
+        let window = self.resolve_window_mode(rule)?;
+        if matches!(window, WindowMode::Tumbling) {
+            let query = if temporal {
+                self.build_temporal_tumbling(
+                    rule,
+                    &table,
+                    ts,
+                    window_secs,
+                    use_time_bucket,
+                    &having_clause,
+                    &rule_tables,
+                    pipeline_state,
+                )?
+            } else {
+                self.build_tumbling_correlation(
+                    rule,
+                    &cte_prefix,
+                    &source_table,
+                    ts,
+                    window_secs,
+                    value_field,
+                    use_time_bucket,
+                )?
+            };
+            return Ok(vec![query]);
+        }
+        if matches!(window, WindowMode::Session) {
+            // The rule's own `gap` wins; the `gap` backend option provides the
+            // default so `correlation_method=session` works for rules that do
+            // not declare one.
+            let gap_secs = rule
+                .gap
+                .as_ref()
+                .map(|g| g.seconds)
+                .or(self.session_gap_secs)
+                .ok_or_else(|| {
+                    ConvertError::UnsupportedCorrelation(
+                        "session window requires a 'gap' (set it on the rule or pass \
+                         -O gap=5m as a conversion default)"
+                            .into(),
+                    )
+                })?;
+            let query = if temporal {
+                self.build_temporal_session(
+                    rule,
+                    &table,
+                    ts,
+                    window_secs,
+                    gap_secs,
+                    &having_clause,
+                    &rule_tables,
+                    pipeline_state,
+                    warnings,
+                )?
+            } else {
+                self.build_session_correlation(
+                    rule,
+                    &cte_prefix,
+                    &source_table,
+                    ts,
+                    window_secs,
+                    gap_secs,
+                    value_field,
+                    warnings,
+                )?
+            };
+            return Ok(vec![query]);
+        }
+
+        let query = match rule.correlation_type {
+            CorrelationType::EventCount if output_format == "sliding_window" => self
+                .build_sliding_window_query(
+                    &cte_prefix,
+                    &source_table,
+                    &time_filter,
+                    &rule.group_by,
+                    ts,
+                    window_secs,
+                    &rule.condition,
+                )?,
+            CorrelationType::EventCount => {
+                format!(
+                    "{cte_prefix}SELECT {group_by_select}COUNT(*) AS event_count \
+                     FROM {source_table}\
+                     {time_filter}\
+                     {group_by_clause} \
+                     HAVING {having_clause}",
+                    having_clause = having_clause.replace("{agg}", "COUNT(*)")
+                )
+            }
+            CorrelationType::ValueCount => {
+                let field = match value_field {
+                    Some(f) => self.field_expr(f)?,
+                    None => "'unknown_field'".to_string(),
+                };
+                let agg = format!("COUNT(DISTINCT {field})");
+                format!(
+                    "{cte_prefix}SELECT {group_by_select}{agg} AS value_count \
+                     FROM {source_table}\
+                     {time_filter}\
+                     {group_by_clause} \
+                     HAVING {having_clause}",
+                    having_clause = having_clause.replace("{agg}", &agg)
+                )
+            }
+            CorrelationType::Temporal | CorrelationType::TemporalOrdered => self
+                .build_temporal_query(
+                    rule,
+                    &table,
+                    ts,
+                    window_secs,
+                    &group_by_cols,
+                    &group_by_select,
+                    &group_by_clause,
+                    &having_clause,
+                    &rule_tables,
+                    pipeline_state,
+                )?,
+            CorrelationType::ValueSum => {
+                let field = match value_field {
+                    Some(f) => self.field_expr(f)?,
+                    None => "'unknown_field'".to_string(),
+                };
+                let agg = format!("SUM({field})");
+                format!(
+                    "{cte_prefix}SELECT {group_by_select}{agg} AS value_sum \
+                     FROM {source_table}\
+                     {time_filter}\
+                     {group_by_clause} \
+                     HAVING {having_clause}",
+                    having_clause = having_clause.replace("{agg}", &agg)
+                )
+            }
+            CorrelationType::ValueAvg => {
+                let field = match value_field {
+                    Some(f) => self.field_expr(f)?,
+                    None => "'unknown_field'".to_string(),
+                };
+                let agg = format!("AVG({field})");
+                format!(
+                    "{cte_prefix}SELECT {group_by_select}{agg} AS value_avg \
+                     FROM {source_table}\
+                     {time_filter}\
+                     {group_by_clause} \
+                     HAVING {having_clause}",
+                    having_clause = having_clause.replace("{agg}", &agg)
+                )
+            }
+            CorrelationType::ValuePercentile | CorrelationType::ValueMedian => {
+                let field = match value_field {
+                    Some(f) => self.field_expr(f)?,
+                    None => "'unknown_field'".to_string(),
+                };
+                let percentile = if rule.correlation_type == CorrelationType::ValueMedian {
+                    0.5
+                } else {
+                    match &rule.condition {
+                        CorrelationCondition::Threshold { percentile, .. } => {
+                            percentile.map(|p| p as f64 / 100.0).unwrap_or(0.95)
+                        }
+                        _ => 0.95,
+                    }
+                };
+                let agg = format!("PERCENTILE_CONT({percentile}) WITHIN GROUP (ORDER BY {field})");
+                format!(
+                    "{cte_prefix}SELECT {group_by_select}\
+                     {agg} AS pct_value \
+                     FROM {source_table}\
+                     {time_filter}\
+                     {group_by_clause} \
+                     HAVING {having_clause}",
+                    having_clause = having_clause.replace("{agg}", &agg)
+                )
+            }
+        };
+
+        Ok(vec![query])
+    }
+
+    /// Resolve the effective window mode for a correlation conversion.
+    ///
+    /// The `correlation_method` backend option, when set, is the converting
+    /// user's explicit choice and overrides the rule's own `window` hint;
+    /// otherwise the rule's `window` (default `sliding`) is used. An option that
+    /// is not one of [`Self::correlation_methods`] is rejected.
+    fn resolve_window_mode(&self, rule: &CorrelationRule) -> Result<WindowMode> {
+        match self.correlation_method.as_deref() {
+            None => Ok(rule.window),
+            Some(method) => {
+                if !self.correlation_methods().iter().any(|(n, _)| *n == method) {
+                    let available = self
+                        .correlation_methods()
+                        .iter()
+                        .map(|(n, _)| *n)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(ConvertError::UnsupportedCorrelation(format!(
+                        "unknown correlation_method '{method}'; available: {available}"
+                    )));
+                }
+                method.parse::<WindowMode>().map_err(|_| {
+                    ConvertError::UnsupportedCorrelation(format!(
+                        "correlation_method '{method}' has no window mapping"
+                    ))
+                })
+            }
+        }
+    }
+
     /// Format a field name for use in a SELECT column list.
     ///
     /// Inspired by the pySigma Athena backend's `_format_select_field`:
@@ -46,7 +341,7 @@ impl super::PostgresBackend {
     /// its own, the query scans the full table with a time-window filter.
     ///
     /// Returns `(cte_prefix, source_table, time_filter)`.
-    pub(super) fn build_correlation_source(
+    fn build_correlation_source(
         &self,
         rule_refs: &[String],
         rule_queries: Option<&HashMap<String, String>>,
@@ -93,7 +388,7 @@ impl super::PostgresBackend {
     /// This produces a per-row sliding window that emits every event crossing
     /// the threshold within its trailing window.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn build_sliding_window_query(
+    fn build_sliding_window_query(
         &self,
         cte_prefix: &str,
         source_table: &str,
@@ -184,7 +479,7 @@ impl super::PostgresBackend {
     /// Shared by the tumbling and session builders. Temporal types are handled
     /// by [`build_temporal_query`](Self::build_temporal_query) and are rejected
     /// here.
-    pub(super) fn correlation_aggregate(
+    fn correlation_aggregate(
         &self,
         rule: &CorrelationRule,
         value_field: Option<&str>,
@@ -227,7 +522,7 @@ impl super::PostgresBackend {
     /// `window_secs` (via `time_bucket` on TimescaleDB, or `date_bin` aligned to
     /// the epoch on plain PostgreSQL) plus the rule's group-by columns.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn build_tumbling_correlation(
+    fn build_tumbling_correlation(
         &self,
         rule: &CorrelationRule,
         cte_prefix: &str,
@@ -278,7 +573,7 @@ impl super::PostgresBackend {
     /// a post-aggregation filter (sessions longer than the cap are dropped, not
     /// split mid-session as the runtime does), which is recorded in `warnings`.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn build_session_correlation(
+    fn build_session_correlation(
         &self,
         rule: &CorrelationRule,
         cte_prefix: &str,
@@ -361,7 +656,7 @@ impl super::PostgresBackend {
 
     /// Build HAVING clause from correlation condition predicates.
     /// Uses `{agg}` as placeholder for the aggregate expression.
-    pub(super) fn build_having_clause(&self, cond: &CorrelationCondition) -> Result<String> {
+    fn build_having_clause(&self, cond: &CorrelationCondition) -> Result<String> {
         match cond {
             CorrelationCondition::Threshold { predicates, .. } => {
                 let parts: Vec<String> = predicates
@@ -396,7 +691,7 @@ impl super::PostgresBackend {
     /// query; tumbling and session windows omit it because they derive their
     /// own bounds from the data.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn build_temporal_matched_inner(
+    fn build_temporal_matched_inner(
         &self,
         rule: &CorrelationRule,
         default_table: &str,
@@ -469,7 +764,7 @@ impl super::PostgresBackend {
     /// the previous step, within the window `partition`. A non-decreasing chain
     /// of hits in `rules` order exists exactly when the last step is not NULL,
     /// which is the returned `HAVING` predicate. Returns `None` for `temporal`.
-    pub(super) fn temporal_order_steps(
+    fn temporal_order_steps(
         rule: &CorrelationRule,
         source: &str,
         ts: &str,
@@ -520,7 +815,7 @@ impl super::PostgresBackend {
     /// field-mappings normalize the schemas, or use a single-table approach with
     /// a discriminator column instead.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn build_temporal_query(
+    fn build_temporal_query(
         &self,
         rule: &CorrelationRule,
         default_table: &str,
@@ -569,7 +864,7 @@ impl super::PostgresBackend {
     /// Like the default temporal path, this counts distinct `rule_name`s, and
     /// `temporal_ordered` adds the ordering steps within each bucket.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn build_temporal_tumbling(
+    fn build_temporal_tumbling(
         &self,
         rule: &CorrelationRule,
         default_table: &str,
@@ -633,7 +928,7 @@ impl super::PostgresBackend {
     /// filter (recorded in `warnings`). `temporal_ordered` adds the ordering
     /// steps within each session.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn build_temporal_session(
+    fn build_temporal_session(
         &self,
         rule: &CorrelationRule,
         default_table: &str,
