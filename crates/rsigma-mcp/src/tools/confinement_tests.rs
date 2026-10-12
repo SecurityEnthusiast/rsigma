@@ -132,6 +132,7 @@ fn every_path_input_is_confined_to_rules_dir() {
                 path: Some(p.clone()),
                 pipelines: vec![],
                 resolve_sources: false,
+                fail_level: Default::default(),
             })),
         );
         assert_escapes(
@@ -264,6 +265,7 @@ fn directory_inputs_reject_nested_symlinks() {
             path: Some("rules".to_string()),
             pipelines: vec![],
             resolve_sources: false,
+            fail_level: Default::default(),
         })),
     );
 }

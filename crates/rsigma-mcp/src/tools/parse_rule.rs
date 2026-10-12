@@ -28,13 +28,14 @@ impl RsigmaMcp {
         Ok(match parse_sigma_yaml(&source) {
             Ok(collection) => json!({
                 // `parse_sigma_yaml` records syntax errors as diagnostics
-                // rather than returning `Err`, so `ok` reflects whether parsing
-                // was clean.
-                "ok": collection.diagnostics.is_empty(),
+                // rather than returning `Err`, so `ok` reflects whether any
+                // document was dropped.
+                "ok": !collection.has_errors(),
                 "rule_count": collection.rules.len(),
                 "correlation_count": collection.correlations.len(),
                 "filter_count": collection.filters.len(),
-                "parse_errors": diagnostic_messages(collection.diagnostics.iter()),
+                "parse_errors": diagnostic_messages(collection.errors()),
+                "parse_warnings": diagnostic_messages(collection.warnings()),
                 "collection": collection,
             }),
             Err(e) => json!({ "ok": false, "error": e.to_string() }),
@@ -61,6 +62,16 @@ mod tests {
             .unwrap();
         assert_eq!(v["ok"], false);
         assert!(!v["parse_errors"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_rule_warnings_keep_ok() {
+        let yaml = VALID_RULE.replace("status: test", "status: bogus");
+        let v = handler().run_parse_rule(src(&yaml)).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["rule_count"], 1);
+        assert_eq!(v["parse_errors"], json!([]));
+        assert_eq!(v["parse_warnings"], json!(["invalid status: 'bogus'"]));
     }
 
     #[test]
