@@ -70,12 +70,12 @@ fn parse_pipeline_value(value: &yaml_serde::Value) -> Result<Pipeline> {
     };
 
     // Pipeline-embedded `sources:` blocks were deprecated in v0.12.0 and
-    // removed in v1.0. Source declarations now live in standalone source
+    // removed in v0.19.0. Source declarations now live in standalone source
     // files loaded via `--source`; a pipeline only references them with
     // `${source.<id>}`. Reject the inline form with a migration hint.
     if obj.get(ykey("sources")).is_some() {
         return Err(EvalError::Pipeline(
-            "pipeline declares an inline 'sources:' block, which was removed in v1.0. \
+            "pipeline declares an inline 'sources:' block, which was removed in v0.19.0. \
              Extract it into a standalone source file with \
              `rsigma rule migrate-sources -p <pipeline> -o sources.yml` and load it via \
              `--source sources.yml`."

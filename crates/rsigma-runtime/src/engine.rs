@@ -754,7 +754,7 @@ detection:
 "#;
 
     /// A dynamic pipeline that references an external source but declares
-    /// none inline (the only form allowed since v1.0).
+    /// none inline (the only form allowed since v0.19.0).
     const DYNAMIC_PIPELINE: &str = r#"
 name: dynamic_pipeline
 priority: 10

@@ -1,7 +1,7 @@
 //! Tests for the removal of pipeline-embedded `sources:` blocks.
 //!
 //! Pipeline-level `sources:` was deprecated in v0.12.0 ([issue #135]), hidden
-//! from docs in v0.13.0 ([issue #136]), and removed in v1.0 ([issue #137]).
+//! from docs in v0.13.0 ([issue #136]), and removed in v0.19.0 ([issue #137]).
 //! A pipeline that still declares an inline `sources:` block is now a hard
 //! parse error that points at `rsigma rule migrate-sources`. These tests pin
 //! that behaviour across the CLI entry points that load pipelines.
@@ -37,7 +37,7 @@ transformations:
       CommandLine: process.command_line
 "#;
 
-const REMOVAL_NEEDLE: &str = "inline 'sources:' block, which was removed in v1.0";
+const REMOVAL_NEEDLE: &str = "inline 'sources:' block, which was removed in v0.19.0";
 
 fn rules_dir(contents: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();

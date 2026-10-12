@@ -27,7 +27,7 @@ For narrative coverage see [Linting Rules](../../guide/linting-rules.md) and [CI
 | `<PATH>` | A Sigma YAML file, or a directory searched recursively for Sigma YAML files. Single files are accepted. {{ added "0.24.0" }} |
 | `-v, --verbose` | Show details for each file, not just the summary. |
 | `-p, --pipeline <PIPELINES>` | Processing pipeline(s) to apply. Builtin names (`ecs_windows`, `fibratus_windows`, `sysmon`) or YAML file paths. Repeatable. |
-| `--source <FILE_OR_DIR>` | External source file(s) or directory of source files. Repeatable. Same standalone `sources:` YAML shape as the daemon's `--source`. Required for meaningful `--resolve-sources` runs after the v1.0 removal of pipeline-embedded `sources:`. |
+| `--source <FILE_OR_DIR>` | External source file(s) or directory of source files. Repeatable. Same standalone `sources:` YAML shape as the daemon's `--source`. Required for meaningful `--resolve-sources` runs after the v0.19.0 removal of pipeline-embedded `sources:`. |
 | `--resolve-sources` | Resolve and fetch every loaded dynamic source during validation. Sources must be reachable for validation to pass. |
 
 ## Examples

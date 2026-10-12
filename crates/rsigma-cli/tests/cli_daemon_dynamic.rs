@@ -5,7 +5,7 @@
 //! file change, error policy enforcement, and API-triggered re-resolution.
 //!
 //! Source declarations live in standalone `--source` files (pipeline-embedded
-//! `sources:` blocks were removed in v1.0); a pipeline references them via
+//! `sources:` blocks were removed in v0.19.0); a pipeline references them via
 //! `${source.*}` templates. The primary mechanism tested is vars +
 //! value_placeholders:
 //! - An external source resolves to a list of values
@@ -288,7 +288,7 @@ fn write_source_file(path: &std::path::Path, content: &str) {
 }
 
 /// A pipeline that references the external `cmd_list` source (no inline
-/// declaration, which is rejected since v1.0).
+/// declaration, which is rejected since v0.19.0).
 fn dynamic_pipeline_yaml() -> String {
     r#"
 name: dynamic-test
