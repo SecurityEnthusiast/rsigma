@@ -5,6 +5,8 @@
 
 mod common;
 
+use std::num::NonZeroU64;
+
 use common::{rule_from, rule_with_condition};
 use rsigma_ir::lower::{LowerOptions, lower_rule};
 use rsigma_ir::{IrCondition, IrError, IrRuleMetadata};
@@ -157,7 +159,7 @@ detection:
     assert_eq!(
         ir.conditions,
         vec![selector(
-            Quantifier::Count(2),
+            Quantifier::Count(NonZeroU64::new(2).unwrap()),
             SelectorPattern::Pattern("selection_*".into())
         )]
     );

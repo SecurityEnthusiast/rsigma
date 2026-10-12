@@ -156,6 +156,7 @@ The full PEG grammar is defined in [`src/sigma.pest`](src/sigma.pest). It implem
 
 - `!ident_char` lookahead ensures `and_filter` parses as a single identifier, not `and` + `filter`.
 - `1 of` and `any of` both map to `Quantifier::Any`.
+- `0 of` is rejected with a located condition error, since it would match every event; `not 1 of` expresses "none of".
 - Nested same-type binary ops are flattened: `a and b and c` becomes `And([a, b, c])`, not `And(a, And(b, c))`.
 
 ### Operator Precedence
@@ -192,7 +193,7 @@ The full PEG grammar is defined in [`src/sigma.pest`](src/sigma.pest). It implem
 | `Status` | `Stable`, `Test`, `Experimental`, `Deprecated`, `Unsupported` |
 | `Level` | `Informational`, `Low`, `Medium`, `High`, `Critical` |
 | `RelationType` | `Derived`, `Obsolete`, `Merged`, `Renamed`, `Similar` |
-| `Quantifier` | `Any`, `All`, `Count(u64)` |
+| `Quantifier` | `Any`, `All`, `Count(NonZeroU64)` (`1 of` parses to `Any`, and `0 of` is rejected) |
 | `ArrayQuantifier` | `Any`, `All`, `AllOrEmpty`, `None` (array object-scope quantifiers) |
 | `SelectorPattern` | `Them`, `Pattern(String)` |
 | `CorrelationType` | `EventCount`, `ValueCount`, `Temporal`, `TemporalOrdered`, `ValueSum`, `ValueAvg`, `ValuePercentile`, `ValueMedian` |

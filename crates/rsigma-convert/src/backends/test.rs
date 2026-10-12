@@ -274,7 +274,8 @@ fn expand_selectors(cond: &mut IrCondition, detections: &HashMap<String, IrDetec
                 .map(|n| IrCondition::Detection(n.clone()))
                 .collect();
             match quantifier {
-                Quantifier::Any | Quantifier::Count(1) => *cond = IrCondition::Or(operands),
+                Quantifier::Any => *cond = IrCondition::Or(operands),
+                Quantifier::Count(n) if n.get() == 1 => *cond = IrCondition::Or(operands),
                 Quantifier::All => *cond = IrCondition::And(operands),
                 Quantifier::Count(_) => {}
             }

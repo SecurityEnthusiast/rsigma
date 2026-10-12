@@ -8,6 +8,8 @@
 //!
 //! Reference: pySigma conditions.py (uses pyparsing infix_notation)
 
+use std::num::NonZeroU64;
+
 use pest::Parser;
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
@@ -272,10 +274,21 @@ fn parse_quantifier(pair: Pair<'_, Rule>) -> Result<Quantifier> {
             let n: u64 = inner.as_str().parse().map_err(|e| {
                 SigmaParserError::Condition(format!("invalid quantifier number: {e}"), None)
             })?;
-            if n == 1 {
-                Ok(Quantifier::Any)
-            } else {
-                Ok(Quantifier::Count(n))
+            match NonZeroU64::new(n) {
+                None => {
+                    let (line, col) = inner.as_span().start_pos().line_col();
+                    Err(SigmaParserError::Condition(
+                        "'0 of' is always true and matches every event; use 'not 1 of' to \
+                         require that none of the detections match"
+                            .into(),
+                        Some(SourceLocation {
+                            line: line as u32,
+                            col: col as u32,
+                        }),
+                    ))
+                }
+                Some(n) if n.get() == 1 => Ok(Quantifier::Any),
+                Some(n) => Ok(Quantifier::Count(n)),
             }
         }
         other => Err(SigmaParserError::Condition(
@@ -571,9 +584,35 @@ mod tests {
         assert_eq!(
             expr,
             ConditionExpr::Selector {
-                quantifier: Quantifier::Count(3),
+                quantifier: Quantifier::Count(NonZeroU64::new(3).unwrap()),
                 pattern: SelectorPattern::Pattern("selection_*".to_string()),
             }
+        );
+    }
+
+    #[test]
+    fn test_zero_of_rejected() {
+        for input in [
+            "0 of selection_*",
+            "00 of them",
+            "selection and not 0 of filter_*",
+        ] {
+            let err = parse_condition(input).unwrap_err();
+            let SigmaParserError::Condition(message, location) = &err else {
+                panic!("expected a condition error for {input:?}, got {err:?}");
+            };
+            assert!(message.starts_with("'0 of' is always true"), "{message}");
+            let col = input.find('0').unwrap() as u32 + 1;
+            assert_eq!(*location, Some(SourceLocation { line: 1, col }), "{input}");
+        }
+    }
+
+    #[test]
+    fn test_zero_count_not_deserializable() {
+        assert!(serde_json::from_str::<Quantifier>(r#"{"Count":0}"#).is_err());
+        assert_eq!(
+            serde_json::from_str::<Quantifier>(r#"{"Count":2}"#).unwrap(),
+            Quantifier::Count(NonZeroU64::new(2).unwrap())
         );
     }
 

@@ -211,7 +211,6 @@ fn analyze_condition(cond: &ConditionExpr, detections: &Detections) -> Analysis 
             match quantifier {
                 // Satisfiable by zero detections, hence vacuously true.
                 Quantifier::All if selected.is_empty() => Analysis::Open,
-                Quantifier::Count(0) => Analysis::Open,
                 // Every selected detection must match, so any one of them
                 // gates the selector.
                 Quantifier::All => and_combine(selected.into_iter().map(analyze_detection)),
