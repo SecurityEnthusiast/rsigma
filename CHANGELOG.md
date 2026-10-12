@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Parse warnings are reported apart from parse errors
+### Parse warnings are reported apart from parse errors (#566)
 
 The parser keeps a rule whose `status` or `level` is outside the allowed set, or whose `related` entries or `sigma-version` are malformed, and ignores the invalid value. It reported those problems in the same list as documents it dropped, so `rule validate` exited `2` and the MCP `validate_rules` and `parse_rule` tools returned `ok: false` for a rule that parsed and compiled. These are now parse warnings, reported next to parse errors but not failing validation by default.
 
