@@ -5,6 +5,8 @@ use yaml_serde::Value;
 use super::super::{
     FixPatch, LintRule, LintWarning, err, get_mapping, get_seq, get_str, key, safe_fix, warning,
 };
+use crate::condition::parse_condition;
+use crate::validate::unresolved_references;
 
 /// Valid related types.
 const VALID_RELATED_TYPES: &[&str] = &[
@@ -103,16 +105,22 @@ pub(crate) fn lint_detection_rule(
                         "/detection/condition",
                     ));
                 } else {
-                    for ident in extract_condition_identifiers(cond_str) {
-                        if !det_keys.contains(ident.as_str()) {
-                            warnings.push(err(
-                                LintRule::ConditionReferencesUnknown,
-                                format!(
-                                    "condition references '{ident}' but no such detection identifier exists"
-                                ),
-                                "/detection/condition",
-                            ));
+                    match parse_condition(cond_str) {
+                        Ok(expr) => {
+                            let names: Vec<&str> = det_keys.iter().copied().collect();
+                            for unresolved in unresolved_references(&expr, &names) {
+                                warnings.push(err(
+                                    LintRule::ConditionReferencesUnknown,
+                                    unresolved.to_string(),
+                                    "/detection/condition",
+                                ));
+                            }
                         }
+                        Err(e) => warnings.push(err(
+                            LintRule::InvalidCondition,
+                            e.to_string(),
+                            "/detection/condition",
+                        )),
                     }
                 }
             }
@@ -343,20 +351,6 @@ pub(crate) fn lint_logsource(m: &yaml_serde::Mapping, warnings: &mut Vec<LintWar
             }
         }
     }
-}
-
-/// Extract bare identifiers from a condition expression (excluding keywords
-/// and wildcard patterns) so we can check they exist in the detection section.
-fn extract_condition_identifiers(condition: &str) -> Vec<String> {
-    const KEYWORDS: &[&str] = &["and", "or", "not", "of", "all", "them"];
-    condition
-        .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '*')
-        .filter(|s| !s.is_empty())
-        .filter(|s| !KEYWORDS.contains(s))
-        .filter(|s| !s.chars().all(|c| c.is_ascii_digit()))
-        .filter(|s| !s.contains('*'))
-        .map(|s| s.to_string())
-        .collect()
 }
 
 /// Detect deprecated Sigma v1.x pipe-aggregation syntax in a condition string.
@@ -1097,6 +1091,122 @@ level: medium
 "#,
         );
         assert!(has_no_rule(&w, LintRule::ConditionReferencesUnknown));
+    }
+
+    #[test]
+    fn condition_reports_every_unknown_identifier() {
+        let w = lint(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    selection:
+        field: value
+    condition: selection and not (filter_a or filter_b)
+level: medium
+"#,
+        );
+        let messages: Vec<&str> = w
+            .iter()
+            .filter(|w| w.rule == LintRule::ConditionReferencesUnknown)
+            .map(|w| w.message.as_str())
+            .collect();
+        assert_eq!(
+            messages,
+            [
+                "condition references unknown detection identifier 'filter_a'",
+                "condition references unknown detection identifier 'filter_b'",
+            ]
+        );
+    }
+
+    #[test]
+    fn condition_selector_matching_nothing_is_unknown() {
+        let w = lint(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    selection:
+        field: value
+    condition: selection and not 1 of filter_*
+level: medium
+"#,
+        );
+        let finding = w
+            .iter()
+            .find(|w| w.rule == LintRule::ConditionReferencesUnknown)
+            .expect("unmatched selector is flagged");
+        assert_eq!(
+            finding.message,
+            "selector '1 of filter_*' matches no detection identifier"
+        );
+        assert_eq!(finding.severity, Severity::Error);
+    }
+
+    #[test]
+    fn condition_selector_matching_a_detection_is_valid() {
+        let w = lint(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    selection_a:
+        field: value
+    selection_b:
+        other: value
+    condition: 1 of selection_* or all of them
+level: medium
+"#,
+        );
+        assert!(has_no_rule(&w, LintRule::ConditionReferencesUnknown));
+    }
+
+    #[test]
+    fn unparsable_condition_is_invalid() {
+        for condition in [
+            "0 of missing_*",
+            "selection andd filter",
+            "selection and (filter",
+        ] {
+            let w = lint(&format!(
+                "title: Test\nlogsource:\n    category: test\ndetection:\n    selection:\n        field: value\n    condition: {condition}\nlevel: medium\n"
+            ));
+            let finding = w
+                .iter()
+                .find(|w| w.rule == LintRule::InvalidCondition)
+                .unwrap_or_else(|| panic!("'{condition}' is flagged"));
+            assert_eq!(finding.severity, Severity::Error);
+            assert_eq!(finding.path, "/detection/condition");
+            let parser_error = parse_condition(condition).unwrap_err().to_string();
+            assert_eq!(finding.message, parser_error);
+            assert!(
+                has_no_rule(&w, LintRule::ConditionReferencesUnknown),
+                "{condition}"
+            );
+        }
+    }
+
+    #[test]
+    fn valid_condition_is_not_invalid() {
+        let w = lint(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    selection:
+        field: value
+    filter:
+        other: value
+    condition: selection and not filter
+level: medium
+"#,
+        );
+        assert!(has_no_rule(&w, LintRule::InvalidCondition));
     }
 
     #[test]

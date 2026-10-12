@@ -19,7 +19,7 @@ Override the threshold with `--fail-level warning` or `--fail-level info`. See [
 
 | Severity | Rules |
 |----------|------:|
-| `error` | 38 |
+| `error` | 39 |
 | `warning` | 45 |
 | `info` | 7 |
 | `hint` | 0 |
@@ -82,7 +82,7 @@ Apply to detection, correlation, and filter rules alike.
 | `non_lowercase_key` | `warning` | yes | A top-level key uses non-lowercase characters (e.g. `Title:` instead of `title:`). The fix lowercases the key. |
 | `unknown_key` | `info` | yes | An unrecognized top-level key. The fix suggests the closest known key when the edit distance is small (e.g. `descirption` → `description`). |
 
-## Detection rules (19)
+## Detection rules (20)
 
 Apply to detection rules (`detection:` block + `condition:`).
 
@@ -103,7 +103,8 @@ Apply to detection rules (`detection:` block + `condition:`).
 | `wildcard_only_value` | `warning` | yes | A detection value is just `*`. The fix replaces it with `exists: true`, which is what the author almost certainly meant. |
 | `null_in_value_list` | `warning` | none | A `null` literal appears inside a list of values. Sigma's semantics around `null` in lists are spec-ambiguous; this flags the case so the author can be explicit. |
 | `empty_value_list` | `warning` | none | A detection item with a list value is empty. |
-| `condition_references_unknown` | `error` | none | The `condition:` expression references a selection name that is not in `detection:`. |
+| `condition_references_unknown` | `error` | none | The `condition:` expression references a selection name that is not in `detection:`, or a selector such as `1 of filter_*` matches none. Each unresolved reference is a separate finding. |
+| `invalid_condition` | `error` | none | The `condition:` expression does not parse, for example `selection andd filter`, an unclosed parenthesis, or `0 of selection_*`. The finding carries the parser's error and location. Conditions that use the deprecated aggregation syntax report `deprecated_aggregation_syntax` instead. {{ added "unreleased" }} |
 | `deprecated_aggregation_syntax` | `warning` | none | The condition uses the deprecated aggregation pipe syntax (`condition: selection \| count() > 5`). Use the modern `correlation:` block instead. |
 | `deprecated_detection_timeframe` | `warning` | none | The `detection:` block has a v1.x `timeframe:` key, which has no effect. Use a correlation rule with a `timespan` instead. {{ added "0.24.0" }} |
 | `flattened_array_correlation` | `warning` | none | Two or more sibling keys share a quantified array prefix (e.g. `connections[any].protocol` and `connections[any].ip`). Each opens an independent scope, so they do **not** correlate on the same array element. Use an object-scope block (`connections[any]:` with the fields nested) to require one element to satisfy all of them. See [Array Matching](../guide/array-matching.md). |
@@ -305,7 +306,7 @@ detection:
     condition: selection_keywords
 ```
 
-The `condition:` expression references `selection_keywords`, but the only selection defined in the `detection:` block is `selection`. The rule will fail to compile; this lint catches it before runtime. No auto-fix because the linter cannot tell which selection name was intended.
+The `condition:` expression references `selection_keywords`, but the only selection defined in the `detection:` block is `selection`. The rule will fail to compile; this lint catches it before runtime. No auto-fix because the linter cannot tell which selection name was intended. A selector such as `1 of filter_*` that matches no detection is reported the same way, and each unresolved reference gets its own finding.
 
 ### `deprecated_aggregation_syntax`
 

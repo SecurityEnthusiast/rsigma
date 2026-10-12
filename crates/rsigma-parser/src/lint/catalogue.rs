@@ -16,7 +16,7 @@
 //! use rsigma_parser::lint::catalogue::catalogue;
 //!
 //! let entries = catalogue();
-//! assert_eq!(entries.len(), 91);
+//! assert_eq!(entries.len(), 92);
 //! let invalid_status = entries.iter().find(|e| e.name == "invalid_status").unwrap();
 //! assert!(invalid_status.fix.is_some()); // has a safe auto-fix
 //! ```
@@ -104,6 +104,7 @@ lint_catalogue! {
     ScopeTooShort => (Severity::Warning, NONE, "A 'scope' entry is too short."),
     LogsourceValueNotLowercase => (Severity::Warning, SAFE, "A logsource value is not lowercase."),
     ConditionReferencesUnknown => (Severity::Error, NONE, "The condition references an undefined selection."),
+    InvalidCondition => (Severity::Error, NONE, "The condition is not a valid condition expression."),
     DeprecatedAggregationSyntax => (Severity::Warning, NONE, "The condition uses deprecated v1.x aggregation syntax."),
     DeprecatedDetectionTimeframe => (Severity::Warning, NONE, "The detection section has a deprecated v1.x 'timeframe', which has no effect."),
 
@@ -248,6 +249,7 @@ const LINT_RULE_NAMES: &[(LintRule, &str)] = &[
         LintRule::ConditionReferencesUnknown,
         "condition_references_unknown",
     ),
+    (LintRule::InvalidCondition, "invalid_condition"),
     (
         LintRule::DeprecatedAggregationSyntax,
         "deprecated_aggregation_syntax",
@@ -359,13 +361,13 @@ mod tests {
 
     #[test]
     fn catalogue_covers_every_rule() {
-        // 91 LintRule variants. The exhaustive `describe` match guarantees a
+        // 92 LintRule variants. The exhaustive `describe` match guarantees a
         // metadata entry per variant at compile time; this asserts the count
         // and the `ALL_LINT_RULES`/`LINT_RULE_NAMES` lists stay in sync.
         let entries = catalogue();
-        assert_eq!(entries.len(), 91, "expected 91 catalogue entries");
-        assert_eq!(ALL_LINT_RULES.len(), 91);
-        assert_eq!(LINT_RULE_NAMES.len(), 91);
+        assert_eq!(entries.len(), 92, "expected 92 catalogue entries");
+        assert_eq!(ALL_LINT_RULES.len(), 92);
+        assert_eq!(LINT_RULE_NAMES.len(), 92);
     }
 
     #[test]
