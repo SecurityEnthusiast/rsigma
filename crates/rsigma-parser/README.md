@@ -404,7 +404,7 @@ The linter operates on raw YAML values to catch issues the parser silently ignor
 | `null_in_value_list` | Warning | | `null` mixed with other values in a list |
 | `single_value_all_modifier` | Warning | Yes | `\|all` with a single value |
 | `all_with_re` | Warning | Yes | `\|all` and `\|re` combined |
-| `incompatible_modifiers` | Warning | | Incompatible modifier combination (e.g. `contains\|startswith`, `re\|contains`, `gt\|contains`, regex flags without `re`) |
+| `incompatible_modifiers` | Error | | Modifier chain the parser rejects (e.g. `contains\|startswith`, `re\|contains`, `wide\|utf16be`, `base64\|re`, regex flags without `re`) |
 | `empty_value_list` | Warning | | Empty value list |
 | `wildcard_only_value` | Warning | Yes | Lone `*` value (suggests `\|exists: true` instead) |
 | `flattened_array_correlation` | Warning | | Sibling keys share a quantified array prefix (e.g. `connections[any].protocol` and `connections[any].ip`); they open independent scopes and don't correlate on one element, so an object-scope block is needed |

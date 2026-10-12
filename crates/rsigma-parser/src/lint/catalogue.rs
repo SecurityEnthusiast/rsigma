@@ -143,7 +143,7 @@ lint_catalogue! {
     NullInValueList => (Severity::Warning, NONE, "A value list contains a null entry."),
     SingleValueAllModifier => (Severity::Warning, SAFE, "|all is used with a single value."),
     AllWithRe => (Severity::Warning, SAFE, "|all combined with |re is redundant."),
-    IncompatibleModifiers => (Severity::Warning, NONE, "A field uses an incompatible combination of modifiers."),
+    IncompatibleModifiers => (Severity::Error, NONE, "A field uses an incompatible combination of modifiers."),
     EmptyValueList => (Severity::Warning, NONE, "A field has an empty value list."),
     WildcardOnlyValue => (Severity::Warning, SAFE, "A value is a lone wildcard; consider |exists instead."),
     FlattenedArrayCorrelation => (Severity::Warning, NONE, "A correlation references a flattened array field."),

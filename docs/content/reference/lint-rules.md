@@ -19,8 +19,8 @@ Override the threshold with `--fail-level warning` or `--fail-level info`. See [
 
 | Severity | Rules |
 |----------|------:|
-| `error` | 39 |
-| `warning` | 45 |
+| `error` | 40 |
+| `warning` | 44 |
 | `info` | 7 |
 | `hint` | 0 |
 | Reserved (no production emission) | {{ rsigma.lint.reserved }} |
@@ -158,7 +158,7 @@ These also apply to detection rules but sit apart from the core detection-block 
 |------|----------|-----|-------------|
 | `single_value_all_modifier` | `warning` | yes | A single-value detection item carries the `\|all` modifier, which is a no-op. The fix removes the redundant modifier. |
 | `all_with_re` | `warning` | yes | The `\|all` modifier is combined with `\|re`, which is not meaningful (regex matching is inherently set-style). The fix removes `\|all`. |
-| `incompatible_modifiers` | `warning` | none | Two modifiers on the same field cannot combine (e.g. `\|contains\|startswith`). `fieldref` may be followed by one of `contains`, `startswith`, or `endswith`, and by `neq`. A string modifier before `fieldref` is a warning, as is `fieldref` combined with `re`, `cidr`, a numeric comparison, `exists`, a timestamp part, or an encoding modifier. |
+| `incompatible_modifiers` | `error` | none | The modifier chain on a field is one the parser rejects, with the parser's reason: more than one operator (e.g. `\|contains\|startswith` or `\|re\|contains`), two UTF-16 encodings, `base64` with `base64offset`, a value transformation with a non-string operator, a regex flag without or before `re`, or a string modifier before `fieldref`. `fieldref` may be followed by one of `contains`, `startswith`, or `endswith`, and by `neq`. Chains with an unknown or repeated modifier are left to the parser's error. Reported as an `error` rather than a `warning`. {{ added "unreleased" }} |
 | `invalid_related_id` | `warning` | none | `related[].id` is not a valid UUID. |
 | `invalid_related_type` | `error` | none | `related[].type` is not one of `derived`, `obsolete`, `merged`, `renamed`, `similar`. |
 | `related_missing_required` | `error` | none | `related[]` entry is missing the required `id:` or `type:` field. |

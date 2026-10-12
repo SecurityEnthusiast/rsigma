@@ -6,7 +6,8 @@ use super::super::{
     FixPatch, LintRule, LintWarning, err, get_mapping, get_seq, get_str, key, safe_fix, warning,
 };
 use crate::condition::parse_condition;
-use crate::validate::unresolved_references;
+use crate::parser::parse_field_spec;
+use crate::validate::{check_modifiers, unresolved_references};
 
 /// Valid related types.
 const VALID_RELATED_TYPES: &[&str] = &[
@@ -442,7 +443,7 @@ fn lint_detection_value(value: &Value, det_name: &str, warnings: &mut Vec<LintWa
                 }
 
                 if let Some(msg) = check_modifier_compatibility(field_key_str) {
-                    warnings.push(warning(
+                    warnings.push(err(
                         LintRule::IncompatibleModifiers,
                         format!("'{field_key_str}' in '{det_name}': {msg}"),
                         format!("/detection/{det_name}/{field_key_str}"),
@@ -571,122 +572,12 @@ fn flattened_array_prefix(field_part: &str) -> Option<String> {
     None
 }
 
-/// Check field modifier compatibility and return a diagnostic message if
-/// the combination is invalid.
+/// The modifier conflict the parser rejects for a detection key, if any. A
+/// chain the parser cannot read (an unknown or repeated modifier, or `not`) is
+/// left to the parser's own error.
 fn check_modifier_compatibility(field_key: &str) -> Option<String> {
-    let parts: Vec<&str> = field_key.split('|').collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let modifiers = &parts[1..];
-
-    let string_match: &[&str] = &["contains", "startswith", "endswith"];
-    let pattern_match: &[&str] = &["re", "cidr"];
-    let numeric_compare: &[&str] = &["gt", "gte", "lt", "lte"];
-    let regex_flags: &[&str] = &["i", "ignorecase", "m", "multiline", "s", "dotall"];
-
-    let has_string = modifiers
-        .iter()
-        .filter(|m| string_match.contains(m))
-        .count();
-    let has_pattern: Vec<&&str> = modifiers
-        .iter()
-        .filter(|m| pattern_match.contains(m))
-        .collect();
-    let has_numeric = modifiers.iter().any(|m| numeric_compare.contains(m));
-    let has_exists = modifiers.contains(&"exists");
-    let has_re = modifiers.contains(&"re");
-    let has_regex_flags = modifiers.iter().any(|m| regex_flags.contains(m));
-
-    if has_string > 1 {
-        return Some(
-            "multiple string-match modifiers (contains, startswith, endswith) \
-             are mutually exclusive"
-                .to_string(),
-        );
-    }
-
-    if !has_pattern.is_empty() && has_string > 0 {
-        return Some(format!(
-            "pattern modifier '{}' is incompatible with string-match modifiers \
-             (contains, startswith, endswith)",
-            has_pattern
-                .iter()
-                .map(|m| **m)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-
-    if has_numeric && (has_string > 0 || !has_pattern.is_empty()) {
-        return Some(
-            "numeric comparison modifiers (gt, gte, lt, lte) are incompatible \
-             with string-match and pattern modifiers"
-                .to_string(),
-        );
-    }
-
-    if has_exists && modifiers.len() > 1 {
-        let others: Vec<&&str> = modifiers
-            .iter()
-            .filter(|m| **m != "exists" && **m != "all" && **m != "cased")
-            .collect();
-        if !others.is_empty() {
-            return Some(format!(
-                "'exists' modifier is incompatible with: {}",
-                others.iter().map(|m| **m).collect::<Vec<_>>().join(", ")
-            ));
-        }
-    }
-
-    if has_regex_flags && !has_re {
-        return Some("regex flag modifiers (i, m, s) require the 're' modifier".to_string());
-    }
-
-    if let Some(fieldref_at) = modifiers.iter().position(|m| *m == "fieldref") {
-        if let Some(name) = modifiers[..fieldref_at]
-            .iter()
-            .find(|m| string_match.contains(*m))
-        {
-            return Some(format!("|{name} must follow |fieldref"));
-        }
-        let blocked: &[&str] = &[
-            "re",
-            "cidr",
-            "gt",
-            "gte",
-            "lt",
-            "lte",
-            "exists",
-            "minute",
-            "hour",
-            "day",
-            "week",
-            "month",
-            "year",
-            "base64",
-            "base64offset",
-            "wide",
-            "utf16",
-            "utf16le",
-            "utf16be",
-            "windash",
-            "expand",
-        ];
-        let hits: Vec<&str> = modifiers
-            .iter()
-            .copied()
-            .filter(|m| blocked.contains(m))
-            .collect();
-        if !hits.is_empty() {
-            return Some(format!(
-                "fieldref is incompatible with: {}",
-                hits.join(", ")
-            ));
-        }
-    }
-
-    None
+    let spec = parse_field_spec(field_key).ok()?;
+    check_modifiers(&spec.modifiers).err()
 }
 
 #[cfg(test)]
@@ -1554,6 +1445,120 @@ level: medium
 "#,
         );
         assert!(has_no_rule(&w, LintRule::IncompatibleModifiers));
+    }
+
+    fn field_rule(key: &str, value: &str) -> String {
+        format!(
+            "title: Test\nlogsource:\n    category: test\ndetection:\n    selection:\n        {key}: {value}\n    condition: selection\nlevel: medium\n"
+        )
+    }
+
+    fn lint_field(key: &str, value: &str) -> Vec<LintWarning> {
+        lint(&field_rule(key, value))
+    }
+
+    fn incompatible_message(key: &str, value: &str) -> Option<String> {
+        lint_field(key, value)
+            .into_iter()
+            .find(|w| w.rule == LintRule::IncompatibleModifiers)
+            .map(|w| w.message)
+    }
+
+    #[test]
+    fn incompatible_modifiers_is_an_error() {
+        let w = lint_field("Field|contains|startswith", "'test'");
+        let finding = w
+            .iter()
+            .find(|w| w.rule == LintRule::IncompatibleModifiers)
+            .expect("conflicting operators are flagged");
+        assert_eq!(finding.severity, Severity::Error);
+        assert_eq!(
+            finding.message,
+            "'Field|contains|startswith' in 'selection': at most one operator may be set per field; got |contains, |startswith"
+        );
+    }
+
+    #[test]
+    fn two_utf16_encodings_are_incompatible() {
+        let msg = incompatible_message("Field|wide|utf16be|base64", "'test'")
+            .expect("two encodings are flagged");
+        assert!(msg.contains("mutually exclusive UTF-16 encodings"), "{msg}");
+    }
+
+    #[test]
+    fn base64_with_base64offset_is_incompatible() {
+        let msg = incompatible_message("Field|base64|base64offset|contains", "'test'")
+            .expect("two base64 strategies are flagged");
+        assert!(
+            msg.contains("mutually exclusive base64 strategies"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn transform_with_non_string_operator_is_incompatible() {
+        let msg = incompatible_message("Field|base64|re", "'test'")
+            .expect("transform with a regex is flagged");
+        assert!(msg.contains("value transformations |base64"), "{msg}");
+    }
+
+    #[test]
+    fn regex_flag_before_re_is_incompatible() {
+        let msg =
+            incompatible_message("Field|i|re", "'test'").expect("a flag before re is flagged");
+        assert!(msg.contains("must follow |re"), "{msg}");
+    }
+
+    #[test]
+    fn exists_with_cased_is_incompatible() {
+        assert!(incompatible_message("Field|exists|cased", "true").is_some());
+    }
+
+    #[test]
+    fn unreadable_modifier_chain_is_not_reported_as_incompatible() {
+        assert!(incompatible_message("Field|contains|bogus|startswith", "'test'").is_none());
+        assert!(incompatible_message("Field|contains|contains", "'test'").is_none());
+    }
+
+    /// Lint flags a modifier chain exactly when the parser rejects it.
+    #[test]
+    fn incompatible_modifiers_matches_parser() {
+        let cases = [
+            ("Field|contains|all", "['a', 'b']"),
+            ("Field|contains|startswith", "'test'"),
+            ("Field|re|i|m|s", "'test'"),
+            ("Field|i|re", "'test'"),
+            ("Field|m", "'test'"),
+            ("Field|cidr", "'10.0.0.0/8'"),
+            ("Field|cidr|contains", "'10.0.0.0/8'"),
+            ("Field|gt", "100"),
+            ("Field|gt|lt", "100"),
+            ("Field|exists", "true"),
+            ("Field|exists|cased", "true"),
+            ("Field|fieldref", "Other"),
+            ("Field|fieldref|endswith", "Other"),
+            ("Field|endswith|fieldref", "Other"),
+            ("Field|fieldref|re", "Other"),
+            ("Field|wide|base64offset|contains", "'test'"),
+            ("Field|utf16le|utf16be|base64", "'test'"),
+            ("Field|base64|base64offset", "'test'"),
+            ("Field|windash|contains", "'-test'"),
+            ("Field|windash|cidr", "'10.0.0.0/8'"),
+            ("Field|expand", "'%var%'"),
+            ("Field|expand|gt", "100"),
+            ("Field|cased|contains", "'test'"),
+            ("Field|cased|re", "'test'"),
+            ("Field|hour", "10"),
+            ("Field|hour|cased", "10"),
+        ];
+        for (key, value) in cases {
+            let yaml = field_rule(key, value);
+            let parser_rejects = crate::parse_sigma_yaml(&yaml)
+                .map(|c| !c.errors.is_empty())
+                .unwrap_or(true);
+            let lint_rejects = has_rule(&lint(&yaml), LintRule::IncompatibleModifiers);
+            assert_eq!(lint_rejects, parser_rejects, "{key}: {value}");
+        }
     }
 
     #[test]
