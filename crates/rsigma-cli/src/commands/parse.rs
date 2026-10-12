@@ -59,7 +59,7 @@ pub(crate) fn cmd_condition(args: ConditionArgs, ctx: OutputCtx) {
         // to compact via [`emit_ast`].
         Ok(ast) => emit_ast("rule condition", &ctx, &ast, true),
         Err(e) => {
-            eprintln!("Condition parse error: {e}");
+            eprintln!("{e}");
             process::exit(crate::exit_code::RULE_ERROR);
         }
     }

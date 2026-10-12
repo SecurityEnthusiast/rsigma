@@ -96,6 +96,19 @@ struct PrattError {
     location: Option<SourceLocation>,
 }
 
+impl PrattError {
+    /// Keeps only the bare message of a condition error, so the location is
+    /// rendered once by the outer error instead of being nested in the text.
+    fn from_error(err: SigmaParserError, fallback: Option<SourceLocation>) -> Self {
+        let location = err.location().or(fallback);
+        let message = match err {
+            SigmaParserError::Condition(message, _) => message,
+            other => other.to_string(),
+        };
+        PrattError { message, location }
+    }
+}
+
 fn location_from_pair(pair: &Pair<'_, Rule>) -> Option<SourceLocation> {
     let (line, col) = pair.as_span().start_pos().line_col();
     Some(SourceLocation {
@@ -128,17 +141,11 @@ fn parse_expr(
             match primary.as_rule() {
                 Rule::ident => ConditionExpr::Identifier(primary.as_str().to_string()),
                 Rule::selector => parse_selector(primary).unwrap_or_else(|e| {
-                    errors.borrow_mut().push(PrattError {
-                        message: e.to_string(),
-                        location: e.location().or(loc),
-                    });
+                    errors.borrow_mut().push(PrattError::from_error(e, loc));
                     ConditionExpr::Identifier(String::new())
                 }),
                 Rule::expr => parse_expr(primary, pratt, depth).unwrap_or_else(|e| {
-                    errors.borrow_mut().push(PrattError {
-                        message: e.to_string(),
-                        location: e.location().or(loc),
-                    });
+                    errors.borrow_mut().push(PrattError::from_error(e, loc));
                     ConditionExpr::Identifier(String::new())
                 }),
                 other => {
@@ -181,7 +188,11 @@ fn parse_expr(
 
     depth.set(depth.get().saturating_sub(1));
 
-    let collected = errors.into_inner();
+    let mut collected = errors.into_inner();
+    if collected.len() == 1 {
+        let PrattError { message, location } = collected.remove(0);
+        return Err(SigmaParserError::Condition(message, location));
+    }
     if !collected.is_empty() {
         let combined = collected
             .iter()
@@ -540,6 +551,18 @@ mod tests {
                 pattern: SelectorPattern::Them,
             }
         );
+    }
+
+    #[test]
+    fn test_nested_error_reported_once() {
+        let input = format!("{}a{}", "(".repeat(70), ")".repeat(70));
+        let message = parse_condition(&input).unwrap_err().to_string();
+        assert_eq!(
+            message.matches("Condition parse error").count(),
+            1,
+            "{message}"
+        );
+        assert_eq!(message.matches("maximum depth").count(), 1, "{message}");
     }
 
     #[test]
