@@ -54,8 +54,8 @@ rsigma backend formats lynxdb
 
 ```text
 Available formats for 'lynxdb':
-  default  - Full SPL2 with `FROM <index> | search ...`
-  minimal  - Just the search expression, for use as a REST API `q=` parameter
+  default  - full query: FROM <index> | search ..., or FROM <index> | where ...
+  minimal  - search expression only (no FROM prefix); * | where ... for a where query
 ```
 
 ### Fibratus formats
@@ -72,8 +72,8 @@ Available formats for 'fibratus':
   rule     - alias of `default`
 
 Correlation methods for 'fibratus' (select with -O correlation_method=NAME, default: sliding):
-  sliding  - Native sliding sequence with `maxspan`
-  session  - Degraded: emits a sliding sequence and a warning that the requested per-step gap is not enforced
+  sliding  - Native sliding sequence with `maxspan` (default; the Fibratus sequence DSL's only time-window primitive is a total-span cap, which is a sliding constraint per stage)
+  session  - Degraded: emits a sliding sequence and a warning that the requested per-step gap is not enforced (Fibratus has no `maxpause`-style inactivity timeout)
 ```
 
 ## Exit codes

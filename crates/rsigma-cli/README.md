@@ -765,7 +765,7 @@ Convert Sigma rules into query strings for a specific backend (SQL, SPL, KQL, Lu
 | `--skip-unsupported` / `-s` | flag | `false` | Skip unsupported rules instead of failing |
 | `--without-pipeline` | flag | `false` | Skip pipeline requirement check |
 
-Available backends: `test`, `postgres` (aliases: `postgresql`, `pg`).
+Native backends: `postgres` (aliases: `postgresql`, `pg`), `lynxdb`, `fibratus`, and the backend-neutral `test` backend. Any other target is delegated to an installed sigma-cli.
 
 ```bash
 # Convert rules using the test backend
@@ -807,13 +807,16 @@ rsigma backend convert rules/ -t postgres -o queries.sql
 
 ### `backend targets`: List available conversion backends
 
-List all registered conversion backend targets.
+List the native conversion backends, plus the sigma-cli targets when sigma-cli is installed.
 
 ```bash
 rsigma backend targets
 # Output:
-#   test      Backend-neutral text queries for testing
-#   postgres  PostgreSQL/TimescaleDB SQL
+#   Available conversion targets:
+#     postgres  - PostgreSQL/TimescaleDB (aliases: postgresql, pg)
+#     lynxdb    - LynxDB log analytics engine
+#     fibratus  - Fibratus kernel-event detection engine
+#     test      - Backend-neutral test backend
 ```
 
 ### `backend formats`: List output formats for a backend
@@ -827,11 +830,17 @@ List the output formats supported by a specific backend.
 ```bash
 rsigma backend formats postgres
 # Output:
-#   default              Plain PostgreSQL SQL
-#   view                 CREATE OR REPLACE VIEW for each rule
-#   timescaledb          TimescaleDB-optimized queries with time_bucket()
-#   continuous_aggregate CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)
-#   sliding_window       Correlation queries using window functions for per-row sliding detection
+#   Available formats for 'postgres':
+#     default               - Plain PostgreSQL SQL
+#     view                  - CREATE OR REPLACE VIEW for each rule
+#     timescaledb           - TimescaleDB-optimized queries with time_bucket()
+#     continuous_aggregate  - CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)
+#     sliding_window        - Correlation queries using window functions for per-row sliding detection
+#
+#   Correlation methods for 'postgres' (select with -O correlation_method=NAME, default: sliding):
+#     sliding   - Trailing per-event window (default; preserves existing SQL)
+#     tumbling  - Fixed boundary-aligned buckets (time_bucket/date_bin)
+#     session   - Gaps-and-islands sessionization (requires a gap)
 ```
 
 ### `rule fields`: List all fields referenced by Sigma rules
