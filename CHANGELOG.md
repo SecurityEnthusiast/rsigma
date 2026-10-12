@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Documentation corrections
+### Documentation corrections (#558)
 
 The docs site publishes the config JSON Schema at `/rsigma.schema.json`, the URL the config template and deployment units already reference. The fuzzing guide lists all 27 harnesses, including the 21 the weekly workflow runs. `RAYON_NUM_THREADS` is documented with the other environment variables. The Prometheus catalogue size is 95 metric names, 90 of them registered without a feature gate. Prose that used an em dash, including older changelog entries and crate descriptions, now uses a comma, a colon, or a separate sentence. Characters that belong to the windash set are unchanged.
 
