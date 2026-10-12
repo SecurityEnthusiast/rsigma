@@ -57,8 +57,8 @@ generate-sigma --product windows --action whoami | rsigma rule stdin
 
 | Code | Meaning |
 |------|---------|
-| `0` | Soft YAML issues (missing required fields, incomplete documents) are reported as warnings on stderr; the partial AST still prints to stdout. |
-| `2` | stdin could not be read, or `parse_sigma_yaml` returned a hard parser error. |
+| `0` | YAML syntax errors and invalid documents (missing required fields, conflicting modifiers) are reported as warnings on stderr; the partial AST still prints to stdout. |
+| `2` | stdin could not be read (including input that is not valid UTF-8), or an `action: global` or `action: repeat` merge exceeded the nesting limit. |
 
 `rule stdin` is intentionally lenient for editor integrations and shell pipelines where soft issues still produce a usable partial AST. For a strict gate, use [`rule validate`](validate.md) (which exits `2` on parse or compile errors).
 

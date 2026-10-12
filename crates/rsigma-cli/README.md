@@ -156,14 +156,12 @@ Parse a Sigma YAML file and output the AST as JSON.
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `path` | positional | required | Path to a Sigma YAML file |
-| `--pretty` / `-p` | flag | **true** | Pretty-print JSON output |
+| `--pretty` / `-p` | flag | `false` | Pretty-print JSON output even when stdout is not a terminal |
 
 ```bash
-rsigma rule parse rule.yml            # print AST as pretty-printed JSON
-rsigma rule parse rule.yml --pretty   # same (default)
+rsigma rule parse rule.yml                  # pretty JSON on a terminal, compact JSON when piped
+rsigma rule parse rule.yml --pretty | less  # pretty JSON through a pipe
 ```
-
-Note: pretty-print is on by default and cannot be disabled.
 
 ### `rule validate`: Validate a rule file or a directory of rules
 
@@ -1113,11 +1111,11 @@ rsigma rule condition 'selection and not filter'
 
 ### `rule stdin`: Parse YAML from stdin
 
-Read a single Sigma YAML document from stdin and output the AST as JSON.
+Read Sigma YAML (one or more documents) from stdin and output the AST as JSON.
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
-| `--pretty` / `-p` | flag | **true** | Pretty-print JSON output |
+| `--pretty` / `-p` | flag | `false` | Pretty-print JSON output even when stdout is not a terminal |
 
 ```bash
 cat rule.yml | rsigma rule stdin

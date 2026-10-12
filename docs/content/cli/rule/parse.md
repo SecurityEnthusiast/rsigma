@@ -14,7 +14,7 @@ rsigma rule parse [OPTIONS] <PATH>
 
 Reads one Sigma rule file, parses it through `rsigma-parser`, and writes the resulting AST to stdout as JSON. Useful for inspecting how RSigma sees a rule, building tooling on top of the parsed shape, or diffing two parse results to spot subtle YAML changes.
 
-Multi-document YAML files (action-global/action-reset/action-repeat fragments) parse into a single JSON object listing each document. A file that cannot be read or is not valid YAML is reported on stderr and the process exits with code `2`. A document that fails rule validation, such as a missing `logsource`, conflicting modifiers, or a value of the wrong type for its modifiers, is listed on stderr under `Warnings:` and left out of the AST, and the process exits with code `0`. Use [`rule validate`](validate.md) as a gate that fails on those errors.
+The output is one JSON object with `rules`, `correlations`, and `filters` arrays, so multi-document YAML files (action-global/action-reset/action-repeat fragments) list each document in the matching array. A file that cannot be read, or is not valid UTF-8, is reported on stderr and the process exits with code `2`. A YAML syntax error is a warning: parsing stops at the broken document, the documents before it still print, and the process exits with code `0`. A document that fails rule validation, such as a missing `logsource`, conflicting modifiers, or a value of the wrong type for its modifiers, is listed on stderr under `Warnings:` and left out of the AST, and the process exits with code `0`. Use [`rule validate`](validate.md) as a gate that fails on those errors.
 
 ## Flags
 
@@ -42,7 +42,7 @@ diff -u before.json after.json
 ### Pipe into `jq` for structured introspection
 
 ```bash
-rsigma rule parse rules/whoami.yml | jq '.detection.selection'
+rsigma rule parse rules/whoami.yml | jq '.rules[0].detection.named.selection'
 ```
 
 ## Exit codes
@@ -50,7 +50,7 @@ rsigma rule parse rules/whoami.yml | jq '.detection.selection'
 | Code | Meaning |
 |------|---------|
 | `0` | The file was readable. A YAML syntax error or missing-required-field is reported as a warning to stderr and the partial AST still prints to stdout. |
-| `2` | The file could not be opened (IO error, permission denied, path not found). |
+| `2` | The file could not be read (path not found, permission denied, not valid UTF-8), or an `action: global` or `action: repeat` merge exceeded the nesting limit. |
 
 For a strict per-rule gate that fails on parse errors, use [`rule validate`](validate.md).
 
