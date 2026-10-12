@@ -311,7 +311,7 @@ disposition = "TESTED"
 test_id = "use_cases::attack_pattern::consumer_examples::ingest_external_framework"
 fixture = "examples/attack-pattern/ex-3.1.7.1-ingest-external-framework.json"
 
-# --- §4.2 Table 55/56 checklist rows (46) — REPORT_ONLY until use-case tests land ---
+# --- §4.2 Table 55/56 checklist rows (46): REPORT_ONLY until use-case tests land ---
 
 [[requirement]]
 req_id = "REQ-CHK-SXC-3.1"
@@ -5977,7 +5977,7 @@ test_id = "harness::reference_closed_bundle_passes"
 fixture = "testcases/harness/tc-harness-closure-smoke.json"
 
 # --- §2.3 cross-cutting (18 executable rows over walkable normative fixtures) ---
-# Not OASIS SXP/SXC certification — use-case role modules and full manifest remain open.
+# Not OASIS SXP/SXC certification: use-case role modules and full manifest remain open.
 # X-07 is REPORT_ONLY (scoping).
 
 [[requirement]]

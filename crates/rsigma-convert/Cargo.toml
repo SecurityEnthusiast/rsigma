@@ -1,6 +1,6 @@
 [package]
 name = "rsigma-convert"
-description = "Sigma rule conversion engine — convert rules to backend-native query strings"
+description = "Sigma rule conversion engine: convert rules to backend-native query strings"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true

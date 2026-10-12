@@ -1,6 +1,6 @@
 [package]
 name = "rsigma-runtime"
-description = "Streaming runtime for rsigma — event sources, sinks, and log processing pipeline"
+description = "Streaming runtime for rsigma: event sources, sinks, and log processing pipeline"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
