@@ -119,7 +119,7 @@ rsigma taxii store \
 
 For TAXII feeds that require auth, pass `--bearer-token`, `--basic-user` with `--basic-password` (or `RSIGMA_TAXII_BASIC_PASSWORD`), or `--api-key`. At most one method. See [taxii sync](https://rsigma.io/cli/taxii/sync/) and [taxii store](https://rsigma.io/cli/taxii/store/).
 
-Point the daemon at the same directory with **`--stix-store`** and a `type: stix` enricher (`stix-enrich` feature) to attach store intel to firings. See [Enrichers](https://rsigma.io/guide/enrichers/#stix-local-stix-store-lookup).
+Point the daemon at the same directory with **`--stix-store`** and a `type: stix` enricher (`stix-enrich` feature) to attach store intel to firings. A store written with `--allow-custom` also needs `--stix-store-allow-custom` on the daemon. See [Enrichers](https://rsigma.io/guide/enrichers/#stix-local-stix-store-lookup).
 
 ### `config`: YAML configuration
 

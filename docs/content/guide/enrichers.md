@@ -149,7 +149,7 @@ Optional `type_filter` restricts to known STIX 2.1 type names (`indicator`, `att
 Operational loop:
 
 1. `rsigma taxii sync --store ./attck-store …` (batch or cron).
-2. `rsigma engine daemon --stix-store ./attck-store --enrichers enrichers.yml …`.
+2. `rsigma engine daemon --stix-store ./attck-store --enrichers enrichers.yml …`. A store synced with `--allow-custom` (MITRE ATT&CK `x-mitre-*` objects) also needs `--stix-store-allow-custom` on the daemon.
 3. Enricher hot-reload re-reads the store from disk so a re-sync is visible without restarting the daemon.
 
 ### `http`: per-result HTTP fetch with optional response cache
