@@ -591,20 +591,24 @@ Always benchmark against representative rule sets and event streams before flipp
 
 ## Error Types
 
+`EvalError` is `#[non_exhaustive]`, so a `match` on it needs a wildcard arm.
+
 | Error | When |
 |-------|------|
 | `InvalidRegex` | Regex compilation failure |
 | `InvalidCidr` | CIDR parse failure in IR that did not come from lowering a rule |
-| `IncompatibleValue` | A value the modifier cannot use, such as a `cidr` with host bits set or a wildcard in a field reference |
+| `IncompatibleValue` | A value the modifier cannot use, such as null for a string modifier, a `cidr` with host bits set, or a wildcard in a field reference |
 | `Base64` | Base64 encoding error |
 | `UnknownDetection` | Condition references missing detection (caught at compile time) |
-| `InvalidModifiers` | Invalid modifier combo, empty AllOf/AnyOf, windash overflow, pipeline failure |
-| `IncompatibleValue` | Wrong type for modifier (e.g. null for string) |
+| `InvalidModifiers` | Invalid modifier combo, empty AllOf/AnyOf, windash overflow |
 | `ExpectedNumeric` | Numeric modifier with non-numeric value |
+| `Pipeline` | Processing pipeline YAML that fails to parse or validate, or a pipeline that fails while being applied (including `rule_failure` and `detection_item_failure`) |
 | `Parser` | Parser error (from rsigma-parser) |
 | `CorrelationError` | Correlation compile/runtime error |
 | `UnknownRuleRef` | Correlation references unknown rule (caught at `add_collection` time) |
 | `CorrelationCycle` | Cycle in correlation references |
+| `Ir` | IR lowering error with no more specific variant |
+| `HirCache` | HIR cache encode or decode failure |
 
 ## Usage
 

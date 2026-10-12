@@ -393,7 +393,7 @@ impl Transformation {
                 interpret_special,
             } => {
                 let re = Regex::new(regex)
-                    .map_err(|e| EvalError::InvalidModifiers(format!("bad regex: {e}")))?;
+                    .map_err(|e| EvalError::Pipeline(format!("bad regex: {e}")))?;
                 helpers::replace_strings_in_rule(
                     rule,
                     state,
@@ -454,8 +454,8 @@ impl Transformation {
                 Ok(true)
             }
 
-            Transformation::RuleFailure { message } => Err(EvalError::InvalidModifiers(format!(
-                "Pipeline rule failure: {message} (rule: {})",
+            Transformation::RuleFailure { message } => Err(EvalError::Pipeline(format!(
+                "rule failure: {message} (rule: {})",
                 rule.title
             ))),
 
@@ -467,8 +467,8 @@ impl Transformation {
                     field_name_conditions,
                 );
                 if has_match {
-                    Err(EvalError::InvalidModifiers(format!(
-                        "Pipeline detection item failure: {message} (rule: {})",
+                    Err(EvalError::Pipeline(format!(
+                        "detection item failure: {message} (rule: {})",
                         rule.title
                     )))
                 } else {

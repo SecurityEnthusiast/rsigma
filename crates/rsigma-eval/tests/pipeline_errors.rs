@@ -28,8 +28,8 @@ level: low
     let mut engine = Engine::new_with_pipeline(pipeline);
     let err = engine.add_collection(&collection).unwrap_err();
     assert!(
-        matches!(err, EvalError::InvalidModifiers(ref s) if s.contains("bad regex")),
-        "expected InvalidModifiers with bad regex message, got: {err}"
+        matches!(err, EvalError::Pipeline(ref s) if s.contains("bad regex")),
+        "expected Pipeline with bad regex message, got: {err}"
     );
 }
 

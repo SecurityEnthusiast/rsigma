@@ -227,7 +227,7 @@ fn extract_inline_sources(
     content: &str,
 ) -> Result<Vec<rsigma_eval::pipeline::sources::DynamicSource>, rsigma_eval::EvalError> {
     let value: yaml_serde::Value = yaml_serde::from_str(content)
-        .map_err(|e| rsigma_eval::EvalError::InvalidModifiers(format!("pipeline YAML: {e}")))?;
+        .map_err(|e| rsigma_eval::EvalError::Pipeline(format!("YAML parse error: {e}")))?;
     let Some(node) = value
         .as_mapping()
         .and_then(|m| m.get(yaml_serde::Value::String("sources".to_string())))
