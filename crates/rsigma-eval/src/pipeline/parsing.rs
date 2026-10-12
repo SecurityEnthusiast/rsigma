@@ -27,22 +27,22 @@ use super::{Pipeline, TransformationItem};
 /// Parse a pipeline from a YAML string.
 pub fn parse_pipeline(yaml: &str) -> Result<Pipeline> {
     let value: yaml_serde::Value = yaml_serde::from_str(yaml)
-        .map_err(|e| EvalError::InvalidModifiers(format!("pipeline YAML parse error: {e}")))?;
+        .map_err(|e| EvalError::Pipeline(format!("YAML parse error: {e}")))?;
     parse_pipeline_value(&value)
 }
 
 /// Parse a pipeline from a YAML file.
 pub fn parse_pipeline_file(path: &Path) -> Result<Pipeline> {
     let content = std::fs::read_to_string(path)
-        .map_err(|e| EvalError::InvalidModifiers(format!("cannot read pipeline file: {e}")))?;
+        .map_err(|e| EvalError::Pipeline(format!("cannot read file: {e}")))?;
     parse_pipeline(&content)
 }
 
 /// Parse a pipeline from a `yaml_serde::Value`.
 fn parse_pipeline_value(value: &yaml_serde::Value) -> Result<Pipeline> {
-    let obj = value.as_mapping().ok_or_else(|| {
-        EvalError::InvalidModifiers("pipeline YAML must be a mapping".to_string())
-    })?;
+    let obj = value
+        .as_mapping()
+        .ok_or_else(|| EvalError::Pipeline("top level must be a mapping".to_string()))?;
 
     let name = obj
         .get(ykey("name"))
@@ -70,12 +70,12 @@ fn parse_pipeline_value(value: &yaml_serde::Value) -> Result<Pipeline> {
     };
 
     // Pipeline-embedded `sources:` blocks were deprecated in v0.12.0 and
-    // removed in v1.0. Source declarations now live in standalone source
+    // removed in v0.19.0. Source declarations now live in standalone source
     // files loaded via `--source`; a pipeline only references them with
     // `${source.<id>}`. Reject the inline form with a migration hint.
     if obj.get(ykey("sources")).is_some() {
-        return Err(EvalError::InvalidModifiers(
-            "pipeline declares an inline 'sources:' block, which was removed in v1.0. \
+        return Err(EvalError::Pipeline(
+            "pipeline declares an inline 'sources:' block, which was removed in v0.19.0. \
              Extract it into a standalone source file with \
              `rsigma rule migrate-sources -p <pipeline> -o sources.yml` and load it via \
              `--source sources.yml`."
@@ -130,17 +130,17 @@ fn yaml_scalar_to_string(value: &yaml_serde::Value) -> Option<String> {
 
 /// Parse a YAML value as a sequence of transformation items.
 pub fn parse_transformation_items(value: &yaml_serde::Value) -> Result<Vec<TransformationItem>> {
-    let items = value.as_sequence().ok_or_else(|| {
-        EvalError::InvalidModifiers("transformations must be a sequence".to_string())
-    })?;
+    let items = value
+        .as_sequence()
+        .ok_or_else(|| EvalError::Pipeline("transformations must be a sequence".to_string()))?;
 
     items.iter().map(parse_transformation_item).collect()
 }
 
 fn parse_transformation_item(value: &yaml_serde::Value) -> Result<TransformationItem> {
-    let obj = value.as_mapping().ok_or_else(|| {
-        EvalError::InvalidModifiers("transformation item must be a mapping".to_string())
-    })?;
+    let obj = value
+        .as_mapping()
+        .ok_or_else(|| EvalError::Pipeline("transformation item must be a mapping".to_string()))?;
 
     validate_transformation_item_keys(obj)?;
 
@@ -269,10 +269,10 @@ fn validate_transformation_item_keys(obj: &yaml_serde::Mapping) -> Result<()> {
 
     for key in obj.keys() {
         let key = key.as_str().ok_or_else(|| {
-            EvalError::InvalidModifiers("transformation item keys must be strings".to_string())
+            EvalError::Pipeline("transformation item keys must be strings".to_string())
         })?;
         if !COMMON.contains(&key) && !specific.contains(&key) {
-            return Err(EvalError::InvalidModifiers(format!(
+            return Err(EvalError::Pipeline(format!(
                 "unknown key '{key}' in transformation item"
             )));
         }
@@ -285,7 +285,7 @@ fn parse_transformation(obj: &yaml_serde::Mapping) -> Result<Transformation> {
         .get(ykey("type"))
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            EvalError::InvalidModifiers("transformation must have a 'type' field".to_string())
+            EvalError::Pipeline("transformation must have a 'type' field".to_string())
         })?;
 
     match type_str {
@@ -334,7 +334,7 @@ fn parse_transformation(obj: &yaml_serde::Mapping) -> Result<Transformation> {
                 .get(ykey("name"))
                 .map(|value| {
                     value.as_str().map(str::to_string).ok_or_else(|| {
-                        EvalError::InvalidModifiers("add_condition 'name' must be a string".into())
+                        EvalError::Pipeline("add_condition 'name' must be a string".into())
                     })
                 })
                 .transpose()?;
@@ -422,7 +422,7 @@ fn parse_transformation(obj: &yaml_serde::Mapping) -> Result<Transformation> {
                 .into_iter()
                 .find(|key| obj.contains_key(ykey(key)))
             {
-                return Err(EvalError::InvalidModifiers(format!(
+                return Err(EvalError::Pipeline(format!(
                     "query_expression_placeholders '{key}' is not supported: placeholders are \
                      not rendered as query expressions"
                 )));
@@ -488,7 +488,7 @@ fn parse_transformation(obj: &yaml_serde::Mapping) -> Result<Transformation> {
                 .get(ykey("apply_keyword"))
                 .is_some_and(|value| value.as_bool() != Some(false))
             {
-                return Err(EvalError::InvalidModifiers(
+                return Err(EvalError::Pipeline(
                     "field_name_transform 'apply_keyword' is not supported: keyword detections \
                      have no field name to transform"
                         .to_string(),
@@ -505,9 +505,7 @@ fn parse_transformation(obj: &yaml_serde::Mapping) -> Result<Transformation> {
                 .get(ykey("valid_hash_algos"))
                 .map(|value| parse_string_list(Some(value)))
                 .ok_or_else(|| {
-                    EvalError::InvalidModifiers(
-                        "hashes_fields requires 'valid_hash_algos'".to_string(),
-                    )
+                    EvalError::Pipeline("hashes_fields requires 'valid_hash_algos'".to_string())
                 })?;
             let field_prefix = obj
                 .get(ykey("field_prefix"))
@@ -557,14 +555,14 @@ fn parse_transformation(obj: &yaml_serde::Mapping) -> Result<Transformation> {
             match obj.get(ykey("method")).map(|method| method.as_str()) {
                 None | Some(Some("ignore_case_brackets" | "ignore_case_flag")) => {}
                 Some(Some("plain")) => {
-                    return Err(EvalError::InvalidModifiers(
+                    return Err(EvalError::Pipeline(
                         "regex method 'plain' is not supported: rsigma matches strings \
                          case-insensitively"
                             .to_string(),
                     ));
                 }
                 Some(_) => {
-                    return Err(EvalError::InvalidModifiers(
+                    return Err(EvalError::Pipeline(
                         "invalid regex 'method'; expected 'plain', 'ignore_case_flag', or \
                          'ignore_case_brackets'"
                             .to_string(),
@@ -638,7 +636,7 @@ fn parse_transformation(obj: &yaml_serde::Mapping) -> Result<Transformation> {
             Ok(Transformation::Nest { items })
         }
 
-        other => Err(EvalError::InvalidModifiers(format!(
+        other => Err(EvalError::Pipeline(format!(
             "unknown transformation type: {other}"
         ))),
     }
@@ -653,15 +651,15 @@ fn parse_rule_conditions(value: &yaml_serde::Value) -> Result<Vec<NamedCondition
 }
 
 fn parse_rule_condition(value: &yaml_serde::Value) -> Result<RuleCondition> {
-    let obj = value.as_mapping().ok_or_else(|| {
-        EvalError::InvalidModifiers("rule condition must be a mapping".to_string())
-    })?;
+    let obj = value
+        .as_mapping()
+        .ok_or_else(|| EvalError::Pipeline("rule condition must be a mapping".to_string()))?;
 
     let type_str = obj
         .get(ykey("type"))
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            EvalError::InvalidModifiers("rule condition must have a 'type' field".to_string())
+            EvalError::Pipeline("rule condition must have a 'type' field".to_string())
         })?;
 
     let condition = match type_str {
@@ -750,7 +748,7 @@ fn parse_rule_condition(value: &yaml_serde::Value) -> Result<RuleCondition> {
             Ok(RuleCondition::Tag { tag })
         }
 
-        other => Err(EvalError::InvalidModifiers(format!(
+        other => Err(EvalError::Pipeline(format!(
             "unknown rule condition type: {other}"
         ))),
     }?;
@@ -770,16 +768,14 @@ fn parse_detection_item_conditions(
 
 fn parse_detection_item_condition(value: &yaml_serde::Value) -> Result<DetectionItemCondition> {
     let obj = value.as_mapping().ok_or_else(|| {
-        EvalError::InvalidModifiers("detection item condition must be a mapping".to_string())
+        EvalError::Pipeline("detection item condition must be a mapping".to_string())
     })?;
 
     let type_str = obj
         .get(ykey("type"))
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            EvalError::InvalidModifiers(
-                "detection item condition must have a 'type' field".to_string(),
-            )
+            EvalError::Pipeline("detection item condition must have a 'type' field".to_string())
         })?;
 
     match type_str {
@@ -794,7 +790,7 @@ fn parse_detection_item_condition(value: &yaml_serde::Value) -> Result<Detection
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             let regex = Regex::new(&pattern).map_err(|e| {
-                EvalError::InvalidModifiers(format!("invalid match_string regex '{pattern}': {e}"))
+                EvalError::Pipeline(format!("invalid match_string regex '{pattern}': {e}"))
             })?;
             let cond = parse_value_match(obj)?;
             Ok(DetectionItemCondition::MatchString {
@@ -839,7 +835,7 @@ fn parse_detection_item_condition(value: &yaml_serde::Value) -> Result<Detection
             Ok(DetectionItemCondition::ProcessingState { key, val, op })
         }
 
-        other => Err(EvalError::InvalidModifiers(format!(
+        other => Err(EvalError::Pipeline(format!(
             "unknown detection item condition type: {other}"
         ))),
     }
@@ -852,15 +848,15 @@ fn parse_field_name_conditions(
 }
 
 fn parse_field_name_condition(value: &yaml_serde::Value) -> Result<FieldNameCondition> {
-    let obj = value.as_mapping().ok_or_else(|| {
-        EvalError::InvalidModifiers("field name condition must be a mapping".to_string())
-    })?;
+    let obj = value
+        .as_mapping()
+        .ok_or_else(|| EvalError::Pipeline("field name condition must be a mapping".to_string()))?;
 
     let type_str = obj
         .get(ykey("type"))
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            EvalError::InvalidModifiers("field name condition must have a 'type' field".to_string())
+            EvalError::Pipeline("field name condition must have a 'type' field".to_string())
         })?;
 
     let is_regex = match obj
@@ -872,7 +868,7 @@ fn parse_field_name_condition(value: &yaml_serde::Value) -> Result<FieldNameCond
             Some("plain") => false,
             Some("re" | "regex") => true,
             _ => {
-                return Err(EvalError::InvalidModifiers(format!(
+                return Err(EvalError::Pipeline(format!(
                     "invalid field name matching mode {mode:?}; expected 'plain' or 're'"
                 )));
             }
@@ -918,7 +914,7 @@ fn parse_field_name_condition(value: &yaml_serde::Value) -> Result<FieldNameCond
             Ok(FieldNameCondition::ProcessingState { key, val, op })
         }
 
-        other => Err(EvalError::InvalidModifiers(format!(
+        other => Err(EvalError::Pipeline(format!(
             "unknown field name condition type: {other}"
         ))),
     }
@@ -950,7 +946,7 @@ fn parse_named_conditions<T>(
             .iter()
             .map(|(id, item)| {
                 let id = id.as_str().ok_or_else(|| {
-                    EvalError::InvalidModifiers(format!("{label} identifiers must be strings"))
+                    EvalError::Pipeline(format!("{label} identifiers must be strings"))
                 })?;
                 Ok(NamedCondition {
                     id: id.to_string(),
@@ -958,7 +954,7 @@ fn parse_named_conditions<T>(
                 })
             })
             .collect(),
-        _ => Err(EvalError::InvalidModifiers(format!(
+        _ => Err(EvalError::Pipeline(format!(
             "{label} must be a sequence or mapping"
         ))),
     }
@@ -978,30 +974,31 @@ fn parse_condition_set<T>(
     let negated = match obj.get(ykey(&not_key)) {
         Some(value) => value
             .as_bool()
-            .ok_or_else(|| EvalError::InvalidModifiers(format!("{not_key} must be a boolean")))?,
+            .ok_or_else(|| EvalError::Pipeline(format!("{not_key} must be a boolean")))?,
         None => false,
     };
 
-    let expression = match obj.get(ykey(&expression_key)) {
-        Some(value) => Some(value.as_str().ok_or_else(|| {
-            EvalError::InvalidModifiers(format!("{expression_key} must be a string"))
-        })?),
-        None => None,
-    };
+    let expression =
+        match obj.get(ykey(&expression_key)) {
+            Some(value) => Some(value.as_str().ok_or_else(|| {
+                EvalError::Pipeline(format!("{expression_key} must be a string"))
+            })?),
+            None => None,
+        };
     let alias_expression = expression_alias
         .map(|alias| {
             obj.get(ykey(alias))
                 .map(|value| {
-                    value.as_str().ok_or_else(|| {
-                        EvalError::InvalidModifiers(format!("{alias} must be a string"))
-                    })
+                    value
+                        .as_str()
+                        .ok_or_else(|| EvalError::Pipeline(format!("{alias} must be a string")))
                 })
                 .transpose()
         })
         .transpose()?
         .flatten();
     if expression.is_some() && alias_expression.is_some() {
-        return Err(EvalError::InvalidModifiers(format!(
+        return Err(EvalError::Pipeline(format!(
             "{expression_key} and {} cannot both be set",
             expression_alias.unwrap_or_default()
         )));
@@ -1009,7 +1006,7 @@ fn parse_condition_set<T>(
     let expression = expression.or(alias_expression).map(String::from);
 
     if expression.is_some() && obj.get(ykey(&op_key)).is_some() {
-        return Err(EvalError::InvalidModifiers(format!(
+        return Err(EvalError::Pipeline(format!(
             "{expression_key} is mutually exclusive with {op_key}"
         )));
     }
@@ -1035,10 +1032,10 @@ fn parse_condition_op(value: Option<&yaml_serde::Value>) -> Result<ConditionOp> 
         None => Ok(ConditionOp::And),
         Some(value) if value.as_str() == Some("and") => Ok(ConditionOp::And),
         Some(value) if value.as_str() == Some("or") => Ok(ConditionOp::Or),
-        Some(yaml_serde::Value::String(other)) => Err(EvalError::InvalidModifiers(format!(
+        Some(yaml_serde::Value::String(other)) => Err(EvalError::Pipeline(format!(
             "condition operator must be 'and' or 'or', got '{other}'"
         ))),
-        Some(_) => Err(EvalError::InvalidModifiers(
+        Some(_) => Err(EvalError::Pipeline(
             "condition operator must be a string".to_string(),
         )),
     }
@@ -1053,10 +1050,10 @@ fn parse_state_operator(value: Option<&yaml_serde::Value>) -> Result<StateOperat
         Some(value) if value.as_str() == Some("gt") => Ok(StateOperator::Gt),
         Some(value) if value.as_str() == Some("lte") => Ok(StateOperator::Lte),
         Some(value) if value.as_str() == Some("lt") => Ok(StateOperator::Lt),
-        Some(yaml_serde::Value::String(other)) => Err(EvalError::InvalidModifiers(format!(
+        Some(yaml_serde::Value::String(other)) => Err(EvalError::Pipeline(format!(
             "processing_state op must be eq, ne, gte, gt, lte, or lt; got '{other}'"
         ))),
-        Some(_) => Err(EvalError::InvalidModifiers(
+        Some(_) => Err(EvalError::Pipeline(
             "processing_state op must be a string".to_string(),
         )),
     }
@@ -1064,9 +1061,7 @@ fn parse_state_operator(value: Option<&yaml_serde::Value>) -> Result<StateOperat
 
 fn yaml_to_json(value: &yaml_serde::Value) -> Result<serde_json::Value> {
     serde_json::to_value(value).map_err(|error| {
-        EvalError::InvalidModifiers(format!(
-            "pipeline value cannot be represented as JSON: {error}"
-        ))
+        EvalError::Pipeline(format!("value cannot be represented as JSON: {error}"))
     })
 }
 
@@ -1140,7 +1135,7 @@ fn parse_value_mapping(
                     // An empty sequence would drop the condition and widen the
                     // rule, so it is rejected rather than skipped.
                     yaml_serde::Value::Sequence(seq) if seq.is_empty() => {
-                        return Err(EvalError::InvalidModifiers(format!(
+                        return Err(EvalError::Pipeline(format!(
                             "add_condition: empty sequence for field '{key}'"
                         )));
                     }
@@ -1169,7 +1164,7 @@ fn scalar_condition_value(field: &str, value: &yaml_serde::Value) -> Result<Sigm
         | yaml_serde::Value::Number(_)
         | yaml_serde::Value::Bool(_)
         | yaml_serde::Value::Null => Ok(SigmaValue::from_yaml(value)),
-        _ => Err(EvalError::InvalidModifiers(format!(
+        _ => Err(EvalError::Pipeline(format!(
             "add_condition: non-scalar value for field '{field}'"
         ))),
     }
@@ -1180,9 +1175,8 @@ fn build_field_matcher(fields: Vec<String>, is_regex: bool) -> Result<FieldMatch
         let regexes = fields
             .iter()
             .map(|p| {
-                Regex::new(p).map_err(|e| {
-                    EvalError::InvalidModifiers(format!("invalid field regex '{p}': {e}"))
-                })
+                Regex::new(p)
+                    .map_err(|e| EvalError::Pipeline(format!("invalid field regex '{p}': {e}")))
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(FieldMatcher::Regex(regexes))
@@ -1201,7 +1195,7 @@ fn force_set_value_type(
         Some(yaml_serde::Value::String(s)) => s.clone(),
         Some(yaml_serde::Value::Number(n)) => n.to_string(),
         _ => {
-            return Err(EvalError::InvalidModifiers(
+            return Err(EvalError::Pipeline(
                 "set_value 'force_type' is only allowed for string and numeric values".to_string(),
             ));
         }
@@ -1217,12 +1211,12 @@ fn force_set_value_type(
             {
                 Ok(SigmaValue::Float(float))
             } else {
-                Err(EvalError::InvalidModifiers(format!(
+                Err(EvalError::Pipeline(format!(
                     "set_value value '{text}' can't be converted to a number"
                 )))
             }
         }
-        _ => Err(EvalError::InvalidModifiers(format!(
+        _ => Err(EvalError::Pipeline(format!(
             "invalid set_value 'force_type' {force_type:?}; expected 'str' or 'num'"
         ))),
     }
@@ -1234,7 +1228,7 @@ fn parse_value_match(obj: &yaml_serde::Mapping) -> Result<ValueMatch> {
         Some(value) => match value.as_str() {
             Some("any") => Ok(ValueMatch::Any),
             Some("all") => Ok(ValueMatch::All),
-            _ => Err(EvalError::InvalidModifiers(format!(
+            _ => Err(EvalError::Pipeline(format!(
                 "invalid detection item condition 'cond' value {value:?}; expected 'any' or 'all'"
             ))),
         },
@@ -1262,7 +1256,7 @@ fn parse_placeholder_filter(obj: &yaml_serde::Mapping) -> Result<PlaceholderFilt
         .get(ykey("exclude"))
         .map(|value| parse_string_list(Some(value)));
     if include.is_some() && exclude.is_some() {
-        return Err(EvalError::InvalidModifiers(
+        return Err(EvalError::Pipeline(
             "placeholder transformations cannot set both include and exclude".to_string(),
         ));
     }
@@ -1289,7 +1283,7 @@ fn parse_finalizers(value: &yaml_serde::Value) -> Vec<Finalizer> {
 pub fn parse_sources(value: &yaml_serde::Value) -> Result<Vec<DynamicSource>> {
     let items = value
         .as_sequence()
-        .ok_or_else(|| EvalError::InvalidModifiers("sources must be a sequence".to_string()))?;
+        .ok_or_else(|| EvalError::Pipeline("sources must be a sequence".to_string()))?;
 
     items.iter().map(parse_dynamic_source).collect()
 }
@@ -1298,20 +1292,18 @@ pub fn parse_sources(value: &yaml_serde::Value) -> Result<Vec<DynamicSource>> {
 pub fn parse_dynamic_source(value: &yaml_serde::Value) -> Result<DynamicSource> {
     let obj = value
         .as_mapping()
-        .ok_or_else(|| EvalError::InvalidModifiers("source must be a mapping".to_string()))?;
+        .ok_or_else(|| EvalError::Pipeline("source must be a mapping".to_string()))?;
 
     let id = obj
         .get(ykey("id"))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| EvalError::InvalidModifiers("source must have an 'id' field".to_string()))?
+        .ok_or_else(|| EvalError::Pipeline("source must have an 'id' field".to_string()))?
         .to_string();
 
     let type_str = obj
         .get(ykey("type"))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            EvalError::InvalidModifiers(format!("source '{id}' must have a 'type' field"))
-        })?;
+        .ok_or_else(|| EvalError::Pipeline(format!("source '{id}' must have a 'type' field")))?;
 
     let format = parse_data_format(obj.get(ykey("format")));
     let extract = parse_extract_expr(obj.get(ykey("extract")), &id)?;
@@ -1322,7 +1314,7 @@ pub fn parse_dynamic_source(value: &yaml_serde::Value) -> Result<DynamicSource> 
                 .get(ykey("url"))
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    EvalError::InvalidModifiers(format!(
+                    EvalError::Pipeline(format!(
                         "source '{id}' of type 'http' must have a 'url' field"
                     ))
                 })?
@@ -1348,7 +1340,7 @@ pub fn parse_dynamic_source(value: &yaml_serde::Value) -> Result<DynamicSource> 
         "command" => {
             let command = parse_command_field(obj.get(ykey("command")))?;
             if command.is_empty() {
-                return Err(EvalError::InvalidModifiers(format!(
+                return Err(EvalError::Pipeline(format!(
                     "source '{id}' of type 'command' must have a non-empty 'command' field"
                 )));
             }
@@ -1363,7 +1355,7 @@ pub fn parse_dynamic_source(value: &yaml_serde::Value) -> Result<DynamicSource> 
                 .get(ykey("path"))
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    EvalError::InvalidModifiers(format!(
+                    EvalError::Pipeline(format!(
                         "source '{id}' of type 'file' must have a 'path' field"
                     ))
                 })?;
@@ -1383,7 +1375,7 @@ pub fn parse_dynamic_source(value: &yaml_serde::Value) -> Result<DynamicSource> 
                 .get(ykey("subject"))
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    EvalError::InvalidModifiers(format!(
+                    EvalError::Pipeline(format!(
                         "source '{id}' of type 'nats' must have a 'subject' field"
                     ))
                 })?
@@ -1396,7 +1388,7 @@ pub fn parse_dynamic_source(value: &yaml_serde::Value) -> Result<DynamicSource> 
             }
         }
         other => {
-            return Err(EvalError::InvalidModifiers(format!(
+            return Err(EvalError::Pipeline(format!(
                 "source '{id}' has unknown type: '{other}'"
             )));
         }
@@ -1434,15 +1426,15 @@ pub fn parse_dynamic_source(value: &yaml_serde::Value) -> Result<DynamicSource> 
 /// ```
 pub fn parse_sources_file(path: &Path) -> Result<Vec<DynamicSource>> {
     let content = std::fs::read_to_string(path)
-        .map_err(|e| EvalError::InvalidModifiers(format!("cannot read sources file: {e}")))?;
+        .map_err(|e| EvalError::Pipeline(format!("cannot read sources file: {e}")))?;
     let value: yaml_serde::Value = yaml_serde::from_str(&content)
-        .map_err(|e| EvalError::InvalidModifiers(format!("sources file YAML parse error: {e}")))?;
-    let obj = value.as_mapping().ok_or_else(|| {
-        EvalError::InvalidModifiers("sources file must be a YAML mapping".to_string())
-    })?;
+        .map_err(|e| EvalError::Pipeline(format!("sources file YAML parse error: {e}")))?;
+    let obj = value
+        .as_mapping()
+        .ok_or_else(|| EvalError::Pipeline("sources file must be a YAML mapping".to_string()))?;
     match obj.get(ykey("sources")) {
         Some(items) => parse_sources(items),
-        None => Err(EvalError::InvalidModifiers(
+        None => Err(EvalError::Pipeline(
             "sources file must contain a top-level 'sources:' key".to_string(),
         )),
     }
@@ -1452,7 +1444,7 @@ pub fn parse_sources_file(path: &Path) -> Result<Vec<DynamicSource>> {
 /// sorted alphabetically. Each file must contain a top-level `sources:` block.
 pub fn parse_sources_dir(dir: &Path) -> Result<Vec<DynamicSource>> {
     let mut entries: Vec<_> = std::fs::read_dir(dir)
-        .map_err(|e| EvalError::InvalidModifiers(format!("cannot read sources directory: {e}")))?
+        .map_err(|e| EvalError::Pipeline(format!("cannot read sources directory: {e}")))?
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
             let path = entry.path();
@@ -1493,7 +1485,7 @@ fn parse_extract_expr(
             .get(ykey("expr"))
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                EvalError::InvalidModifiers(format!(
+                EvalError::Pipeline(format!(
                     "source '{source_id}': extract object must have an 'expr' field"
                 ))
             })?
@@ -1509,7 +1501,7 @@ fn parse_extract_expr(
             "jsonpath" => ExtractExpr::JsonPath(expr),
             "cel" => ExtractExpr::Cel(expr),
             other => {
-                return Err(EvalError::InvalidModifiers(format!(
+                return Err(EvalError::Pipeline(format!(
                     "source '{source_id}': unknown extract type '{other}' (expected: jq, jsonpath, cel)"
                 )));
             }
@@ -1518,7 +1510,7 @@ fn parse_extract_expr(
         return Ok(Some(extract_expr));
     }
 
-    Err(EvalError::InvalidModifiers(format!(
+    Err(EvalError::Pipeline(format!(
         "source '{source_id}': 'extract' must be a string or mapping"
     )))
 }
@@ -1644,7 +1636,7 @@ pub fn validate_source_refs(
     if undeclared.is_empty() {
         Ok(())
     } else {
-        Err(EvalError::InvalidModifiers(format!(
+        Err(EvalError::Pipeline(format!(
             "pipeline references undeclared source(s): {}",
             undeclared.join(", ")
         )))

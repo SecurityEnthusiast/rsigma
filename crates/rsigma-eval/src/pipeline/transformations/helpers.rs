@@ -204,7 +204,7 @@ where
                     .fold(1usize, |acc, n| acc.saturating_mul(n));
                 if total > MAX_FIELD_MAPPING_COMBINATIONS {
                     let sizes: Vec<usize> = alternatives.iter().map(Vec::len).collect();
-                    return Err(EvalError::InvalidModifiers(format!(
+                    return Err(EvalError::Pipeline(format!(
                         "field name mapping cartesian expansion would produce {total} \
                          branches, exceeding the limit of {MAX_FIELD_MAPPING_COMBINATIONS} \
                          (rule: {rule_title}, per-item alternative counts: {sizes:?}); \
@@ -305,7 +305,7 @@ where
             Some(names) if !names.is_empty() => {
                 if mapped_values.len().saturating_add(names.len()) > MAX_FIELD_MAPPING_COMBINATIONS
                 {
-                    return Err(EvalError::InvalidModifiers(format!(
+                    return Err(EvalError::Pipeline(format!(
                         "field reference mapping would produce more than \
                          {MAX_FIELD_MAPPING_COMBINATIONS} values (rule: {rule_title})"
                     )));
@@ -476,7 +476,7 @@ pub(super) fn add_conditions(rule: &mut SigmaRule, added: &AddedCondition<'_>) -
 
     let det_name = match added.name {
         Some(name) if rule.detection.named.contains_key(name) => {
-            return Err(EvalError::InvalidModifiers(format!(
+            return Err(EvalError::Pipeline(format!(
                 "add_condition name '{name}' collides with an existing detection (rule: {})",
                 rule.title
             )));
@@ -947,7 +947,7 @@ fn expand_placeholder_string(
             Segment::Placeholder(name) => match expansion.state.vars.get(*name) {
                 Some(values) => values.iter().map(|v| v.replace('%', "\\%")).collect(),
                 None => {
-                    return Err(EvalError::InvalidModifiers(format!(
+                    return Err(EvalError::Pipeline(format!(
                         "placeholder replacement variable '{name}' is not defined \
                          (rule: {rule_title})"
                     )));
@@ -957,7 +957,7 @@ fn expand_placeholder_string(
 
         let total = combinations.len().saturating_mul(replacements.len());
         if total > MAX_PLACEHOLDER_COMBINATIONS {
-            return Err(EvalError::InvalidModifiers(format!(
+            return Err(EvalError::Pipeline(format!(
                 "placeholder expansion would produce {total} values, exceeding the limit of \
                  {MAX_PLACEHOLDER_COMBINATIONS} (rule: {rule_title})"
             )));
@@ -1188,7 +1188,7 @@ fn hash_value_group(
         }
     }
     if by_field.is_empty() {
-        return Err(EvalError::InvalidModifiers(format!(
+        return Err(EvalError::Pipeline(format!(
             "no valid hash algorithm found in field '{}'; use one of: {} (rule: {rule_title})",
             item.field.name.as_deref().unwrap_or_default(),
             hashes.valid_hash_algos.join(", ")

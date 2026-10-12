@@ -4,6 +4,7 @@ use thiserror::Error;
 
 /// Errors that can occur during rule compilation or evaluation.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum EvalError {
     /// A regex pattern failed to compile.
     #[error("invalid regex pattern: {0}")]
@@ -32,6 +33,12 @@ pub enum EvalError {
     /// A numeric value was expected but not found.
     #[error("expected numeric value: {0}")]
     ExpectedNumeric(String),
+
+    /// A processing pipeline could not be parsed, or failed while it was
+    /// applied to a rule (including a deliberate `rule_failure` or
+    /// `detection_item_failure` transformation).
+    #[error("pipeline error: {0}")]
+    Pipeline(String),
 
     /// A parser error propagated during compilation.
     #[error("parser error: {0}")]

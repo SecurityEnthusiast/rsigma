@@ -313,8 +313,8 @@ fn apply_correlation_transformation(
             Ok(true)
         }
 
-        Transformation::RuleFailure { message } => Err(EvalError::InvalidModifiers(format!(
-            "Pipeline rule failure: {message} (correlation: {})",
+        Transformation::RuleFailure { message } => Err(EvalError::Pipeline(format!(
+            "rule failure: {message} (correlation: {})",
             corr.title
         ))),
 
@@ -365,7 +365,7 @@ fn map_correlation_fields(
                 continue;
             };
             if names.len() > 1 {
-                return Err(EvalError::InvalidModifiers(format!(
+                return Err(EvalError::Pipeline(format!(
                     "field_name_mapping one-to-many cannot be applied to \
                      correlation alias mapping (alias '{}', rule '{}', \
                      field '{}' maps to {} alternatives)",
@@ -414,7 +414,7 @@ fn map_correlation_fields(
                 continue;
             };
             if names.len() > 1 {
-                return Err(EvalError::InvalidModifiers(format!(
+                return Err(EvalError::Pipeline(format!(
                     "field_name_mapping one-to-many cannot be applied to \
                      correlation condition field reference ('{}' maps to \
                      {} alternatives)",

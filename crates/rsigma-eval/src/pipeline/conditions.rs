@@ -484,11 +484,11 @@ fn eval_parsed_condition(expr: &ConditionExpr, results: &HashMap<String, bool>) 
 /// Validate a condition expression and its references.
 pub(crate) fn validate_condition_expr(expr: &str, ids: &[String], label: &str) -> Result<()> {
     let parsed = parse_condition(expr).map_err(|error| {
-        EvalError::InvalidModifiers(format!("invalid {label} expression '{expr}': {error}"))
+        EvalError::Pipeline(format!("invalid {label} expression '{expr}': {error}"))
     })?;
     let mut referenced = HashSet::new();
     collect_condition_ids(&parsed, &mut referenced).map_err(|()| {
-        EvalError::InvalidModifiers(format!(
+        EvalError::Pipeline(format!(
             "{label} expression must contain only condition identifiers and boolean operators"
         ))
     })?;
@@ -500,7 +500,7 @@ pub(crate) fn validate_condition_expr(expr: &str, ids: &[String], label: &str) -
         .filter(|id| !defined.contains(id))
         .collect();
     if !unknown.is_empty() {
-        return Err(EvalError::InvalidModifiers(format!(
+        return Err(EvalError::Pipeline(format!(
             "{label} expression references unknown condition identifier(s): {}",
             unknown.join(", ")
         )));
@@ -512,7 +512,7 @@ pub(crate) fn validate_condition_expr(expr: &str, ids: &[String], label: &str) -
         .filter(|id| !referenced.contains(*id))
         .collect();
     if !unreferenced.is_empty() {
-        return Err(EvalError::InvalidModifiers(format!(
+        return Err(EvalError::Pipeline(format!(
             "{label} expression leaves condition identifier(s) unreferenced: {}",
             unreferenced.join(", ")
         )));

@@ -210,6 +210,8 @@ Decision matrix in [Performance Tuning](../guide/performance-tuning.md). Verifie
 
 `EvalError` from `thiserror`. Variants include `Parser` (re-exports the parser errors), `InvalidRegex`, `InvalidCidr`, `IncompatibleValue` (a value the modifier cannot use, such as a `cidr` with host bits set), `InvalidModifiers`, `UnknownRuleRef` (correlation references a rule that wasn't added), `CorrelationCycle`, and `Base64`. Each carries enough context to point operators at the offending rule.
 
+Processing pipelines that fail to parse or validate, or that fail while being applied to a rule (including a deliberate `rule_failure` or `detection_item_failure`), return `EvalError::Pipeline`. The enum is `#[non_exhaustive]`, so a `match` on it needs a wildcard arm. {{ added "unreleased" }}
+
 ## See also
 
 - [Architecture](../reference/architecture.md) for how `Engine` and `CorrelationEngine` fit into the broader runtime.

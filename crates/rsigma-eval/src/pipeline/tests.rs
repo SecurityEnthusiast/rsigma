@@ -1040,7 +1040,7 @@ transformations:
 
 #[test]
 fn test_inline_sources_block_is_rejected() {
-    // Pipeline-embedded `sources:` was removed in v1.0; the parser rejects it
+    // Pipeline-embedded `sources:` was removed in v0.19.0; the parser rejects it
     // with a hint pointing at the migration tool.
     let yaml = r#"
 name: Legacy Pipeline

@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Pipeline errors get their own variant (#561)
+
+Processing pipeline failures were reported as `invalid modifier combination: ...`, so a YAML syntax error in a pipeline file, an unknown transformation type, or a deliberate `rule_failure` read like a problem with a rule's field modifiers. They now return the new `EvalError::Pipeline` variant and print as `pipeline error: ...`, and `rule migrate-sources` reports pipeline YAML errors the same way. The rejection message for an inline pipeline `sources:` block, and the remaining docs pages that mention it, now date the removal to 0.19.0 instead of v1.0.
+
+Breaking changes for library users: `EvalError` has a new `Pipeline(String)` variant, and errors from pipeline parsing and application move to it from `InvalidModifiers`. `EvalError` is now `#[non_exhaustive]`, so an exhaustive `match` on it needs a wildcard arm, and later variants are not breaking changes.
+
 ### `--no-default-features` builds compile again (#560)
 
 `cargo build -p rsigma --no-default-features`, the minimal build the CLI README documents, had failed to compile since 0.22.0 because the disposition-spool reader behind `rule tune --from-dispositions` needs `rsigma-runtime`, which only the `daemon` feature pulls in. The reader is now gated on `daemon`, and in a build without it `--from-dispositions` exits `3` with a rebuild hint. The `check` CI job compiles the CLI and its tests without default features so the build stays green.
