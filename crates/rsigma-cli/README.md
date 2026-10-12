@@ -119,7 +119,7 @@ rsigma taxii store \
 
 For TAXII feeds that require auth, pass `--bearer-token`, `--basic-user` with `--basic-password` (or `RSIGMA_TAXII_BASIC_PASSWORD`), or `--api-key`. At most one method. See [taxii sync](https://rsigma.io/cli/taxii/sync/) and [taxii store](https://rsigma.io/cli/taxii/store/).
 
-Point the daemon at the same directory with **`--stix-store`** and a `type: stix` enricher (`stix-enrich` feature) to attach store intel to firings. See [Enrichers](https://rsigma.io/guide/enrichers/#stix-local-stix-store-lookup).
+Point the daemon at the same directory with **`--stix-store`** and a `type: stix` enricher (`stix-enrich` feature) to attach store intel to firings. A store written with `--allow-custom` also needs `--stix-store-allow-custom` on the daemon. See [Enrichers](https://rsigma.io/guide/enrichers/#stix-local-stix-store-lookup).
 
 ### `config`: YAML configuration
 
@@ -156,14 +156,12 @@ Parse a Sigma YAML file and output the AST as JSON.
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `path` | positional | required | Path to a Sigma YAML file |
-| `--pretty` / `-p` | flag | **true** | Pretty-print JSON output |
+| `--pretty` / `-p` | flag | `false` | Pretty-print JSON output even when stdout is not a terminal |
 
 ```bash
-rsigma rule parse rule.yml            # print AST as pretty-printed JSON
-rsigma rule parse rule.yml --pretty   # same (default)
+rsigma rule parse rule.yml                  # pretty JSON on a terminal, compact JSON when piped
+rsigma rule parse rule.yml --pretty | less  # pretty JSON through a pipe
 ```
-
-Note: pretty-print is on by default and cannot be disabled.
 
 ### `rule validate`: Validate a rule file or a directory of rules
 
@@ -765,7 +763,7 @@ Convert Sigma rules into query strings for a specific backend (SQL, SPL, KQL, Lu
 | `--skip-unsupported` / `-s` | flag | `false` | Skip unsupported rules instead of failing |
 | `--without-pipeline` | flag | `false` | Skip pipeline requirement check |
 
-Available backends: `test`, `postgres` (aliases: `postgresql`, `pg`).
+Native backends: `postgres` (aliases: `postgresql`, `pg`), `lynxdb`, `fibratus`, and the backend-neutral `test` backend. Any other target is delegated to an installed sigma-cli.
 
 ```bash
 # Convert rules using the test backend
@@ -807,13 +805,16 @@ rsigma backend convert rules/ -t postgres -o queries.sql
 
 ### `backend targets`: List available conversion backends
 
-List all registered conversion backend targets.
+List the native conversion backends, plus the sigma-cli targets when sigma-cli is installed.
 
 ```bash
 rsigma backend targets
 # Output:
-#   test      Backend-neutral text queries for testing
-#   postgres  PostgreSQL/TimescaleDB SQL
+#   Available conversion targets:
+#     postgres  - PostgreSQL/TimescaleDB (aliases: postgresql, pg)
+#     lynxdb    - LynxDB log analytics engine
+#     fibratus  - Fibratus kernel-event detection engine
+#     test      - Backend-neutral test backend
 ```
 
 ### `backend formats`: List output formats for a backend
@@ -827,11 +828,17 @@ List the output formats supported by a specific backend.
 ```bash
 rsigma backend formats postgres
 # Output:
-#   default              Plain PostgreSQL SQL
-#   view                 CREATE OR REPLACE VIEW for each rule
-#   timescaledb          TimescaleDB-optimized queries with time_bucket()
-#   continuous_aggregate CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)
-#   sliding_window       Correlation queries using window functions for per-row sliding detection
+#   Available formats for 'postgres':
+#     default               - Plain PostgreSQL SQL
+#     view                  - CREATE OR REPLACE VIEW for each rule
+#     timescaledb           - TimescaleDB-optimized queries with time_bucket()
+#     continuous_aggregate  - CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)
+#     sliding_window        - Correlation queries using window functions for per-row sliding detection
+#
+#   Correlation methods for 'postgres' (select with -O correlation_method=NAME, default: sliding):
+#     sliding   - Trailing per-event window (default; preserves existing SQL)
+#     tumbling  - Fixed boundary-aligned buckets (time_bucket/date_bin)
+#     session   - Gaps-and-islands sessionization (requires a gap)
 ```
 
 ### `rule fields`: List all fields referenced by Sigma rules
@@ -1104,11 +1111,11 @@ rsigma rule condition 'selection and not filter'
 
 ### `rule stdin`: Parse YAML from stdin
 
-Read a single Sigma YAML document from stdin and output the AST as JSON.
+Read Sigma YAML (one or more documents) from stdin and output the AST as JSON.
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
-| `--pretty` / `-p` | flag | **true** | Pretty-print JSON output |
+| `--pretty` / `-p` | flag | `false` | Pretty-print JSON output even when stdout is not a terminal |
 
 ```bash
 cat rule.yml | rsigma rule stdin
@@ -1116,7 +1123,7 @@ cat rule.yml | rsigma rule stdin
 
 ### `rule migrate-sources`: Extract pipeline sources into standalone files
 
-Extract pipeline-embedded `sources:` blocks into standalone source files. Pipeline-embedded sources were removed in v1.0; this tool automates the migration to the `--source` flag for any pipeline that still declares them.
+Extract pipeline-embedded `sources:` blocks into standalone source files. Pipeline-embedded sources were removed in v0.19.0; this tool automates the migration to the `--source` flag for any pipeline that still declares them.
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -1272,7 +1279,7 @@ rsigma engine daemon -r rules/ -p pipelines/ --source sources.d/   # loads all *
 
 External source files decouple source configuration from pipeline logic, so pipelines stay reusable across environments. Source IDs must be unique across every `--source` file. The flag is repeatable, so multiple files can be combined (each with its own per-team or per-data-source ownership).
 
-> **Removed in v1.0.** Declaring `sources:` inline in a pipeline file is no longer accepted (tracked in [#137](https://github.com/timescale/rsigma/issues/137)); the parser rejects such a pipeline with a hard error pointing at the migration tool. Migrate with `rsigma rule migrate-sources -p <dir-or-file> -o sources.yml` and load the result via `--source sources.yml`.
+> **Removed in v0.19.0.** Declaring `sources:` inline in a pipeline file is no longer accepted (tracked in [#137](https://github.com/timescale/rsigma/issues/137)); the parser rejects such a pipeline with a hard error pointing at the migration tool. Migrate with `rsigma rule migrate-sources -p <dir-or-file> -o sources.yml` and load the result via `--source sources.yml`.
 
 ### Source types
 

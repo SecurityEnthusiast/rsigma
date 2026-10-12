@@ -1,0 +1,52 @@
+name: Docs audit
+
+# Runs on every change, not only docs changes: most drift comes from a code
+# change (a new flag, metric, route, or tool) that leaves the docs behind.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: docs-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  sources:
+    name: Docs catalogues
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # read repo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check docs catalogues against the source tree
+        run: python3 scripts/docs-audit/check_sources.py
+
+  binary:
+    name: Docs contracts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # read repo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-rust
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Every feature, so each documented flag, config key, and MCP tool exists.
+      - name: Build rsigma with all features
+        run: cargo build --locked -p rsigma --all-features
+      - name: Check docs against the binary
+        run: python3 scripts/docs-audit/check_binary.py --bin target/debug/rsigma

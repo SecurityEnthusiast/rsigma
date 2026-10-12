@@ -51,3 +51,5 @@ Full-text engines may match keywords differently from the evaluator: PostgreSQL 
 `1 of them` and `all of them` cover every detection whose name does not start with an underscore. A pattern selector such as `1 of selection_*` or `all of *` also skips names that start with an underscore, unless the pattern itself starts with one: `1 of _filter*` selects `_filter_a` and `_filter_b`.
 
 A selector that matches no detection name, such as `all of zzz*`, or `1 of *` when every detection name starts with an underscore, is a compile error. Evaluation and conversion reject the rule alike, instead of treating `all of` over nothing as true.
+
+`any of` is accepted as a synonym of `1 of`, as in pySigma. A count above one, such as `2 of selection_*`, is an extension beyond the specification: the evaluator matches when at least that many of the selected detections match. Backends cannot express a count, so conversion rejects the rule with `'2 of' quantifier not supported in conversion`.

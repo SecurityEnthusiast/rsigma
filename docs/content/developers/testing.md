@@ -11,6 +11,7 @@ The workspace runs several test tiers. Most are gated in CI on every PR; coverag
 | End-to-end (binary + containers) | `crates/rsigma-cli/tests/cli_*.rs`, `crates/rsigma-runtime/tests/nats_e2e.rs`, `crates/rsigma-convert/tests/postgres_integration.rs` | Same; testcontainers-based tests skip when Docker is unavailable. | Same. |
 | Snapshot / golden | insta snapshots mainly under `crates/rsigma-parser/tests/snapshots/`; convert/runtime/cli goldens under each crate's `tests/golden/` (or fixtures); dynamic-pipeline goldens in `tests/fixtures/dynamic-pipelines/golden/` | `cargo test` plus the SigmaHQ-corpus job for the dynamic-pipelines goldens. | `test` and `sigma-corpus` jobs. |
 | SigmaHQ corpus | `.github/workflows/ci.yml` -> `sigma-corpus` | `cargo build --release --all-features --locked -p rsigma` then `target/release/rsigma rule validate …` against the pinned corpus SHA | `sigma-corpus` job, on every PR. |
+| Docs audit | `scripts/docs-audit/` | `python3 scripts/docs-audit/check_sources.py`; `cargo build --locked -p rsigma --all-features` then `python3 scripts/docs-audit/check_binary.py --bin target/debug/rsigma` | `Docs catalogues` and `Docs contracts` jobs in `docs-audit.yml`, on every PR. |
 | Coverage | `cargo-llvm-cov` (Linux) | CI: `cargo llvm-cov --workspace --all-features --locked --no-report` then `cargo llvm-cov report --lcov …`. Locally a one-shot form is fine; prefer `--locked`. | `coverage` job (advisory, not gating). |
 | Representative performance | `.github/workflows/performance.yml`, `scripts/perf/` | `scripts/perf/fetch-fixtures.sh` then the offline and daemon harnesses | Coarse same-runner base/PR gate for evaluator hot-path, dependency, toolchain, and performance-harness changes; weekly full matrix plus native glibc/static musl scaling on dedicated eight-core amd64/arm64 runners. |
 
@@ -173,6 +174,15 @@ cd - >/dev/null
 ```
 
 The Performance workflow also uses this pinned corpus for representative throughput and candidate-rate checks. Keep both corpus consumers pinned to the same SHA.
+
+## Docs audit
+
+Two standard-library Python scripts keep the docs in step with the code. `.github/workflows/docs-audit.yml` runs both on every PR, including PRs that touch no docs, because most drift starts as a code change.
+
+- `scripts/docs-audit/check_sources.py` reads only the source tree. It compares the hand-maintained catalogues with the code they describe: fuzz harnesses and the scheduled set, lint and metrics counts in `docs/_data/vars.yml`, metric names, daemon HTTP routes, CLI features, environment variables, native backends, and the navigation. It also rejects em and en dashes outside lines that describe the windash dash set.
+- `scripts/docs-audit/check_binary.py --bin <path>` drives an all-features binary. Every flag in `--help` must appear on its `docs/content/cli/` page, and every flag in a page's tables must exist. `docs/rsigma.schema.json` must equal `rsigma config schema`, and every schema key must be documented directly or through its flag. Every MCP tool and resource must appear in the MCP guide, the `mcp serve` page, and the `rsigma-mcp` README. The `backend targets` and `backend formats` samples must match the output line for line. Self-contained YAML examples (rules with a `title`, pipelines, and config files) must pass `rule validate`, a pipeline load, or `config validate`. Blocks with `...` or `<placeholder>` elisions are skipped.
+
+When a check fails, fix the docs, or fix the code if the docs describe the intended behavior.
 
 ## Coverage
 

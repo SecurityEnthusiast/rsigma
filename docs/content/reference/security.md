@@ -210,7 +210,7 @@ The daemon never writes outside the paths it is explicitly given:
 - `--output file://<PATH>`: append-only NDJSON of detections.
 - `daemon.capture.spool_dir`: versioned TP/FP corpus bundles. Sensitive; classify and protect the path.
 
-Rules and pipeline files are read-only. The `notify` file-watcher does not write. The MkDocs documentation build is local and never touches `~/`.
+Rules and pipeline files are read-only. The `notify` file-watcher does not write. The docmd documentation build is local and never touches `~/`.
 
 `rule lint --fix` does write rule files in place. Always commit changes first, then run `--fix`, then diff.
 
