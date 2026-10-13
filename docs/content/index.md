@@ -92,6 +92,7 @@ RSigma combines pySigma-style conversion with a streaming evaluator in one self-
 | [detection.studio](https://github.com/northsh/detection.studio) | MIT | Browser-based Sigma playground with real-time evaluation via RSigma compiled to WebAssembly |
 | [Garmr](https://github.com/hentorp/garmr) | AGPL-3.0 or commercial | Self-hosted application-audit and insider-risk platform using RSigma for per-event Sigma detection |
 | [LocalObserve](https://github.com/JJediny/LocalObserve) | Not specified | Local-first Linux security observability stack using RSigma for edge Sigma detection and webhook alerting |
+| [LogsTotal](https://github.com/wagga40/LogsTotal) | MIT | Self-hosted log analysis platform that runs Sigma rules through several engines, including RSigma for Windows event logs, and compares their findings |
 | [MFT](https://github.com/fukusuket/MFT) | AGPL-3.0 | Windows NTFS forensic triage from `$MFT` using RSigma to match file records against Sigma rules |
 | [Rustinel](https://github.com/Karib0u/rustinel) | Apache-2.0 | Cross-platform endpoint detection engine with RSigma as the only Sigma backend for live telemetry |
 | [sagan2sigma](https://github.com/NRGLine4Sec/sagan2sigma) | GPL-2.0 | Converts Sagan rules to Sigma and verifies them with RSigma |
