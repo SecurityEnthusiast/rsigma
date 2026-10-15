@@ -98,6 +98,7 @@ RSigma combines pySigma-style conversion with a streaming evaluator in one self-
 | [sagan2sigma](https://github.com/NRGLine4Sec/sagan2sigma) | GPL-2.0 | Converts Sagan rules to Sigma and verifies them with RSigma |
 | [Sheut](https://github.com/PerceptraHQ/sheut-community) | MPL-2.0 | Local-first cyber threat intelligence workbench using RSigma for STIX 2.1 validation and interchange |
 | [Sigmacatch](https://github.com/frack113/sigmacatch) | MIT | Captures live Windows Event Log events, matches them with RSigma, and writes SigmaHQ-ready regression data |
+| [Sluice](https://github.com/Dr1nS0menOp/SLUICE) | AGPL-3.0 | Writes Vector configurations that cut SIEM ingest, using RSigma to prove on real traffic that Sigma rules raise the same alerts, correlations included |
 
 ## Read the deep dives
 
