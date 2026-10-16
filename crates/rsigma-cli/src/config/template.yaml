@@ -302,6 +302,8 @@ eval:
   syslog_tz: "+00:00"
   # Strip a leading UTF-8 BOM from RFC 5424 syslog messages. Set false to keep it.
   syslog_strip_bom: true
+  # Write results to a file instead of stdout (NDJSON unless --output-format is set).
+  # output: ./detections.ndjson
   fail_on_detection: false
   # Schema routing for `engine eval` (see daemon.schema for details). `observe`
   # has no effect here; eval has no schema observer.
