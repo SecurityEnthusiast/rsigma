@@ -10,10 +10,98 @@
 //! Extraction is fail-open per dimension: a field that is absent, null, or
 //! blank leaves that dimension unset (after the static default is consulted),
 //! so a missing tag never prunes anything.
+//!
+//! Embedders whose events carry their logsource somewhere other than a
+//! matchable field (out-of-band metadata, a transport envelope) implement
+//! [`ExtractLogSource`] for their event type instead, and build the engine
+//! around it with [`Engine::with_logsource_extractor`].
+//!
+//! [`Engine::with_logsource_extractor`]: crate::Engine::with_logsource_extractor
 
 use rsigma_parser::LogSource;
 
 use crate::event::Event;
+
+/// Derives an event's [`LogSource`] for conflict-based logsource pruning.
+///
+/// [`Engine`](crate::Engine), [`CorrelationEngine`](crate::CorrelationEngine),
+/// and [`SchemaRouter`](crate::SchemaRouter) are generic over their extractor
+/// type, defaulting to the field-reading [`LogSourceExtractor`], and call it
+/// once per event with static dispatch. The trait is generic over the event
+/// type, so an extractor can read state that only a concrete event type
+/// carries.
+///
+/// A dimension left unset is a wildcard for pruning. An extractor that cannot
+/// determine a dimension must leave it `None` rather than guess, so a missing
+/// value never prunes a rule.
+///
+/// # Example
+///
+/// An event type that carries its logsource as metadata beside the payload:
+///
+/// ```rust
+/// use std::borrow::Cow;
+///
+/// use rsigma_eval::event::{Event, EventValue, JsonEvent};
+/// use rsigma_eval::{Engine, ExtractLogSource};
+/// use rsigma_parser::{LogSource, parse_sigma_yaml};
+/// use serde_json::{Value, json};
+///
+/// struct TaggedEvent {
+///     product: &'static str,
+///     payload: JsonEvent<'static>,
+/// }
+///
+/// impl Event for TaggedEvent {
+///     fn get_field(&self, path: &str) -> Option<EventValue<'_>> {
+///         self.payload.get_field(path)
+///     }
+///     fn any_string_value(&self, pred: &dyn Fn(&str) -> bool) -> bool {
+///         self.payload.any_string_value(pred)
+///     }
+///     fn all_string_values(&self) -> Vec<Cow<'_, str>> {
+///         self.payload.all_string_values()
+///     }
+///     fn to_json(&self) -> Value {
+///         self.payload.to_json()
+///     }
+/// }
+///
+/// struct MetadataExtractor;
+///
+/// impl ExtractLogSource<TaggedEvent> for MetadataExtractor {
+///     fn extract(&self, event: &TaggedEvent) -> LogSource {
+///         LogSource {
+///             product: Some(event.product.to_string()),
+///             ..LogSource::default()
+///         }
+///     }
+/// }
+///
+/// let rules = parse_sigma_yaml(r#"
+/// title: Linux whoami
+/// logsource:
+///     product: linux
+/// detection:
+///     selection:
+///         CommandLine|contains: whoami
+///     condition: selection
+/// "#).unwrap();
+///
+/// let mut engine = Engine::with_logsource_extractor(MetadataExtractor);
+/// engine.add_collection(&rules).unwrap();
+///
+/// let payload = || JsonEvent::owned(json!({"CommandLine": "whoami"}));
+/// let linux = TaggedEvent { product: "linux", payload: payload() };
+/// let windows = TaggedEvent { product: "windows", payload: payload() };
+///
+/// assert_eq!(engine.evaluate(&linux).len(), 1);
+/// assert!(engine.evaluate(&windows).is_empty()); // pruned by metadata
+/// ```
+pub trait ExtractLogSource<E: Event> {
+    /// Extract the event's logsource.
+    fn extract(&self, event: &E) -> LogSource;
+}
 
 /// Derives an event [`LogSource`] from configurable fields plus static
 /// defaults, for conflict-based logsource pruning on the evaluation hot path.
@@ -134,6 +222,12 @@ impl LogSourceExtractor {
             }
         }
         default.clone()
+    }
+}
+
+impl<E: Event> ExtractLogSource<E> for LogSourceExtractor {
+    fn extract(&self, event: &E) -> LogSource {
+        LogSourceExtractor::extract(self, event)
     }
 }
 

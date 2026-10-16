@@ -14,6 +14,7 @@ This library is part of [rsigma].
 |--------|-------------|
 | `Engine::new()` | Create an empty engine |
 | `Engine::new_with_pipeline(pipeline)` | Create engine with an initial pipeline |
+| `Engine::with_logsource_extractor(extractor)` | Create an empty engine that prunes with a custom `ExtractLogSource` implementation |
 | `set_include_event(include: bool)` | Global override: include full event JSON in all match results |
 | `add_pipeline(pipeline)` | Add a pipeline (sorted by `priority` after add) |
 | `add_rule(rule: &SigmaRule)` | Apply pipelines, compile, and incrementally fold into engine indexes (amortized O(1) per rule) |
@@ -45,6 +46,7 @@ The free function `apply_filters(collection: &SigmaCollection) -> Vec<SigmaRule>
 | Method | Description |
 |--------|-------------|
 | `CorrelationEngine::new(config)` | Create with a `CorrelationConfig` |
+| `CorrelationEngine::with_logsource_extractor(config, extractor)` | Create with a `CorrelationConfig` and a custom `ExtractLogSource` implementation |
 | `set_include_event(include: bool)` | Global override for event inclusion |
 | `add_collection(collection)` | Add rules and correlations |
 | `add_rule(rule: &SigmaRule)` | Add a single detection rule |
@@ -161,7 +163,7 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 
 - **Witness-based candidate index**: every rule is analyzed into witnesses, necessary conditions of which at least one holds on any event the rule can match, drawn from exact values, substring needles, keywords, mandatory regex literals, and field presence. The index inverts that relation over a per-field presence list and exact-value map, one Aho-Corasick automaton per field for substring needles, and one keyword automaton scanned against every string value. Rules with no sound witness, chiefly those whose only required branch is negated, are evaluated against every event. Candidates come back in ascending rule order.
 - **Compiled matchers**: optimized matching for all 30 modifier combinations: exact, contains, startswith, endswith, regex, CIDR, numeric comparison, base64 offset (3 alignment variants), windash expansion (5 replacement characters), field references, placeholder expansion, timestamp part extraction
-- **Logsource-aware evaluation**: opt-in `LogSourceExtractor` plus conflict-based pruning (`set_logsource_extractor`) skips rules whose `product`/`service`/`category` (and custom dimensions) conflict with the event's logsource, backed by a product-partitioned rule index; off by default and fail-open
+- **Logsource-aware evaluation**: opt-in `LogSourceExtractor` plus conflict-based pruning (`set_logsource_extractor`) skips rules whose `product`/`service`/`category` (and custom dimensions) conflict with the event's logsource, backed by a product-partitioned rule index; off by default and fail-open. Implement the `ExtractLogSource` trait to read the logsource from your own event type, such as metadata beside the payload; `Engine`, `CorrelationEngine`, and `SchemaRouter` are generic over the extractor and default to `LogSourceExtractor`
 - **Schema classification and routing**: `SchemaClassifier` recognizes an event's schema from declarative field predicates (`explain`/`classify_with_ambiguity` for tuning), and `SchemaRouter` routes each event to its schema's pipeline engine, derives the event's logsource from the recognized schema for pruning, and feeds one shared correlation store
 - **Condition tree evaluation**: short-circuit boolean logic, selector patterns with quantifiers (`1 of selection_*`, `all of them`)
 - **Filter application**: runtime injection of filter rules as `AND NOT` conditions on referenced rules
