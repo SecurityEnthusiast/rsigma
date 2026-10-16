@@ -191,6 +191,7 @@ Run [`rsigma config init`](../cli/config/init.md) to scaffold a full, commented 
 | `daemon.schema` | `engine daemon` | Schema classification and routing (`observe`, `discover`, `routing`, `partition_rules`, `config`, `on_unknown`). All opt-in. See [Schema Routing](../guide/schema-routing.md). |
 | `daemon.logsource_routing` | `engine daemon` | Conflict-based logsource pruning (`enabled`, `field_map`, `event_logsource`). `strict` is accepted and ignored. Opt-in. See [Logsource-Aware Evaluation](../guide/logsource-routing.md). |
 | `eval` | `engine eval` | Mirrors the eval flag surface. |
+| `eval.output` | `engine eval` | Write results to this file instead of stdout (`-o, --output`). The CLI flag takes precedence. {{ added "unreleased" }} |
 | `eval.schema` | `engine eval` | Schema routing for one-shot eval (`routing`, `config`, `on_unknown`). `observe`/`discover` have no effect here. |
 | `eval.logsource_routing` | `engine eval` | Conflict-based logsource pruning for one-shot eval (`enabled`, `field_map`, `event_logsource`). `strict` is accepted and ignored. |
 | `backtest` | `rule backtest` | `rules`, `corpus`, `expectations`, `unexpected`, `pipelines`, and the syslog input knobs. `unexpected` has no compiled default so the expectations-file default can apply. |
