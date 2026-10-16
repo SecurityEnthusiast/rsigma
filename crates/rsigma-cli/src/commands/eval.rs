@@ -50,6 +50,12 @@ pub(crate) struct EvalArgs {
     #[arg(long)]
     pub pretty: bool,
 
+    /// Write detection and correlation results to this file instead of
+    /// stdout. The file is created or truncated. Defaults to NDJSON unless
+    /// --output-format is set; the summary and diagnostics stay on stderr.
+    #[arg(short = 'o', long = "output", value_name = "PATH")]
+    pub output: Option<PathBuf>,
+
     /// Processing pipeline(s) to apply. Accepts builtin names (ecs_windows, sysmon) or YAML file paths
     #[arg(short = 'p', long = "pipeline")]
     pub pipelines: Vec<PathBuf>,
@@ -353,6 +359,11 @@ fn overlay_eval_config(
         {
             args.syslog_strip_bom = v;
         }
+        if !explicit("output")
+            && let Some(v) = eval.output
+        {
+            args.output = Some(v);
+        }
         if !explicit("fail_on_detection")
             && let Some(v) = eval.fail_on_detection
         {
@@ -420,6 +431,7 @@ pub(crate) fn cmd_eval(args: EvalArgs, ctx: OutputCtx) -> bool {
         rules: rules_opt,
         event: event_json,
         pretty,
+        output,
         pipelines: pipeline_paths,
         jq,
         jsonpath,
@@ -551,7 +563,11 @@ pub(crate) fn cmd_eval(args: EvalArgs, ctx: OutputCtx) -> bool {
     // The match renderer encapsulates the selected output format. `--pretty`
     // is honoured for backwards compatibility: it implies the JSON branch and
     // turns pretty-printing on even when stdout is not a TTY.
-    let mut renderer = MatchRenderer::new(ctx, pretty);
+    let output = output.map(|path| {
+        ensure_output_is_not_input(&path, &event_source);
+        OutputFile::create(path)
+    });
+    let mut renderer = MatchRenderer::new(ctx, pretty, output);
 
     if schema_routing {
         let mut router = build_schema_router(
@@ -1341,9 +1357,67 @@ fn write_report_to_file(path: &Path, serialized: &str) -> std::io::Result<()> {
 ///
 /// The legacy `--pretty` flag flips the JSON branch to pretty-print even
 /// when stdout is piped, so callers can still get pretty JSON in CI logs.
+///
+/// With `--output`, results go to an [`OutputFile`] instead of stdout.
 struct MatchRenderer {
     ctx: OutputCtx,
     state: RenderState,
+    /// `--output` destination for the JSON and table formats. The delimited
+    /// formats move the file into their [`DelimitedWriter`] instead.
+    file: Option<OutputFile>,
+}
+
+/// Buffered `--output` destination. Write failures exit with
+/// [`exit_code::CONFIG_ERROR`] so a truncated results file never looks like
+/// a successful run.
+struct OutputFile {
+    path: PathBuf,
+    writer: io::BufWriter<File>,
+}
+
+impl OutputFile {
+    fn create(path: PathBuf) -> Self {
+        match File::create(&path) {
+            Ok(file) => Self {
+                path,
+                writer: io::BufWriter::new(file),
+            },
+            Err(e) => {
+                eprintln!("error: cannot create output file '{}': {e}", path.display());
+                process::exit(exit_code::CONFIG_ERROR);
+            }
+        }
+    }
+
+    fn check(&self, result: io::Result<()>) {
+        if let Err(e) = result {
+            eprintln!(
+                "error: failed to write output file '{}': {e}",
+                self.path.display()
+            );
+            process::exit(exit_code::CONFIG_ERROR);
+        }
+    }
+}
+
+/// Refuse an `--output` path that names the `--event` input file, which
+/// would otherwise be truncated before it is read.
+fn ensure_output_is_not_input(output: &Path, source: &EventSource) {
+    let input = match source {
+        EventSource::NdjsonFile(p) => p,
+        #[cfg(feature = "evtx")]
+        EventSource::EvtxFile(p) => p,
+        EventSource::SingleJson(_) | EventSource::Stdin => return,
+    };
+    if let (Ok(a), Ok(b)) = (std::fs::canonicalize(output), std::fs::canonicalize(input))
+        && a == b
+    {
+        eprintln!(
+            "error: --output '{}' is the --event input file",
+            output.display()
+        );
+        process::exit(exit_code::CONFIG_ERROR);
+    }
 }
 
 enum RenderState {
@@ -1356,7 +1430,15 @@ enum RenderState {
 }
 
 impl MatchRenderer {
-    fn new(ctx: OutputCtx, pretty_flag: bool) -> Self {
+    fn new(mut ctx: OutputCtx, pretty_flag: bool, mut file: Option<OutputFile>) -> Self {
+        // A file is never a terminal, and without an explicit format it gets
+        // NDJSON so it can be consumed line by line.
+        if file.is_some() {
+            ctx.stdout_is_tty = false;
+            if !ctx.explicit_format {
+                ctx.format = OutputFormat::Ndjson;
+            }
+        }
         // `--pretty` was the historical way to opt into pretty-printed JSON.
         // The operator explicitly asked for that, so honour it regardless of
         // the resolved format (it would be confusing if `--pretty` silently
@@ -1369,16 +1451,12 @@ impl MatchRenderer {
                     pretty: pretty_flag || ctx.pretty_json(),
                 },
                 OutputFormat::Ndjson => RenderState::Json { pretty: false },
-                OutputFormat::Csv => {
-                    RenderState::Delimited(Box::new(DelimitedWriter::new(',', EvalRow::headers())))
-                }
-                OutputFormat::Tsv => {
-                    RenderState::Delimited(Box::new(DelimitedWriter::new('\t', EvalRow::headers())))
-                }
+                OutputFormat::Csv => RenderState::Delimited(Box::new(delimited(',', &mut file))),
+                OutputFormat::Tsv => RenderState::Delimited(Box::new(delimited('\t', &mut file))),
                 OutputFormat::Table => RenderState::Table(Vec::new()),
             }
         };
-        Self { ctx, state }
+        Self { ctx, state, file }
     }
 
     fn ctx(&self) -> &OutputCtx {
@@ -1388,7 +1466,13 @@ impl MatchRenderer {
     /// Emit one match in the configured format.
     fn emit(&mut self, m: &EvaluationResult) {
         match &mut self.state {
-            RenderState::Json { pretty } => crate::output::render_json(m, *pretty),
+            RenderState::Json { pretty } => match &mut self.file {
+                Some(file) => {
+                    let result = crate::output::write_json(&mut file.writer, m, *pretty);
+                    file.check(result);
+                }
+                None => crate::output::render_json(m, *pretty),
+            },
             RenderState::Delimited(writer) => {
                 let row = EvalRow::from_result(m).row();
                 writer.push(&row);
@@ -1397,11 +1481,31 @@ impl MatchRenderer {
         }
     }
 
-    /// Render any buffered output. No-op for the streaming formats.
+    /// Render any buffered output and flush the `--output` file.
     fn flush(&mut self) {
-        if let RenderState::Table(rows) = &self.state {
-            crate::output::render_table(rows);
+        match &mut self.state {
+            RenderState::Table(rows) => match &mut self.file {
+                Some(file) => {
+                    let result = crate::output::write_table(&mut file.writer, rows);
+                    file.check(result);
+                }
+                None => crate::output::render_table(rows),
+            },
+            RenderState::Delimited(writer) => writer.finish(),
+            RenderState::Json { .. } => {}
         }
+        if let Some(file) = &mut self.file {
+            let result = file.writer.flush();
+            file.check(result);
+        }
+    }
+}
+
+/// Build the `csv`/`tsv` writer, moving the `--output` file into it when set.
+fn delimited(sep: char, file: &mut Option<OutputFile>) -> DelimitedWriter {
+    match file.take() {
+        Some(file) => DelimitedWriter::with_writer(sep, EvalRow::headers(), Box::new(file.writer)),
+        None => DelimitedWriter::new(sep, EvalRow::headers()),
     }
 }
 
@@ -1537,6 +1641,28 @@ mod tests {
         // CLI flag wins for rules; the file fills fail_on_detection.
         assert_eq!(args.rules.as_deref(), Some(Path::new("/cli/rules")));
         assert!(args.fail_on_detection);
+    }
+
+    #[test]
+    fn output_fills_from_config_file() {
+        let (mut args, matches) = parse(&["eval"]);
+        overlay_eval_config(
+            &mut args,
+            &matches,
+            partial("eval:\n  output: /file/out.ndjson\n"),
+        );
+        assert_eq!(args.output.as_deref(), Some(Path::new("/file/out.ndjson")));
+    }
+
+    #[test]
+    fn output_flag_beats_config_file() {
+        let (mut args, matches) = parse(&["eval", "-o", "/cli/out.ndjson"]);
+        overlay_eval_config(
+            &mut args,
+            &matches,
+            partial("eval:\n  output: /file/out.ndjson\n"),
+        );
+        assert_eq!(args.output.as_deref(), Some(Path::new("/cli/out.ndjson")));
     }
 
     #[test]

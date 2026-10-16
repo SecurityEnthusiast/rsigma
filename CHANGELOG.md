@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### `engine eval` writes results to a file with `-o, --output` (#576)
+
+`engine eval -o <PATH>` writes detection and correlation results to a file instead of stdout, matching the `-o, --output` flag on `backend convert`, `hunt run`, `rule reverse`, and `engine tap`. The file is created or truncated at start and flushed on exit, including when `--fail-on-detection` exits with code `1`. Results use `--output-format` when it is set and NDJSON otherwise, and `--pretty` still applies. The processing summary and diagnostics stay on stderr, so callers that run `engine eval` without a shell, such as from the `FROM scratch` Docker image, get the results and the summary as separate streams. The `eval.output` config key sets the same path, and the flag takes precedence. A path that names the `--event` input file is rejected with exit code `3` instead of truncating the input.
+
 ### PostgreSQL JSONB rendering lives in its own module (#568)
 
 The PostgreSQL backend renders JSONB field paths and array object-scope matches (`field[any]`, `field[all]`, `field[all_or_empty]`, `field[none]`) in a private `jsonb` module, with its tests beside it and new unit tests for negative and leading indexes and for malformed bracket paths. Generated SQL is byte-identical for the SigmaHQ ruleset and for array rules, with and without a JSONB column.

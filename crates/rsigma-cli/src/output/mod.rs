@@ -320,6 +320,23 @@ pub(crate) fn render_json<T: Serialize>(value: &T, pretty: bool) {
     }
 }
 
+/// Write `value` as one JSON document followed by a newline to `out`.
+///
+/// Serialization and I/O failures are both returned as [`io::Error`] so the
+/// caller can report them against its destination.
+pub(crate) fn write_json<T: Serialize, W: Write>(
+    out: &mut W,
+    value: &T,
+    pretty: bool,
+) -> io::Result<()> {
+    if pretty {
+        serde_json::to_writer_pretty(&mut *out, value)?;
+    } else {
+        serde_json::to_writer(&mut *out, value)?;
+    }
+    out.write_all(b"\n")
+}
+
 /// Render `value` as a single NDJSON line on stdout. Same error semantics as
 /// [`render_json`].
 pub(crate) fn render_ndjson<T: Serialize>(value: &T) {
@@ -380,9 +397,16 @@ fn render_delimited<T: Tabular>(rows: &[T], sep: char) {
 /// is left-aligned. `table` is not a streaming format; for piping to other
 /// tools prefer `ndjson`, `csv`, or `tsv`.
 pub(crate) fn render_table<T: Tabular>(rows: &[T]) {
+    let stdout = io::stdout();
+    let _ = write_table(&mut stdout.lock(), rows);
+}
+
+/// Write a slice of `Tabular` rows as a width-aligned text table to `out`.
+/// Layout is identical to [`render_table`].
+pub(crate) fn write_table<T: Tabular, W: Write>(out: &mut W, rows: &[T]) -> io::Result<()> {
     let headers = T::headers();
     if headers.is_empty() {
-        return;
+        return Ok(());
     }
     let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
     let stringified: Vec<Vec<String>> = rows.iter().map(|r| r.row()).collect();
@@ -402,24 +426,18 @@ pub(crate) fn render_table<T: Tabular>(rows: &[T]) {
         })
         .collect();
 
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    let _ = write_row(&mut out, headers.iter().copied(), &widths, &right_align);
+    write_row(out, headers.iter().copied(), &widths, &right_align)?;
     let dashes: Vec<String> = widths.iter().map(|w| "-".repeat(*w)).collect();
-    let _ = write_row(
-        &mut out,
+    write_row(
+        out,
         dashes.iter().map(String::as_str),
         &widths,
         &right_align,
-    );
+    )?;
     for row in &stringified {
-        let _ = write_row(
-            &mut out,
-            row.iter().map(String::as_str),
-            &widths,
-            &right_align,
-        );
+        write_row(out, row.iter().map(String::as_str), &widths, &right_align)?;
     }
+    Ok(())
 }
 
 fn write_row<'a, I, W>(
@@ -455,17 +473,27 @@ where
 /// to large match counts without buffering. Backed by the `csv` crate with an
 /// explicit LF terminator so CLI output stays platform-stable.
 pub(crate) struct DelimitedWriter {
-    inner: Option<csv::Writer<io::Stdout>>,
+    inner: Option<csv::Writer<Box<dyn Write>>>,
     headers: &'static [&'static str],
     wrote_header: bool,
 }
 
 impl DelimitedWriter {
     pub(crate) fn new(sep: char, headers: &'static [&'static str]) -> Self {
+        Self::with_writer(sep, headers, Box::new(io::stdout()))
+    }
+
+    /// Like [`DelimitedWriter::new`], but streams rows to `out` instead of
+    /// stdout.
+    pub(crate) fn with_writer(
+        sep: char,
+        headers: &'static [&'static str],
+        out: Box<dyn Write>,
+    ) -> Self {
         let writer = csv::WriterBuilder::new()
             .delimiter(sep as u8)
             .terminator(csv::Terminator::Any(b'\n'))
-            .from_writer(io::stdout());
+            .from_writer(out);
         Self {
             inner: Some(writer),
             headers,

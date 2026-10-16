@@ -602,6 +602,7 @@ Evaluate JSON events against Sigma detection and correlation rules.
 |----------|------|---------|-------------|
 | `--rules` / `-r` | path | required | Path to Sigma rule file or directory |
 | `--event` / `-e` | string | none | A single event as a JSON string, or `@path` to read from a file. Supports NDJSON files and `.evtx` (Windows Event Log) files (requires `evtx` feature). If omitted, reads NDJSON from stdin |
+| `--output` / `-o` | path | stdout | Write results to a file instead of stdout (created or truncated). NDJSON unless `--output-format` is set; the summary stays on stderr |
 | `--pretty` | flag | **false** | Pretty-print JSON output |
 | `--pipeline` / `-p` | repeatable | `[]` | Processing pipeline YAML file(s), applied in priority order |
 | `--jq` | string | none | jq filter to extract event payload (conflicts with `--jsonpath`) |

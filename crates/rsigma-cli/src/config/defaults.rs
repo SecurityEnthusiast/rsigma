@@ -251,6 +251,7 @@ pub(crate) fn defaults_partial() -> RsigmaConfigPartial {
             input_format: Some(INPUT_FORMAT.to_string()),
             syslog_tz: Some(SYSLOG_TZ.to_string()),
             syslog_strip_bom: Some(SYSLOG_STRIP_BOM),
+            output: None,
             fail_on_detection: Some(false),
             schema: Some(SchemaPartial {
                 observe: None,

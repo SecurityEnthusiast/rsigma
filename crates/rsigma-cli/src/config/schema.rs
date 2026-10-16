@@ -741,6 +741,10 @@ pub(crate) struct EvalPartial {
     /// Strip a leading UTF-8 BOM from RFC 5424 syslog messages (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub syslog_strip_bom: Option<bool>,
+    /// Write detection and correlation results to this file instead of stdout
+    /// (`--output`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fail_on_detection: Option<bool>,
     /// Schema classification and routing settings.
@@ -759,6 +763,7 @@ impl Merge for EvalPartial {
             input_format: over.input_format.or(self.input_format),
             syslog_tz: over.syslog_tz.or(self.syslog_tz),
             syslog_strip_bom: over.syslog_strip_bom.or(self.syslog_strip_bom),
+            output: over.output.or(self.output),
             fail_on_detection: over.fail_on_detection.or(self.fail_on_detection),
             schema: merge_opt(self.schema, over.schema),
             logsource_routing: merge_opt(self.logsource_routing, over.logsource_routing),
