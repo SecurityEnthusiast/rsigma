@@ -40,6 +40,13 @@ use filters::{
     namespaced_filter_condition, stable_references,
 };
 
+#[derive(Debug)]
+pub(crate) struct IdentifiedEvaluation {
+    pub result: EvaluationResult,
+    pub rule_id: Option<String>,
+    pub rule_name: Option<String>,
+}
+
 /// The main rule evaluation engine.
 ///
 /// Holds a set of compiled rules and provides methods to evaluate events
@@ -75,13 +82,6 @@ use filters::{
 /// assert_eq!(matches.len(), 1);
 /// assert_eq!(matches[0].header.rule_title, "Detect Whoami");
 /// ```
-#[derive(Debug)]
-pub(crate) struct IdentifiedEvaluation {
-    pub result: EvaluationResult,
-    pub rule_id: Option<String>,
-    pub rule_name: Option<String>,
-}
-
 pub struct Engine {
     rules: Vec<CompiledRule>,
     /// Post-pipeline, pre-filter HIR for rules added via the parsed-rule paths,
