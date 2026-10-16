@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Custom logsource extractors
+### Custom logsource extractors (#578)
 
 `rsigma-eval` adds the `ExtractLogSource<E>` trait so an embedder can prune rules by a logsource its event type carries outside the matchable fields, such as metadata beside the payload. `Engine`, `CorrelationEngine`, and `SchemaRouter` are generic over the extractor type, which defaults to `LogSourceExtractor`, and call it once per event with static dispatch. Build one with `Engine::with_logsource_extractor`, `CorrelationEngine::with_logsource_extractor`, or `SchemaRouter::build_with_logsource_extractor`. Correlation through `process_event`, `process_event_at`, and `process_batch` keeps each compiled rule's identity, which precomputed detections lose for rules without an `id` that share a title. Existing code is unaffected: `LogSourceExtractor` keeps its name and inherent methods, and `SchemaRouter::build` still accepts `None`. Based on work by John Sonnenschein in #500.
 
