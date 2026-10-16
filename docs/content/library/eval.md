@@ -236,7 +236,7 @@ let correlation =
 
 Leave a dimension `None` when the extractor cannot determine it. An unset dimension is a wildcard, so pruning stays fail-open. Build a router with `SchemaRouter::build_with_logsource_extractor`, which takes the same arguments as `SchemaRouter::build` except the extractor. The recognized schema's implied logsource still fills any dimension the extractor leaves unset.
 
-Prefer an extractor over computing the logsource yourself and calling `evaluate_pruned`. `process_event`, `process_event_at`, and `process_batch` keep each compiled rule's `id` and `name`. Detections precomputed and fed to `process_with_detections` or `correlate_detections` are matched to their rule by title, as described above.
+Prefer an extractor over computing the logsource yourself and calling `evaluate_pruned`. `process_event`, `process_event_at`, and `process_batch` keep each compiled rule's `id` and `name`. When detections are precomputed and fed to `process_with_detections` or `correlate_detections`, a detection from a rule without an `id` is matched to its rule by title, as described above.
 
 ## Error handling
 
