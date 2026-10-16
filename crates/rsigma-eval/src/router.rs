@@ -32,7 +32,7 @@ use crate::correlation_engine::{
 use crate::engine::{Engine, IdentifiedEvaluation};
 use crate::error::Result;
 use crate::event::{Event, MappedEvent};
-use crate::logsource::LogSourceExtractor;
+use crate::logsource::{ExtractLogSource, LogSourceExtractor};
 use crate::pipeline::Pipeline;
 use crate::pipeline::transformations::Transformation;
 use crate::result::MatchDetailLevel;
@@ -136,8 +136,8 @@ fn pipeline_changes_product(pipeline: &Pipeline) -> bool {
 /// is what lets a `product`-less event still prune cross-product rules once its
 /// schema is known (for example a `sysmon`-classified event implies
 /// `product: windows`).
-fn resolve_event_logsource<E: Event>(
-    extractor: &LogSourceExtractor,
+fn resolve_event_logsource<E: Event, L: ExtractLogSource<E>>(
+    extractor: &L,
     implied: Option<&LogSource>,
     event: &E,
 ) -> LogSource {
@@ -165,11 +165,11 @@ fn resolve_event_logsource<E: Event>(
 /// shared state so it can run in parallel across a batch. When a logsource
 /// extractor is configured, the event's logsource is resolved (explicit fields
 /// plus the schema's implied logsource) and fed into conflict-based pruning.
-fn detect_one<E: Event>(
+fn detect_one<E: Event, L: ExtractLogSource<E>>(
     classifier: &SchemaClassifier,
     plan: &RoutingPlan,
     engines: &[Engine],
-    extractor: Option<&LogSourceExtractor>,
+    extractor: Option<&L>,
     event: &E,
 ) -> Routed1 {
     let schema = classifier.classify(event).map(|m| m.name);
@@ -191,7 +191,12 @@ fn detect_one<E: Event>(
 
 /// A multi-engine router over a classifier, a [`RoutingPlan`], one detection
 /// engine per pipeline-set, and one shared correlation store.
-pub struct SchemaRouter {
+///
+/// Generic over the logsource extractor `L`, which defaults to
+/// [`LogSourceExtractor`]. Build with [`SchemaRouter::build`] for the default,
+/// or [`SchemaRouter::build_with_logsource_extractor`] for a custom
+/// [`ExtractLogSource`] implementation.
+pub struct SchemaRouter<L = LogSourceExtractor> {
     classifier: SchemaClassifier,
     plan: RoutingPlan,
     /// One detection engine per pipeline-set (index = set index).
@@ -203,7 +208,7 @@ pub struct SchemaRouter {
     /// Event-logsource extractor for conflict-based pruning; `None` disables
     /// pruning. Resolution happens per event in the router (extractor value
     /// plus the schema's implied logsource), so it is not set on the engines.
-    logsource_extractor: Option<LogSourceExtractor>,
+    logsource_extractor: Option<L>,
 }
 
 impl SchemaRouter {
@@ -219,6 +224,62 @@ impl SchemaRouter {
         include_event: bool,
         match_detail: MatchDetailLevel,
         logsource_extractor: Option<LogSourceExtractor>,
+        partition_rules: bool,
+    ) -> Result<Self> {
+        Self::build_inner(
+            collection,
+            classifier,
+            plan,
+            pipeline_sets,
+            corr_config,
+            include_event,
+            match_detail,
+            logsource_extractor,
+            partition_rules,
+        )
+    }
+}
+
+impl<L> SchemaRouter<L> {
+    /// Build a router that prunes with `extractor`, a custom
+    /// [`ExtractLogSource`] implementation. Arguments are otherwise as in
+    /// [`SchemaRouter::build`]. The recognized schema's implied logsource
+    /// still fills any dimension the extractor leaves unset.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_with_logsource_extractor(
+        collection: &SigmaCollection,
+        classifier: SchemaClassifier,
+        plan: RoutingPlan,
+        pipeline_sets: Vec<Vec<Pipeline>>,
+        corr_config: CorrelationConfig,
+        include_event: bool,
+        match_detail: MatchDetailLevel,
+        extractor: L,
+        partition_rules: bool,
+    ) -> Result<Self> {
+        Self::build_inner(
+            collection,
+            classifier,
+            plan,
+            pipeline_sets,
+            corr_config,
+            include_event,
+            match_detail,
+            Some(extractor),
+            partition_rules,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_inner(
+        collection: &SigmaCollection,
+        classifier: SchemaClassifier,
+        plan: RoutingPlan,
+        pipeline_sets: Vec<Vec<Pipeline>>,
+        corr_config: CorrelationConfig,
+        include_event: bool,
+        match_detail: MatchDetailLevel,
+        logsource_extractor: Option<L>,
         partition_rules: bool,
     ) -> Result<Self> {
         // Optional, gated per-schema rule partitioning: each engine bound only
@@ -418,7 +479,10 @@ impl SchemaRouter {
 
     /// Stateless classify + detection for a batch. Safe to call under a shared
     /// borrow when there is no correlation store; see [`Self::process_batch`].
-    pub fn detect_batch<E: Event + Sync>(&self, events: &[&E]) -> Vec<ProcessResult> {
+    pub fn detect_batch<E: Event + Sync>(&self, events: &[&E]) -> Vec<ProcessResult>
+    where
+        L: ExtractLogSource<E> + Sync,
+    {
         let classifier = &self.classifier;
         let plan = &self.plan;
         let engines = &self.engines;
@@ -460,7 +524,10 @@ impl SchemaRouter {
     ///
     /// When there is no correlation store this is equivalent to [`Self::detect_batch`]
     /// and only needs a shared borrow of the router.
-    pub fn process_batch<E: Event + Sync>(&mut self, events: &[&E]) -> Vec<ProcessResult> {
+    pub fn process_batch<E: Event + Sync>(&mut self, events: &[&E]) -> Vec<ProcessResult>
+    where
+        L: ExtractLogSource<E> + Sync,
+    {
         if self.correlation.is_none() {
             return self.detect_batch(events);
         }
@@ -508,7 +575,10 @@ impl SchemaRouter {
     }
 
     /// Classify and route one event.
-    pub fn route(&mut self, event: &impl Event) -> RouteResult {
+    pub fn route<E: Event>(&mut self, event: &E) -> RouteResult
+    where
+        L: ExtractLogSource<E>,
+    {
         let schema = self.classifier.classify(event).map(|m| m.name);
         match self.plan.decide(schema.as_deref()) {
             RouteDecision::Drop => RouteResult {

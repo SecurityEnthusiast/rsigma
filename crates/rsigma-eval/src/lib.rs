@@ -140,7 +140,7 @@ pub use explain::{
 };
 pub use field_observer::{FieldCoverage, FieldObservation, FieldObservationEntry, FieldObserver};
 pub use fields::{FieldOrigin, FieldSource, RuleFieldSet};
-pub use logsource::LogSourceExtractor;
+pub use logsource::{ExtractLogSource, LogSourceExtractor};
 pub use matcher::{CompiledMatcher, MatchDescriptor};
 pub use pipeline::{
     Pipeline, PipelineState, TransformationItem, TransformedRule, apply_pipelines,

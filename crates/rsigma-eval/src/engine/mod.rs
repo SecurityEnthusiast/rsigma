@@ -27,7 +27,7 @@ use crate::compiler::{
 };
 use crate::error::{EvalError, Result};
 use crate::event::Event;
-use crate::logsource::LogSourceExtractor;
+use crate::logsource::{ExtractLogSource, LogSourceExtractor};
 use crate::pipeline::{Pipeline, TransformedRule, apply_pipelines, transform_collection};
 use crate::result::{EvaluationResult, MatchDetailLevel};
 use crate::rule_metadata::{RuleBundleMetadata, RuleMetadataLookup};
@@ -51,6 +51,11 @@ pub(crate) struct IdentifiedEvaluation {
 ///
 /// Holds a set of compiled rules and provides methods to evaluate events
 /// against them. Supports optional logsource routing for performance.
+///
+/// The engine is generic over its logsource extractor `L`, which defaults to
+/// the field-reading [`LogSourceExtractor`]. Build an engine around a custom
+/// [`ExtractLogSource`] implementation with
+/// [`Engine::with_logsource_extractor`].
 ///
 /// # Example
 ///
@@ -82,7 +87,7 @@ pub(crate) struct IdentifiedEvaluation {
 /// assert_eq!(matches.len(), 1);
 /// assert_eq!(matches[0].header.rule_title, "Detect Whoami");
 /// ```
-pub struct Engine {
+pub struct Engine<L = LogSourceExtractor> {
     rules: Vec<CompiledRule>,
     /// Post-pipeline, pre-filter HIR for rules added via the parsed-rule paths,
     /// retained so [`Engine::save_hir`] can serialize a restart cache. Kept in
@@ -122,7 +127,7 @@ pub struct Engine {
     /// `None` (default) leaves the hot path unchanged; when `Some`, the
     /// engine extracts each event's logsource once and skips rules whose
     /// logsource conflicts (see [`Engine::set_logsource_extractor`]).
-    logsource_extractor: Option<LogSourceExtractor>,
+    logsource_extractor: Option<L>,
     /// Monotonic count of rules skipped because their logsource conflicts
     /// with the event's, whether pruned by the index's product partitioning
     /// or by the residual check in the evaluation loop. Incremented only when
@@ -158,35 +163,30 @@ pub struct Engine {
 impl Engine {
     /// Create a new empty engine.
     pub fn new() -> Self {
-        Engine {
-            rules: Vec::new(),
-            ir_rules: Vec::new(),
-            pipelines: Vec::new(),
-            include_event: false,
-            match_detail: MatchDetailLevel::Off,
-            filter_counter: 0,
-            rule_index: CandidateIndex::empty(),
-            bloom_index: FieldBloomIndex::empty(),
-            bloom_prefilter: false,
-            bloom_max_bytes: None,
-            logsource_extractor: None,
-            logsource_pruned: AtomicU64::new(0),
-            logsource_absent: AtomicU64::new(0),
-            #[cfg(feature = "daachorse-index")]
-            cross_rule_ac_index: cross_rule_ac::CrossRuleAcIndex::empty(),
-            #[cfg(feature = "daachorse-index")]
-            cross_rule_ac_enabled: false,
-            #[cfg(feature = "daachorse-index")]
-            cross_rule_ac_prunable: Vec::new(),
-        }
+        Self::from_parts(Vec::new(), None)
     }
 
     /// Create a new engine with a pipeline.
     pub fn new_with_pipeline(pipeline: Pipeline) -> Self {
+        Self::from_parts(vec![pipeline], None)
+    }
+}
+
+impl<L> Engine<L> {
+    /// Create a new empty engine that prunes with `extractor`.
+    ///
+    /// This is the constructor for a custom [`ExtractLogSource`]
+    /// implementation: it fixes the engine's extractor type to `L`. Add
+    /// pipelines and rules afterwards as with [`Engine::new`].
+    pub fn with_logsource_extractor(extractor: L) -> Self {
+        Self::from_parts(Vec::new(), Some(extractor))
+    }
+
+    fn from_parts(pipelines: Vec<Pipeline>, logsource_extractor: Option<L>) -> Self {
         Engine {
             rules: Vec::new(),
             ir_rules: Vec::new(),
-            pipelines: vec![pipeline],
+            pipelines,
             include_event: false,
             match_detail: MatchDetailLevel::Off,
             filter_counter: 0,
@@ -194,7 +194,7 @@ impl Engine {
             bloom_index: FieldBloomIndex::empty(),
             bloom_prefilter: false,
             bloom_max_bytes: None,
-            logsource_extractor: None,
+            logsource_extractor,
             logsource_pruned: AtomicU64::new(0),
             logsource_absent: AtomicU64::new(0),
             #[cfg(feature = "daachorse-index")]
@@ -253,7 +253,7 @@ impl Engine {
     /// Enable or disable opt-in, conflict-based logsource pruning.
     ///
     /// When set to `Some`, `evaluate` extracts each event's logsource once via
-    /// the [`LogSourceExtractor`] and skips any candidate rule whose logsource
+    /// the extractor and skips any candidate rule whose logsource
     /// conflicts with the event's (a dimension set on both sides that
     /// disagrees). A dimension unset on either side is a wildcard, so an event
     /// tagged only `product: windows` skips `product: linux` rules while still
@@ -263,13 +263,13 @@ impl Engine {
     /// fails open: an event with no extractable logsource evaluates every
     /// rule. The extractor is read on every `evaluate` call, so it can be
     /// swapped at runtime (e.g. carried across a hot-reload).
-    pub fn set_logsource_extractor(&mut self, extractor: Option<LogSourceExtractor>) {
+    pub fn set_logsource_extractor(&mut self, extractor: Option<L>) {
         self.logsource_extractor = extractor;
     }
 
     /// Returns the configured logsource extractor, if any. `None` means
     /// logsource pruning is disabled.
-    pub fn logsource_extractor(&self) -> Option<&LogSourceExtractor> {
+    pub fn logsource_extractor(&self) -> Option<&L> {
         self.logsource_extractor.as_ref()
     }
 
@@ -693,14 +693,20 @@ impl Engine {
     /// When a logsource extractor is configured (see
     /// [`Engine::set_logsource_extractor`]) the event's logsource is derived
     /// from it and used for conflict-based pruning.
-    pub fn evaluate<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
+    pub fn evaluate<E: Event>(&self, event: &E) -> Vec<EvaluationResult>
+    where
+        L: ExtractLogSource<E>,
+    {
         self.evaluate_identified(event)
             .into_iter()
             .map(|identified| identified.result)
             .collect()
     }
 
-    pub(crate) fn evaluate_identified<E: Event>(&self, event: &E) -> Vec<IdentifiedEvaluation> {
+    pub(crate) fn evaluate_identified<E: Event>(&self, event: &E) -> Vec<IdentifiedEvaluation>
+    where
+        L: ExtractLogSource<E>,
+    {
         let event_logsource = self
             .logsource_extractor
             .as_ref()
@@ -1005,7 +1011,10 @@ impl Engine {
     /// [`Engine::evaluate`] must compare order-insensitively, since candidate
     /// iteration order is not part of the engine's contract.
     #[cfg(test)]
-    pub(crate) fn evaluate_full_scan<E: Event>(&self, event: &E) -> Vec<EvaluationResult> {
+    pub(crate) fn evaluate_full_scan<E: Event>(&self, event: &E) -> Vec<EvaluationResult>
+    where
+        L: ExtractLogSource<E>,
+    {
         let event_logsource = self
             .logsource_extractor
             .as_ref()
@@ -1073,7 +1082,10 @@ impl Engine {
     /// When the `parallel` feature is enabled, events are evaluated concurrently
     /// using rayon's work-stealing thread pool. Otherwise, falls back to
     /// sequential evaluation.
-    pub fn evaluate_batch<E: Event + Sync>(&self, events: &[&E]) -> Vec<Vec<EvaluationResult>> {
+    pub fn evaluate_batch<E: Event + Sync>(&self, events: &[&E]) -> Vec<Vec<EvaluationResult>>
+    where
+        L: ExtractLogSource<E> + Sync,
+    {
         #[cfg(feature = "parallel")]
         {
             use rayon::prelude::*;

@@ -33,6 +33,7 @@ use crate::correlation::{
 use crate::engine::{Engine, IdentifiedEvaluation};
 use crate::error::{EvalError, Result};
 use crate::event::{Event, EventValue};
+use crate::logsource::{ExtractLogSource, LogSourceExtractor};
 use crate::pipeline::{Pipeline, apply_pipelines, apply_pipelines_to_correlation};
 use crate::result::{CorrelationBody, EvaluationResult, ResultBody, RuleHeader};
 use crate::rule_metadata::{RuleBundleMetadata, RuleMetadataLookup};
@@ -57,9 +58,12 @@ const MAX_CHAIN_DEPTH: usize = 10;
 ///
 /// Wraps the stateless `Engine` for detection rules and adds time-windowed
 /// correlation on top. Supports all 7 Sigma correlation types and chaining.
-pub struct CorrelationEngine {
+///
+/// Generic over the inner engine's logsource extractor `L`, which defaults to
+/// [`LogSourceExtractor`] (see [`Engine`]).
+pub struct CorrelationEngine<L = LogSourceExtractor> {
     /// Inner stateless detection engine.
-    engine: Engine,
+    engine: Engine<L>,
     /// Compiled correlation rules.
     correlations: Vec<CompiledCorrelation>,
     /// Maps rule ID/name -> indices into `correlations` that reference it.
@@ -92,8 +96,20 @@ pub struct CorrelationEngine {
 impl CorrelationEngine {
     /// Create a new correlation engine with the given configuration.
     pub fn new(config: CorrelationConfig) -> Self {
+        Self::with_engine(config, Engine::new())
+    }
+}
+
+impl<L> CorrelationEngine<L> {
+    /// Create a new correlation engine whose inner detection engine prunes
+    /// with `extractor`, a custom [`ExtractLogSource`] implementation.
+    pub fn with_logsource_extractor(config: CorrelationConfig, extractor: L) -> Self {
+        Self::with_engine(config, Engine::with_logsource_extractor(extractor))
+    }
+
+    fn with_engine(config: CorrelationConfig, engine: Engine<L>) -> Self {
         CorrelationEngine {
-            engine: Engine::new(),
+            engine,
             correlations: Vec::new(),
             rule_index: HashMap::new(),
             rule_ids: Vec::new(),
@@ -137,10 +153,7 @@ impl CorrelationEngine {
     /// Forward to [`crate::Engine::set_logsource_extractor`] on the inner
     /// detection engine. Correlation inherits logsource pruning, since
     /// `process_event` evaluates through this engine.
-    pub fn set_logsource_extractor(
-        &mut self,
-        extractor: Option<crate::logsource::LogSourceExtractor>,
-    ) {
+    pub fn set_logsource_extractor(&mut self, extractor: Option<L>) {
         self.engine.set_logsource_extractor(extractor);
     }
 
@@ -463,7 +476,10 @@ impl CorrelationEngine {
     /// When no timestamp field is found, the `timestamp_fallback` policy applies:
     /// - `WallClock`: use `Utc::now()` (good for real-time streaming)
     /// - `Skip`: return detections only, skip correlation state updates
-    pub fn process_event(&mut self, event: &impl Event) -> ProcessResult {
+    pub fn process_event<E: Event>(&mut self, event: &E) -> ProcessResult
+    where
+        L: ExtractLogSource<E>,
+    {
         let detections = self.engine.evaluate_identified(event);
         self.correlate_identified_detections(event, detections)
     }
@@ -521,7 +537,10 @@ impl CorrelationEngine {
     ///
     /// The timestamp is clamped to `[0, i64::MAX / 2]` to prevent overflow
     /// when adding timespan durations internally.
-    pub fn process_event_at(&mut self, event: &impl Event, timestamp_secs: i64) -> ProcessResult {
+    pub fn process_event_at<E: Event>(&mut self, event: &E, timestamp_secs: i64) -> ProcessResult
+    where
+        L: ExtractLogSource<E>,
+    {
         let detections = self.engine.evaluate_identified(event);
         let (all_detections, identities) = split_identified(detections);
         self.process_with_detection_identities(event, all_detections, identities, timestamp_secs)
@@ -613,7 +632,10 @@ impl CorrelationEngine {
     /// so it can be called concurrently from multiple threads (e.g. via
     /// `rayon::par_iter`) while the mutable correlation phase runs
     /// sequentially afterwards.
-    pub fn evaluate(&self, event: &impl Event) -> Vec<EvaluationResult> {
+    pub fn evaluate<E: Event>(&self, event: &E) -> Vec<EvaluationResult>
+    where
+        L: ExtractLogSource<E>,
+    {
         self.engine.evaluate(event)
     }
 
@@ -624,7 +646,10 @@ impl CorrelationEngine {
     /// phase (it borrows `&self.config` immutably). After `collect()` releases the
     /// immutable borrows, each event's pre-computed detections are fed into the
     /// stateful correlation engine sequentially.
-    pub fn process_batch<E: Event + Sync>(&mut self, events: &[&E]) -> Vec<ProcessResult> {
+    pub fn process_batch<E: Event + Sync>(&mut self, events: &[&E]) -> Vec<ProcessResult>
+    where
+        L: ExtractLogSource<E> + Sync,
+    {
         // Borrow split: take immutable refs to fields needed for the parallel phase.
         // These are released by collect() before the sequential &mut self phase.
         let engine = &self.engine;
@@ -1386,7 +1411,7 @@ impl CorrelationEngine {
     }
 
     /// Access the inner stateless engine.
-    pub fn engine(&self) -> &Engine {
+    pub fn engine(&self) -> &Engine<L> {
         &self.engine
     }
 
