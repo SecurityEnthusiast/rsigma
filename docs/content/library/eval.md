@@ -41,6 +41,7 @@ serde_json = "1"   # only if you use the JsonEvent shim
 | `TransformedRule` + `transform_rule` / `transform_collection` | Apply pipelines and hand back the rewritten rule, the transformation ids that fired, and the merged `PipelineState`, without compiling or loading. `Engine::transform_rule` / `Engine::transform_collection` do the same over an engine's configured pipelines. |
 | `apply_filters(&SigmaCollection) -> Vec<SigmaRule>` | Merge each filter into the detection rules it targets, as pySigma does when a collection loads, and return the rules for pipelines to transform. Filters target rules the same way `Engine::apply_filter` does. Conversion uses it. {{ added "0.24.0" }} |
 | `LogSourceExtractor` | Derives an event's `LogSource` from configurable fields plus optional static defaults, for conflict-based logsource pruning. Pass to `Engine::set_logsource_extractor`. |
+| `ExtractLogSource<E: Event>` | Trait behind logsource pruning, with one method, `extract(&self, &E) -> LogSource`. `LogSourceExtractor` implements it for every event type. Implement it for your own event type to prune by logsource carried outside the matchable fields, such as metadata beside the payload. See [Custom logsource extractors](#custom-logsource-extractors). {{ added "unreleased" }} |
 | `Event` trait + `JsonEvent`, `KvEvent`, `MapEvent`, `PlainEvent` | The event shapes the engine consumes. |
 | `EvaluationResult` | One detection match or correlation firing. Composes a `RuleHeader` (rule metadata, custom attributes, optional enrichments) and a `ResultBody::Detection(DetectionBody)` / `ResultBody::Correlation(CorrelationBody)` payload. Serializes to one flat JSON object per result. |
 | `RuleHeader`, `DetectionBody`, `CorrelationBody` | The three composable structs behind `EvaluationResult`. `RuleHeader` carries the fields shared between kinds (`rule_title`, `rule_id`, `level`, `tags`, `custom_attributes`, and an optional `enrichments` map); the body variants carry the kind-specific fields. |
@@ -196,6 +197,7 @@ Pipeline transformations can write `rsigma.*` attributes that the engine consume
 | `Engine::set_bloom_max_bytes(usize)` | Per-engine bloom budget. Default 1 MiB. |
 | `Engine::set_cross_rule_ac(bool)` | Toggle the cross-rule Aho-Corasick pre-filter. Requires the `daachorse-index` feature. Pays off only on very large pure-substring rule sets. |
 | `Engine::set_logsource_extractor(Option<LogSourceExtractor>)` | Opt into conflict-based logsource pruning: skip rules whose `product`/`service`/`category` (and custom dimensions) conflict with the event's. Off by default, fail-open. Pays off on large mixed-product rule sets. |
+| `Engine::with_logsource_extractor(extractor)` | Create an empty engine that prunes with a custom `ExtractLogSource` implementation. {{ added "unreleased" }} |
 | `Engine::evaluate_pruned(&event, &LogSource)` | Evaluate with a caller-resolved event logsource for conflict-based pruning, bypassing the engine's own extractor. Used by `SchemaRouter` to feed a per-event logsource resolved from explicit fields plus the recognized schema's implied logsource. |
 | `Engine::evaluate_batch(&[events])` (with `parallel`) | Batch evaluation. With the `parallel` feature, rayon parallelizes across events internally. |
 | `Engine::save_hir()` / `load_hir(&[u8])` | Serialize the engine's lowered rules to a versioned HIR cache blob and rebuild from one, a restart cache that skips parse, pipeline, and lowering. Captures rules added via the parsed-rule paths in post-pipeline, pre-filter form; re-apply filters after `load_hir`. Backed by [`rsigma-ir`](ir.md)'s `cache`. |
@@ -205,6 +207,36 @@ Schema classification and routing live alongside the engine: `SchemaClassifier::
 `Engine::add_rule` and `add_compiled_rule` are amortized O(1) per call (v0.12.0+), so a control-plane that ingests rules one at a time no longer pays an O(N) cost on every push. The bulk loaders (`add_rules`, `extend_compiled_rules`, `add_collection`) rebuild indexes exactly once per batch. If you enable `set_cross_rule_ac(true)`, prefer the bulk loaders since the daachorse automaton has no incremental update.
 
 Decision matrix in [Performance Tuning](../guide/performance-tuning.md). Verified Criterion numbers in [Benchmarks](../benchmarks.md).
+
+### Custom logsource extractors
+
+{{ added "unreleased" }}
+
+`LogSourceExtractor` reads the event's logsource from its fields. When your event type carries the logsource somewhere else, such as metadata from a transport envelope, implement `ExtractLogSource` for that type. `Engine`, `CorrelationEngine`, and `SchemaRouter` are generic over the extractor type, which defaults to `LogSourceExtractor`, so existing code keeps compiling. The extractor runs once per event with static dispatch.
+
+```rust
+use rsigma_eval::{CorrelationConfig, CorrelationEngine, Engine, ExtractLogSource};
+use rsigma_parser::LogSource;
+
+struct MetadataExtractor;
+
+impl ExtractLogSource<MyEvent> for MetadataExtractor {
+    fn extract(&self, event: &MyEvent) -> LogSource {
+        LogSource {
+            product: event.metadata.product.clone(),
+            ..LogSource::default()
+        }
+    }
+}
+
+let engine = Engine::with_logsource_extractor(MetadataExtractor);
+let correlation =
+    CorrelationEngine::with_logsource_extractor(CorrelationConfig::default(), MetadataExtractor);
+```
+
+Leave a dimension `None` when the extractor cannot determine it. An unset dimension is a wildcard, so pruning stays fail-open. Build a router with `SchemaRouter::build_with_logsource_extractor`, which takes the same arguments as `SchemaRouter::build` except the extractor. The recognized schema's implied logsource still fills any dimension the extractor leaves unset.
+
+Prefer an extractor over computing the logsource yourself and calling `evaluate_pruned`. `process_event`, `process_event_at`, and `process_batch` keep each compiled rule's `id` and `name`. Detections precomputed and fed to `process_with_detections` or `correlate_detections` are matched to their rule by title, as described above.
 
 ## Error handling
 
