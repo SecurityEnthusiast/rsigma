@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Time-part modifiers accept space-separated fractional timestamps
+
+`rsigma-eval` had two string timestamp parsers, and the one behind `|minute`, `|hour`, `|day`, `|week`, `|month`, and `|year` lacked the `%Y-%m-%d %H:%M:%S%.f` form that the correlation engine accepted, so `"2024-07-10 12:30:00.500"` worked as a correlation timestamp but made `ts|hour: 12` never match. Both now share one parser: RFC 3339, or a `T`- or space-separated naive timestamp with an optional fractional second, plus epoch seconds and milliseconds.
+
 ### Integer literals above 2^53 match exactly (#610)
 
 Rule integers were stored as `f64` from lowering onward, so any literal above 2^53 rounded to a neighbor: `pid: 9007199254740993` matched `9007199254740992` and not itself, `pid|gt: 9007199254740992` missed `9007199254740993`, an integer keyword searched for the rounded digits, and `backend convert` and `backend reverse` emitted the rounded number. Integers now stay exact end to end: `IrNumber::Literal` holds a new `rsigma_ir::NumericLiteral` (`Integer(i64)` or `Float(f64)`), equality and the `gt`, `gte`, `lt`, and `lte` comparisons are exact against integer, string, and float event values, and conversion renders the exact digits. Fractional values still compare as `f64`.
