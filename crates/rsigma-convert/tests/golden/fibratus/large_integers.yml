@@ -1,0 +1,8 @@
+title: Large Integers
+logsource:
+  category: test
+detection:
+  s:
+    ps.pid: 9007199254740993
+    ps.sessionid|gt: 9007199254740993
+  condition: s

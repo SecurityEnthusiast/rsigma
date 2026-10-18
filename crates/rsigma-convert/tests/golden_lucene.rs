@@ -82,3 +82,8 @@ fn golden_exists() {
 fn golden_keywords() {
     run_golden("keywords");
 }
+
+#[test]
+fn golden_large_integers() {
+    run_golden("large_integers");
+}

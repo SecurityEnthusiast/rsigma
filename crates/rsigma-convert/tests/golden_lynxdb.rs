@@ -113,3 +113,8 @@ fn golden_brute_force() {
 fn golden_encodings() {
     run_golden("encodings");
 }
+
+#[test]
+fn golden_large_integers() {
+    run_golden("large_integers");
+}
