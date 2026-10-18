@@ -177,6 +177,27 @@ impl DedupStore {
             }
         }
     }
+
+    /// Evict the least recently seen alerts until at most `max` remain,
+    /// returning how many were evicted. Evicted alerts emit no `resolved`
+    /// record. The live path never exceeds the cap; this bounds a store
+    /// restored or carried across a reload under a lower one.
+    pub(crate) fn enforce_cap(&mut self, max: usize) -> usize {
+        let excess = self.alerts.len().saturating_sub(max);
+        if excess == 0 {
+            return 0;
+        }
+        let mut by_age: Vec<(i64, String)> = self
+            .alerts
+            .iter()
+            .map(|(fingerprint, alert)| (alert.last_seen, fingerprint.clone()))
+            .collect();
+        by_age.sort_unstable();
+        for (_, fingerprint) in by_age.into_iter().take(excess) {
+            self.alerts.remove(&fingerprint);
+        }
+        excess
+    }
 }
 
 /// Compute the fingerprint for a result under `selectors`.

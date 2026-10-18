@@ -477,21 +477,88 @@ impl IncidentStore {
         self.incidents.values().cloned().collect()
     }
 
-    /// Restore incidents, dropping any already past `resolve_timeout` at `now`,
-    /// and rebuild the entity index from the restored incidents' entity values
-    /// (the index and cardinality counters are not themselves persisted).
-    pub(crate) fn restore(&mut self, incidents: Vec<Incident>, now: i64, resolve_secs: i64) {
+    /// Restore incidents, dropping any already past `resolve_timeout` at `now`
+    /// and trimming to `caps` (see [`enforce_caps`](Self::enforce_caps)), then
+    /// rebuild the entity index from what remains (the index and cardinality
+    /// counters are not themselves persisted). Returns how many incidents the
+    /// open-incident cap evicted.
+    pub(crate) fn restore(
+        &mut self,
+        incidents: Vec<Incident>,
+        now: i64,
+        resolve_secs: i64,
+        caps: &Caps,
+    ) -> usize {
         for inc in incidents {
-            if now - inc.last_seen >= resolve_secs {
-                continue;
+            if now - inc.last_seen < resolve_secs {
+                self.incidents.insert(inc.id.clone(), inc);
             }
+        }
+        let evicted = self.enforce_caps(caps);
+        self.entity_index.clear();
+        for inc in self.incidents.values() {
             for (sel, values) in &inc.entities {
                 for value in values {
                     self.entity_index
                         .insert((sel.clone(), value.clone()), inc.id.clone());
                 }
             }
-            self.incidents.insert(inc.id.clone(), inc);
+        }
+        evicted
+    }
+
+    /// Bring the store within `caps`: evict the least recently seen incidents
+    /// beyond `max_open_incidents` (without a `resolved` emission), and cut
+    /// each incident's samples to `max_results_per_incident` and its entity
+    /// values to `max_entities_per_incident` per selector. Dropped entity
+    /// values stop acting as join keys. Returns how many incidents were
+    /// evicted. The live path stays within the caps; this bounds a store
+    /// restored or carried across a reload under lower ones.
+    pub(crate) fn enforce_caps(&mut self, caps: &Caps) -> usize {
+        let excess = self.incidents.len().saturating_sub(caps.max_open_incidents);
+        if excess > 0 {
+            let mut by_age: Vec<(i64, String)> = self
+                .incidents
+                .values()
+                .map(|inc| (inc.last_seen, inc.id.clone()))
+                .collect();
+            by_age.sort_unstable();
+            for (_, id) in by_age.into_iter().take(excess) {
+                if let Some(inc) = self.incidents.remove(&id) {
+                    for (sel, values) in inc.entities {
+                        for value in values {
+                            self.forget_value(&id, (sel.clone(), value));
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut dropped: Vec<(String, (String, String))> = Vec::new();
+        for inc in self.incidents.values_mut() {
+            inc.refs.truncate(caps.max_results_per_incident);
+            inc.results.truncate(caps.max_results_per_incident);
+            for (sel, values) in inc.entities.iter_mut() {
+                while values.len() > caps.max_entities_per_incident {
+                    let Some(value) = values.pop_last() else {
+                        break;
+                    };
+                    dropped.push((inc.id.clone(), (sel.clone(), value)));
+                }
+            }
+        }
+        for (id, key) in dropped {
+            self.forget_value(&id, key);
+        }
+        excess
+    }
+
+    /// Drop an entity value's index entry and cardinality counter, but only
+    /// while the index still attributes the value to incident `id`.
+    fn forget_value(&mut self, id: &str, key: (String, String)) {
+        if self.entity_index.get(&key).is_some_and(|owner| owner == id) {
+            self.entity_index.remove(&key);
+            self.value_counts.remove(&key);
         }
     }
 }
@@ -1095,6 +1162,51 @@ mod tests {
         assert_eq!(
             store.value_counts[&stale_key], 1,
             "the stale counter is reset"
+        );
+    }
+
+    #[test]
+    fn enforce_caps_evicts_the_oldest_incident_and_its_join_keys() {
+        let cfg = entity_cfg();
+        let mut store = IncidentStore::default();
+        assign(&mut store, &cfg, "10.0.0.1", "alice", 0);
+        let newer = assign(&mut store, &cfg, "10.0.0.2", "bob", 1).unwrap();
+
+        let caps = Caps {
+            max_open_incidents: 1,
+            ..Caps::default()
+        };
+        assert_eq!(store.enforce_caps(&caps), 1);
+        assert_eq!(store.incidents.keys().collect::<Vec<_>>(), [&newer]);
+        let mut keys: Vec<&str> = store.entity_index.keys().map(|(_, v)| v.as_str()).collect();
+        keys.sort();
+        assert_eq!(keys, ["10.0.0.2", "bob"]);
+        assert_eq!(store.value_counts.len(), 2);
+    }
+
+    #[test]
+    fn restore_applies_the_per_incident_caps_before_indexing() {
+        let cfg = entity_cfg();
+        let mut store = IncidentStore::default();
+        let id = assign(&mut store, &cfg, "10.0.0.1", "alice", 0).unwrap();
+        assign(&mut store, &cfg, "10.0.0.1", "bob", 1);
+        assign(&mut store, &cfg, "10.0.0.2", "bob", 2);
+        assert_eq!(store.incidents[&id].refs.len(), 3);
+
+        let caps = Caps {
+            max_entities_per_incident: 1,
+            max_results_per_incident: 2,
+            ..Caps::default()
+        };
+        let mut restored = IncidentStore::default();
+        assert_eq!(restored.restore(store.export(), 3, 3600, &caps), 0);
+        let inc = &restored.incidents[&id];
+        assert_eq!(inc.refs.len(), 2);
+        assert!(inc.entities.values().all(|values| values.len() == 1));
+        assert_eq!(
+            restored.entity_index.len(),
+            2,
+            "only kept values are join keys"
         );
     }
 
