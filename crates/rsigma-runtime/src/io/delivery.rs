@@ -3,10 +3,12 @@
 //! The daemon fans every result into a [`Dispatcher`], which owns one
 //! [`SinkWorker`] per leaf sink. Each worker drains its queue sequentially,
 //! batches opportunistically, retries with bounded exponential backoff, and
-//! routes terminal failures to the DLQ. Acknowledgments use the lifetime of an
-//! [`AckGuard`]: each event's ack tokens fire only once every worker has
-//! durably committed (delivered or DLQ-parked) the event, so the at-least-once
-//! contract survives fan-out.
+//! routes terminal failures to the DLQ channel. Acknowledgments use the
+//! lifetime of an [`AckGuard`]: each event's ack tokens fire only once every
+//! worker has finished with the event, either delivering it or handing the
+//! failure to the DLQ channel, so the at-least-once contract survives fan-out.
+//! The ack does not wait for whoever drains the DLQ channel to persist the
+//! failure.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -191,7 +193,9 @@ impl Default for DeliveryContext {
 /// A result that could not be delivered after exhausting retries.
 ///
 /// Emitted to the DLQ channel; the CLI wraps it into its own DLQ record so the
-/// runtime stays free of CLI types.
+/// runtime stays free of CLI types. The event is acked once the failure is
+/// queued on the channel, so a receiver that drops or fails to persist it
+/// loses the result.
 pub struct DeliveryFailure {
     /// The serialized `ProcessResult` that failed to deliver.
     pub serialized: String,
@@ -307,6 +311,9 @@ impl Dispatcher {
     /// [`crate::io::Sink::into_leaves`]); each carries its own
     /// [`DeliveryConfig`] so a sink (e.g. a webhook) can override the global
     /// retry/backoff/queue defaults.
+    ///
+    /// Terminal failures go to `dlq_tx`. With `None`, or once its receiver is
+    /// gone, each one is logged at `warn` and dropped.
     pub fn spawn<S: DeliverySink>(
         sinks: Vec<(S, OnFull, DeliveryConfig)>,
         dlq_tx: Option<mpsc::Sender<DeliveryFailure>>,
@@ -494,12 +501,17 @@ async fn deliver_one<S: DeliverySink>(
                                 DeliverTarget::Incident(e) => e.json.clone(),
                                 DeliverTarget::FormattedIncident(e) => e.native().json.clone(),
                             };
-                            let _ = dlq
-                                .send(DeliveryFailure {
-                                    serialized,
-                                    error: format!("sink delivery failure: {e}"),
-                                })
-                                .await;
+                            let failure = DeliveryFailure {
+                                serialized,
+                                error: format!("sink delivery failure: {e}"),
+                            };
+                            if dlq.send(failure).await.is_err() {
+                                tracing::warn!(
+                                    sink = label,
+                                    error = %e,
+                                    "Sink delivery failed and the DLQ channel is closed; dropping result",
+                                );
+                            }
                         }
                         None => {
                             tracing::warn!(
@@ -781,6 +793,50 @@ mod tests {
         assert!(
             ack_rx.try_recv().is_ok(),
             "token acked after DLQ parking (matches prior behavior)",
+        );
+    }
+
+    #[tokio::test]
+    async fn terminal_failure_with_closed_dlq_counts_and_acks() {
+        #[derive(Default)]
+        struct FailureCounter(AtomicUsize);
+        impl MetricsHook for FailureCounter {
+            fn on_sink_delivery_failed(&self, _sink: &str) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+            fn on_parse_error(&self) {}
+            fn on_events_processed(&self, _: u64) {}
+            fn on_detection_matches(&self, _: u64) {}
+            fn on_correlation_matches(&self, _: u64) {}
+            fn observe_processing_latency(&self, _: f64) {}
+            fn on_input_queue_depth_change(&self, _: i64) {}
+            fn on_back_pressure(&self) {}
+            fn observe_batch_size(&self, _: u64) {}
+            fn on_output_queue_depth_change(&self, _: i64) {}
+            fn observe_pipeline_latency(&self, _: f64) {}
+            fn set_correlation_state_entries(&self, _: u64) {}
+        }
+
+        let (ack_tx, mut ack_rx) = mpsc::unbounded_channel();
+        let (dlq_tx, dlq_rx) = mpsc::channel(8);
+        drop(dlq_rx);
+        let counter = Arc::new(FailureCounter::default());
+        let mut sink = MockSink::new("mock");
+        sink.always_fail = true;
+        let dispatcher = Dispatcher::spawn(
+            vec![(sink, OnFull::Block, fast_cfg())],
+            Some(dlq_tx),
+            ack_tx,
+            counter.clone(),
+        );
+
+        dispatcher.dispatch(result(), vec![AckToken::Noop]).await;
+        dispatcher.shutdown().await;
+
+        assert_eq!(counter.0.load(Ordering::SeqCst), 1, "failure still counted");
+        assert!(
+            ack_rx.try_recv().is_ok(),
+            "token acked even though the DLQ channel is closed",
         );
     }
 
