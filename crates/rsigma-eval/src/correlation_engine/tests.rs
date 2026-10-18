@@ -62,6 +62,13 @@ fn test_parse_timestamp_every_form() {
         (json!(1720614600500_i64), Some(1720614600)),
         (json!(1720614600.5), Some(1720614600)),
         (json!("garbage"), None),
+        (json!(-1), None),
+        (json!(-1720614600500_i64), None),
+        (json!(-0.5), None),
+        (json!(1e300), None),
+        (json!(u64::MAX), None),
+        (json!(i64::MAX), None),
+        (json!("1969-12-31T23:59:59Z"), None),
     ] {
         let event = json!({ "ts": val });
         let event = JsonEvent::borrow(&event);
@@ -103,6 +110,81 @@ fn test_extract_timestamp_fallback_fields() {
     let event = JsonEvent::borrow(&v);
     let ts = engine.extract_event_timestamp(&event);
     assert_eq!(ts, Some(1720613400));
+}
+
+#[test]
+fn test_extract_timestamp_skips_out_of_range_fields() {
+    let config = CorrelationConfig {
+        timestamp_fields: vec!["@timestamp".to_string(), "timestamp".to_string()],
+        ..Default::default()
+    };
+    let engine = CorrelationEngine::new(config);
+
+    for bad in [
+        json!(-5),
+        json!(1e300),
+        json!(i64::MAX),
+        json!("1900-01-01T00:00:00Z"),
+    ] {
+        let v = json!({"@timestamp": bad, "timestamp": 1720613400});
+        let event = JsonEvent::borrow(&v);
+        assert_eq!(
+            engine.extract_event_timestamp(&event),
+            Some(1720613400),
+            "{bad} should fall through to the next field",
+        );
+
+        let v = json!({"@timestamp": bad});
+        let event = JsonEvent::borrow(&v);
+        assert_eq!(engine.extract_event_timestamp(&event), None, "{bad}");
+    }
+}
+
+#[test]
+fn test_out_of_range_timestamp_uses_the_skip_fallback() {
+    let yaml = r#"
+title: test rule
+id: ts-range-rule
+logsource:
+    product: test
+detection:
+    selection:
+        action: click
+    condition: selection
+level: low
+---
+title: test correlation
+correlation:
+    type: event_count
+    rules:
+        - ts-range-rule
+    group-by:
+        - User
+    timespan: 10s
+    condition:
+        gte: 2
+level: high
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    let mut engine = CorrelationEngine::new(CorrelationConfig {
+        timestamp_fallback: TimestampFallback::Skip,
+        emit_detections: true,
+        ..Default::default()
+    });
+    engine.add_collection(&collection).unwrap();
+
+    for ts in [json!(-100), json!(-200), json!(1e300), json!(1e301)] {
+        let v = json!({"action": "click", "User": "alice", "@timestamp": ts});
+        let event = JsonEvent::borrow(&v);
+        let r = engine.process_event(&event);
+        assert!(r.detection_count() > 0, "detection should still fire");
+        assert_eq!(
+            r.correlation_count(),
+            0,
+            "{ts} must not feed correlation state"
+        );
+    }
+    assert_eq!(engine.state_count(), 0);
 }
 
 #[test]

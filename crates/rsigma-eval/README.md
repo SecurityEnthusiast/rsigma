@@ -290,7 +290,7 @@ Stateful processing with sliding time windows, group-by aggregation, and all 8 c
 ### Timestamp Extraction
 
 - **Field priority list**: configurable ordered list of fields to try (default: `@timestamp`, `timestamp`, `EventTime`, `TimeCreated`, `eventTime`)
-- **Format support**: RFC 3339, `%Y-%m-%dT%H:%M:%S` and `%Y-%m-%d %H:%M:%S` with an optional fractional second (read as UTC), epoch seconds, epoch milliseconds (auto-detected if value > 10^12). The time-part modifiers (`|hour`, `|day`, and the others) accept the same formats.
+- **Format support**: RFC 3339, `%Y-%m-%dT%H:%M:%S` and `%Y-%m-%d %H:%M:%S` with an optional fractional second (read as UTC), epoch seconds, epoch milliseconds (auto-detected if value > 10^12). The time-part modifiers (`|hour`, `|day`, and the others) accept the same formats. For correlation, a value before 1970, a non-finite number, or a date past the representable range does not count as a timestamp, so the next timestamp field and then `timestamp_fallback` apply.
 - **Fallback policy**: `WallClock` (use `Utc::now()`, good for real-time streaming) or `Skip` (skip event from correlation, recommended for batch/replay)
 
 ### Value Percentile

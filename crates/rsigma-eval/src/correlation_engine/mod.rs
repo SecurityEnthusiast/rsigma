@@ -38,7 +38,7 @@ use crate::logsource::{ExtractLogSource, LogSourceExtractor};
 use crate::pipeline::{Pipeline, apply_pipelines, apply_pipelines_to_correlation};
 use crate::result::{CorrelationBody, EvaluationResult, ResultBody, RuleHeader};
 use crate::rule_metadata::{RuleBundleMetadata, RuleMetadataLookup};
-use crate::timestamp::{normalize_epoch, parse_timestamp_str};
+use crate::timestamp::{epoch_seconds_from_float, epoch_seconds_from_int, parse_timestamp_str};
 
 type RuleIdentity = (Option<String>, Option<String>);
 
@@ -1259,7 +1259,8 @@ impl<L> CorrelationEngine<L> {
     /// - Numeric values (epoch seconds, or epoch millis if > 1e12)
     /// - ISO 8601 strings (e.g., "2024-07-10T12:30:00Z")
     ///
-    /// Returns `None` if no field yields a valid timestamp.
+    /// Returns `None` if no field yields a valid timestamp; a value before
+    /// 1970 or past the representable range does not count as one.
     fn extract_event_timestamp(&self, event: &impl Event) -> Option<i64> {
         for field_name in &self.config.timestamp_fields {
             if let Some(val) = event.get_field(field_name)
@@ -1613,11 +1614,16 @@ fn extract_event_ts(event: &impl Event, timestamp_fields: &[String]) -> Option<i
 }
 
 /// Parse an [`EventValue`] as a Unix epoch timestamp in seconds.
+///
+/// Values before 1970, non-finite floats, and dates past the representable
+/// range are `None`, so the next timestamp field or the fallback applies.
 fn parse_timestamp_value(val: &EventValue) -> Option<i64> {
     match val {
-        EventValue::Int(i) => Some(normalize_epoch(*i)),
-        EventValue::Float(f) => Some(normalize_epoch(*f as i64)),
-        EventValue::Str(s) => parse_timestamp_str(s).map(|dt| dt.timestamp()),
+        EventValue::Int(i) => epoch_seconds_from_int(*i),
+        EventValue::Float(f) => epoch_seconds_from_float(*f),
+        EventValue::Str(s) => parse_timestamp_str(s)
+            .map(|dt| dt.timestamp())
+            .filter(|ts| *ts >= 0),
         _ => None,
     }
 }
