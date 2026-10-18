@@ -12,6 +12,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
@@ -148,6 +149,7 @@ impl Default for DeliveryConfig {
 /// access (the first signing attempt) fixes the value, and every retry reuses
 /// the same one.
 pub struct DeliveryContext {
+    seq: u64,
     inner: OnceLock<ContextData>,
 }
 
@@ -159,9 +161,17 @@ struct ContextData {
 impl DeliveryContext {
     /// Create a context with nothing computed yet. Cheap; no RNG, no syscall.
     pub fn new() -> Self {
+        static NEXT_SEQ: AtomicU64 = AtomicU64::new(0);
         DeliveryContext {
+            seq: NEXT_SEQ.fetch_add(1, Ordering::Relaxed),
             inner: OnceLock::new(),
         }
+    }
+
+    /// Process-unique number for this delivery, so a sink can recognize a
+    /// retry of the delivery it last attempted.
+    pub(crate) fn seq(&self) -> u64 {
+        self.seq
     }
 
     fn data(&self) -> &ContextData {

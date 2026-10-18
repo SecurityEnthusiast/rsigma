@@ -1,5 +1,6 @@
 mod delivery;
 mod file;
+mod lines;
 #[cfg(feature = "nats")]
 pub mod nats_config;
 #[cfg(feature = "nats")]

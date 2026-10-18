@@ -3,7 +3,9 @@
 //!
 //! Dials the socket as a client and reconnects once on a write failure before
 //! surfacing the error (which the daemon routes to the DLQ, like any other
-//! sink failure).
+//! sink failure). A connection that failed mid-write is dropped, and the lines
+//! it fully carried are not sent again, neither on the reconnect nor when the
+//! delivery layer retries the result.
 
 use std::path::{Path, PathBuf};
 
@@ -13,6 +15,7 @@ use tokio::net::UnixStream;
 use rsigma_eval::ProcessResult;
 
 use crate::error::RuntimeError;
+use crate::io::lines::{LineBatch, ResumePoint};
 use crate::io::{DeliveryContext, SinkFormat, serialize_result};
 
 /// Writes one line per result to a Unix domain socket, reconnecting on
@@ -21,6 +24,7 @@ pub struct UnixSocketSink {
     path: PathBuf,
     stream: Option<UnixStream>,
     format: SinkFormat,
+    resume: ResumePoint,
 }
 
 impl UnixSocketSink {
@@ -31,6 +35,7 @@ impl UnixSocketSink {
             path: path.to_path_buf(),
             stream: Some(stream),
             format: SinkFormat::default(),
+            resume: ResumePoint::default(),
         })
     }
 
@@ -67,41 +72,85 @@ impl UnixSocketSink {
         if result.is_empty() {
             return Ok(());
         }
-        for (index, m) in result.iter().enumerate() {
-            let json = serialize_result(m, self.format, false, ctx.map(|ctx| (ctx, index)))?;
-            self.write_line(&json).await?;
+        let start = self.resume.start(ctx);
+        let mut batch = LineBatch::default();
+        for (index, m) in result.iter().enumerate().skip(start) {
+            batch.push(&serialize_result(
+                m,
+                self.format,
+                false,
+                ctx.map(|ctx| (ctx, index)),
+            )?);
         }
-        Ok(())
+        match self.write_batch(&batch).await {
+            Ok(()) => {
+                self.resume.clear();
+                Ok(())
+            }
+            Err((lines, err)) => {
+                self.resume.record(ctx, start + lines);
+                Err(err)
+            }
+        }
     }
 
     /// Write a pre-serialized JSON line directly to the socket.
     pub async fn send_raw(&mut self, json: &str) -> Result<(), RuntimeError> {
-        self.write_line(json).await
+        let mut batch = LineBatch::default();
+        batch.push(json);
+        self.write_batch(&batch).await.map_err(|(_, err)| err)
     }
 
-    /// Write one line, reconnecting once if the socket has gone away.
-    async fn write_line(&mut self, json: &str) -> Result<(), RuntimeError> {
-        if self.try_write(json).await.is_err() {
-            // Drop the dead stream and try a single reconnect; a second
-            // failure surfaces to the caller (and the DLQ).
-            self.stream = None;
-            self.try_write(json).await?;
-        }
-        Ok(())
+    /// Write `batch`, reconnecting once if the socket has gone away. A failure
+    /// reports how many whole lines were written.
+    async fn write_batch(&mut self, batch: &LineBatch) -> Result<(), (usize, RuntimeError)> {
+        let done = match self.try_write(batch.bytes()).await {
+            Ok(()) => return Ok(()),
+            Err((written, _)) => batch.complete_lines(written),
+        };
+        // Try a single reconnect from the first line the dead stream did not
+        // fully carry; a second failure surfaces to the caller (and the DLQ).
+        let from = batch.line_start(done);
+        self.try_write(&batch.bytes()[from..])
+            .await
+            .map_err(|(written, err)| (batch.complete_lines(from + written), err))
     }
 
-    async fn try_write(&mut self, json: &str) -> Result<(), RuntimeError> {
+    /// Write `bytes` on the current connection, dialing one if there is none.
+    /// On failure the connection is dropped, and the error carries how many
+    /// bytes it accepted.
+    async fn try_write(&mut self, bytes: &[u8]) -> Result<(), (usize, RuntimeError)> {
         let stream = match self.stream.as_mut() {
             Some(stream) => stream,
             None => {
-                let stream = UnixStream::connect(&self.path).await?;
+                let stream = UnixStream::connect(&self.path)
+                    .await
+                    .map_err(|err| (0, err.into()))?;
                 self.stream.insert(stream)
             }
         };
-        stream.write_all(json.as_bytes()).await?;
-        stream.write_all(b"\n").await?;
-        stream.flush().await?;
-        Ok(())
+        let mut written = 0;
+        let mut outcome = Ok(());
+        while written < bytes.len() {
+            match stream.write(&bytes[written..]).await {
+                Ok(0) => {
+                    outcome = Err(std::io::ErrorKind::WriteZero.into());
+                    break;
+                }
+                Ok(n) => written += n,
+                Err(err) => {
+                    outcome = Err(err);
+                    break;
+                }
+            }
+        }
+        if outcome.is_ok() {
+            outcome = stream.flush().await;
+        }
+        outcome.map_err(|err| {
+            self.stream = None;
+            (written, err.into())
+        })
     }
 }
 
@@ -110,6 +159,41 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::net::UnixListener;
+
+    #[tokio::test]
+    async fn dropped_connection_is_replaced_without_repeating_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("collector.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+
+        let collector = tokio::spawn(async move {
+            let (first, _) = listener.accept().await.unwrap();
+            let mut first = BufReader::new(first).lines();
+            let before = first.next_line().await.unwrap().unwrap();
+            drop(first);
+            closed_tx.send(()).unwrap();
+
+            let (second, _) = listener.accept().await.unwrap();
+            let mut second = BufReader::new(second).lines();
+            let mut after = Vec::new();
+            while let Some(line) = second.next_line().await.unwrap() {
+                after.push(line);
+            }
+            (before, after)
+        });
+
+        let mut sink = UnixSocketSink::connect(&path).await.unwrap();
+        sink.send_raw("{\"n\":0}").await.unwrap();
+        closed_rx.await.unwrap();
+        sink.send_raw("{\"n\":1}").await.unwrap();
+        sink.send_raw("{\"n\":2}").await.unwrap();
+        drop(sink);
+
+        let (before, after) = collector.await.unwrap();
+        assert_eq!(before, "{\"n\":0}");
+        assert_eq!(after, ["{\"n\":1}", "{\"n\":2}"]);
+    }
 
     #[tokio::test]
     async fn writes_ndjson_lines_to_collector() {
