@@ -4,6 +4,17 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Event values are escaped in enricher and webhook URLs and enricher bodies (security)
+
+The `http` enricher substituted `${detection.*}` and `${correlation.*}` values into its request URL and body as raw text, and webhook sinks did the same for their URLs. A crafted event field could add keys to a JSON enricher body or reach other paths and query parameters on the configured host ([GHSA-3fh4-8r8j-8xw3](https://github.com/timescale/rsigma/security/advisories/GHSA-3fh4-8r8j-8xw3)).
+
+- Enricher bodies are JSON-string-escaped, as webhook bodies already were.
+- In enricher and webhook URLs, each event or correlation value is percent-encoded as one URL component, so it cannot add path segments or start a query or fragment. A value that is exactly `.` or `..` has its dots encoded twice so it cannot act as a dot segment.
+- `${ENV_VAR}` values in URLs stay verbatim, so an environment variable can still hold a whole path such as a Slack webhook path.
+- New `rsigma_runtime::enrichment::render_template_url` for embedders that render URL templates.
+
+Breaking changes: an enricher URL template that relied on an event value containing `/`, `?`, `&`, or `#` to build several path segments or query parameters now receives that value as a single encoded component. An enricher body template that placed a value outside a JSON string literal still gets raw text, but a value inside a string literal is now escaped.
+
 ### MCP server refuses unconfined writes and unconfined HTTP serving (security, #598)
 
 Without `--rules-dir`, `rsigma mcp serve` accepted any file path in its tools, so a prompt-injected agent or any client reaching the HTTP endpoint could read files outside a rules tree through `fix_rules`, and `fix_rules` with `write: true` could rewrite Sigma YAML anywhere the server user could write ([GHSA-33jj-q567-34gj](https://github.com/timescale/rsigma/security/advisories/GHSA-33jj-q567-34gj)).
