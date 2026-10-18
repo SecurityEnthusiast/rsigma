@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Match detail costs one evaluation pass
+### Match detail costs one evaluation pass (#613)
 
 With `MatchDetailLevel` above `Off`, a rule that fired was evaluated again to collect its selection names and then walked a third time to collect its field matches, re-running every matcher, including regexes. Field matches are now recorded while the selections are evaluated, so a firing rule costs one detail pass, and array members are matched once per quantifier instead of again for the report. The output is unchanged. On the `eval_matched_detail` benchmark (200 rules that all fire), `Full` drops from 314 to 307 µs and `Off` from 252 to 244 µs.
 
