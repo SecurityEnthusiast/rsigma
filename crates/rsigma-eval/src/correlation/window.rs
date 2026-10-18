@@ -453,44 +453,25 @@ fn count_fired_rules(rule_refs: &[String], rule_hits: &HashMap<String, VecDeque<
 /// For `temporal_ordered`, each rule must have at least one hit, and there
 /// must exist a sequence of timestamps (one per rule) that is non-decreasing
 /// and follows the rule ordering.
-fn check_temporal_ordered(
+///
+/// Taking the earliest hit at or after the previous rule's choice is enough:
+/// any valid sequence can swap in that earlier hit and stay valid, so the
+/// check is one pass over each rule's hits.
+pub(super) fn check_temporal_ordered(
     rule_refs: &[String],
     rule_hits: &HashMap<String, VecDeque<i64>>,
 ) -> bool {
-    if rule_refs.is_empty() {
-        return true;
-    }
-
-    // All rules must have at least one hit
-    for r in rule_refs {
-        if rule_hits.get(r.as_str()).is_none_or(|ts| ts.is_empty()) {
-            return false;
+    let mut previous = i64::MIN;
+    for rule_ref in rule_refs {
+        let earliest = rule_hits
+            .get(rule_ref.as_str())
+            .and_then(|hits| hits.iter().copied().filter(|&ts| ts >= previous).min());
+        match earliest {
+            Some(ts) => previous = ts,
+            None => return false,
         }
     }
-
-    // Check if there's a valid ordered sequence: for each rule in order,
-    // find a timestamp >= the previous rule's chosen timestamp.
-    fn find_ordered(
-        rule_refs: &[String],
-        rule_hits: &HashMap<String, VecDeque<i64>>,
-        idx: usize,
-        min_ts: i64,
-    ) -> bool {
-        if idx >= rule_refs.len() {
-            return true;
-        }
-        let Some(timestamps) = rule_hits.get(&rule_refs[idx]) else {
-            return false;
-        };
-        for &ts in timestamps {
-            if ts >= min_ts && find_ordered(rule_refs, rule_hits, idx + 1, ts) {
-                return true;
-            }
-        }
-        false
-    }
-
-    find_ordered(rule_refs, rule_hits, 0, i64::MIN)
+    true
 }
 
 /// Evaluate a boolean condition expression against the set of rules that have

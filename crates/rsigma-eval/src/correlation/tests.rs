@@ -1292,3 +1292,92 @@ fn test_truncate_oldest_temporal_caps_each_rule_deque() {
     assert_eq!(state.earliest_timestamp(), Some(3));
     assert_eq!(state.latest_timestamp(), Some(10));
 }
+
+/// The exhaustive search `check_temporal_ordered` used to run.
+fn temporal_ordered_by_search(
+    rule_refs: &[String],
+    rule_hits: &HashMap<String, VecDeque<i64>>,
+    idx: usize,
+    min_ts: i64,
+) -> bool {
+    let Some(rule_ref) = rule_refs.get(idx) else {
+        return true;
+    };
+    rule_hits.get(rule_ref).is_some_and(|hits| {
+        hits.iter().any(|&ts| {
+            ts >= min_ts && temporal_ordered_by_search(rule_refs, rule_hits, idx + 1, ts)
+        })
+    })
+}
+
+#[test]
+fn test_temporal_ordered_matches_exhaustive_search() {
+    let names = ["a", "b", "c", "d"];
+    let mut x: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = |bound: u64| {
+        x = x
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (x >> 33) % bound
+    };
+    let mut matched = 0;
+    for _ in 0..5_000 {
+        let rule_refs: Vec<String> = (0..1 + next(5))
+            .map(|_| names[next(4) as usize].to_string())
+            .collect();
+        let mut rule_hits = HashMap::new();
+        for name in names {
+            if next(5) == 0 {
+                continue;
+            }
+            let hits: VecDeque<i64> = (0..next(6)).map(|_| next(20) as i64).collect();
+            rule_hits.insert(name.to_string(), hits);
+        }
+        let expected = temporal_ordered_by_search(&rule_refs, &rule_hits, 0, i64::MIN);
+        assert_eq!(
+            check_temporal_ordered(&rule_refs, &rule_hits),
+            expected,
+            "refs {rule_refs:?}, hits {rule_hits:?}"
+        );
+        matched += usize::from(expected);
+    }
+    assert!(
+        matched > 500 && matched < 4_500,
+        "the cases should mix both outcomes; {matched} matched"
+    );
+}
+
+#[test]
+fn test_temporal_ordered_with_many_hits_per_rule() {
+    // Every earlier rule has many hits that each fit the order, and the last
+    // rule fired too early for all of them, so an exhaustive search would try
+    // every combination of the earlier hits before giving up.
+    let rule_refs: Vec<String> = (0..8).map(|i| format!("r{i}")).collect();
+    let mut rule_hits: HashMap<String, VecDeque<i64>> = rule_refs
+        .iter()
+        .take(7)
+        .map(|r| (r.clone(), (1_000..1_200).collect()))
+        .collect();
+    rule_hits.insert("r7".to_string(), (0..200).collect());
+    assert!(!check_temporal_ordered(&rule_refs, &rule_hits));
+
+    rule_hits.insert("r7".to_string(), (0..1_200).collect());
+    assert!(check_temporal_ordered(&rule_refs, &rule_hits));
+}
+
+#[test]
+fn test_temporal_ordered_repeated_rule_can_reuse_a_hit() {
+    let refs = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+    let rule_hits = HashMap::from([
+        ("a".to_string(), VecDeque::from([5])),
+        ("b".to_string(), VecDeque::from([3, 9])),
+    ]);
+    assert!(check_temporal_ordered(&refs(&["a", "a", "b"]), &rule_hits));
+    assert!(check_temporal_ordered(&refs(&["b", "a", "b"]), &rule_hits));
+    assert!(!check_temporal_ordered(&refs(&["a", "b", "a"]), &rule_hits));
+    assert!(!check_temporal_ordered(
+        &refs(&["a", "missing"]),
+        &rule_hits
+    ));
+    assert!(check_temporal_ordered(&[], &rule_hits));
+}
