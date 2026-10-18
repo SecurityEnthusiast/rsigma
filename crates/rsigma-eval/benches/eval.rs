@@ -8,7 +8,7 @@ mod datagen;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use rsigma_eval::{Engine, JsonEvent};
+use rsigma_eval::{Engine, JsonEvent, MatchDetailLevel};
 use rsigma_parser::parse_sigma_yaml;
 
 // ---------------------------------------------------------------------------
@@ -536,6 +536,67 @@ fn bench_eval_regex_heavy(c: &mut Criterion) {
 // Criterion harness
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Benchmark: rules that match, with their match detail
+// ---------------------------------------------------------------------------
+
+fn bench_eval_matched_detail(c: &mut Criterion) {
+    let mut group = c.benchmark_group("eval_matched_detail");
+
+    let rules: String = (0..200)
+        .map(|i| {
+            format!(
+                r#"title: Matched {i}
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    sel_img:
+        Image|endswith: '\cmd.exe'
+    sel_cmd:
+        CommandLine|contains:
+            - whoami
+            - net user
+            - ipconfig
+    sel_cmd_flag:
+        CommandLine|contains: ' /c '
+    sel_parent:
+        ParentImage|endswith:
+            - '\explorer.exe'
+            - '\powershell.exe'
+    filter:
+        User: SYSTEM
+    condition: sel_img and 1 of sel_cmd* and sel_parent and not filter
+---
+"#
+            )
+        })
+        .collect();
+    let collection = parse_sigma_yaml(&rules).unwrap();
+    let event_value = serde_json::json!({
+        "Image": "C:\\Windows\\System32\\cmd.exe",
+        "CommandLine": "cmd /c whoami && ipconfig /all",
+        "ParentImage": "C:\\Windows\\explorer.exe",
+        "User": "alice",
+    });
+    let event = JsonEvent::borrow(&event_value);
+
+    for (name, level) in [
+        ("off", MatchDetailLevel::Off),
+        ("full", MatchDetailLevel::Full),
+    ] {
+        let mut engine = Engine::new();
+        engine.set_match_detail(level);
+        engine.add_collection(&collection).unwrap();
+        assert_eq!(engine.evaluate(&event).len(), 200);
+        group.bench_function(BenchmarkId::new("rules_200", name), |b| {
+            b.iter(|| black_box(engine.evaluate(black_box(&event))));
+        });
+    }
+
+    group.finish();
+}
+
 #[cfg(feature = "daachorse-index")]
 criterion_group!(
     benches,
@@ -551,6 +612,7 @@ criterion_group!(
     bench_eval_cross_rule_ac,
     bench_eval_wildcard_heavy,
     bench_eval_regex_heavy,
+    bench_eval_matched_detail,
 );
 
 #[cfg(not(feature = "daachorse-index"))]
@@ -567,5 +629,6 @@ criterion_group!(
     bench_eval_bloom_rejection,
     bench_eval_wildcard_heavy,
     bench_eval_regex_heavy,
+    bench_eval_matched_detail,
 );
 criterion_main!(benches);
