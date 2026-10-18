@@ -4,6 +4,8 @@
 use opentelemetry_proto::tonic::collector::logs::v1::{
     ExportLogsServiceRequest, logs_service_client::LogsServiceClient,
 };
+use std::time::Duration;
+
 use prost::Message;
 use tonic::codec::CompressionEncoding;
 use tonic::transport::Channel;
@@ -49,13 +51,28 @@ enum Transport {
     },
 }
 
+/// Default deadline for one OTLP export attempt, matching the webhook sink.
+pub const DEFAULT_OTLP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Bound on establishing a connection to the collector, for both transports.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// HTTP/2 keepalive ping interval and ack deadline on the gRPC channel, so a
+/// collector that stops answering is detected even between exports.
+const GRPC_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+const GRPC_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Exports detection and correlation results to an OTLP collector.
 ///
 /// The gRPC channel connects lazily, so a collector that is not yet reachable
 /// does not fail daemon startup; delivery failures are surfaced to the
-/// delivery layer, which retries and ultimately routes to the DLQ.
+/// delivery layer, which retries and ultimately routes to the DLQ. Each export
+/// attempt is bounded by a deadline ([`DEFAULT_OTLP_TIMEOUT`] unless set with
+/// [`OtlpSink::with_timeout`]), so a collector that accepts the connection but
+/// never replies fails the attempt instead of stalling delivery.
 pub struct OtlpSink {
     transport: Transport,
+    timeout: Duration,
 }
 
 impl OtlpSink {
@@ -80,7 +97,10 @@ impl OtlpSink {
             },
             OtlpProtocol::Grpc => {
                 let mut endpoint = Channel::from_shared(format!("{scheme}://{endpoint}"))
-                    .map_err(|e| RuntimeError::Io(std::io::Error::other(e)))?;
+                    .map_err(|e| RuntimeError::Io(std::io::Error::other(e)))?
+                    .connect_timeout(CONNECT_TIMEOUT)
+                    .http2_keep_alive_interval(GRPC_KEEPALIVE_INTERVAL)
+                    .keep_alive_timeout(GRPC_KEEPALIVE_TIMEOUT);
                 if let Some(tls) = &tls {
                     endpoint = endpoint
                         .tls_config(grpc_tls_config(tls))
@@ -95,7 +115,22 @@ impl OtlpSink {
                 Transport::Grpc { client }
             }
         };
-        Ok(OtlpSink { transport })
+        Ok(OtlpSink {
+            transport,
+            timeout: DEFAULT_OTLP_TIMEOUT,
+        })
+    }
+
+    /// Set the deadline for one export attempt. An attempt that exceeds it
+    /// fails with a retryable timeout error.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// The deadline for one export attempt.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
     }
 
     /// Serialize and export a batch of results to the collector.
@@ -132,6 +167,24 @@ impl OtlpSink {
     }
 
     async fn export(&mut self, request: ExportLogsServiceRequest) -> Result<(), RuntimeError> {
+        let timeout = self.timeout;
+        tokio::time::timeout(timeout, self.export_unbounded(request))
+            .await
+            .unwrap_or_else(|_| {
+                Err(RuntimeError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!(
+                        "OTLP export timed out after {}",
+                        humantime::format_duration(timeout)
+                    ),
+                )))
+            })
+    }
+
+    async fn export_unbounded(
+        &mut self,
+        request: ExportLogsServiceRequest,
+    ) -> Result<(), RuntimeError> {
         match &mut self.transport {
             Transport::Http { client, url, gzip } => {
                 let mut builder = client
@@ -179,10 +232,12 @@ fn install_crypto_provider() {
 
 /// Build the OTLP/HTTP `reqwest` client, applying TLS material when present.
 fn build_http_client(tls: Option<&OtlpClientTls>) -> Result<reqwest::Client, RuntimeError> {
+    let mut builder = reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT);
     let Some(tls) = tls else {
-        return Ok(reqwest::Client::new());
+        return builder
+            .build()
+            .map_err(|e| RuntimeError::Io(std::io::Error::other(e)));
     };
-    let mut builder = reqwest::Client::builder();
     if let Some(ca) = &tls.ca_pem {
         let cert = reqwest::Certificate::from_pem(ca)
             .map_err(|e| RuntimeError::Io(std::io::Error::other(e)))?;
@@ -314,6 +369,61 @@ mod tests {
         let endpoint = server.address().to_string();
         let mut sink = OtlpSink::new(OtlpProtocol::Http, &endpoint, true, None).unwrap();
         sink.send(&one_detection()).await.unwrap();
+    }
+
+    #[test]
+    fn default_timeout_applies_until_overridden() {
+        let sink = OtlpSink::new(OtlpProtocol::Http, "127.0.0.1:1", false, None).unwrap();
+        assert_eq!(sink.timeout(), DEFAULT_OTLP_TIMEOUT);
+        let sink = sink.with_timeout(Duration::from_secs(3));
+        assert_eq!(sink.timeout(), Duration::from_secs(3));
+    }
+
+    fn assert_timed_out(err: RuntimeError) {
+        match err {
+            RuntimeError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::TimedOut, "{e}"),
+            other => panic!("expected a retryable timeout, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn http_export_times_out_on_a_silent_collector() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/logs"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(30)))
+            .mount(&server)
+            .await;
+
+        let endpoint = server.address().to_string();
+        let mut sink = OtlpSink::new(OtlpProtocol::Http, &endpoint, false, None)
+            .unwrap()
+            .with_timeout(Duration::from_millis(200));
+        let started = std::time::Instant::now();
+        let err = sink.send(&one_detection()).await.unwrap_err();
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_timed_out(err);
+    }
+
+    #[tokio::test]
+    async fn grpc_export_times_out_when_the_collector_never_replies() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let holder = tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                held.push(stream);
+            }
+        });
+
+        let mut sink = OtlpSink::new(OtlpProtocol::Grpc, &addr.to_string(), false, None)
+            .unwrap()
+            .with_timeout(Duration::from_millis(200));
+        let started = std::time::Instant::now();
+        let err = sink.send(&one_detection()).await.unwrap_err();
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_timed_out(err);
+        holder.abort();
     }
 
     use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse;
