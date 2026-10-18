@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Match detail reports only the selections that decide the match
+
+`matched_selections` and `matched_fields` were built from every selection the detail pass saw match, even inside a sub-expression that ended up false, so `(s1 and s2) or s3` firing on `s3` also reported `s1` when it matched, `not sel_b or sel_a` reported `sel_b`, `a and not all of filter_*` reported the matching filters, and `a and (a or b)` reported `a` and its fields twice. Enrichment templates, OCSF findings, and `engine eval` output attributed alerts to selections that did not make them fire. Now a false `and` keeps only its failing child's selections, a true `or` keeps only its true child's, a selector reports its members only when its quantifier holds, and each name appears once. `eval_condition` follows the same rules.
+
 ### Time-part modifiers accept space-separated fractional timestamps (#611)
 
 `rsigma-eval` had two string timestamp parsers, and the one behind `|minute`, `|hour`, `|day`, `|week`, `|month`, and `|year` lacked the `%Y-%m-%d %H:%M:%S%.f` form that the correlation engine accepted, so `"2024-07-10 12:30:00.500"` worked as a correlation timestamp but made `ts|hour: 12` never match. Both now share one parser: RFC 3339, or a `T`- or space-separated naive timestamp with an optional fractional second, plus epoch seconds and milliseconds.

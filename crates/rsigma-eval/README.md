@@ -323,7 +323,7 @@ Accessors: `is_detection()` / `is_correlation()`, `as_detection() -> Option<&Det
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `matched_selections` | `Vec<String>` | Detection names that matched |
+| `matched_selections` | `Vec<String>` | Matched detection names that decide the condition, each once (`(a and b) or c` firing on `c` reports only `c`) |
 | `matched_fields` | `Vec<FieldMatch>` | Field/value pairs that contributed to the match. Array object-scope matches record binding members with indexed paths (`connections[0].protocol`), capped at 32 members; `[none]` and vacuous `[all_or_empty]` keep the container. |
 | `event` | `Option<Value>` | Full event JSON when `include_event` is enabled |
 
