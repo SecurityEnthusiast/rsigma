@@ -30,7 +30,8 @@ These always show up. They cover ingest, matches, queue depth, back-pressure, re
 | `rsigma_batch_phase_duration_seconds` | histogram | `phase` (`parse`, `decode_merge`, `observe`, `evaluate`, `result_merge`, `dispatch`) | Wall-clock duration of each batch-processing phase. `parse` is the parallel format parse; `decode_merge` is the ordered post-parse merge and optional event filter; `observe` covers field/schema observers and decoded taps; `evaluate` is engine detection/correlation; `result_merge` is per-line result assembly and counters; `dispatch` is the daemon's post-batch ack/sink enqueue loop. Compare `_sum` deltas over the same interval to rank serial share without inferring it from throughput. |
 | `rsigma_pipeline_latency_seconds` | histogram | none | End-to-end latency from event dequeue to sink send. |
 | `rsigma_batch_size` | histogram | none | Number of events processed per batch. |
-| `rsigma_dlq_events_total` | counter | none | Events routed to the dead-letter queue. |
+| `rsigma_dlq_events_total` | counter | none | Events routed to the dead-letter queue, counted whether or not a `--dlq` sink is configured. |
+| `rsigma_dlq_write_failures_total` | counter | none | Dead-letter queue entries the `--dlq` sink failed to write. Each one is a lost event that was already acked. {{ added "unreleased" }} |
 | `rsigma_sink_queue_depth` | gauge | `sink` | Results buffered in each sink's delivery queue. |
 | `rsigma_sink_retries_total` | counter | `sink` | Sink delivery retries after a retryable failure. |
 | `rsigma_sink_dropped_total` | counter | `sink` | Results dropped because a lossy sink's queue was full (`?on_full=drop`). |
