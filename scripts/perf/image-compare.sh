@@ -126,11 +126,18 @@ measure() {
     shift
     docker rm -f "${container}" >/dev/null 2>&1 || true
 
+    # Images that refuse a tokenless public bind need the explicit opt-out;
+    # older images do not know the flag.
+    local open_api=()
+    if docker run --rm "${image}" engine daemon --help 2>/dev/null | grep -q -- --allow-unauthenticated; then
+        open_api=(--allow-unauthenticated)
+    fi
+
     docker run -d --name "${container}" --network "${network}" \
         "${daemon_cpus[@]+"${daemon_cpus[@]}"}" \
         -p "${addr}:9090" -v "${fixtures}/sigma/rules:/rules:ro" \
         "${image}" engine daemon -r /rules --input http \
-        --api-addr 0.0.0.0:9090 --allow-plaintext \
+        --api-addr 0.0.0.0:9090 --allow-plaintext "${open_api[@]+"${open_api[@]}"}" \
         --batch-size "${batch_size}" --output "file:///dev/null" "$@" >/dev/null
 
     local ready=""
