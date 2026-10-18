@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Percentile and median checks no longer sort the window
+
+`value_percentile` and `value_median` correlations sorted every finite value in the group's window on each event fed into the group. They now select the needed ranks with `select_nth_unstable_by`, which is O(n) on average and returns exactly the same values, including interpolated percentiles and even-count medians. In the new `correlation_numeric_window` benchmark, a group checked against a 5,000-value window processes events about 4x faster. Chained correlations also stop cloning every fired result, including its retained events in full event mode, just to read which correlation fired and for which group.
+
 ### OTLP log decoding is fuzzed (#617)
 
 OTLP log ingestion decodes untrusted protobuf and flattens each record to JSON, but it was the only untrusted input surface without a `cargo-fuzz` harness. The new `fuzz_otlp_logs_decode` target decodes arbitrary bytes as `ExportLogsServiceRequest`, converts whatever decodes with `logs_request_to_raw_events`, and asserts each event is valid JSON. It runs in the weekly fuzz workflow from a committed seed corpus. Conversion recurses once per nested `AnyValue`, so its depth depends on prost's decode recursion limit; a new unit test fails if a dependency turns that limit off through prost's `no-recursion-limit` feature.
