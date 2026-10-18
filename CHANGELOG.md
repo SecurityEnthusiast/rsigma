@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Boolean keywords match the word instead of nothing
+### Boolean keywords match the word instead of nothing (#609)
 
 A `keywords:` detection with a YAML boolean, such as `keywords: [true]`, parsed, compiled, and passed lint, but never fired, because keyword evaluation runs only string matchers and the value lowered to a boolean equality check; `backend convert` rejected the same rule with `UnsupportedKeyword`. Boolean keywords now lower to a case-insensitive substring search for the word `true` or `false`, like any other keyword, so `keywords: [true]` matches `"true"` and `flag is TRUE now` in eval and converts as the term `true`. Keyword search still does not visit JSON booleans; use a field match such as `a: true` for those. Fixes #587.
 
