@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Restore and alert-pipeline reload enforce the dedup and incident caps
+
+Restoring from `--state-db` kept every dedup alert and incident still inside its `resolve_timeout`, and an alert-pipeline hot-reload swapped in new caps without touching the carried-over stores, so after an operator lowered `dedup.max_active_alerts` or `group.caps.max_open_incidents` the stores stayed above the bound until entries aged out. Both now evict the least recently seen alerts and incidents down to the cap, without a `resolved` record, and cut each incident to `max_results_per_incident` and `max_entities_per_incident`, logging the eviction counts. The daemon trims and swaps the reloaded pipeline under the alert-state lock, and the sink task re-reads the pipeline after taking that lock, so no batch refills the stores under the old caps. In `rsigma-runtime`, `AlertPipeline::enforce_caps` applies the trim and returns a `CapTrim`. Fixes #590.
+
 ### Hot-reload no longer rolls back correlation state (#604)
 
 A rule reload (`SIGHUP`, the file watcher, or `POST /api/v1/reload`) snapshotted correlation state before loading the new rules and imported that snapshot after, so every window update made by events processed during the load was lost and counts silently rewound on each reload under traffic. Rules still load without pausing processing, but the state is now exported from the live engine, imported, and swapped behind the batch-order lock. An ordered batch that was waiting on that lock during the swap now evaluates against the new engine instead of advancing the retired one. Fixes #579.
