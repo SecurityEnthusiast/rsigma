@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Hot-reload no longer rolls back correlation state
+
+A rule reload (`SIGHUP`, the file watcher, or `POST /api/v1/reload`) snapshotted correlation state before loading the new rules and imported that snapshot after, so every window update made by events processed during the load was lost and counts silently rewound on each reload under traffic. Rules still load without pausing processing, but the state is now exported from the live engine, imported, and swapped behind the batch-order lock. An ordered batch that was waiting on that lock during the swap now evaluates against the new engine instead of advancing the retired one. Fixes #579.
+
 ### Entity-graph grouping no longer leaks join keys or drops live incidents (#603)
 
 In `entity_graph` grouping, a value that arrived after its incident's selector was full (`max_entities_per_incident`) was not stored on the incident but was still indexed as a join key. Resolve and merge only evict stored values, so those keys outlived the incident: the index grew without bound on a long-running daemon, and a later result carrying such a value could be merged into the dead incident id, which silently discarded the live incident it should have joined. Only stored values are now indexed, a stale index entry is dropped instead of being merged into, and `max_value_cardinality` counters move only for values an accepted result actually records, so a result refused by `max_open_incidents` or an over-cap value no longer inflates them. Fixes #583.
