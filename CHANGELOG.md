@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Partly case-insensitive regex pairs match the original text again
+### Partly case-insensitive regex pairs match the original text again (#608)
 
 When a field had exactly two regex values that both looked case-insensitive, the optimizer grouped them to lowercase the event value once and match each regex against the lowercased text. The check stopped at the first `i` after `(?`, so a scoped flag such as `(?i:foo)BAR`, or a pattern that clears the flag later such as the `(?i)foo(?-i)BAR` that `|re|i` builds from `foo(?-i)BAR`, was treated as fully case-insensitive: such rules missed events they should match and matched events they should not. The optimizer now parses the pattern and groups a regex only when a leading global flag enables `i` and no later flag group, global or scoped, clears it. Fixes #584.
 
