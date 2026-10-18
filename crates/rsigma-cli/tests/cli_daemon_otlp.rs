@@ -206,6 +206,74 @@ fn otlp_http_gzip_protobuf_accepted() {
     );
 }
 
+/// The OTLP/HTTP decompressed-body limit, mirrored from the daemon.
+const OTLP_HTTP_MAX_DECOMPRESSED_BYTES: usize = 4 * 1024 * 1024;
+
+fn gzip(data: &[u8]) -> Vec<u8> {
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use std::io::Write;
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(data).unwrap();
+    encoder.finish().unwrap()
+}
+
+#[test]
+fn otlp_http_gzip_over_limit_returns_413() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let daemon = DaemonProcess::spawn_http(rule.path().to_str().unwrap());
+
+    let compressed = gzip(&vec![0u8; 2 * OTLP_HTTP_MAX_DECOMPRESSED_BYTES]);
+    assert!(compressed.len() < 64 * 1024);
+
+    let result = ureq::post(&daemon.url("/v1/logs"))
+        .header("Content-Type", "application/x-protobuf")
+        .header("Content-Encoding", "gzip")
+        .send(&compressed[..]);
+
+    match result {
+        Err(ureq::Error::StatusCode(413)) => {}
+        other => panic!("expected 413 Payload Too Large, got {other:?}"),
+    }
+
+    let (_, metrics) = http_get(&daemon.url("/metrics"));
+    assert!(
+        metrics
+            .lines()
+            .any(|l| l.starts_with("rsigma_otlp_errors_total{")
+                && l.contains(r#"reason="body_too_large""#)
+                && l.contains(r#"transport="http""#)
+                && l.ends_with(" 1")),
+        "body_too_large error not counted:\n{metrics}"
+    );
+
+    let (status, _) = http_get(&daemon.url("/healthz"));
+    assert_eq!(status, 200, "daemon must stay up after a rejected bomb");
+}
+
+#[test]
+fn otlp_http_gzip_under_limit_is_accepted() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let daemon = DaemonProcess::spawn_http(rule.path().to_str().unwrap());
+
+    let request = make_otlp_request(vec![kv(
+        "CommandLine",
+        string_val(&"a".repeat(OTLP_HTTP_MAX_DECOMPRESSED_BYTES - 1024)),
+    )]);
+    let mut proto_buf = Vec::new();
+    request.encode(&mut proto_buf).unwrap();
+    assert!(proto_buf.len() <= OTLP_HTTP_MAX_DECOMPRESSED_BYTES);
+
+    let resp = ureq::post(&daemon.url("/v1/logs"))
+        .header("Content-Type", "application/x-protobuf")
+        .header("Content-Encoding", "gzip")
+        .send(&gzip(&proto_buf)[..])
+        .expect("OTLP gzip POST under the limit failed");
+
+    assert_eq!(resp.status().as_u16(), 200);
+}
+
 // ---------------------------------------------------------------------------
 // OTLP/HTTP error cases
 // ---------------------------------------------------------------------------

@@ -4240,7 +4240,23 @@ async fn otlp_http_logs(
 
         let body = match otlp_maybe_decompress(&headers, body) {
             Ok(b) => b,
-            Err(e) => {
+            Err(OtlpDecompressError::TooLarge) => {
+                state
+                    .metrics
+                    .otlp_errors
+                    .with_label_values(&["http", "body_too_large"])
+                    .inc();
+                return (
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    Json(serde_json::json!({
+                        "error": format!(
+                            "decompressed body exceeds {OTLP_HTTP_MAX_DECOMPRESSED_BYTES} bytes"
+                        )
+                    })),
+                )
+                    .into_response();
+            }
+            Err(OtlpDecompressError::Io(e)) => {
                 state
                     .metrics
                     .otlp_errors
@@ -4339,25 +4355,51 @@ async fn otlp_http_logs(
     .await
 }
 
+/// Upper bound on a gzip-decoded OTLP/HTTP body. Matches tonic's default
+/// decoded-message limit on the gRPC path (4 MiB), so both transports bound
+/// decoded requests the same way.
+#[cfg(feature = "daemon-otlp")]
+const OTLP_HTTP_MAX_DECOMPRESSED_BYTES: usize = 4 * 1024 * 1024;
+
+#[cfg(feature = "daemon-otlp")]
+#[derive(Debug)]
+enum OtlpDecompressError {
+    TooLarge,
+    Io(std::io::Error),
+}
+
 #[cfg(feature = "daemon-otlp")]
 fn otlp_maybe_decompress(
     headers: &axum::http::HeaderMap,
     body: axum::body::Bytes,
-) -> Result<axum::body::Bytes, std::io::Error> {
+) -> Result<axum::body::Bytes, OtlpDecompressError> {
     let content_encoding = headers
         .get(axum::http::header::CONTENT_ENCODING)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
     if content_encoding == "gzip" {
-        use std::io::Read;
-        let mut decoder = flate2::read::GzDecoder::new(&body[..]);
-        let mut decompressed = Vec::new();
-        decoder.read_to_end(&mut decompressed)?;
-        Ok(axum::body::Bytes::from(decompressed))
+        otlp_gunzip_bounded(&body, OTLP_HTTP_MAX_DECOMPRESSED_BYTES).map(axum::body::Bytes::from)
     } else {
         Ok(body)
     }
+}
+
+/// Inflate `body`, failing with [`OtlpDecompressError::TooLarge`] once the
+/// output would exceed `max` bytes. Reads one byte past the limit so an
+/// over-limit body is rejected instead of silently truncated.
+#[cfg(feature = "daemon-otlp")]
+fn otlp_gunzip_bounded(body: &[u8], max: usize) -> Result<Vec<u8>, OtlpDecompressError> {
+    use std::io::Read;
+    let mut decompressed = Vec::new();
+    flate2::read::GzDecoder::new(body)
+        .take(max as u64 + 1)
+        .read_to_end(&mut decompressed)
+        .map_err(OtlpDecompressError::Io)?;
+    if decompressed.len() > max {
+        return Err(OtlpDecompressError::TooLarge);
+    }
+    Ok(decompressed)
 }
 
 #[cfg(feature = "daemon-otlp")]
@@ -4452,6 +4494,44 @@ mod tests {
         assert_eq!(default_detect_inflight(4), 3);
         assert_eq!(default_detect_inflight(8), 5);
         assert_eq!(default_detect_inflight(16), 5);
+    }
+
+    #[cfg(feature = "daemon-otlp")]
+    mod otlp_gunzip {
+        use super::super::{OtlpDecompressError, otlp_gunzip_bounded};
+        use std::io::Write;
+
+        fn gzip(data: &[u8]) -> Vec<u8> {
+            let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            enc.write_all(data).unwrap();
+            enc.finish().unwrap()
+        }
+
+        #[test]
+        fn exactly_at_limit_is_accepted() {
+            let out = otlp_gunzip_bounded(&gzip(&[7u8; 1024]), 1024).unwrap();
+            assert_eq!(out.len(), 1024);
+        }
+
+        #[test]
+        fn one_byte_over_limit_is_rejected() {
+            let err = otlp_gunzip_bounded(&gzip(&[7u8; 1025]), 1024).unwrap_err();
+            assert!(matches!(err, OtlpDecompressError::TooLarge));
+        }
+
+        #[test]
+        fn high_ratio_bomb_stops_at_limit() {
+            let bomb = gzip(&vec![0u8; 64 * 1024 * 1024]);
+            assert!(bomb.len() < 128 * 1024);
+            let err = otlp_gunzip_bounded(&bomb, 4 * 1024 * 1024).unwrap_err();
+            assert!(matches!(err, OtlpDecompressError::TooLarge));
+        }
+
+        #[test]
+        fn corrupt_stream_is_io_error() {
+            let err = otlp_gunzip_bounded(b"not gzip", 1024).unwrap_err();
+            assert!(matches!(err, OtlpDecompressError::Io(_)));
+        }
     }
 
     #[cfg(feature = "daemon-otlp")]
