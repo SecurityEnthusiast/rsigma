@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use rsigma_eval::pipeline::state::PipelineState;
-use rsigma_ir::{IrDetection, IrDetectionItem, IrPattern, IrPatternPart, IrStrOp};
+use rsigma_ir::{IrDetection, IrDetectionItem, IrPattern, IrPatternPart, IrStrOp, NumericLiteral};
 use rsigma_parser::*;
 
 use crate::error::{ConvertError, Result};
@@ -243,7 +243,7 @@ pub trait Backend: Send + Sync {
     fn convert_field_eq_num(
         &self,
         field: &str,
-        value: f64,
+        value: NumericLiteral,
         state: &mut ConversionState,
     ) -> Result<String>;
 
@@ -308,7 +308,7 @@ pub trait Backend: Send + Sync {
         &self,
         field: &str,
         op: CompareOp,
-        value: f64,
+        value: NumericLiteral,
         state: &mut ConversionState,
     ) -> Result<String>;
 
@@ -320,7 +320,11 @@ pub trait Backend: Send + Sync {
     ) -> Result<String>;
 
     /// Keyword (unbound) numeric term.
-    fn convert_keyword_num(&self, value: f64, state: &mut ConversionState) -> Result<String>;
+    fn convert_keyword_num(
+        &self,
+        value: NumericLiteral,
+        state: &mut ConversionState,
+    ) -> Result<String>;
 
     // --- Query finalization ---
 

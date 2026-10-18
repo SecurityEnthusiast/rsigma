@@ -512,7 +512,7 @@ mod tests {
             Regex::new(r"^foo").unwrap()
         )));
         // Numeric and CIDR are never pre-lowerable.
-        assert!(!is_pre_lowerable(&CompiledMatcher::NumericEq(42.0)));
+        assert!(!is_pre_lowerable(&CompiledMatcher::NumericEq(42.into())));
         assert!(!is_pre_lowerable(&CompiledMatcher::Cidr(
             "10.0.0.0/8".parse().unwrap()
         )));

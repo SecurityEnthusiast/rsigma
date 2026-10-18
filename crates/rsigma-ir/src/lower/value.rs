@@ -11,9 +11,12 @@ use rsigma_parser::value::{SpecialChar, StringPart};
 use rsigma_parser::{SigmaString, SigmaValue};
 
 use crate::error::IrError;
-use crate::{IrEncoding, IrExpandPart, IrMatcher, IrNumber, IrPattern, IrPatternPart, IrStrOp};
+use crate::{
+    IrEncoding, IrExpandPart, IrMatcher, IrNumber, IrPattern, IrPatternPart, IrStrOp,
+    NumericLiteral,
+};
 
-use super::helpers::{ExpandSegment, Result, scan_expand, value_to_f64, value_to_plain_string};
+use super::helpers::{ExpandSegment, Result, scan_expand, value_to_number, value_to_plain_string};
 use super::mod_ctx::ModCtx;
 
 /// Build an [`IrPattern`] from a parser [`SigmaString`], preserving literal
@@ -99,11 +102,11 @@ pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher>
 
     if let Some(part) = ctx.timestamp_part {
         let inner = match value {
-            SigmaValue::Integer(n) => IrMatcher::NumericEq(IrNumber::Literal(*n as f64)),
-            SigmaValue::Float(n) => IrMatcher::NumericEq(IrNumber::Literal(*n)),
+            SigmaValue::Integer(n) => IrMatcher::NumericEq(IrNumber::Literal((*n).into())),
+            SigmaValue::Float(n) => IrMatcher::NumericEq(IrNumber::Literal((*n).into())),
             SigmaValue::String(s) => {
                 let plain = s.as_plain().unwrap_or_else(|| s.original.clone());
-                let n: f64 = plain.parse().map_err(|_| {
+                let n = NumericLiteral::parse(&plain).ok_or_else(|| {
                     IrError::IncompatibleValue(format!(
                         "timestamp part modifier requires numeric value, got: {plain}"
                     ))
@@ -149,7 +152,7 @@ pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher>
     }
 
     if ctx.has_numeric_comparison() {
-        let n = value_to_f64(value)?;
+        let n = value_to_number(value)?;
         if ctx.gt {
             return Ok(IrMatcher::NumericGt(IrNumber::Literal(n)));
         }
@@ -169,13 +172,13 @@ pub(super) fn lower_value(value: &SigmaValue, ctx: &ModCtx) -> Result<IrMatcher>
             if ctx.contains || ctx.startswith || ctx.endswith {
                 return Ok(lower_str(plain_pattern(&n.to_string()), ctx));
             }
-            return Ok(IrMatcher::NumericEq(IrNumber::Literal(*n as f64)));
+            return Ok(IrMatcher::NumericEq(IrNumber::Literal((*n).into())));
         }
         SigmaValue::Float(n) => {
             if ctx.contains || ctx.startswith || ctx.endswith {
                 return Ok(lower_str(plain_pattern(&n.to_string()), ctx));
             }
-            return Ok(IrMatcher::NumericEq(IrNumber::Literal(*n)));
+            return Ok(IrMatcher::NumericEq(IrNumber::Literal((*n).into())));
         }
         SigmaValue::Bool(b) => return Ok(IrMatcher::BoolEq(*b)),
         SigmaValue::Null => return Ok(IrMatcher::Null),
@@ -309,8 +312,8 @@ pub(super) fn lower_value_keywords(value: &SigmaValue) -> Result<IrMatcher> {
             pattern: pattern_from_sigma(s),
             case_insensitive: ci,
         }),
-        SigmaValue::Integer(n) => Ok(IrMatcher::NumericEq(IrNumber::Literal(*n as f64))),
-        SigmaValue::Float(n) => Ok(IrMatcher::NumericEq(IrNumber::Literal(*n))),
+        SigmaValue::Integer(n) => Ok(IrMatcher::NumericEq(IrNumber::Literal((*n).into()))),
+        SigmaValue::Float(n) => Ok(IrMatcher::NumericEq(IrNumber::Literal((*n).into()))),
         // Keywords search text, so a YAML boolean is the word `true`/`false`.
         SigmaValue::Bool(b) => Ok(IrMatcher::Str {
             op: IrStrOp::Contains,

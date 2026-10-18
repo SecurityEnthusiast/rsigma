@@ -50,7 +50,7 @@ mod tests;
 use std::collections::HashMap;
 
 use rsigma_eval::pipeline::state::PipelineState;
-use rsigma_ir::{IrDetectionItem, IrMatcher, IrPattern, IrPatternPart, IrStrOp};
+use rsigma_ir::{IrDetectionItem, IrMatcher, IrPattern, IrPatternPart, IrStrOp, NumericLiteral};
 use rsigma_parser::*;
 
 use crate::backend::*;
@@ -615,15 +615,11 @@ impl Backend for FibratusBackend {
     fn convert_field_eq_num(
         &self,
         field: &str,
-        value: f64,
+        value: NumericLiteral,
         _state: &mut ConversionState,
     ) -> Result<String> {
         let f = self.escape_and_quote_field(field);
-        if value.fract() == 0.0 {
-            Ok(format!("{f} = {}", value as i64))
-        } else {
-            Ok(format!("{f} = {value}"))
-        }
+        Ok(format!("{f} = {value}"))
     }
 
     fn convert_field_eq_bool(
@@ -681,7 +677,7 @@ impl Backend for FibratusBackend {
         &self,
         field: &str,
         op: CompareOp,
-        value: f64,
+        value: NumericLiteral,
         _state: &mut ConversionState,
     ) -> Result<String> {
         let f = self.escape_and_quote_field(field);
@@ -698,11 +694,7 @@ impl Backend for FibratusBackend {
             .find(|(n, _)| *n == op_name)
             .map(|(_, t)| *t)
             .ok_or_else(|| ConvertError::UnsupportedModifier(op_name.into()))?;
-        let val_str = if value.fract() == 0.0 {
-            (value as i64).to_string()
-        } else {
-            value.to_string()
-        };
+        let val_str = value.to_string();
         Ok(format!("{f} {op_token} {val_str}"))
     }
 
@@ -771,7 +763,11 @@ impl Backend for FibratusBackend {
         Err(ConvertError::UnsupportedKeyword)
     }
 
-    fn convert_keyword_num(&self, _value: f64, _state: &mut ConversionState) -> Result<String> {
+    fn convert_keyword_num(
+        &self,
+        _value: NumericLiteral,
+        _state: &mut ConversionState,
+    ) -> Result<String> {
         Err(ConvertError::UnsupportedKeyword)
     }
 

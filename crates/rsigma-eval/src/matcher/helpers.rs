@@ -1,8 +1,10 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::net::IpAddr;
 
 use chrono::{Datelike, Timelike};
 use ipnet::IpNet;
+use rsigma_ir::NumericLiteral;
 
 use super::{ExpandPart, TimePart};
 use crate::event::{Event, EventValue};
@@ -49,21 +51,80 @@ fn match_str_value_ref(value: &EventValue, pred: &dyn Fn(&str) -> bool) -> bool 
     }
 }
 
-/// Try to extract a numeric value and apply a predicate.
-///
-/// Handles numeric values directly and tries to parse strings as numbers.
-pub(super) fn match_numeric_value(value: &EventValue, pred: impl Fn(f64) -> bool) -> bool {
-    match_numeric_value_ref(value, &pred)
+/// Comparison operator of a numeric matcher.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum NumericOp {
+    Eq,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
 }
 
-fn match_numeric_value_ref(value: &EventValue, pred: &dyn Fn(f64) -> bool) -> bool {
-    match value {
-        EventValue::Int(n) => pred(*n as f64),
-        EventValue::Float(f) => pred(*f),
-        EventValue::Str(s) => s.parse::<f64>().is_ok_and(pred),
-        EventValue::Array(arr) => arr.iter().any(|v| match_numeric_value_ref(v, pred)),
-        _ => false,
+impl NumericOp {
+    fn holds(self, ord: Ordering) -> bool {
+        match self {
+            Self::Eq => ord == Ordering::Equal,
+            Self::Gt => ord == Ordering::Greater,
+            Self::Gte => ord != Ordering::Less,
+            Self::Lt => ord == Ordering::Less,
+            Self::Lte => ord != Ordering::Greater,
+        }
     }
+
+    fn holds_f64(self, v: f64, n: f64) -> bool {
+        match self {
+            Self::Eq => (v - n).abs() < f64::EPSILON,
+            Self::Gt => v > n,
+            Self::Gte => v >= n,
+            Self::Lt => v < n,
+            Self::Lte => v <= n,
+        }
+    }
+}
+
+/// Compare a numeric value against a literal.
+///
+/// Handles numeric values directly and tries to parse strings as numbers. An
+/// integer literal compares exactly against integers and floats alike.
+pub(super) fn match_numeric_value(value: &EventValue, op: NumericOp, lit: NumericLiteral) -> bool {
+    let v = match value {
+        EventValue::Int(n) => NumericLiteral::Integer(*n),
+        EventValue::Float(f) => NumericLiteral::Float(*f),
+        EventValue::Str(s) => match NumericLiteral::parse(s) {
+            Some(v) => v,
+            None => return false,
+        },
+        EventValue::Array(arr) => return arr.iter().any(|v| match_numeric_value(v, op, lit)),
+        _ => return false,
+    };
+    match (v, lit) {
+        (_, NumericLiteral::Float(n)) => op.holds_f64(v.as_f64(), n),
+        (NumericLiteral::Integer(v), NumericLiteral::Integer(n)) => op.holds(v.cmp(&n)),
+        (NumericLiteral::Float(v), NumericLiteral::Integer(n)) => {
+            cmp_f64_i64(v, n).is_some_and(|ord| op.holds(ord))
+        }
+    }
+}
+
+/// Exact ordering of a float against an integer, `None` for NaN.
+fn cmp_f64_i64(f: f64, n: i64) -> Option<Ordering> {
+    // 2^63 is exact as an f64 and exceeds every i64.
+    const TWO_POW_63: f64 = 9_223_372_036_854_775_808.0;
+    if f.is_nan() {
+        return None;
+    }
+    if f >= TWO_POW_63 {
+        return Some(Ordering::Greater);
+    }
+    if f < -TWO_POW_63 {
+        return Some(Ordering::Less);
+    }
+    let floor = f.floor();
+    Some(match (floor as i64).cmp(&n) {
+        Ordering::Equal if f != floor => Ordering::Greater,
+        ord => ord,
+    })
 }
 
 /// Convert a [`SigmaString`](rsigma_parser::SigmaString) to a regex pattern string.
@@ -220,6 +281,37 @@ pub(super) fn match_cidr(value: &EventValue, net: &IpNet) -> bool {
 // =============================================================================
 // Property-based tests
 // =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn float_against_integer_ordering_is_exact() {
+        use Ordering::*;
+        // 2^53 + 1 rounds to 2^53 as an f64.
+        assert_eq!(
+            cmp_f64_i64(9007199254740992.0, 9007199254740993),
+            Some(Less)
+        );
+        assert_eq!(
+            cmp_f64_i64(9007199254740994.0, 9007199254740993),
+            Some(Greater)
+        );
+        assert_eq!(
+            cmp_f64_i64(9007199254740992.0, 9007199254740992),
+            Some(Equal)
+        );
+        assert_eq!(cmp_f64_i64(-1.5, -2), Some(Greater));
+        assert_eq!(cmp_f64_i64(-1.5, -1), Some(Less));
+        assert_eq!(cmp_f64_i64(2.5, 2), Some(Greater));
+        assert_eq!(cmp_f64_i64(i64::MAX as f64, i64::MAX), Some(Greater));
+        assert_eq!(cmp_f64_i64(i64::MIN as f64, i64::MIN), Some(Equal));
+        assert_eq!(cmp_f64_i64(f64::INFINITY, i64::MAX), Some(Greater));
+        assert_eq!(cmp_f64_i64(f64::NEG_INFINITY, i64::MIN), Some(Less));
+        assert_eq!(cmp_f64_i64(f64::NAN, 0), None);
+    }
+}
 
 #[cfg(test)]
 mod proptests {

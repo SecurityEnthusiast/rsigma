@@ -285,11 +285,66 @@ pub enum IrTimePart {
 /// Numeric literal or deferred source reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum IrNumber {
-    Literal(f64),
+    Literal(NumericLiteral),
     DynamicSourceRef {
         source_id: String,
         extract: Option<IrExtractExpr>,
     },
+}
+
+/// A numeric literal that keeps integers exact.
+///
+/// A rule integer stays an `i64` so values above 2^53, which an `f64` cannot
+/// represent, match, compare, and render exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum NumericLiteral {
+    Integer(i64),
+    Float(f64),
+}
+
+impl NumericLiteral {
+    /// Parse decimal text, preferring an exact integer.
+    pub fn parse(s: &str) -> Option<Self> {
+        s.parse::<i64>()
+            .map(Self::Integer)
+            .ok()
+            .or_else(|| s.parse::<f64>().ok().map(Self::Float))
+    }
+
+    /// The value as an `f64`, rounding integers above 2^53.
+    pub fn as_f64(self) -> f64 {
+        match self {
+            Self::Integer(n) => n as f64,
+            Self::Float(f) => f,
+        }
+    }
+}
+
+/// Decimal text without a fractional part for whole numbers.
+impl std::fmt::Display for NumericLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::Integer(n) => write!(f, "{n}"),
+            Self::Float(v)
+                if v.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&v) =>
+            {
+                write!(f, "{}", v as i64)
+            }
+            Self::Float(v) => write!(f, "{v}"),
+        }
+    }
+}
+
+impl From<i64> for NumericLiteral {
+    fn from(n: i64) -> Self {
+        Self::Integer(n)
+    }
+}
+
+impl From<f64> for NumericLiteral {
+    fn from(f: f64) -> Self {
+        Self::Float(f)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -355,4 +410,28 @@ pub struct IrFilter {
     pub logsource: Option<LogSource>,
     pub detections: HashMap<String, IrDetection>,
     pub conditions: Vec<IrCondition>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NumericLiteral;
+
+    #[test]
+    fn numeric_literal_keeps_integers_exact() {
+        assert_eq!(
+            NumericLiteral::parse("9007199254740993"),
+            Some(NumericLiteral::Integer(9007199254740993))
+        );
+        assert_eq!(
+            NumericLiteral::parse("1.5"),
+            Some(NumericLiteral::Float(1.5))
+        );
+        assert_eq!(NumericLiteral::parse("x"), None);
+        assert_eq!(
+            NumericLiteral::Integer(9007199254740993).to_string(),
+            "9007199254740993"
+        );
+        assert_eq!(NumericLiteral::Float(4688.0).to_string(), "4688");
+        assert_eq!(NumericLiteral::Float(1.5).to_string(), "1.5");
+    }
 }

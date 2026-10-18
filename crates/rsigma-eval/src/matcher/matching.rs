@@ -2,8 +2,8 @@ use regex::RegexSet;
 use rsigma_ir::IrStrOp;
 
 use super::helpers::{
-    ascii_lowercase_cow, expand_template, extract_timestamp_part, match_cidr, match_numeric_value,
-    match_str_value,
+    NumericOp, ascii_lowercase_cow, expand_template, extract_timestamp_part, match_cidr,
+    match_numeric_value, match_str_value,
 };
 use super::{CompiledMatcher, GroupMode};
 use crate::event::{Event, EventValue};
@@ -133,13 +133,11 @@ impl CompiledMatcher {
             CompiledMatcher::Cidr(net) => match_cidr(value, net),
 
             // -- Numeric --
-            CompiledMatcher::NumericEq(n) => {
-                match_numeric_value(value, |v| (v - n).abs() < f64::EPSILON)
-            }
-            CompiledMatcher::NumericGt(n) => match_numeric_value(value, |v| v > *n),
-            CompiledMatcher::NumericGte(n) => match_numeric_value(value, |v| v >= *n),
-            CompiledMatcher::NumericLt(n) => match_numeric_value(value, |v| v < *n),
-            CompiledMatcher::NumericLte(n) => match_numeric_value(value, |v| v <= *n),
+            CompiledMatcher::NumericEq(n) => match_numeric_value(value, NumericOp::Eq, *n),
+            CompiledMatcher::NumericGt(n) => match_numeric_value(value, NumericOp::Gt, *n),
+            CompiledMatcher::NumericGte(n) => match_numeric_value(value, NumericOp::Gte, *n),
+            CompiledMatcher::NumericLt(n) => match_numeric_value(value, NumericOp::Lt, *n),
+            CompiledMatcher::NumericLte(n) => match_numeric_value(value, NumericOp::Lte, *n),
 
             // -- Special --
             // A value is present even when it is null.
@@ -479,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_numeric() {
-        let m = CompiledMatcher::NumericGte(100.0);
+        let m = CompiledMatcher::NumericGte(100.into());
         let e = empty_event();
         let event = JsonEvent::borrow(&e);
         assert!(m.matches(&EventValue::Int(100), &event));
@@ -774,7 +772,7 @@ mod tests {
     fn test_timestamp_part_hour() {
         let m = CompiledMatcher::TimestampPart {
             part: TimePart::Hour,
-            inner: Box::new(CompiledMatcher::NumericEq(12.0)),
+            inner: Box::new(CompiledMatcher::NumericEq(12.into())),
         };
         let e = json!({});
         let event = JsonEvent::borrow(&e);
@@ -786,7 +784,7 @@ mod tests {
     fn test_timestamp_part_month() {
         let m = CompiledMatcher::TimestampPart {
             part: TimePart::Month,
-            inner: Box::new(CompiledMatcher::NumericEq(7.0)),
+            inner: Box::new(CompiledMatcher::NumericEq(7.into())),
         };
         let e = json!({});
         let event = JsonEvent::borrow(&e);
@@ -798,7 +796,7 @@ mod tests {
     fn test_timestamp_part_day() {
         let m = CompiledMatcher::TimestampPart {
             part: TimePart::Day,
-            inner: Box::new(CompiledMatcher::NumericEq(10.0)),
+            inner: Box::new(CompiledMatcher::NumericEq(10.into())),
         };
         let e = json!({});
         let event = JsonEvent::borrow(&e);
@@ -810,7 +808,7 @@ mod tests {
     fn test_timestamp_part_year() {
         let m = CompiledMatcher::TimestampPart {
             part: TimePart::Year,
-            inner: Box::new(CompiledMatcher::NumericEq(2024.0)),
+            inner: Box::new(CompiledMatcher::NumericEq(2024.into())),
         };
         let e = json!({});
         let event = JsonEvent::borrow(&e);
@@ -822,7 +820,7 @@ mod tests {
     fn test_timestamp_part_from_epoch() {
         let m = CompiledMatcher::TimestampPart {
             part: TimePart::Hour,
-            inner: Box::new(CompiledMatcher::NumericEq(12.0)),
+            inner: Box::new(CompiledMatcher::NumericEq(12.into())),
         };
         let e = json!({});
         let event = JsonEvent::borrow(&e);
