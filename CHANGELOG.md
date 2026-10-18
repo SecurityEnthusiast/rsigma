@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Hot-reload no longer rolls back correlation state
+### Hot-reload no longer rolls back correlation state (#604)
 
 A rule reload (`SIGHUP`, the file watcher, or `POST /api/v1/reload`) snapshotted correlation state before loading the new rules and imported that snapshot after, so every window update made by events processed during the load was lost and counts silently rewound on each reload under traffic. Rules still load without pausing processing, but the state is now exported from the live engine, imported, and swapped behind the batch-order lock. An ordered batch that was waiting on that lock during the swap now evaluates against the new engine instead of advancing the retired one. Fixes #579.
 
