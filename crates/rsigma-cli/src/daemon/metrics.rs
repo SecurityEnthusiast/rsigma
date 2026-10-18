@@ -26,6 +26,7 @@ pub struct Metrics {
     pub pipeline_latency: Histogram,
     pub batch_size_histogram: Histogram,
     pub dlq_events: IntCounter,
+    pub dlq_write_failures: IntCounter,
     pub sink_queue_depth: IntGaugeVec,
     pub sink_retries_total: IntCounterVec,
     pub sink_dropped_total: IntCounterVec,
@@ -240,6 +241,11 @@ impl Metrics {
             "Events routed to dead-letter queue",
         ))
         .unwrap();
+        let dlq_write_failures = IntCounter::with_opts(Opts::new(
+            "rsigma_dlq_write_failures_total",
+            "Dead-letter queue entries the DLQ sink failed to write",
+        ))
+        .unwrap();
         let sink_queue_depth = IntGaugeVec::new(
             Opts::new(
                 "rsigma_sink_queue_depth",
@@ -357,6 +363,9 @@ impl Metrics {
             .register(Box::new(batch_size_histogram.clone()))
             .unwrap();
         registry.register(Box::new(dlq_events.clone())).unwrap();
+        registry
+            .register(Box::new(dlq_write_failures.clone()))
+            .unwrap();
         registry
             .register(Box::new(sink_queue_depth.clone()))
             .unwrap();
@@ -1156,6 +1165,7 @@ impl Metrics {
             pipeline_latency,
             batch_size_histogram,
             dlq_events,
+            dlq_write_failures,
             sink_queue_depth,
             sink_retries_total,
             sink_dropped_total,

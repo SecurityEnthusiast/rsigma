@@ -4,6 +4,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::process::{Command as StdCommand, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use assert_cmd::Command;
@@ -101,6 +102,7 @@ impl Drop for ChildGuard {
 pub struct DaemonProcess {
     child: std::process::Child,
     api_addr: String,
+    stderr: Arc<Mutex<Vec<String>>>,
 }
 
 impl DaemonProcess {
@@ -147,7 +149,9 @@ impl DaemonProcess {
         }
 
         let stderr = guard.as_child_mut().stderr.take().unwrap();
+        let stderr_lines = Arc::new(Mutex::new(Vec::new()));
         let (tx, rx) = std::sync::mpsc::channel::<StartupEvent>();
+        let collected = stderr_lines.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(stderr).lines() {
                 let Ok(line) = line else { return };
@@ -159,6 +163,7 @@ impl DaemonProcess {
                 if line.contains("Sink started") {
                     let _ = tx.send(StartupEvent::SinkStarted);
                 }
+                collected.lock().unwrap().push(line);
             }
         });
 
@@ -196,6 +201,7 @@ impl DaemonProcess {
                 return Self {
                     child: guard.disarm(),
                     api_addr,
+                    stderr: stderr_lines,
                 };
             }
             if Instant::now() >= deadline {
@@ -270,6 +276,11 @@ impl DaemonProcess {
 
     pub fn api_addr(&self) -> &str {
         &self.api_addr
+    }
+
+    /// The daemon's stderr log lines read so far.
+    pub fn stderr_lines(&self) -> Vec<String> {
+        self.stderr.lock().unwrap().clone()
     }
 
     fn kill(&mut self) {

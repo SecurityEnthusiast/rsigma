@@ -12,7 +12,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{DaemonProcess, SIMPLE_RULE, http_post, poll_until, temp_file};
+use common::{DaemonProcess, SIMPLE_RULE, http_get, http_post, poll_until, temp_file};
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -419,5 +419,59 @@ fn webhook_does_not_block_file_sink_under_fanout() {
     assert!(
         landed.is_some(),
         "an unreachable webhook must not block the file sink behind it",
+    );
+}
+
+#[test]
+fn delivery_failures_without_dlq_log_one_rate_limited_warning() {
+    let cfg = WEBHOOK_RETRY_CFG
+        .replace("__URL__", "http://127.0.0.1:1")
+        .replace("attempts: 3", "attempts: 1")
+        .replace("backoff: 100ms", "backoff: 10ms");
+    let webhook = temp_file(".yml", &cfg);
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    let daemon = DaemonProcess::spawn_http_with_args(
+        rule.path().to_str().unwrap(),
+        &["--webhook", webhook.path().to_str().unwrap()],
+    );
+
+    for _ in 0..3 {
+        let (status, _) = http_post(&daemon.url("/api/v1/events"), MATCHING_EVENT);
+        assert_eq!(status, 200);
+    }
+
+    let metrics = poll_until(Duration::from_secs(10), || {
+        let (_, body) = http_get(&daemon.url("/metrics"));
+        body.contains(r#"rsigma_sink_delivery_failures_total{sink="slack"} 3"#)
+            .then_some(body)
+    })
+    .expect("all three deliveries should fail");
+    assert!(
+        metrics.contains("rsigma_dlq_write_failures_total 0"),
+        "nothing reaches a DLQ sink when none is configured: {metrics}"
+    );
+
+    let warnings: Vec<String> = poll_until(Duration::from_secs(5), || {
+        let lines: Vec<String> = daemon
+            .stderr_lines()
+            .into_iter()
+            .filter(|l| l.contains("no DLQ sink is configured"))
+            .collect();
+        (!lines.is_empty()).then_some(lines)
+    })
+    .expect("a dropped delivery failure must be logged without --dlq");
+    assert_eq!(
+        warnings.len(),
+        1,
+        "later drops within the interval fold into the next warning: {warnings:?}"
+    );
+    let warning: serde_json::Value = serde_json::from_str(&warnings[0]).unwrap();
+    assert_eq!(warning["level"], "WARN");
+    assert_eq!(warning["fields"]["dropped"], 1);
+    assert!(
+        warning["fields"]["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("sink delivery failure")),
+        "{warning}"
     );
 }
