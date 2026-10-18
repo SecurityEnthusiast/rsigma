@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Event values are escaped in enricher and webhook URLs and enricher bodies (security)
+### Event values are escaped in enricher and webhook URLs and enricher bodies (security, #599)
 
 The `http` enricher substituted `${detection.*}` and `${correlation.*}` values into its request URL and body as raw text, and webhook sinks did the same for their URLs. A crafted event field could add keys to a JSON enricher body or reach other paths and query parameters on the configured host ([GHSA-3fh4-8r8j-8xw3](https://github.com/timescale/rsigma/security/advisories/GHSA-3fh4-8r8j-8xw3)).
 
