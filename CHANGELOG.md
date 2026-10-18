@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Daemon state saves are one consistent, atomic cut
+
+With `--state-db`, the periodic and shutdown saves exported the correlation snapshot before reading the NATS source position, then wrote the correlation, alert-pipeline, risk, and disposition snapshots as four separate statements with awaits in between. An event acked between the export and the position read was claimed by the position but missing from the snapshot, so a replay from that position skipped its correlation state, and a crash between the writes paired snapshots from different moments. The daemon now reads the position first, captures every snapshot back to back, and writes them in one SQLite transaction, so a failed save leaves the previous one intact. The ack task publishes the position with release ordering to match. Each save also serializes the correlation snapshot once instead of twice. Fixes #580.
+
 ### Restore and alert-pipeline reload enforce the dedup and incident caps (#605)
 
 Restoring from `--state-db` kept every dedup alert and incident still inside its `resolve_timeout`, and an alert-pipeline hot-reload swapped in new caps without touching the carried-over stores, so after an operator lowered `dedup.max_active_alerts` or `group.caps.max_open_incidents` the stores stayed above the bound until entries aged out. Both now evict the least recently seen alerts and incidents down to the cap, without a `resolved` record, and cut each incident to `max_results_per_incident` and `max_entities_per_incident`, logging the eviction counts. The daemon trims and swaps the reloaded pipeline under the alert-state lock, and the sink task re-reads the pipeline after taking that lock, so no batch refills the stores under the old caps. In `rsigma-runtime`, `AlertPipeline::enforce_caps` applies the trim and returns a `CapTrim`. Fixes #590.
