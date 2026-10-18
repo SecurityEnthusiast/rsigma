@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Engines no longer retain rule HIR by default, and source references share one grammar
+### Engines no longer retain rule HIR by default, and source references share one grammar (#620)
 
 `Engine` kept every loaded rule's lowered HIR beside its compiled form, only so `save_hir` could write a restart cache, which nothing in the CLI, daemon, MCP server, or LSP calls. Retention is now opt-in through `Engine::set_retain_hir(true)`, which must be on before rules are loaded; loading the 3,132 SigmaHQ rules with `engine eval` peaks about 12 to 16 MB (roughly 6%) lower without it. This changes library behavior: `save_hir` now returns `EvalError::HirCache` unless retention was on for every rule loaded from parsed Sigma, rather than writing a cache that silently misses rules.
 
