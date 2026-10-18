@@ -31,7 +31,7 @@ rsigma engine eval -r path/to/rules/ -e @events.ndjson --output-format csv
 cat events.ndjson | rsigma engine classify --output-format table
 
 # Long-running daemon with hot-reload, health checks, and Prometheus metrics
-hel run | rsigma engine daemon -r rules/ -p ecs_windows --api-addr 0.0.0.0:9090
+hel run | rsigma engine daemon -r rules/ -p ecs_windows --api-addr 127.0.0.1:9090
 
 # With a builtin pipeline (no external file needed)
 rsigma engine eval -r rules/ -p ecs_windows -e '{"process.command_line": "whoami"}'
@@ -268,6 +268,8 @@ Unlike `engine eval`, the daemon stays alive after stdin reaches EOF and support
 | `--pretty` | flag | `false` | Pretty-print JSON output |
 | `--api-addr` | string | `0.0.0.0:9090` | Address for health, metrics, and management API server |
 | `--api-token-env` | string | none | Require bearer-token auth on the API; the named environment variable holds the single accepted token (full admin permissions). For per-token roles and granular `resource:action` permissions use the `daemon.api.auth` config block instead (mutually exclusive). `GET /healthz` and `GET /readyz` stay open. |
+| `--allow-plaintext` | flag | `false` | Permit plaintext on a non-loopback `--api-addr`. Loopback and `unix://` always allow plaintext. |
+| `--allow-unauthenticated` | flag | `false` | Permit an unauthenticated API on a non-loopback `--api-addr`. Without it, a public bind needs bearer tokens or `--tls-client-ca`. |
 | `--suppress` | string | none | Suppression window for correlation alerts (e.g. `5m`, `1h`) |
 | `--action` | string | none | `alert` or `reset`, the action taken after correlation fires |
 | `--emit-detections` | flag | `false` | Emit detection and correlation matches that only feed correlations |
@@ -321,9 +323,8 @@ Unlike `engine eval`, the daemon stays alive after stdin reaches EOF and support
 | `--tls-key-password` | string | none | Password for an encrypted `--tls-key` (env: `RSIGMA_TLS_KEY_PASSWORD`). Currently rejected with a clear hint pointing at `openssl rsa` for offline decryption. |
 | `--tls-client-ca` | path | none | PEM bundle of trusted CAs for inbound client certificate verification (mTLS). |
 | `--tls-min-version` | string | `"1.3"` | Minimum TLS protocol version: `1.2` or `1.3`. |
-| `--allow-plaintext` | flag | `false` | Permit plaintext on a non-loopback `--api-addr`. Loopback always allows plaintext. |
 
-When the `daemon-tls` feature is built in, the daemon refuses to start on a non-loopback `--api-addr` without `--tls-cert`/`--tls-key` or an explicit `--allow-plaintext` opt-in. With TLS configured, the same socket serves HTTP REST, `/metrics`, OTLP/HTTP, and OTLP/gRPC over a single TLS connection via ALPN (advertises both `h2` and `http/1.1`). Crypto provider is `aws-lc-rs`, matching the NATS client TLS path. Certificate hot-reload is cross-platform: any of the hot-reload triggers below re-reads the cert/key from disk and atomically swaps the active `rustls::ServerConfig` via `Arc<ArcSwap<…>>` without dropping inflight TLS connections.
+Every build refuses to start on a non-loopback TCP `--api-addr` without `--tls-cert`/`--tls-key` or an explicit `--allow-plaintext`, and without authentication (bearer tokens or `--tls-client-ca`) or an explicit `--allow-unauthenticated`. With TLS configured, the same socket serves HTTP REST, `/metrics`, OTLP/HTTP, and OTLP/gRPC over a single TLS connection via ALPN (advertises both `h2` and `http/1.1`). Crypto provider is `aws-lc-rs`, matching the NATS client TLS path. Certificate hot-reload is cross-platform: any of the hot-reload triggers below re-reads the cert/key from disk and atomically swaps the active `rustls::ServerConfig` via `Arc<ArcSwap<…>>` without dropping inflight TLS connections.
 
 \* Feature-gated: `logfmt` requires the `logfmt` feature, `cef` requires the `cef` feature.
 
@@ -369,10 +370,11 @@ rsigma engine daemon -r rules/ --input nats://localhost:4222/events.> --replay-f
 # Consumer groups for horizontal scaling
 rsigma engine daemon -r rules/ --input nats://localhost:4222/events.> --consumer-group detection-workers
 
-# Terminate TLS in-process (requires the daemon-tls feature)
-rsigma engine daemon -r rules/ --input http --api-addr 0.0.0.0:9090 \
+# Terminate TLS in-process (requires the daemon-tls feature); a public bind also needs authentication
+RSIGMA_API_TOKEN=... rsigma engine daemon -r rules/ --input http --api-addr 0.0.0.0:9090 \
   --tls-cert /etc/rsigma/tls/server.crt \
-  --tls-key  /etc/rsigma/tls/server.key
+  --tls-key  /etc/rsigma/tls/server.key \
+  --api-token-env RSIGMA_API_TOKEN
 
 # Mutual TLS: every agent must present a CA-signed client cert
 rsigma engine daemon -r rules/ --input http --api-addr 0.0.0.0:9090 \
@@ -403,7 +405,7 @@ rsigma engine daemon \
   --jq '.event' \
   --suppress 5m \
   --action reset \
-  --api-addr 0.0.0.0:9090 \
+  --api-addr 127.0.0.1:9090 \
   --state-db /var/lib/rsigma/state.db
 ```
 

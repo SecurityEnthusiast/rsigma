@@ -48,6 +48,8 @@ daemon:
   # risk: /etc/rsigma/risk.yml                       # risk-based alerting (see the Risk-Based Alerting guide)
   api:
     addr: "0.0.0.0:9090"   # TCP host:port, or unix:///run/rsigma/api.sock (Unix; no TLS)
+                           # non-loopback TCP needs TLS (or tls.allow_plaintext) and auth, tls.client_ca, or allow_unauthenticated
+    # allow_unauthenticated: false
   input:
     source: stdin          # stdin | http | nats://... | unix:///run/rsigma/ingest.sock (Unix)
     format: auto

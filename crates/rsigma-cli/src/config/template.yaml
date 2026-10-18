@@ -35,9 +35,16 @@ daemon:
   # risk: /etc/rsigma/risk.yml
 
   api:
-    # Bind address for health, metrics, and the HTTP/OTLP API.
+    # Bind address for health, metrics, and the HTTP/OTLP API. A non-loopback
+    # TCP address refuses to start without TLS (or tls.allow_plaintext) and
+    # without authentication (an auth block, tls.client_ca, or
+    # allow_unauthenticated). Loopback and unix:// addresses are exempt.
     addr: "0.0.0.0:9090"
-    # TLS settings (ignored unless built with the daemon-tls feature).
+    # Serve an unauthenticated API on a non-loopback address. Use only behind
+    # an authenticating proxy or network policy.
+    # allow_unauthenticated: false
+    # TLS settings (ignored unless built with the daemon-tls feature, except
+    # allow_plaintext, which applies to every build).
     # tls:
     #   cert: /etc/rsigma/tls/cert.pem
     #   key: /etc/rsigma/tls/key.pem
@@ -45,7 +52,8 @@ daemon:
     #   min_version: "1.3"
     #   allow_plaintext: false
     # Bearer-token authentication with resource:action permissions. Absent =
-    # no authentication (all routes open). Token secrets never live in YAML:
+    # no authentication (all routes open; refused on a non-loopback address
+    # unless allow_unauthenticated is set). Token secrets never live in YAML:
     # token_env names an environment variable resolved at startup. Built-in
     # roles: reader (*:read), operator (*:read + control-plane writes except
     # reload), ingest (events:ingest), admin (*). GET /healthz and

@@ -28,8 +28,10 @@ cargo install --locked rsigma --features daemon-otlp
 With the feature compiled in, the OTLP endpoints are always active, regardless of `--input`. You can pair OTLP ingestion with another primary source (`--input nats://...` or `--input http`) on the same daemon. OTLP logs and the primary source feed into the same engine.
 
 ```bash
-rsigma engine daemon -r rules/ --input http --api-addr 0.0.0.0:9090
+rsigma engine daemon -r rules/ --input http --api-addr 127.0.0.1:9090
 ```
+
+Agents on other hosts need a routable `--api-addr`, which requires TLS (or `--allow-plaintext`) and authentication: a bearer token with `events:ingest`, client certificates, or `--allow-unauthenticated`. {{ added "unreleased" }} See [Daemon network exposure](../reference/security.md#daemon-network-exposure).
 
 ## Endpoints
 
@@ -214,10 +216,11 @@ Build the daemon with the `daemon-tls` feature and pass `--tls-cert`/`--tls-key`
 rsigma engine daemon -r rules/ \
     --api-addr 0.0.0.0:9090 \
     --tls-cert /etc/rsigma/tls/server.crt \
-    --tls-key  /etc/rsigma/tls/server.key
+    --tls-key  /etc/rsigma/tls/server.key \
+    --tls-client-ca /etc/rsigma/tls/agents-ca.crt
 ```
 
-For agent-to-daemon pinning, add `--tls-client-ca` and require every agent to present a CA-signed client cert. See [TLS termination](../reference/security.md#tls-termination-for-the-api-listener) for the full reference, including SIGHUP-triggered hot-reload of the certificate.
+`--tls-client-ca` requires every agent to present a CA-signed client cert, which also authenticates them, so a public bind needs no bearer token. Without it, configure a token with `events:ingest` and set it in each agent's exporter `headers`. See [TLS termination](../reference/security.md#tls-termination-for-the-api-listener) for the full reference, including SIGHUP-triggered hot-reload of the certificate.
 
 When `daemon-tls` is not compiled in (or the operator prefers an external TLS terminator), put a reverse proxy in front of the daemon: Caddy, nginx, Envoy, and Traefik all work. The proxy speaks TLS outbound and forwards HTTP/2 + HTTP/1.1 to the daemon's plain socket on a private network.
 

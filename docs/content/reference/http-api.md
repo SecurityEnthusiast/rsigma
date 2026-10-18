@@ -41,7 +41,7 @@ All bodies are JSON unless otherwise noted. All responses include a `Content-Typ
 | `/v1/logs` | POST | `events:ingest` | OTLP/HTTP log ingestion (`application/x-protobuf` or `application/json`, optionally gzip-encoded). Requires `daemon-otlp`. |
 | OTLP/gRPC `LogsService/Export` | gRPC | `events:ingest` | OTLP over gRPC on the same `--api-addr`. Requires `daemon-otlp`. |
 
-The Permission column applies only when authentication is enabled; by default the daemon runs without authentication and every route is open. In-process TLS termination is available via the optional `daemon-tls` build feature: pass `--tls-cert` / `--tls-key` to terminate TLS for the HTTP REST, OTLP/HTTP, and OTLP/gRPC surfaces on the same `--api-addr`, and `--tls-client-ca` to require mTLS. See [TLS termination for the API listener](security.md#tls-termination-for-the-api-listener) for the full flag set.
+The Permission column applies only when authentication is enabled; without it every route is open, which the daemon accepts only on loopback, a `unix://` socket, a listener that requires client certificates, or with `--allow-unauthenticated`. In-process TLS termination is available via the optional `daemon-tls` build feature: pass `--tls-cert` / `--tls-key` to terminate TLS for the HTTP REST, OTLP/HTTP, and OTLP/gRPC surfaces on the same `--api-addr`, and `--tls-client-ca` to require mTLS. See [TLS termination for the API listener](security.md#tls-termination-for-the-api-listener) for the full flag set.
 
 Endpoint details are split across three pages:
 
@@ -51,7 +51,7 @@ Endpoint details are split across three pages:
 
 ## Authentication
 
-Bearer-token authentication is opt-in and off by default, so loopback and trusted-network deployments are untouched. Enable it either with the `--api-token-env <ENV_VAR>` flag (a single token with full `admin` permissions, read from the named environment variable) or with the `daemon.api.auth` config block for per-token roles:
+Bearer-token authentication is off by default, so loopback and `unix://` deployments are untouched. {{ added "unreleased" }} A non-loopback TCP `--api-addr` refuses to start without it unless the listener requires client certificates (`--tls-client-ca`) or `--allow-unauthenticated` is passed (see [Daemon network exposure](security.md#daemon-network-exposure)). Enable it either with the `--api-token-env <ENV_VAR>` flag (a single token with full `admin` permissions, read from the named environment variable) or with the `daemon.api.auth` config block for per-token roles:
 
 ```yaml
 daemon:

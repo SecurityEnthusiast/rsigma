@@ -76,15 +76,21 @@ docker run --rm \
     --cap-drop=ALL \
     --security-opt=no-new-privileges:true \
     --tmpfs /tmp:rw,size=64m,mode=1777 \
+    -e RSIGMA_API_TOKEN \
     -v "$PWD/rules:/rules:ro" \
     -v "$PWD/pipelines:/pipelines:ro" \
     -p 9090:9090 \
     ghcr.io/timescale/rsigma:latest \
     engine daemon -r /rules/ -p /pipelines/ecs.yml --input http \
-    --api-addr 0.0.0.0:9090 --allow-plaintext
+    --api-addr 0.0.0.0:9090 --allow-plaintext \
+    --api-token-env RSIGMA_API_TOKEN
 ```
 
 Inside a container the API has to bind a non-loopback address to be reachable through the published port, and the daemon refuses a plaintext non-loopback bind unless you pass `--tls-cert`/`--tls-key` or `--allow-plaintext`. The examples on this page use `--allow-plaintext` and publish the port on the host's loopback or behind a TLS-terminating proxy; see [TLS termination](../reference/security.md#tls-termination-for-the-api-listener) to serve TLS from the daemon itself.
+
+{{ added "unreleased" }}
+
+A non-loopback bind also needs authentication, so the examples pass `--api-token-env RSIGMA_API_TOKEN` and forward the secret from the host with `-e RSIGMA_API_TOKEN` (generate one with `openssl rand -hex 32`). Clients send it as `Authorization: Bearer <token>`; `GET /healthz` and `GET /readyz` stay open for probes. Use the `daemon.api.auth` config block for per-client roles, `--tls-client-ca` for certificate-based authentication, or `--allow-unauthenticated` only when an authenticating proxy fronts the container. See [Daemon API authentication](../reference/security.md#daemon-api-authentication).
 
 | Flag | Why |
 |------|-----|
@@ -101,6 +107,7 @@ docker run --rm \
     --read-only \
     --cap-drop=ALL \
     --security-opt=no-new-privileges:true \
+    -e RSIGMA_API_TOKEN \
     -v "$PWD/rules:/rules:ro" \
     -v "$PWD/state:/state:rw" \
     -p 9090:9090 \
@@ -108,7 +115,8 @@ docker run --rm \
     engine daemon -r /rules/ \
     --input http \
     --state-db /state/correlation.db \
-    --api-addr 0.0.0.0:9090 --allow-plaintext
+    --api-addr 0.0.0.0:9090 --allow-plaintext \
+    --api-token-env RSIGMA_API_TOKEN
 ```
 
 On Linux hosts, the bind-mounted `$PWD/state` directory must be writable by uid `65534` (`nobody`). Either `chown -R 65534:65534 ./state` before starting, or use a Docker-managed volume (`-v rsigma-state:/state`) which Docker creates with the correct ownership.
@@ -141,6 +149,10 @@ services:
       - --api-addr
       - 0.0.0.0:9090
       - --allow-plaintext
+      - --api-token-env
+      - RSIGMA_API_TOKEN
+    environment:
+      RSIGMA_API_TOKEN: ${RSIGMA_API_TOKEN:?set RSIGMA_API_TOKEN to the API bearer token}
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
@@ -171,12 +183,14 @@ Both feature paths require nothing extra at the image level (the published image
 ```bash
 docker run --rm \
     -e NATS_CREDS=/etc/rsigma/nats.creds \
+    -e RSIGMA_API_TOKEN \
     -v "$PWD/rules:/rules:ro" \
     -v "$PWD/nats.creds:/etc/rsigma/nats.creds:ro" \
     ghcr.io/timescale/rsigma:{{ rsigma.version }} \
     engine daemon -r /rules/ \
     --input "nats://nats.internal:4222/events.>" \
-    --api-addr 0.0.0.0:9090 --allow-plaintext
+    --api-addr 0.0.0.0:9090 --allow-plaintext \
+    --api-token-env RSIGMA_API_TOKEN
 ```
 
 For OTLP, expose port 9090 (HTTP/REST + OTLP/HTTP + gRPC all share one listener) and point upstream agents at `http://<host>:9090/v1/logs`. See [OTLP Integration](../guide/otlp-integration.md) for agent-side recipes.

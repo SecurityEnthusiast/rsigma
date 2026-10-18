@@ -221,7 +221,7 @@ rsigma engine daemon \
     --batch-size 64 \
     --drain-timeout 30 \
     --nats-require-tls \
-    --api-addr 0.0.0.0:9090
+    --api-addr 127.0.0.1:9090
 ```
 
 ## See also

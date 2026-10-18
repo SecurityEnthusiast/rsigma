@@ -96,7 +96,7 @@ For continuous detection, start the daemon with HTTP input. Detections go to std
 rsigma engine daemon -r rules/ --input http --api-addr 127.0.0.1:9090 &
 ```
 
-Loopback binds keep plaintext for local development. Non-loopback binds require TLS (or `--allow-plaintext`); see [TLS termination](../reference/security.md#tls-termination-for-the-api-listener).
+Loopback binds keep plaintext and need no token for local development. Non-loopback binds require TLS (or `--allow-plaintext`) and authentication (or `--allow-unauthenticated`); see [Daemon network exposure](../reference/security.md#daemon-network-exposure).
 
 In another terminal, send an event:
 

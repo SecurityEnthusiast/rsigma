@@ -27,14 +27,26 @@ The [prebuilt binaries](installation.md#prebuilt-binaries) and the Docker image 
 ## The daemon refuses to start
 
 ```text
-refusing to bind plaintext on non-loopback address 0.0.0.0:9090; pass --tls-cert/--tls-key to enable TLS or --allow-plaintext to opt out (e.g. when terminating TLS at a sidecar reverse proxy)
+refusing to bind plaintext on non-loopback address 0.0.0.0:9090; pass --tls-cert/--tls-key to enable TLS, or pass --allow-plaintext to opt out (e.g. when terminating TLS at a sidecar reverse proxy)
 ```
 
-The API listens on `0.0.0.0:9090` by default, and builds with the `daemon-tls` feature (including the prebuilt binaries and the image) refuse plaintext on any non-loopback address. Pick one:
+The API listens on `0.0.0.0:9090` by default, and every build refuses plaintext on a non-loopback address. {{ added "unreleased" }} Pick one:
 
 - Local use: `--api-addr 127.0.0.1:9090`. Loopback always allows plaintext.
-- Serve TLS: `--tls-cert` and `--tls-key`. See [TLS termination](../reference/security.md#tls-termination-for-the-api-listener).
+- Serve TLS: `--tls-cert` and `--tls-key` (prebuilt binaries and the image; `cargo install` needs `--features daemon-tls`). See [TLS termination](../reference/security.md#tls-termination-for-the-api-listener).
 - TLS is handled elsewhere (a reverse proxy, a service mesh, a private network): `--allow-plaintext`.
+
+```text
+refusing to serve the API without authentication on non-loopback address 0.0.0.0:9090; configure bearer tokens (daemon.api.auth or --api-token-env), require client certificates with --tls-client-ca, or pass --allow-unauthenticated to opt out (e.g. when an authenticating proxy fronts the daemon)
+```
+
+{{ added "unreleased" }}
+
+A non-loopback bind also needs authentication. Pick one:
+
+- A bearer token: `--api-token-env RSIGMA_API_TOKEN` with the secret in that variable, or the `daemon.api.auth` block for per-token roles. See [HTTP API: Authentication](../reference/http-api.md#authentication).
+- Client certificates: `--tls-client-ca`, so only agents with a CA-signed certificate can connect.
+- Authentication is handled elsewhere (an authenticating proxy, a network policy that admits only trusted callers): `--allow-unauthenticated`. The daemon logs a warning at startup.
 
 Other startup failures exit with code `2` (the initial rules could not be loaded) or `3` (a configuration error, such as a missing rules path, a bad pipeline, an invalid input URL, or a TLS or auth misconfiguration). The last line on stderr names the problem. See [exit codes](../cli/engine/daemon.md#exit-codes).
 

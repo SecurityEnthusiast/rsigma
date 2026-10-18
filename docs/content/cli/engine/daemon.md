@@ -93,12 +93,14 @@ The webhooks file (also settable as the `daemon.output.webhooks` path list) decl
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--api-addr <ADDR>` | `0.0.0.0:9090` | Bind address for `/healthz`, `/readyz`, `/metrics`, `/api/v1/*`, and (with the `daemon-otlp` feature) `/v1/logs`. A TCP `host:port`, or on Unix `unix:///path/to.sock` for a permission-gated local socket. A `unix://` address cannot be combined with TLS (the socket file is the trust boundary) and is exempt from the plaintext-bind refusal. |
+| `--api-addr <ADDR>` | `0.0.0.0:9090` | Bind address for `/healthz`, `/readyz`, `/metrics`, `/api/v1/*`, and (with the `daemon-otlp` feature) `/v1/logs`. A TCP `host:port`, or on Unix `unix:///path/to.sock` for a permission-gated local socket. A `unix://` address cannot be combined with TLS (the socket file is the trust boundary) and is exempt from the plaintext and unauthenticated bind refusals. |
+| `--allow-plaintext` | off | Permit plaintext on a non-loopback TCP `--api-addr`. Without this flag (and without `--tls-cert`/`--tls-key`) the daemon refuses to start on any public address, in every build. {{ added "unreleased" }} Loopback (`127.0.0.0/8`, `::1`) always allows plaintext for local development. Config-file equivalent: `daemon.api.tls.allow_plaintext`. |
+| `--allow-unauthenticated` {{ added "unreleased" }} | off | Permit an unauthenticated API on a non-loopback TCP `--api-addr`. Without this flag the daemon refuses to start on a public address unless bearer tokens (`--api-token-env` or `daemon.api.auth`) or client certificates (`--tls-client-ca`) authenticate callers. Use it only when an authenticating proxy or network policy fronts the daemon; a startup warning is logged. Config-file equivalent: `daemon.api.allow_unauthenticated`. |
 | `--api-token-env <ENV_VAR>` | unset | Require bearer-token authentication on the API, with the named environment variable holding the single accepted token (full `admin` permissions). The flag names the variable, so the secret never appears on the command line; an unset or empty variable fails startup. `GET /healthz` and `GET /readyz` stay open. Mutually exclusive with the `daemon.api.auth` config block, which adds per-token roles and granular `resource:action` permissions; see [HTTP API: Authentication](../../reference/http-api.md#authentication). |
 
 ### Authentication
 
-Off by default: without `--api-token-env` or a `daemon.api.auth` config block, every route is open and network position (TLS/mTLS, reverse proxy, loopback, or a `unix://` socket) is the only guard.
+Off by default: without `--api-token-env` or a `daemon.api.auth` config block, every route is open. {{ added "unreleased" }} The daemon accepts that only on loopback, on a `unix://` socket, on a listener that requires client certificates (`--tls-client-ca`), or with `--allow-unauthenticated`; any other non-loopback bind refuses to start.
 
 For anything beyond the single admin token, configure the `daemon.api.auth` block (config-file-only, like the tap and tail tuning keys): named roles as `resource:action` permission lists, per-token role assignment with env-resolved secrets, and `anonymous_permissions` for requests without a token (for example `["metrics:read"]` keeps Prometheus scraping token-free). Built-in roles: `reader`, `operator`, `ingest`, `admin`. The per-route permission table, role definitions, and failure semantics (401 vs 403, the `rsigma_api_auth_failures_total` counter) are documented in [HTTP API: Authentication](../../reference/http-api.md#authentication); the threat-model discussion is in [Security: Daemon API authentication](../../reference/security.md#daemon-api-authentication).
 
@@ -133,9 +135,8 @@ When TLS is configured, the daemon terminates TLS in-process for every protocol 
 | `--tls-cert <PATH>` | unset | unset | PEM-encoded leaf certificate (with any intermediates) for the API listener. Requires `--tls-key`. |
 | `--tls-key <PATH>` | unset | unset | PEM-encoded private key. PKCS#8, PKCS#1 (RSA), and SEC1 (EC) formats are accepted. Requires `--tls-cert`. |
 | `--tls-key-password <PASS>` | `RSIGMA_TLS_KEY_PASSWORD` | unset | Password for an encrypted `--tls-key`. Currently rejected at startup with a clear error; decrypt with `openssl rsa -in key.pem -out key-decrypted.pem` first. |
-| `--tls-client-ca <PATH>` | unset | unset | PEM bundle of trusted CA certificates used to verify inbound client certificates. Enables mutual TLS: clients without a cert signed by one of the listed CAs are rejected during the handshake. |
+| `--tls-client-ca <PATH>` | unset | unset | PEM bundle of trusted CA certificates used to verify inbound client certificates. Enables mutual TLS: clients without a cert signed by one of the listed CAs are rejected during the handshake. Mutual TLS counts as authentication, so a public bind with it needs no bearer tokens. |
 | `--tls-min-version <1.2\|1.3>` | unset | `1.3` | Minimum TLS protocol version. Drop to `1.2` only for legacy agents that cannot negotiate TLS 1.3. |
-| `--allow-plaintext` | unset | off | Permit plaintext on a non-loopback `--api-addr`. Without this flag (and without `--tls-cert`/`--tls-key`) the daemon refuses to start on any public address. Loopback (`127.0.0.0/8`, `::1`) always allows plaintext for local development. |
 
 Hot-reload: every reload trigger funnels through the daemon's central debounced reload task, so a single `POST /api/v1/reload` (cross-platform, including Windows), `kill -HUP <pid>` (Unix), or a YAML file change picked up by the file watcher rotates rules, pipelines, enrichers, and the TLS certificate in one pass. The active `rustls::ServerConfig` is swapped atomically via `Arc<ArcSwap<…>>`, so new handshakes pick up the rotated material without dropping inflight TLS connections. Failed reloads keep the previous certificate active, bump `rsigma_reloads_failed_total`, and log an error so a typo in the cert path cannot black-hole the listener.
 
@@ -351,7 +352,7 @@ rsigma engine daemon -r /etc/rsigma/rules/ \
     --batch-size 128 \
     --drain-timeout 30 \
     --nats-require-tls \
-    --api-addr 0.0.0.0:9090
+    --api-addr 127.0.0.1:9090
 ```
 
 ### Multi-output fan-out

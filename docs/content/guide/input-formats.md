@@ -170,7 +170,7 @@ EVTX is only supported through the `@file` syntax. There is no `--input-format e
 OpenTelemetry Protocol log ingestion is wired into the daemon's API server, not the `--input` flag. Agents POST to `/v1/logs` over HTTP (protobuf or JSON, optionally gzipped) or call the gRPC `LogsService/Export` on the same port.
 
 ```bash
-rsigma engine daemon -r rules/ --input http --api-addr 0.0.0.0:9090
+rsigma engine daemon -r rules/ --input http --api-addr 127.0.0.1:9090
 ```
 
 When the daemon is built with `daemon-otlp`, the OTLP endpoints are always active regardless of `--input`. You can pair OTLP ingestion with NATS or stdin input on the same daemon.
