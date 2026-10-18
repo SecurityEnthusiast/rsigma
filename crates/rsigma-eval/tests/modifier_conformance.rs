@@ -437,3 +437,31 @@ fn duplicate_modifiers_are_rejected() {
         assert!(error.contains("more than once"), "{key}: {error}");
     }
 }
+
+#[test]
+fn two_regexes_with_partial_case_insensitivity_match_the_original_text() {
+    let events = [json!({"CommandLine": "FOOBAR"})];
+    // `i` scoped to `foo`: `BAR` must still match case-sensitively.
+    assert_eq!(
+        matching(
+            "selection:\n  CommandLine|re: ['(?i:foo)BAR', '(?i)baz']",
+            &events
+        ),
+        [0]
+    );
+    assert!(
+        matching(
+            "selection:\n  CommandLine|re: ['(?i:foo)bar', '(?i)baz']",
+            &events
+        )
+        .is_empty()
+    );
+    // `|re|i` prepends `(?i)`, and the pattern clears it again before `BAR`.
+    assert_eq!(
+        matching(
+            "selection:\n  CommandLine|re|i: ['foo(?-i)BAR', 'baz']",
+            &events
+        ),
+        [0]
+    );
+}
