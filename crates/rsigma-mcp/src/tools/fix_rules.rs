@@ -26,7 +26,8 @@ pub struct FixInput {
     /// means apply every available safe fix.
     #[serde(default)]
     pub lint_rules: Vec<String>,
-    /// Persist the fixed YAML back to disk. Only valid with a `path` input.
+    /// Persist the fixed YAML back to disk. Only valid with a `path` input,
+    /// and only when the server has a rules root (`--rules-dir`).
     #[serde(default)]
     pub write: bool,
 }
@@ -35,7 +36,7 @@ pub struct FixInput {
 impl RsigmaMcp {
     /// Apply safe auto-fixes to Sigma rules.
     #[tool(
-        description = "Apply safe auto-fixes (lowercase keys, status/level typos, duplicate removal, ...) to Sigma YAML, preserving comments and formatting. Returns the fixed YAML and applied/failed/skipped-unsafe counts. Unsafe fixes are never auto-applied. With `write: true` (only valid with a file `path`) the change is persisted to disk. Optional `lint_rules` restricts which lint rules are fixed."
+        description = "Apply safe auto-fixes (lowercase keys, status/level typos, duplicate removal, ...) to Sigma YAML, preserving comments and formatting. Returns the fixed YAML and applied/failed/skipped-unsafe counts. Unsafe fixes are never auto-applied. With `write: true` (only valid with a file `path`, and only when the server runs with --rules-dir) the change is persisted to disk. Optional `lint_rules` restricts which lint rules are fixed."
     )]
     async fn fix_rules(
         &self,
@@ -48,6 +49,11 @@ impl RsigmaMcp {
         if input.write && input.path.is_none() {
             return Err(invalid(
                 "`write: true` is only valid with a file `path` input",
+            ));
+        }
+        if input.write && self.root().is_none() {
+            return Err(invalid(
+                "`write: true` requires the server to be started with --rules-dir",
             ));
         }
         let (source, label) = self.load_source(input.yaml.as_deref(), input.path.as_deref())?;
@@ -108,6 +114,7 @@ impl RsigmaMcp {
 mod tests {
     use super::*;
     use crate::tools::handler;
+    use rsigma_parser::LintConfig;
 
     #[test]
     fn fix_rules_applies_safe_fix() {
@@ -168,10 +175,10 @@ mod tests {
         )
         .unwrap();
 
-        let v = handler()
+        let v = RsigmaMcp::new(Some(dir.path().to_path_buf()), LintConfig::default(), false)
             .run_fix_rules(FixInput {
                 yaml: None,
-                path: Some(path.display().to_string()),
+                path: Some("rule.yml".to_string()),
                 lint_rules: vec![],
                 write: true,
             })
@@ -179,6 +186,25 @@ mod tests {
         assert_eq!(v["written"], true);
         let on_disk = std::fs::read_to_string(&path).unwrap();
         assert!(on_disk.contains("status: test"));
+    }
+
+    #[test]
+    fn fix_rules_write_without_root_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rule.yml");
+        let original = "title: T\nStatus: test\nlogsource:\n  category: test\ndetection:\n  sel:\n    a: b\n  condition: sel\n";
+        std::fs::write(&path, original).unwrap();
+
+        let err = handler()
+            .run_fix_rules(FixInput {
+                yaml: None,
+                path: Some(path.display().to_string()),
+                lint_rules: vec![],
+                write: true,
+            })
+            .unwrap_err();
+        assert!(format!("{err:?}").contains("--rules-dir"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
     }
 
     #[test]

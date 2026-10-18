@@ -26,6 +26,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -201,11 +202,13 @@ class HttpClient:
         self.session = None
         self._id = 0
         self._stderr = open("/tmp/rsigma-mcp-smoke.http.stderr.log", "w")
+        # `--http` refuses to start without a rules root.
+        self._rules_dir = tempfile.TemporaryDirectory(prefix="rsigma-mcp-smoke-")
         # `--auth-token=...` (not a separate argv entry): token_urlsafe can
         # start with `-`, which clap would otherwise parse as a flag.
         self.proc = subprocess.Popen(
             [bin_path, "mcp", "serve", "--http", f"{host}:{port}",
-             f"--auth-token={self.token}"],
+             f"--auth-token={self.token}", "--rules-dir", self._rules_dir.name],
             stdout=subprocess.DEVNULL,
             stderr=self._stderr,
             text=True,
@@ -287,6 +290,7 @@ class HttpClient:
     def close(self):
         self.proc.terminate()
         self._stderr.close()
+        self._rules_dir.cleanup()
 
 
 def _tool_text(result):

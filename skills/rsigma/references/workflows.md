@@ -26,6 +26,8 @@ Guide: [MCP server](https://rsigma.io/guide/mcp-server/).
 
 `engine daemon` stays up, reloads rules, and exposes health and metrics. Use it when events are a stream. It needs the `daemon` feature. NATS input also needs `daemon-nats`, and OTLP logs arrive on `/v1/logs` on the API address with `daemon-otlp`, not through `--input`. Release binaries include all three; a `cargo install rsigma` build has only `daemon`.
 
+The API binds `0.0.0.0:9090` by default, and a non-loopback address refuses to start unless it has TLS (or `--allow-plaintext`) and authentication (`--api-token-env`, `--tls-client-ca`, or `--allow-unauthenticated`). For local work pass `--api-addr 127.0.0.1:9090`, which needs neither. See [Daemon network exposure](https://rsigma.io/reference/security/#daemon-network-exposure).
+
 Guide: [Evaluating rules](https://rsigma.io/guide/evaluating-rules/), [Streaming detection](https://rsigma.io/guide/streaming-detection/).
 
 ## Draft versus a rule you already know

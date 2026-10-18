@@ -22,7 +22,7 @@ use rsigma_runtime::{
     HttpResponseCache, OnError, OutputFormat, Scope, build_default_http_client,
 };
 use serde_json::json;
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 // ---------------------------------------------------------------------------
@@ -229,6 +229,53 @@ async fn http_template_renders_path_and_authorization_header() {
     unsafe {
         std::env::remove_var("CMDB_TOKEN");
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_template_escapes_event_values_in_url_and_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/lookup/..%2Fadmin%3Fx%3D1"))
+        .and(body_json(json!({"user": r#"a","admin":true,"x":"y"#})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true})))
+        .mount(&server)
+        .await;
+
+    let url_template = format!("{}/lookup/${{detection.fields.HostName}}", server.uri());
+    let mut det = detection("rule-x", "ps -ef");
+    let fields = &mut det.as_detection_mut().unwrap().matched_fields;
+    fields.push(FieldMatch::new("HostName", json!("../admin?x=1")));
+    fields.push(FieldMatch::new("User", json!(r#"a","admin":true,"x":"y"#)));
+
+    let enricher = Box::new(HttpEnricher::new(
+        "escaped_lookup".to_string(),
+        EnricherKind::Detection,
+        "lookup".to_string(),
+        "POST".to_string(),
+        url_template,
+        Vec::new(),
+        Some(r#"{"user":"${detection.fields.User}"}"#.to_string()),
+        Duration::from_secs(5),
+        OnError::Skip,
+        Scope::default(),
+        None,
+        http_client_for_test(),
+        HttpResponseCache::new(Duration::from_secs(0)),
+    )) as Box<dyn rsigma_runtime::Enricher>;
+
+    let pipeline = EnrichmentPipeline::new(vec![enricher], 4);
+    let mut results = vec![det];
+    pipeline.run(&mut results).await;
+
+    assert_eq!(
+        results[0]
+            .header
+            .enrichments
+            .as_ref()
+            .and_then(|m| m.get("lookup")),
+        Some(&json!({"ok": true})),
+        "the escaped request did not reach the expected path with the expected body"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

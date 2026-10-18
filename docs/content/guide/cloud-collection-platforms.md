@@ -154,7 +154,7 @@ SigmaHQ's `gcp.audit` rules reference fields under a `data.` prefix (for example
 For a GCP-only feed, apply the pipeline globally (schema routing is optional):
 
 ```bash
-rsigma engine daemon -r rules/ -p gcp_audit --input http --api-addr 0.0.0.0:8952
+rsigma engine daemon -r rules/ -p gcp_audit --input http --api-addr 127.0.0.1:8952
 ```
 
 On a mixed stream with `--schema-routing`, bind the pipeline to the `gcp_audit` schema in `--schema-config` instead of relying on `-p` alone (see [A combined example](cloud-collection-recipes.md#a-combined-example)). With schema routing enabled and no bindings, every event falls through to `default_pipelines`, and a bare `-p` is not applied per schema.

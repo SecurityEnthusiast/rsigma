@@ -40,6 +40,7 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 uuid = { version = "1", features = ["v4"] }
 async-trait = "0.1"
 humantime = "2"
+percent-encoding = "2"
 globset = "0.4"
 regex = "1"
 csv = "1"

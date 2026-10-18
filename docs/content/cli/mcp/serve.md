@@ -25,7 +25,8 @@ The command is gated behind the opt-in `mcp` Cargo feature: build from source wi
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--lint-config <PATH>` | lint defaults | A lint config file (`.rsigma-lint.yml`) applied by the `lint_rules` tool (disabled rules, severity overrides, extra tag namespaces). Config key: `mcp.lint_config`. |
-| `--rules-dir <PATH>` | none | Root directory for path arguments in tool calls. Relative paths resolve against it, and any path that leaves it (absolute, `../`, or through a symlink) is refused. Without it, tools can read any file the server's OS user can read. Config key: `mcp.rules_dir`. |
+| `--rules-dir <PATH>` | none | Root directory for path arguments in tool calls. Relative paths resolve against it, and any path that leaves it (absolute, `../`, or through a symlink) is refused. Without it, tools can read any file the server's OS user can read, `fix_rules` cannot write, `--http` refuses to start, and stdio prints a startup warning. Config key: `mcp.rules_dir`. |
+| `--allow-unconfined-paths` | off | Run without `--rules-dir`, leaving path arguments unconfined. Required to serve `--http` without a root; on stdio it silences the startup warning. `fix_rules` still cannot write without a root. Config key: `mcp.allow_unconfined_paths`. {{ added "unreleased" }} |
 | `--allow-sigma-cli` | off | Allow the `convert_rules` tool to delegate targets without a native backend to an installed [sigma-cli](../../reference/backends/sigma-cli.md), reaching the full pySigma backend set. Delegated calls spawn a subprocess (60s timeout, at most 2 concurrent); `path` and file-based `pipelines` inputs stay confined to `--rules-dir` when it is set. Config key: `mcp.allow_sigma_cli`. |
 | `--daemon-url <URL>` | none | Base URL of a running rsigma daemon (`http://127.0.0.1:9090`). Registers the Operate-cycle read tools against that API. Unix-socket URLs are unsupported; use TCP loopback. Config key: `mcp.daemon_url`. {{ added "0.22.0" }} |
 | `--daemon-ca <PATH>` | none | Extra root CA (PEM) for a self-signed daemon TLS listener. Config key: `mcp.daemon_ca`. {{ added "0.22.0" }} |
@@ -37,7 +38,7 @@ The command is gated behind the opt-in `mcp` Cargo feature: build from source wi
 | `--tls-cert <PATH>` | none | TLS certificate (PEM) for the HTTP transport. Requires `--tls-key` and a build with the `daemon-tls` feature. |
 | `--tls-key <PATH>` | none | TLS private key (PEM) for the HTTP transport. Requires `--tls-cert`. |
 
-`--http`, `--lint-config`, `--rules-dir`, `--allow-sigma-cli`, `--daemon-url`, `--daemon-ca`, and `--allow-operate-writes` also resolve from the layered config (`mcp` section) and the `RSIGMA_MCP__*` environment layer; the MCP HTTP auth token and the daemon token stay flag/env-only.
+`--http`, `--lint-config`, `--rules-dir`, `--allow-unconfined-paths`, `--allow-sigma-cli`, `--daemon-url`, `--daemon-ca`, and `--allow-operate-writes` also resolve from the layered config (`mcp` section) and the `RSIGMA_MCP__*` environment layer; the MCP HTTP auth token and the daemon token stay flag/env-only.
 
 The global flags (`--log-format`, `--quiet`, …) are accepted but stdout stays reserved for the MCP transport; use `--log-format` to send structured diagnostics to stderr.
 
@@ -56,7 +57,7 @@ The global flags (`--log-format`, `--quiet`, …) are accepted but stdout stays 
 | `list_fields` | List the event fields rules reference, with provenance. |
 | `resolve_pipeline` | Inspect a builtin or file pipeline; optionally resolve dynamic sources. |
 | `list_builtin_pipelines` | List the builtin pipelines (`ecs_windows`, `fibratus_windows`, `sysmon`). |
-| `fix_rules` | Apply safe auto-fixes; optionally persist with `write: true`. |
+| `fix_rules` | Apply safe auto-fixes; optionally persist with `write: true` (requires `--rules-dir`). |
 | `author_ads` | Scaffold or render ADS detection metadata for a rule. |
 | `tune_rules` | Propose a verified Sigma filter from false-positive and true-positive event arrays. |
 | `test_exemplars` | Replay embedded `rsigma.exemplars` and return the pass/fail report. {{ added "0.22.0" }} |
@@ -92,19 +93,21 @@ For remote agents, serve over HTTP instead of stdio:
 
 ```bash
 # Local, loopback (no TLS required)
-rsigma mcp serve --http 127.0.0.1:9100
+rsigma mcp serve --http 127.0.0.1:9100 --rules-dir /path/to/rules
 
 # Authenticated (bearer token), behind a TLS-terminating proxy
 RSIGMA_MCP_AUTH_TOKEN=$(openssl rand -hex 32) \
-  rsigma mcp serve --http 0.0.0.0:9100 --allow-plaintext
+  rsigma mcp serve --http 0.0.0.0:9100 --rules-dir /path/to/rules --allow-plaintext
 
 # Native TLS (requires the `daemon-tls` feature)
-rsigma mcp serve --http 0.0.0.0:9100 \
+rsigma mcp serve --http 0.0.0.0:9100 --rules-dir /path/to/rules \
   --auth-token "$TOKEN" \
   --tls-cert /etc/rsigma/tls/cert.pem --tls-key /etc/rsigma/tls/key.pem
 ```
 
 The endpoint is `https?://<addr>/mcp`. Plaintext binds on non-loopback addresses are refused unless `--allow-plaintext` is set (use it when a sidecar proxy terminates TLS). Native TLS reuses the daemon's rustls loader and is only available when the binary is built with `daemon-tls`.
+
+`--http` refuses to start without `--rules-dir` unless `--allow-unconfined-paths` is set, because any client that reaches the endpoint could otherwise read files outside a rules tree. {{ added "unreleased" }}
 
 ## Exit codes
 
@@ -112,7 +115,7 @@ The endpoint is `https?://<addr>/mcp`. Plaintext binds on non-loopback addresses
 |------|---------|
 | `0` | The server ran and the client disconnected cleanly. |
 | `2` | The server failed (transport error). |
-| `3` | The `--lint-config` file could not be loaded, or an invalid config value (e.g. `mcp.http_addr`). |
+| `3` | The `--lint-config` file could not be loaded, an invalid config value (e.g. `mcp.http_addr`), or `--http` without `--rules-dir` or `--allow-unconfined-paths`. |
 
 ## See also
 

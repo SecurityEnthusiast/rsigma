@@ -4784,6 +4784,7 @@ dependencies = [
  "notify",
  "opentelemetry-proto",
  "parking_lot",
+ "percent-encoding",
  "prost",
  "rand 0.10.3",
  "rayon",

@@ -24,7 +24,7 @@ use super::{
     EnrichError, EnrichErrorKind, Enricher, EnricherKind, OnError, Scope,
     http_cache::{CacheKey, CacheOutcome, HttpResponseCache},
     inject_enrichment,
-    template::render_template,
+    template::{render_template, render_template_json, render_template_url},
 };
 use crate::metrics::{MetricsHook, NoopMetrics};
 use crate::sources::MAX_SOURCE_RESPONSE_BYTES;
@@ -200,8 +200,8 @@ impl Enricher for HttpEnricher {
     }
 
     async fn enrich(&self, result: &mut EvaluationResult) -> Result<(), EnrichError> {
-        let url = render_template(&self.url, result);
-        let body = self.body.as_ref().map(|b| render_template(b, result));
+        let url = render_template_url(&self.url, result);
+        let body = self.body.as_ref().map(|b| render_template_json(b, result));
 
         let cache_key = CacheKey::new(&self.method, &url, body.as_deref().map(str::as_bytes));
         let (outcome, cached) = self.cache.lookup(&cache_key);

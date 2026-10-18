@@ -250,11 +250,14 @@ fn parse_expiry_metric(body: &str) -> Option<f64> {
 }
 
 // ---------------------------------------------------------------------------
-// Plaintext refusal policy
+// Listener policy with TLS
 // ---------------------------------------------------------------------------
 
+/// TLS alone does not authenticate clients: a public bind with a server
+/// certificate but no tokens still needs `--allow-unauthenticated`.
 #[test]
-fn public_bind_without_tls_refuses_to_start() {
+fn public_tls_bind_without_auth_refuses_to_start() {
+    let fixture = mint_ca_and_leaf();
     let rule = temp_file(".yml", SIMPLE_RULE);
     let stderr = spawn_expect_failure(
         &[
@@ -266,31 +269,29 @@ fn public_bind_without_tls_refuses_to_start() {
             "http",
             "--api-addr",
             "0.0.0.0:0",
+            "--tls-cert",
+            &fixture.cert_path,
+            "--tls-key",
+            &fixture.key_path,
         ],
         Duration::from_secs(5),
     );
     assert!(
-        stderr.contains("refusing to bind plaintext"),
-        "expected plaintext refusal in stderr, got: {stderr}"
+        stderr.contains("without authentication"),
+        "expected unauthenticated-bind refusal in stderr, got: {stderr}"
     );
     assert!(
-        stderr.contains("--allow-plaintext"),
-        "stderr should mention the opt-out flag, got: {stderr}"
+        stderr.contains("--tls-client-ca"),
+        "a TLS build should suggest client certificates, got: {stderr}"
     );
 }
 
+/// Requiring client certificates authenticates every connection, so a public
+/// mTLS bind starts without tokens or an opt-out flag.
 #[test]
-fn loopback_keeps_plaintext_without_flag() {
-    let rule = temp_file(".yml", SIMPLE_RULE);
-    let daemon = DaemonProcess::spawn_http(rule.path().to_str().unwrap());
-    let (status, body) = common::http_get(&daemon.url("/healthz"));
-    assert_eq!(status, 200);
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(v["status"], "ok");
-}
-
-#[test]
-fn public_bind_with_allow_plaintext_starts() {
+fn public_mtls_bind_starts_without_tokens() {
+    let fixture = mint_ca_and_leaf();
+    let (client_cert_file, client_key_file) = mint_client_cert(&fixture.ca_issuer);
     let rule = temp_file(".yml", SIMPLE_RULE);
     let daemon = DaemonProcess::spawn(&[
         "engine",
@@ -301,10 +302,22 @@ fn public_bind_with_allow_plaintext_starts() {
         "http",
         "--api-addr",
         "0.0.0.0:0",
-        "--allow-plaintext",
+        "--tls-cert",
+        &fixture.cert_path,
+        "--tls-key",
+        &fixture.key_path,
+        "--tls-client-ca",
+        &fixture.ca_path,
     ]);
-    let (status, _) = common::http_get(&daemon.url("/healthz"));
-    assert_eq!(status, 200);
+
+    let config = client_config_with_auth(
+        fixture.root_store,
+        client_cert_file.path().to_str().unwrap(),
+        client_key_file.path().to_str().unwrap(),
+    );
+    let (status, body) =
+        https_get(daemon.api_addr(), "/healthz", config).expect("mTLS handshake should succeed");
+    assert_eq!(status, 200, "body was: {body}");
 }
 
 // ---------------------------------------------------------------------------

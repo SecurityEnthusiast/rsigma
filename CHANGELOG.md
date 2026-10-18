@@ -4,6 +4,35 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Refuse public plaintext and unauthenticated daemon APIs in every build (#601)
+
+**Breaking:** `engine daemon` now refuses to start on a non-loopback TCP `--api-addr` that serves an unauthenticated API, unless bearer tokens (`--api-token-env` or `daemon.api.auth`) or client certificates (`--tls-client-ca`) authenticate callers, or the operator passes the new `--allow-unauthenticated` flag (config `daemon.api.allow_unauthenticated`). The plaintext refusal and `--allow-plaintext` used to exist only in `daemon-tls` builds, so a default `cargo install rsigma` daemon served an anonymous control API on every interface; both checks now apply to every build, and `daemon.api.tls.allow_plaintext` is honored without `daemon-tls`. Opting out of authentication on a non-loopback address logs a startup warning. Loopback and `unix://` addresses are unaffected. To upgrade a public deployment, configure a token, or pass `--allow-unauthenticated` when an authenticating proxy fronts the daemon. The deployment guides now configure a token. Fixes #582.
+
+### OTLP sink export timeouts (#600)
+
+OTLP output sinks no longer wait forever on a collector that accepts the connection and never answers. Every export attempt now has a deadline, 10 seconds by default and tunable per sink with `?timeout=<duration>` (for example `otlp://otel-collector:4317?timeout=3s`). A timed-out attempt is retried and then dead-lettered like any other transient failure. Before this, under the default `on_full=block`, one hung collector stalled every sink behind the shared sink task. Connection setup is capped at 10 seconds on both transports, and gRPC channels send HTTP/2 keepalive pings. In `rsigma-runtime`, `OtlpSink::with_timeout` overrides the deadline and `DEFAULT_OTLP_TIMEOUT` exposes the default. Fixes #585.
+
+### Event values are escaped in enricher and webhook URLs and enricher bodies (security, #599)
+
+The `http` enricher substituted `${detection.*}` and `${correlation.*}` values into its request URL and body as raw text, and webhook sinks did the same for their URLs. A crafted event field could add keys to a JSON enricher body or reach other paths and query parameters on the configured host ([GHSA-3fh4-8r8j-8xw3](https://github.com/timescale/rsigma/security/advisories/GHSA-3fh4-8r8j-8xw3)).
+
+- Enricher bodies are JSON-string-escaped, as webhook bodies already were.
+- In enricher and webhook URLs, each event or correlation value is percent-encoded as one URL component, so it cannot add path segments or start a query or fragment. A value that is exactly `.` or `..` has its dots encoded twice so it cannot act as a dot segment.
+- `${ENV_VAR}` values in URLs stay verbatim, so an environment variable can still hold a whole path such as a Slack webhook path.
+- New `rsigma_runtime::enrichment::render_template_url` for embedders that render URL templates.
+
+Breaking changes: an enricher URL template that relied on an event value containing `/`, `?`, `&`, or `#` to build several path segments or query parameters now receives that value as a single encoded component. An enricher body template that placed a value outside a JSON string literal still gets raw text, but a value inside a string literal is now escaped.
+
+### MCP server refuses unconfined writes and unconfined HTTP serving (security, #598)
+
+Without `--rules-dir`, `rsigma mcp serve` accepted any file path in its tools, so a prompt-injected agent or any client reaching the HTTP endpoint could read files outside a rules tree through `fix_rules`, and `fix_rules` with `write: true` could rewrite Sigma YAML anywhere the server user could write ([GHSA-33jj-q567-34gj](https://github.com/timescale/rsigma/security/advisories/GHSA-33jj-q567-34gj)).
+
+- `fix_rules` with `write: true` is refused when the server has no rules root.
+- `mcp serve --http` refuses to start without `--rules-dir` unless the new `--allow-unconfined-paths` flag (config key `mcp.allow_unconfined_paths`) is set, and exits with code `3`.
+- `mcp serve` on stdio without `--rules-dir` prints a warning on stderr at startup. `--allow-unconfined-paths` silences it.
+
+Breaking changes: `mcp serve --http` without `--rules-dir` no longer starts. Pass `--rules-dir`, or `--allow-unconfined-paths` to keep the old behavior. MCP clients that called `fix_rules` with `write: true` against a server without a root now get an error.
+
 ### OTLP/HTTP gzip bodies are capped at 4 MiB after decompression (security, #597)
 
 `POST /v1/logs` inflated a `Content-Encoding: gzip` body into an unbounded buffer, so one small request could expand to gigabytes and get the daemon killed for running out of memory ([GHSA-vwg6-4q3h-8pvq](https://github.com/timescale/rsigma/security/advisories/GHSA-vwg6-4q3h-8pvq)). The decompressed body is now limited to 4 MiB, matching the decoded-message limit on the OTLP/gRPC transport. A body that inflates past the limit is rejected with `413 Payload Too Large` before decoding and counted as `rsigma_otlp_errors_total{transport="http",reason="body_too_large"}`. Affects builds with `daemon-otlp`, which includes the prebuilt binaries and the Docker image.

@@ -35,9 +35,16 @@ daemon:
   # risk: /etc/rsigma/risk.yml
 
   api:
-    # Bind address for health, metrics, and the HTTP/OTLP API.
+    # Bind address for health, metrics, and the HTTP/OTLP API. A non-loopback
+    # TCP address refuses to start without TLS (or tls.allow_plaintext) and
+    # without authentication (an auth block, tls.client_ca, or
+    # allow_unauthenticated). Loopback and unix:// addresses are exempt.
     addr: "0.0.0.0:9090"
-    # TLS settings (ignored unless built with the daemon-tls feature).
+    # Serve an unauthenticated API on a non-loopback address. Use only behind
+    # an authenticating proxy or network policy.
+    # allow_unauthenticated: false
+    # TLS settings (ignored unless built with the daemon-tls feature, except
+    # allow_plaintext, which applies to every build).
     # tls:
     #   cert: /etc/rsigma/tls/cert.pem
     #   key: /etc/rsigma/tls/key.pem
@@ -45,7 +52,8 @@ daemon:
     #   min_version: "1.3"
     #   allow_plaintext: false
     # Bearer-token authentication with resource:action permissions. Absent =
-    # no authentication (all routes open). Token secrets never live in YAML:
+    # no authentication (all routes open; refused on a non-loopback address
+    # unless allow_unauthenticated is set). Token secrets never live in YAML:
     # token_env names an environment variable resolved at startup. Built-in
     # roles: reader (*:read), operator (*:read + control-plane writes except
     # reload), ingest (events:ingest), admin (*). GET /healthz and
@@ -102,9 +110,9 @@ daemon:
     # | otlp(s)://host:port (gRPC) | otlphttp(s)://host:port (HTTP); the `s`
     # variants use TLS. Optional query suffixes: ?on_full=drop (best-effort),
     # ?format=ndjson|ocsf (OCSF Detection Finding JSON; stdout, file, nats, and
-    # unix sinks only), ?compression=gzip (OTLP), and for TLS ?ca=,
-    # ?client_cert=, ?client_key= (PEM paths; the last two enable mutual TLS)
-    # and ?tls_domain= (SNI).
+    # unix sinks only), ?compression=gzip and ?timeout=10s (OTLP export
+    # deadline per attempt), and for TLS ?ca=, ?client_cert=, ?client_key=
+    # (PEM paths; the last two enable mutual TLS) and ?tls_domain= (SNI).
     sinks: [stdout]
     # Dead-letter queue for events that fail processing.
     # dlq: "file:///var/lib/rsigma/dlq.ndjson"
@@ -425,8 +433,12 @@ mcp:
   # http_addr: 127.0.0.1:9100
   # Lint config file applied by the lint_rules tool (`--lint-config`).
   # lint_config: .rsigma-lint.yml
-  # Default root for relative path-based tool calls (`--rules-dir`).
+  # Root for path-based tool calls (`--rules-dir`). Paths that leave it are
+  # refused. Without it, tools can read any file the server user can read.
   # rules_dir: ./rules
+  # Run without rules_dir (`--allow-unconfined-paths`). Required to serve
+  # http_addr without a root; on stdio it silences the startup warning.
+  # allow_unconfined_paths: false
   # Allow the convert_rules tool to delegate targets without a native backend
   # to an installed sigma-cli (`--allow-sigma-cli`). Off by default; delegated
   # path inputs stay confined to rules_dir when it is set.

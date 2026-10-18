@@ -212,13 +212,20 @@ pub(crate) struct ApiPartial {
     /// unix:// address).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub addr: Option<String>,
-    /// TLS settings. Ignored unless built with `daemon-tls`.
+    /// TLS settings. Ignored unless built with `daemon-tls`, except
+    /// `allow_plaintext`, which applies to every build.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tls: Option<TlsPartial>,
     /// Bearer-token authentication with `resource:action` permissions.
-    /// Absent = no authentication (all routes open, as before).
+    /// Absent = no authentication, which a non-loopback TCP address refuses
+    /// unless `allow_unauthenticated` is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthPartial>,
+    /// Serve the API without authentication on a non-loopback TCP address
+    /// (no `auth` block, no `--api-token-env`, no TLS client CA). Default:
+    /// false, so such a daemon refuses to start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_unauthenticated: Option<bool>,
     /// Control-plane API audit trail (requires `--state-db`). Auto-enabled
     /// when a state database is configured; tune retention or disable here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -235,6 +242,7 @@ impl Merge for ApiPartial {
             // config (a token granted in /etc could survive an override in
             // ./rsigma.yaml).
             auth: over.auth.or(self.auth),
+            allow_unauthenticated: over.allow_unauthenticated.or(self.allow_unauthenticated),
             audit: over.audit.or(self.audit),
         }
     }
@@ -313,6 +321,8 @@ pub(crate) struct TlsPartial {
     pub client_ca: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_version: Option<String>,
+    /// Serve plaintext on a non-loopback TCP address. Applies to every build,
+    /// with or without `daemon-tls`. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_plaintext: Option<bool>,
 }
@@ -380,8 +390,8 @@ pub(crate) struct OutputPartial {
     /// variants use TLS. On Unix, `unix:///path/to.sock` writes NDJSON to a
     /// local socket. Optional query suffixes: `?on_full=drop`,
     /// `?format=ndjson|ocsf` (line sinks only: stdout, file, NATS, unix),
-    /// `?compression=gzip`, and for TLS `?ca=`, `?client_cert=`, `?client_key=`,
-    /// `?tls_domain=`.
+    /// `?compression=gzip` and `?timeout=<duration>` (OTLP, default `10s`), and
+    /// for TLS `?ca=`, `?client_cert=`, `?client_key=`, `?tls_domain=`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sinks: Option<Vec<String>>,
     /// Dead-letter queue for events that fail processing.
@@ -1113,6 +1123,11 @@ pub(crate) struct McpPartial {
     /// Default root for relative path-based tool calls (maps to `--rules-dir`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rules_dir: Option<PathBuf>,
+    /// Run without `rules_dir`, leaving tool path arguments unconfined (maps
+    /// to `--allow-unconfined-paths`). Required for the HTTP transport without
+    /// a root. Defaults to off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_unconfined_paths: Option<bool>,
     /// Allow the `convert_rules` tool to delegate targets without a native
     /// backend to an installed sigma-cli (maps to `--allow-sigma-cli`).
     /// Defaults to off.
@@ -1139,6 +1154,7 @@ impl Merge for McpPartial {
             http_addr: over.http_addr.or(self.http_addr),
             lint_config: over.lint_config.or(self.lint_config),
             rules_dir: over.rules_dir.or(self.rules_dir),
+            allow_unconfined_paths: over.allow_unconfined_paths.or(self.allow_unconfined_paths),
             allow_sigma_cli: over.allow_sigma_cli.or(self.allow_sigma_cli),
             daemon_url: over.daemon_url.or(self.daemon_url),
             daemon_ca: over.daemon_ca.or(self.daemon_ca),
@@ -1161,6 +1177,7 @@ mod tests {
                     addr: Some("0.0.0.0:9090".into()),
                     tls: None,
                     auth: None,
+                    allow_unauthenticated: None,
                     audit: None,
                 }),
                 ..Default::default()
@@ -1174,6 +1191,7 @@ mod tests {
                     addr: Some("127.0.0.1:8080".into()),
                     tls: None,
                     auth: None,
+                    allow_unauthenticated: None,
                     audit: None,
                 }),
                 ..Default::default()
@@ -1194,7 +1212,7 @@ mod tests {
     #[test]
     fn mcp_section_parses_and_merges() {
         let base: RsigmaConfigPartial = yaml_serde::from_str(
-            "mcp:\n  http_addr: 127.0.0.1:9100\n  rules_dir: /etc/rsigma/rules\n  allow_sigma_cli: true\n  daemon_url: http://127.0.0.1:9090\n  allow_operate_writes: true\n",
+            "mcp:\n  http_addr: 127.0.0.1:9100\n  rules_dir: /etc/rsigma/rules\n  allow_unconfined_paths: true\n  allow_sigma_cli: true\n  daemon_url: http://127.0.0.1:9090\n  allow_operate_writes: true\n",
         )
         .expect("parses mcp section");
         let over: RsigmaConfigPartial =
@@ -1204,6 +1222,7 @@ mod tests {
         // higher layer wins per-field; untouched fields are preserved
         assert_eq!(mcp.http_addr.as_deref(), Some("127.0.0.1:9100"));
         assert_eq!(mcp.rules_dir, Some(PathBuf::from("/override/rules")));
+        assert_eq!(mcp.allow_unconfined_paths, Some(true));
         assert_eq!(mcp.allow_sigma_cli, Some(true));
         assert_eq!(mcp.daemon_url.as_deref(), Some("http://127.0.0.1:9090"));
         assert_eq!(mcp.allow_operate_writes, Some(true));

@@ -108,7 +108,14 @@ The `engine daemon` HTTP and gRPC listeners share one socket. With the optional 
 - Bind to a private network segment that the SOC controls.
 - On Unix, bind a domain socket with `--api-addr unix:///run/rsigma/api.sock`. Access is gated by the socket file's permissions (created `0600`), so it never leaves the host and needs no TLS. This is the simplest hardened shape for a co-located admin/metrics client or a sidecar that proxies the socket.
 
-To prevent accidental cleartext exposure when `daemon-tls` is built in, the daemon refuses to start on a non-loopback `--api-addr` unless either `--tls-cert`/`--tls-key` or `--allow-plaintext` is supplied. Loopback (`127.0.0.0/8`, `::1`) always allows plaintext. A `unix://` address is treated as local: it is exempt from this refusal and, because TLS terminates on TCP only, combining it with `--tls-cert`/`--tls-key` is rejected at startup.
+{{ added "unreleased" }}
+
+To prevent accidental exposure, every build refuses to start on a non-loopback TCP `--api-addr` in two cases:
+
+- **Plaintext.** Neither `--tls-cert`/`--tls-key` nor `--allow-plaintext` (config `daemon.api.tls.allow_plaintext`) is supplied. A build without `daemon-tls` cannot serve TLS, so it needs `--allow-plaintext` and a TLS-terminating proxy in front.
+- **Unauthenticated.** No bearer tokens are configured (`daemon.api.auth` or `--api-token-env`), the listener does not require client certificates (`--tls-client-ca`), and `--allow-unauthenticated` (config `daemon.api.allow_unauthenticated`) is not supplied. TLS without client certificates encrypts the traffic but does not authenticate the caller, so it does not satisfy this check.
+
+Opting out of authentication on a non-loopback address logs a startup warning. Loopback (`127.0.0.0/8`, `::1`) is exempt from both checks. A `unix://` address is treated as local: it is exempt from both checks and, because TLS terminates on TCP only, combining it with `--tls-cert`/`--tls-key` is rejected at startup.
 
 NATS connections from the daemon (source, sink, DLQ) support five auth methods (creds file, token, user+password, NKey, mTLS) and TLS-required mode. See [NATS Streaming: authentication](../guide/nats-streaming.md#authentication).
 
@@ -117,15 +124,16 @@ NATS connections from the daemon (source, sink, DLQ) support five auth methods (
 Pass any two of the four `--tls-*` flags to enable in-process TLS:
 
 ```bash
-rsigma engine daemon -r rules/ \
+RSIGMA_API_TOKEN=... rsigma engine daemon -r rules/ \
     --api-addr 0.0.0.0:9090 \
     --tls-cert /etc/rsigma/tls/server.crt \
-    --tls-key  /etc/rsigma/tls/server.key
+    --tls-key  /etc/rsigma/tls/server.key \
+    --api-token-env RSIGMA_API_TOKEN
 ```
 
 ALPN advertises both `h2` and `http/1.1` so the same listener serves OTLP/gRPC (HTTP/2 framing) and the REST API (HTTP/1.1) without splitting ports.
 
-For mutual TLS (every agent must present a CA-signed client cert):
+For mutual TLS (every agent must present a CA-signed client cert, which also satisfies the authentication check on a public bind):
 
 ```bash
 rsigma engine daemon -r rules/ \
@@ -147,7 +155,7 @@ OTLP receiver authentication has two options: mTLS (`--tls-client-ca`) so every 
 
 ## Daemon API authentication
 
-Bearer-token authentication with `resource:action` permissions gates the daemon API at the application layer. It is opt-in and off by default: without a `daemon.api.auth` config block or the `--api-token-env` flag, every route is open and the network-level protections above are the only guard. When enabled, every route except the liveness probes (`GET /healthz`, `GET /readyz`) requires a token whose permission set covers the route's permission; the per-route mapping is in the [HTTP API endpoint summary](http-api.md#endpoint-summary).
+Bearer-token authentication with `resource:action` permissions gates the daemon API at the application layer. Without a `daemon.api.auth` config block or the `--api-token-env` flag, every route is open. {{ added "unreleased" }} The daemon accepts that only on loopback, on a `unix://` socket, on a listener that requires client certificates, or with an explicit `--allow-unauthenticated` (see [Daemon network exposure](#daemon-network-exposure)). When enabled, every route except the liveness probes (`GET /healthz`, `GET /readyz`) requires a token whose permission set covers the route's permission; the per-route mapping is in the [HTTP API endpoint summary](http-api.md#endpoint-summary).
 
 Design properties:
 
@@ -198,7 +206,7 @@ Verdict-driven capture ([Verdict-Driven Corpora](../guide/verdict-to-corpus.md))
 The MCP server ([`rsigma mcp serve`](../cli/mcp/serve.md)) treats every tool argument as untrusted, because an agent can be steered by prompt-injected content it is asked to process (a third-party rule set, an issue being summarized).
 
 - **`--rules-dir` is a confinement boundary.** When it is set, every path argument (`path`, `events_path`, `enrichers_path`, and file-based `pipelines` in every tool) is canonicalized and refused if it leaves the directory, whether it is absolute, uses `../`, or resolves through a symlink. A missing file outside the root is refused the same way as an existing one, so callers cannot probe for files. Directory inputs that contain a symlink anywhere in the tree are refused. `fix_rules` with `write: true` only writes to files inside the root.
-- **Without `--rules-dir`, paths are unconfined.** The server can read any file its OS user can read. Always set `--rules-dir` when the server is reachable by an agent that processes untrusted content.
+- **Without `--rules-dir`, paths are unconfined.** The server can read any file its OS user can read. Always set `--rules-dir` when the server is reachable by an agent that processes untrusted content. Without a root, `fix_rules` refuses `write: true`, stdio prints a startup warning, and `--http` refuses to start unless `--allow-unconfined-paths` is set. {{ added "unreleased" }}
 - **No process execution or network egress from enrichers.** `evaluate_events` builds only `template` enrichers. `command`, `http`, `lookup`, and `stix` enrichers are refused; configure them on the daemon instead.
 - **sigma-cli delegation** (`--allow-sigma-cli`, off by default) spawns a subprocess with the rules root as its working directory. Only bare identifiers (letters, digits, `_`, `-`) are passed through as sigma-cli pipeline names; anything else is treated as a path and confined.
 

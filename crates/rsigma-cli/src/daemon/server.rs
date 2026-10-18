@@ -2674,6 +2674,31 @@ fn build_otlp_tls(params: &[(&str, &str)]) -> rsigma_runtime::OtlpClientTls {
     }
 }
 
+/// Parse the per-attempt export deadline from a `timeout` query parameter on
+/// an OTLP sink URL (`otlp://host:4317?timeout=5s`). `None` means the sink
+/// default. Zero, unparsable, and repeated values are rejected.
+#[cfg(feature = "daemon-otlp")]
+fn otlp_timeout_from_params(
+    params: &[(&str, &str)],
+) -> Result<Option<std::time::Duration>, String> {
+    let mut values = params
+        .iter()
+        .filter(|(k, _)| *k == "timeout")
+        .map(|(_, v)| *v);
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err("timeout= may be specified only once".to_string());
+    }
+    let timeout = humantime::parse_duration(value)
+        .map_err(|e| format!("invalid OTLP sink timeout '{value}': {e}"))?;
+    if timeout.is_zero() {
+        return Err("OTLP sink timeout must be greater than zero".to_string());
+    }
+    Ok(Some(timeout))
+}
+
 /// Build a single Sink from an output spec string, plus its full-queue policy.
 async fn build_sink(
     spec: &str,
@@ -2749,13 +2774,22 @@ async fn build_sink(
                 .iter()
                 .any(|(k, v)| *k == "compression" && *v == "gzip");
             let tls = tls_enabled.then(|| build_otlp_tls(&params));
+            let timeout = otlp_timeout_from_params(&params).unwrap_or_else(|e| {
+                tracing::error!(spec = base, error = %e, "Invalid OTLP sink timeout");
+                std::process::exit(crate::exit_code::CONFIG_ERROR);
+            });
             return match rsigma_runtime::OtlpSink::new(protocol, endpoint, gzip, tls) {
                 Ok(sink) => {
+                    let sink = match timeout {
+                        Some(t) => sink.with_timeout(t),
+                        None => sink,
+                    };
                     tracing::info!(
                         endpoint,
                         ?protocol,
                         gzip,
                         tls = tls_enabled,
+                        timeout = %humantime::format_duration(sink.timeout()),
                         "OTLP sink started"
                     );
                     (Sink::Otlp(Box::new(sink)), on_full)
@@ -4531,6 +4565,46 @@ mod tests {
         fn corrupt_stream_is_io_error() {
             let err = otlp_gunzip_bounded(b"not gzip", 1024).unwrap_err();
             assert!(matches!(err, OtlpDecompressError::Io(_)));
+        }
+    }
+
+    #[cfg(feature = "daemon-otlp")]
+    mod otlp_sink_timeout {
+        use super::super::{otlp_timeout_from_params, split_query};
+        use std::time::Duration;
+
+        fn parse(spec: &str) -> Result<Option<Duration>, String> {
+            let (_, params) = split_query(spec);
+            otlp_timeout_from_params(&params)
+        }
+
+        #[test]
+        fn absent_uses_the_sink_default() {
+            assert_eq!(parse("otlp://collector:4317").unwrap(), None);
+            assert_eq!(
+                parse("otlp://collector:4317?compression=gzip").unwrap(),
+                None
+            );
+        }
+
+        #[test]
+        fn humantime_values_parse() {
+            assert_eq!(
+                parse("otlphttp://collector:4318?timeout=500ms").unwrap(),
+                Some(Duration::from_millis(500))
+            );
+            assert_eq!(
+                parse("otlp://collector:4317?compression=gzip&timeout=30s").unwrap(),
+                Some(Duration::from_secs(30))
+            );
+        }
+
+        #[test]
+        fn zero_invalid_and_repeated_values_are_rejected() {
+            assert!(parse("otlp://c:4317?timeout=0s").is_err());
+            assert!(parse("otlp://c:4317?timeout=soon").is_err());
+            assert!(parse("otlp://c:4317?timeout=").is_err());
+            assert!(parse("otlp://c:4317?timeout=1s&timeout=2s").is_err());
         }
     }
 

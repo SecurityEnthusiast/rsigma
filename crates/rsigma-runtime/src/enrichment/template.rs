@@ -36,6 +36,7 @@
 use std::sync::LazyLock;
 
 use async_trait::async_trait;
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use regex::Regex;
 use rsigma_eval::{EvaluationResult, ResultBody};
 use rsigma_parser::Level;
@@ -173,7 +174,23 @@ pub fn validate_template_namespace(
 /// the empty string rather than panicking, since the same render path is
 /// reused by tests.
 pub fn render_template(text: &str, result: &EvaluationResult) -> String {
-    render_with(text, result, |s| s)
+    render_with(text, result, |_, s| s)
+}
+
+/// Like [`render_template`], but percent-encodes every `${detection.*}` and
+/// `${correlation.*}` value for use inside a URL.
+///
+/// Event-derived values are attacker-influenced, so each one is encoded as a
+/// single URL component: everything except ASCII letters, digits, `-`, `_`,
+/// `.`, and `~` is percent-encoded, including `/`, `?`, `#`, `&`, `=`, and
+/// `%`. A value cannot add path segments, start a query or fragment, or smuggle
+/// a pre-encoded sequence. `${ENV_VAR}` values are inserted verbatim because
+/// operators use them for whole URL parts (a webhook path, a token).
+pub fn render_template_url(text: &str, result: &EvaluationResult) -> String {
+    render_with(text, result, |source, s| match source {
+        ValueSource::Env => s,
+        ValueSource::Result => url_component_escape(&s),
+    })
 }
 
 /// Like [`render_template`], but JSON-string-escapes every substituted value.
@@ -183,15 +200,24 @@ pub fn render_template(text: &str, result: &EvaluationResult) -> String {
 /// containing a quote, backslash, or control character would otherwise break
 /// the rendered payload. The escaper serializes each substitution as a JSON
 /// string and strips the surrounding quotes, yielding content safe to drop
-/// inside a JSON string literal. `url`/`headers` keep [`render_template`]
-/// (identity escaping) because they are not JSON.
+/// inside a JSON string literal. A placeholder outside a string literal is
+/// still inserted as raw text. URLs use [`render_template_url`]; headers keep
+/// [`render_template`] because header parsing rejects CR and LF.
 pub fn render_template_json(text: &str, result: &EvaluationResult) -> String {
-    render_with(text, result, json_escape_value)
+    render_with(text, result, |_, s| json_escape_value(s))
+}
+
+/// Where a substituted value came from, so an escaper can treat operator
+/// environment values differently from evaluation-result values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ValueSource {
+    Env,
+    Result,
 }
 
 /// Shared render core: substitute every `${...}` reference, then run each
 /// substituted value through `escape`.
-fn render_with<F: Fn(String) -> String>(
+fn render_with<F: Fn(ValueSource, String) -> String>(
     text: &str,
     result: &EvaluationResult,
     escape: F,
@@ -199,21 +225,47 @@ fn render_with<F: Fn(String) -> String>(
     TEMPLATE_RE
         .replace_all(text, |caps: &regex::Captures| {
             let inner = caps.get(1).unwrap().as_str();
-            let raw = match classify_ref(inner) {
-                VarRef::Env(name) => std::env::var(name).unwrap_or_default(),
-                VarRef::Detection(path) => match &result.body {
-                    ResultBody::Detection(_) => render_detection_path(&path, result),
-                    ResultBody::Correlation(_) => String::new(),
-                },
-                VarRef::Correlation(path) => match &result.body {
-                    ResultBody::Correlation(_) => render_correlation_path(&path, result),
-                    ResultBody::Detection(_) => String::new(),
-                },
-                VarRef::Invalid(_) => String::new(),
+            let (source, raw) = match classify_ref(inner) {
+                VarRef::Env(name) => (ValueSource::Env, std::env::var(name).unwrap_or_default()),
+                VarRef::Detection(path) => (
+                    ValueSource::Result,
+                    match &result.body {
+                        ResultBody::Detection(_) => render_detection_path(&path, result),
+                        ResultBody::Correlation(_) => String::new(),
+                    },
+                ),
+                VarRef::Correlation(path) => (
+                    ValueSource::Result,
+                    match &result.body {
+                        ResultBody::Correlation(_) => render_correlation_path(&path, result),
+                        ResultBody::Detection(_) => String::new(),
+                    },
+                ),
+                VarRef::Invalid(_) => (ValueSource::Result, String::new()),
             };
-            escape(raw)
+            escape(source, raw)
         })
         .into_owned()
+}
+
+/// Bytes left unencoded in a URL component: RFC 3986 unreserved characters.
+const URL_COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'~');
+
+/// Percent-encode a value as one URL component.
+///
+/// `.` and `..` are dot segments under the URL standard even when written as
+/// `%2E`, so a value that is exactly one of them has its dots encoded twice
+/// (`%252E`). The receiver then sees the literal text `%2E` instead of a
+/// reference to the current or parent path.
+fn url_component_escape(value: &str) -> String {
+    if value == "." || value == ".." {
+        return "%252E".repeat(value.len());
+    }
+    utf8_percent_encode(value, URL_COMPONENT).to_string()
 }
 
 /// JSON-string-escape a substituted value: serialize it as a JSON string and
@@ -499,5 +551,96 @@ mod tests {
         let r = detection("PlainTitle", "x", serde_json::json!("v"));
         let body = render_template_json(r#"{"text":"${detection.rule.title}"}"#, &r);
         assert_eq!(body, r#"{"text":"PlainTitle"}"#);
+    }
+
+    #[test]
+    fn json_escape_blocks_key_injection() {
+        let r = detection("T", "user", serde_json::json!(r#"a","admin":true,"x":"y"#));
+        let body = render_template_json(r#"{"user":"${detection.fields.user}"}"#, &r);
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed.as_object().unwrap().len(), 1);
+        assert_eq!(parsed["user"], r#"a","admin":true,"x":"y"#);
+    }
+
+    fn render_url_field(value: &str) -> String {
+        let r = detection("T", "f", serde_json::json!(value));
+        render_template_url("https://api.example/v1/${detection.fields.f}/info", &r)
+    }
+
+    #[test]
+    fn url_escape_encodes_path_traversal() {
+        assert_eq!(
+            render_url_field("/../../admin"),
+            "https://api.example/v1/%2F..%2F..%2Fadmin/info"
+        );
+    }
+
+    #[test]
+    fn url_escape_double_encodes_bare_dot_segments() {
+        assert_eq!(
+            render_url_field(".."),
+            "https://api.example/v1/%252E%252E/info"
+        );
+        assert_eq!(render_url_field("."), "https://api.example/v1/%252E/info");
+        assert_eq!(render_url_field("..."), "https://api.example/v1/.../info");
+    }
+
+    #[test]
+    fn url_escape_encodes_pre_encoded_sequences() {
+        assert_eq!(
+            render_url_field("%2e%2e"),
+            "https://api.example/v1/%252e%252e/info"
+        );
+    }
+
+    #[test]
+    fn url_escape_encodes_query_and_fragment_delimiters() {
+        assert_eq!(
+            render_url_field("a?b=1&c=2#frag"),
+            "https://api.example/v1/a%3Fb%3D1%26c%3D2%23frag/info"
+        );
+    }
+
+    #[test]
+    fn url_escape_leaves_unreserved_values_untouched() {
+        assert_eq!(
+            render_url_field("host-01.corp_x~y"),
+            "https://api.example/v1/host-01.corp_x~y/info"
+        );
+    }
+
+    #[test]
+    fn url_escape_encodes_non_ascii_as_utf8() {
+        assert_eq!(
+            render_url_field("é "),
+            "https://api.example/v1/%C3%A9%20/info"
+        );
+    }
+
+    #[test]
+    fn url_escape_leaves_env_values_verbatim() {
+        let var = "RSIGMA_TEMPLATE_URL_TEST_PATH";
+        // SAFETY: the variable name is unique to this test.
+        unsafe { std::env::set_var(var, "services/T000/B000/xyz") };
+        let r = detection("T", "f", serde_json::json!("a/b"));
+        let url = render_template_url(
+            &format!("https://hooks.example/${{{var}}}?u=${{detection.fields.f}}"),
+            &r,
+        );
+        assert_eq!(url, "https://hooks.example/services/T000/B000/xyz?u=a%2Fb");
+    }
+
+    #[test]
+    fn url_escaped_values_do_not_traverse_after_parsing() {
+        for value in ["..", ".", "/../../admin", "%2e%2e", "../admin"] {
+            let rendered = render_url_field(value);
+            let parsed = reqwest::Url::parse(&rendered).unwrap();
+            assert!(
+                parsed.path().starts_with("/v1/") && parsed.path().ends_with("/info"),
+                "{value:?} rendered to {rendered} which parses to {}",
+                parsed.path()
+            );
+            assert_eq!(parsed.path_segments().unwrap().count(), 3, "{value:?}");
+        }
     }
 }

@@ -9,7 +9,9 @@ use std::time::Duration;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use rsigma_eval::{EvaluationResult, ProcessResult};
 
-use crate::enrichment::{HttpEnricherClient, render_template, render_template_json};
+use crate::enrichment::{
+    HttpEnricherClient, render_template, render_template_json, render_template_url,
+};
 use crate::error::RuntimeError;
 use crate::io::DeliveryContext;
 use crate::metrics::MetricsHook;
@@ -185,7 +187,7 @@ impl WebhookSink {
             self.metrics.on_webhook_rate_limited(&self.id);
         }
 
-        let url = render_template(&self.url, eval);
+        let url = render_template_url(&self.url, eval);
         // Reserve for the user headers plus up to three signing headers
         // (webhook-id/timestamp/signature is the widest scheme) so a signed
         // request does not reallocate the map.
@@ -403,6 +405,20 @@ mod tests {
             .await;
         let mut sink = sink_to(format!("{}/hook", server.uri()));
         let result: ProcessResult = vec![detection("hi")];
+        assert!(sink.send(&result, &ctx()).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn url_template_values_are_percent_encoded() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook/..%2F..%2Fadmin"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut sink = sink_to(format!("{}/hook/${{detection.rule.title}}", server.uri()));
+        let result: ProcessResult = vec![detection("../../admin")];
         assert!(sink.send(&result, &ctx()).await.is_ok());
     }
 

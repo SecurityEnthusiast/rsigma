@@ -43,9 +43,7 @@ version: 1
 daemon:
   rules: /etc/rsigma/rules
   api:
-    addr: "0.0.0.0:8952"
-    tls:
-      allow_plaintext: true   # or cert/key; a non-loopback bind needs one of the two
+    addr: "127.0.0.1:8952"   # shippers on the same host; a routable bind needs TLS and authentication
   input:
     source: http
   output:
@@ -58,6 +56,8 @@ daemon:
 ```bash
 rsigma engine daemon --config /etc/rsigma/rsigma.yaml
 ```
+
+The shipper recipes in this guide post to `localhost`, so the daemon binds loopback. {{ added "unreleased" }} To accept shippers on other hosts, bind a routable address and configure TLS (or `tls.allow_plaintext`) and an `ingest` token in `daemon.api.auth`; see [Daemon network exposure](../reference/security.md#daemon-network-exposure).
 
 `schema-routing.yml`:
 

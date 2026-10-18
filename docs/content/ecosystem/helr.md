@@ -111,6 +111,9 @@ services:
       - --output=stdout
       - --api-addr=0.0.0.0:9090
       - --allow-plaintext
+      - --api-token-env=RSIGMA_API_TOKEN
+    environment:
+      RSIGMA_API_TOKEN: "${RSIGMA_API_TOKEN:?set RSIGMA_API_TOKEN to the API bearer token}"
     ports:
       - "9090:9090"
     depends_on: [nats]
@@ -119,7 +122,7 @@ volumes:
   helr-state:
 ```
 
-Events flow Okta -> Helr -> NATS -> rsigma daemon -> stdout (or whatever next sink). Both services expose Prometheus metrics; both ship signed multi-arch images. The Docker hardening flags (`read_only`, `cap_drop: [ALL]`, non-root user `65534`) match the [Docker deployment guidance](../deployment/docker.md) for rsigma. `--allow-plaintext` is required because the compose example binds a non-loopback `--api-addr` without TLS.
+Events flow Okta -> Helr -> NATS -> rsigma daemon -> stdout (or whatever next sink). Both services expose Prometheus metrics; both ship signed multi-arch images. The Docker hardening flags (`read_only`, `cap_drop: [ALL]`, non-root user `65534`) match the [Docker deployment guidance](../deployment/docker.md) for rsigma. `--allow-plaintext` is required because the compose example binds a non-loopback `--api-addr` without TLS, and the API token is required because a non-loopback bind refuses to serve an unauthenticated API. {{ added "unreleased" }} Events arrive over NATS, so only the metrics and control API use the token.
 
 ## Alternatives to NATS as the glue
 
@@ -129,7 +132,7 @@ NATS JetStream is the recommended transport because it provides at-least-once de
 |-----------|-----------|-------------|-----------|
 | stdout pipe | `helr run` (default) | `rsigma engine daemon --input stdin` | Lowest overhead, but requires both processes to be co-supervised (one died -> the other dies). |
 | File + pipe | `--output /var/log/helr/events.ndjson` | `tail -F /var/log/helr/events.ndjson \| rsigma engine daemon --input stdin` | Disk-buffered and simple. The daemon has no native file-tail input, so a follow-pipe is required. A restart of either side can still drop in-flight lines without external journaling. |
-| HTTP POST | `--output http://rsigma:9090/api/v1/events` | `--input http --api-addr 0.0.0.0:9090 --allow-plaintext` | Decoupled lifecycle. RSigma applies channel back-pressure on HTTP ingest; there is no durable replay without NATS. |
+| HTTP POST | `--output http://rsigma:9090/api/v1/events` | `--input http --api-addr 0.0.0.0:9090 --allow-plaintext`, plus `--allow-unauthenticated` when only Helr can reach the port | Decoupled lifecycle. RSigma applies channel back-pressure on HTTP ingest; there is no durable replay without NATS. |
 
 Pick NATS for production, stdout for testing, HTTP for "I cannot run NATS but I want loose coupling".
 
