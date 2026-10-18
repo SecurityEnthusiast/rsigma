@@ -178,7 +178,7 @@ Without `--state-db`, correlation state lives only in memory and is lost on rest
 rsigma engine daemon -r rules/ --state-db /var/lib/rsigma/state.db
 ```
 
-The daemon loads any existing snapshot on startup, saves periodically (every 30 s by default, tunable with `--state-save-interval`), and saves on graceful shutdown. The database is a single SQLite file in WAL journal mode that holds one JSON snapshot row.
+The daemon loads any existing snapshot on startup, saves periodically (every 30 s by default, tunable with `--state-save-interval`), and saves on graceful shutdown. The database is a single SQLite file in WAL journal mode that holds one JSON snapshot row per kind of state (correlation, alert pipeline, risk, and dispositions). Each save captures all of them back to back and writes them in one transaction, so a crash mid-save leaves the previous save intact rather than a mix of old and new state. {{ added "unreleased" }}
 
 This means an `event_count` correlation that has seen 4 of 5 required events resumes at 4 after a restart, not 0.
 
