@@ -267,10 +267,9 @@ impl WindowState {
                 }
             }
             (WindowState::NumericAgg { entries }, CorrelationType::ValuePercentile) => {
-                // Proper percentile calculation using linear interpolation.
-                // The condition threshold represents a percentile rank (0-100).
-                // We compute the value at that percentile from the window data.
-                return window_percentile(entries, condition.percentile);
+                // The value at the condition's percentile rank (0-100), by
+                // linear interpolation; the predicates then apply to it.
+                window_percentile(entries, condition.percentile)?
             }
             (WindowState::NumericAgg { entries }, CorrelationType::ValueMedian) => {
                 // An empty window has no median. Returning `0.0` here would

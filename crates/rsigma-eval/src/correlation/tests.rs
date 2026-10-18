@@ -575,16 +575,24 @@ fn test_value_percentile_check_condition() {
         state.push_numeric(1000 + i, i as f64);
     }
 
-    let cond = CompiledCondition {
+    let cond = |op, threshold| CompiledCondition {
         field: Some(vec!["latency".to_string()]),
-        predicates: vec![(ConditionOperator::Lte, 50.0)],
+        predicates: vec![(op, threshold)],
         percentile: None,
     };
-    // 50th percentile of 1..100 should be ~50.5
-    let result = state.check_condition(&cond, CorrelationType::ValuePercentile, &[], None);
-    assert!(result.is_some());
-    let val = result.unwrap();
-    assert!((val - 50.5).abs() < 1.0, "expected ~50.5, got {val}");
+    let check = |c: &CompiledCondition| {
+        state.check_condition(c, CorrelationType::ValuePercentile, &[], None)
+    };
+
+    // The 50th percentile of 1..=100 is 50.5.
+    let val = check(&cond(ConditionOperator::Lte, 51.0)).expect("50.5 <= 51");
+    assert!(
+        (val - 50.5).abs() < f64::EPSILON,
+        "expected 50.5, got {val}"
+    );
+    assert_eq!(check(&cond(ConditionOperator::Lte, 50.0)), None);
+    assert_eq!(check(&cond(ConditionOperator::Gte, 51.0)), None);
+    assert!(check(&cond(ConditionOperator::Gt, 50.0)).is_some());
 }
 
 #[test]
