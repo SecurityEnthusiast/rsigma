@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Integer literals above 2^53 match exactly
+### Integer literals above 2^53 match exactly (#610)
 
 Rule integers were stored as `f64` from lowering onward, so any literal above 2^53 rounded to a neighbor: `pid: 9007199254740993` matched `9007199254740992` and not itself, `pid|gt: 9007199254740992` missed `9007199254740993`, an integer keyword searched for the rounded digits, and `backend convert` and `backend reverse` emitted the rounded number. Integers now stay exact end to end: `IrNumber::Literal` holds a new `rsigma_ir::NumericLiteral` (`Integer(i64)` or `Float(f64)`), equality and the `gt`, `gte`, `lt`, and `lte` comparisons are exact against integer, string, and float event values, and conversion renders the exact digits. Fractional values still compare as `f64`.
 
