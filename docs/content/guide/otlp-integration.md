@@ -43,6 +43,8 @@ OTLP is exposed on the same `--api-addr` port as the rest of the daemon's HTTP A
 
 Both transports support `Content-Encoding: gzip` (HTTP) or gRPC gzip compression for compressed payloads.
 
+Both transports cap a decompressed request at 4 MiB. Over HTTP, a gzip body that inflates past the cap is rejected with `413 Payload Too Large` and counted as `rsigma_otlp_errors_total{reason="body_too_large"}`; uncompressed HTTP bodies are limited to 2 MiB. Keep agent batches under these limits. {{ added "unreleased" }}
+
 When no `Content-Type` is provided on a POST to `/v1/logs`, protobuf is assumed, matching the OTLP/HTTP specification default.
 
 ## LogRecord to JSON mapping
@@ -242,7 +244,7 @@ OTLP traffic surfaces in three places:
 |-------|------|
 | Prometheus metric `rsigma_otlp_requests_total{transport, encoding}` | Counter of OTLP export requests received. Labels: `transport` (`http` or `grpc`) and `encoding` (`protobuf` or `json`). Gzip is decompressed before the encoding label is recorded. |
 | Prometheus metric `rsigma_otlp_log_records_total` | Counter of LogRecords ingested. |
-| Prometheus metric `rsigma_otlp_errors_total{transport, reason}` | Errors by transport and reason (`unsupported_content_type`, `decompression`, `decode`, `channel_closed`). |
+| Prometheus metric `rsigma_otlp_errors_total{transport, reason}` | Errors by transport and reason (`unsupported_content_type`, `decompression`, `body_too_large`, `decode`, `channel_closed`). |
 | `RUST_LOG=info,rsigma=debug` | Per-request `otlp_ingest` span on both HTTP and gRPC handlers, with `record_count` after decoding. |
 
 See [Prometheus metrics reference](../reference/metrics.md) for the full set, and [Observability](observability.md) for the `RUST_LOG` filter targets.

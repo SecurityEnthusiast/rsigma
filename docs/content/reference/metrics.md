@@ -124,7 +124,7 @@ Exposed when the daemon is built with `daemon-otlp` and an OTLP receiver is acti
 |--------|------|--------|-------------|
 | `rsigma_otlp_requests_total` | counter | `transport` (`http`, `grpc`), `encoding` (`json`, `protobuf`) | OTLP export requests received. Gzip is decompressed before the encoding label is recorded. |
 | `rsigma_otlp_log_records_total` | counter | none | Log records ingested via OTLP. |
-| `rsigma_otlp_errors_total` | counter | `transport`, `reason` (`unsupported_content_type`, `decompression`, `decode`, `channel_closed`) | OTLP request errors. |
+| `rsigma_otlp_errors_total` | counter | `transport`, `reason` (`unsupported_content_type`, `decompression`, `body_too_large`, `decode`, `channel_closed`) | OTLP request errors. |
 
 ## TLS (2 metrics)
 

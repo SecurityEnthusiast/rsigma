@@ -9,6 +9,7 @@ For the SECURITY policy and disclosure process, see [`SECURITY.md`](../security-
 | Limit | Constant | Value | Scope | Behaviour on overrun |
 |-------|----------|-------|-------|----------------------|
 | Single event size | `MAX_LINE_BYTES` | 1 MiB | `engine daemon` HTTP/stdin event ingest | Line rejected with a `413`-equivalent error in HTTP mode; counted in `rsigma_events_parse_errors_total`. |
+| Decompressed OTLP/HTTP body | `OTLP_HTTP_MAX_DECOMPRESSED_BYTES` | 4 MiB | `POST /v1/logs` with `Content-Encoding: gzip` (`daemon-otlp`) | Request rejected with `413` before decoding; counted as `rsigma_otlp_errors_total{reason="body_too_large"}`. The gRPC transport applies the same 4 MiB decoded-message limit. {{ added "unreleased" }} |
 | Condition expression length | `MAX_CONDITION_LEN` | 64 KiB | Rule parser | Rule rejected at parse time with an `InvalidCondition` error. |
 | Condition expression depth | `MAX_CONDITION_DEPTH` | 64 | Rule parser | Same. |
 | JSON event traversal depth | `MAX_NESTING_DEPTH` | 64 | Keyword search inside nested JSON | Traversal stops; deeper fields are not matched against keyword detections. |
