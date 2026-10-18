@@ -151,7 +151,9 @@ Dedup here is a sink-path stage that applies to detection and correlation result
 
 When the daemon runs with `--state-db <PATH>`, the alert pipeline's state is persisted to the SQLite store alongside the correlation snapshot, in its own `rsigma_alert_pipeline_state` table. The snapshot carries the active dedup alerts, open incidents, the dynamic (API) silences, and the inhibition active-source index; static silences come from config and are re-seeded on boot. It is written periodically (`--state-save-interval`) and on graceful shutdown, and restored on boot.
 
-Restore is window-aware: dedup alerts past `resolve_timeout`, incidents past their `resolve_timeout`, silences past `ends_at`, and inhibition sources past their rule's `duration` are dropped during restore, so stale state never lingers. Deterministic `group_by` incident ids are preserved across the restart. A snapshot whose version does not match the current build is ignored with a warning (the daemon starts fresh). `--clear-state` skips the restore (and `--keep-state` forces it), matching the correlation-state flags.
+Restore is window-aware: dedup alerts past `resolve_timeout`, incidents past their `resolve_timeout`, silences past `ends_at`, and inhibition sources past their rule's `duration` are dropped during restore, so stale state never lingers. Deterministic `group_by` incident ids are preserved across the restart.
+
+Restore and hot-reload also enforce the configured caps, so lowering one takes effect at once instead of when the excess ages out. {{ added "unreleased" }} Beyond `dedup.max_active_alerts` or `group.caps.max_open_incidents`, the least recently seen alerts or incidents are evicted without a `resolved` record, and each remaining incident is cut to `max_results_per_incident` samples and `max_entities_per_incident` values per selector. The daemon logs a warning with the eviction counts. A snapshot whose version does not match the current build is ignored with a warning (the daemon starts fresh). `--clear-state` skips the restore (and `--keep-state` forces it), matching the correlation-state flags.
 
 ## Grouping
 
