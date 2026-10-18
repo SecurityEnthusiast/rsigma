@@ -294,7 +294,9 @@ impl RuntimeEngine {
     ///
     /// This is the async entry point for source resolution. Call this before
     /// `load_rules()` when you have an async context available, or let
-    /// `load_rules()` handle it synchronously via `tokio::runtime::Handle`.
+    /// `load_rules()` handle it synchronously via `tokio::runtime::Handle`,
+    /// which needs a multi-threaded runtime and returns an error on a
+    /// current-thread one.
     pub async fn resolve_dynamic_pipelines(&mut self) -> Result<(), String> {
         let Some(resolver) = &self.source_resolver else {
             return Ok(());
@@ -356,11 +358,15 @@ impl RuntimeEngine {
             let resolver = self.source_resolver.clone().unwrap();
             let allow_remote = self.allow_remote_include;
             let external = self.external_sources.clone();
-            let resolved = tokio::task::block_in_place(|| {
-                handle.block_on(async {
-                    resolve_pipelines_async(&resolver, &pipelines, &external, allow_remote).await
-                })
-            });
+            let resolved = match block_on_from_sync(&handle, async {
+                resolve_pipelines_async(&resolver, &pipelines, &external, allow_remote).await
+            }) {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    self.pipelines = pipelines;
+                    return Err(e);
+                }
+            };
             match resolved {
                 Ok(p) => self.pipelines = p,
                 Err(e) => {
@@ -395,12 +401,9 @@ impl RuntimeEngine {
                     let external = self.external_sources.clone();
                     let mut resolved_sets = Vec::with_capacity(spec.pipeline_sets.len());
                     for set in spec.pipeline_sets {
-                        let resolved = tokio::task::block_in_place(|| {
-                            handle.block_on(async {
-                                resolve_pipelines_async(&resolver, &set, &external, allow_remote)
-                                    .await
-                            })
-                        });
+                        let resolved = block_on_from_sync(&handle, async {
+                            resolve_pipelines_async(&resolver, &set, &external, allow_remote).await
+                        })?;
                         match resolved {
                             Ok(p) => resolved_sets.push(p),
                             Err(e) => {
@@ -743,6 +746,26 @@ async fn resolve_pipelines_async(
     Ok(resolved_pipelines)
 }
 
+/// Wait for `fut` from synchronous code running inside a Tokio runtime.
+///
+/// Only a multi-threaded runtime can do this: `block_in_place` panics on a
+/// current-thread runtime, and blocking its only thread would also stall the
+/// connection tasks the future may be waiting on. There the caller gets an
+/// error instead, and the rules are not loaded with unresolved sources.
+fn block_on_from_sync<F: Future>(
+    handle: &tokio::runtime::Handle,
+    fut: F,
+) -> Result<F::Output, String> {
+    if handle.runtime_flavor() != tokio::runtime::RuntimeFlavor::MultiThread {
+        return Err(
+            "Resolving dynamic pipeline sources from load_rules needs a multi-threaded tokio \
+             runtime; refusing to load rules with unresolved sources"
+                .to_string(),
+        );
+    }
+    Ok(tokio::task::block_in_place(|| handle.block_on(fut)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -862,6 +885,49 @@ transformations:
         assert!(
             err.contains("Dynamic source resolution failed"),
             "error should explain the fail-closed path; got: {err}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn load_rules_refuses_dynamic_sources_on_a_current_thread_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let rule_path = dir.path().join("rule.yml");
+        std::fs::write(&rule_path, RULE_YAML).unwrap();
+        let pipeline_path = dir.path().join("pipeline.yml");
+        std::fs::write(&pipeline_path, DYNAMIC_PIPELINE).unwrap();
+        let source_path = dir.path().join("feed.json");
+        std::fs::write(&source_path, "[]").unwrap();
+        let pipeline = parse_pipeline_file(&pipeline_path).unwrap();
+
+        let mut engine = RuntimeEngine::new(
+            rule_path,
+            vec![pipeline],
+            CorrelationConfig::default(),
+            false,
+        );
+        engine.set_source_resolver(Arc::new(sources::DefaultSourceResolver::new()));
+        engine.set_external_sources(vec![DynamicSource {
+            id: "feed".to_string(),
+            source_type: SourceType::File {
+                path: source_path,
+                format: DataFormat::Json,
+                extract: None,
+            },
+            refresh: RefreshPolicy::Once,
+            timeout: None,
+            on_error: ErrorPolicy::Fail,
+            required: true,
+            default: None,
+        }]);
+
+        let err = engine
+            .load_rules()
+            .expect_err("a current-thread runtime cannot resolve sources from load_rules");
+        assert!(err.contains("multi-threaded"), "got: {err}");
+        assert_eq!(
+            engine.pipelines.len(),
+            1,
+            "the unresolved pipelines are kept for a retry"
         );
     }
 }
