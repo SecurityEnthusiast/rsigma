@@ -166,6 +166,8 @@ Three triggers cause the daemon to re-read its rules and pipelines, debounced at
 
 If the new configuration fails to parse, the daemon keeps the old engine running and increments `rsigma_reloads_failed_total`. Successful reloads atomically swap the in-memory engine via `ArcSwap`, so in-flight events finish on the old engine and new events evaluate against the new one without dropping any.
 
+Correlation windows carry over to the new engine for correlations that still exist after the reload. Rules load while events keep flowing through the old engine; the window state is then copied across and the engines swapped while ordered batches are briefly paused, so counts and windows include every event processed during the load.
+
 Builtin pipelines (`ecs_windows`, `sysmon`) are embedded in the binary and are not file-watched.
 
 ## State persistence
