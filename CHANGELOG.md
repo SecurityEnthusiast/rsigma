@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### OTLP log decoding is fuzzed
+
+OTLP log ingestion decodes untrusted protobuf and flattens each record to JSON, but it was the only untrusted input surface without a `cargo-fuzz` harness. The new `fuzz_otlp_logs_decode` target decodes arbitrary bytes as `ExportLogsServiceRequest`, converts whatever decodes with `logs_request_to_raw_events`, and asserts each event is valid JSON. It runs in the weekly fuzz workflow from a committed seed corpus. Conversion recurses once per nested `AnyValue`, so its depth depends on prost's decode recursion limit; a new unit test fails if a dependency turns that limit off through prost's `no-recursion-limit` feature.
+
 ### The inhibit store is capped, and long unbounded correlation windows warn at load (#616)
 
 `InhibitStore` was the only alert-pipeline store without a count cap: sources were pruned by `duration` only, so `equal` selectors over attacker-influenced values (source IPs, usernames) could grow it without bound. A new top-level `max_inhibit_sources` key (default 100000) caps tracked sources across all `inhibit_rules`. At the cap, a result that would open a new source is still checked as a target but is not tracked, and the refusal is counted on the new `rsigma_inhibit_sources_refused_total{rule}` counter; already-tracked sources keep refreshing. Restore and hot-reload trim the store to the cap, evicting the least recently seen sources, and `CapTrim` reports them as `inhibit_sources`. For library users, `AlertPipelineFile` gains `max_inhibit_sources`, and `MetricsHook` gains `on_inhibit_source_refused`, which defaults to a no-op.
