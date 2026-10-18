@@ -12,7 +12,8 @@ libfuzzer-sys = "0.4"
 rsigma-parser = { path = "../crates/rsigma-parser" }
 rsigma-eval = { path = "../crates/rsigma-eval" }
 rsigma-convert = { path = "../crates/rsigma-convert" }
-rsigma-runtime = { path = "../crates/rsigma-runtime", features = ["logfmt", "cef"] }
+rsigma-runtime = { path = "../crates/rsigma-runtime", features = ["logfmt", "cef", "otlp"] }
+prost = "0.14"
 serde_json = "1"
 yaml_serde = "0.10"
 regex = "1"
@@ -154,3 +155,7 @@ name = "fuzz_lucene_frontend"
 path = "fuzz_targets/fuzz_lucene_frontend.rs"
 doc = false
 
+[[bin]]
+name = "fuzz_otlp_logs_decode"
+path = "fuzz_targets/fuzz_otlp_logs_decode.rs"
+doc = false
