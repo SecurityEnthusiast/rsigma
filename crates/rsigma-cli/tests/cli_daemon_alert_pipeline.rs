@@ -81,13 +81,23 @@ fn dedup_folds_duplicate_detections() {
         "expected exactly one emitted and two folded dedup results within 5s"
     );
 
-    // Exactly one detection line should have reached the file sink.
-    let lines: Vec<String> = std::fs::read_to_string(&output_path)
-        .unwrap_or_default()
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| l.to_string())
-        .collect();
+    // Exactly one detection line should reach the file sink. The dedup
+    // metrics move when the pipeline decides, before the sink's delivery
+    // worker writes the line, so wait for the write. The two folded fires are
+    // already counted, so no further line can arrive after the first.
+    let read_lines = || -> Vec<String> {
+        std::fs::read_to_string(&output_path)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| l.to_string())
+            .collect()
+    };
+    let lines = poll_until(Duration::from_secs(5), || {
+        let lines = read_lines();
+        (!lines.is_empty()).then_some(lines)
+    })
+    .unwrap_or_default();
     assert_eq!(
         lines.len(),
         1,
