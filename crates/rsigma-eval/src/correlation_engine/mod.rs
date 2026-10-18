@@ -1372,16 +1372,24 @@ impl<L> CorrelationEngine<L> {
                 target,
             );
 
-            // Collect keys with their latest timestamp, sort by oldest first
+            // Partition by latest timestamp so the `excess` stalest entries
+            // come first, and clone only their keys.
             let mut by_staleness: Vec<_> = self
                 .state
                 .iter()
-                .map(|(k, v)| (k.clone(), v.latest_timestamp().unwrap_or(i64::MIN)))
+                .map(|(k, v)| (k, v.latest_timestamp().unwrap_or(i64::MIN)))
                 .collect();
-            by_staleness.sort_unstable_by_key(|&(_, ts)| ts);
+            if excess < by_staleness.len() {
+                by_staleness.select_nth_unstable_by_key(excess, |&(_, ts)| ts);
+            }
+            let stalest: Vec<_> = by_staleness
+                .iter()
+                .take(excess)
+                .map(|&(k, _)| k.clone())
+                .collect();
 
-            // Drop the oldest entries (and their associated event buffers)
-            for (key, _) in by_staleness.into_iter().take(excess) {
+            // Drop the stalest entries (and their associated event buffers)
+            for key in stalest {
                 self.state.remove(&key);
                 self.last_alert.remove(&key);
                 self.event_buffers.remove(&key);

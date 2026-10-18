@@ -656,6 +656,57 @@ fn windowed_engine_with_group_cap(window_lines: &str, cap: usize) -> Correlation
 }
 
 #[test]
+fn test_hard_cap_evicts_the_stalest_groups() {
+    let collection = parse_sigma_yaml(&window_mode_yaml("    timespan: 1h")).unwrap();
+    let mut engine = CorrelationEngine::new(CorrelationConfig {
+        max_state_entries: 20,
+        ..Default::default()
+    });
+    engine.add_collection(&collection).unwrap();
+
+    // Twenty groups whose latest timestamps arrive out of order.
+    let latest = |i: i64| 100 + (i * 7) % 20;
+    for i in 0..20 {
+        let v = json!({"action": "click", "User": format!("user_{i}")});
+        engine.process_event_at(&JsonEvent::borrow(&v), latest(i));
+    }
+    assert_eq!(engine.state_count(), 20);
+
+    // The cap is reached, so the next new group trims the state to 90% first:
+    // the two groups with the oldest latest timestamps go.
+    let v = json!({"action": "click", "User": "newcomer"});
+    engine.process_event_at(&JsonEvent::borrow(&v), 200);
+
+    let users: std::collections::HashSet<String> = engine
+        .state
+        .keys()
+        .filter_map(|(_, key)| key.0[0].clone())
+        .collect();
+    assert_eq!(users.len(), 19);
+    assert!(users.contains("newcomer"));
+    let evicted: Vec<String> = (0..20)
+        .filter(|&i| latest(i) < 102)
+        .map(|i| format!("user_{i}"))
+        .collect();
+    assert_eq!(evicted.len(), 2);
+    for user in &evicted {
+        assert!(!users.contains(user), "{user} is among the stalest");
+    }
+
+    // A cap of one evicts every entry before each new group.
+    let mut engine = CorrelationEngine::new(CorrelationConfig {
+        max_state_entries: 1,
+        ..Default::default()
+    });
+    engine.add_collection(&collection).unwrap();
+    for i in 0..3 {
+        let v = json!({"action": "click", "User": format!("user_{i}")});
+        engine.process_event_at(&JsonEvent::borrow(&v), 100 + i);
+        assert_eq!(engine.state_count(), 1);
+    }
+}
+
+#[test]
 fn test_long_window_without_group_cap_is_flagged() {
     let flagged = |window_lines: &str, config: CorrelationConfig| {
         let collection = parse_sigma_yaml(&window_mode_yaml(window_lines)).unwrap();
