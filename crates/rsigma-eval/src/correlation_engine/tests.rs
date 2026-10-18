@@ -2992,6 +2992,73 @@ level: high
 }
 
 #[test]
+fn test_chaining_in_full_event_mode() {
+    // Child results carry retained events in full mode; the chained parent
+    // still sees the child's group and fires without events of its own.
+    let yaml = r#"
+title: click
+id: det-rule
+logsource:
+    product: test
+detection:
+    selection:
+        action: click
+    condition: selection
+---
+title: correlation A
+id: corr-a
+correlation:
+    type: event_count
+    rules:
+        - det-rule
+    group-by:
+        - User
+    timespan: 5m
+    condition:
+        gte: 2
+level: high
+---
+title: correlation B
+id: corr-b
+correlation:
+    type: event_count
+    rules:
+        - corr-a
+    group-by:
+        - User
+    timespan: 5m
+    condition:
+        gte: 2
+level: high
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    let mut engine = CorrelationEngine::new(CorrelationConfig {
+        correlation_event_mode: CorrelationEventMode::Full,
+        max_correlation_events: 10,
+        ..emit_every_hop()
+    });
+    engine.add_collection(&collection).unwrap();
+
+    let mut last = None;
+    for i in 0..3 {
+        let v = json!({"action": "click", "User": "alice"});
+        last = Some(engine.process_event_at(&JsonEvent::borrow(&v), 1_000 + i));
+    }
+    let result = last.unwrap();
+    let bodies: Vec<_> = result
+        .correlations()
+        .map(|c| (c.header.rule_title.as_str(), c.as_correlation().unwrap()))
+        .collect();
+    let [("correlation A", a), ("correlation B", b)] = bodies.as_slice() else {
+        panic!("expected A then chained B, got {bodies:?}");
+    };
+    assert_eq!(a.events.as_ref().map(Vec::len), Some(3));
+    assert!(b.events.is_none());
+    assert_eq!(b.group_key, [("User".to_string(), "alice".to_string())]);
+    assert_eq!(b.aggregated_value, 2.0);
+}
+
+#[test]
 fn test_chaining_parent_referenced_by_child_name() {
     let yaml = r#"
 title: click

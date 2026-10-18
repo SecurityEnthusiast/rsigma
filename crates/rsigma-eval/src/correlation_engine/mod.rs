@@ -1104,10 +1104,13 @@ impl<L> CorrelationEngine<L> {
         out_indices: &mut Vec<usize>,
     ) {
         debug_assert_eq!(fired.len(), fired_indices.len());
-        let mut pending: Vec<(usize, EvaluationResult)> = fired_indices
+        // Chaining only needs which correlation fired and for which group, so
+        // `pending` carries that instead of cloning results and their events.
+        // Only correlation results chain. Detections never reach here.
+        let mut pending: Vec<(usize, Vec<(String, String)>)> = fired_indices
             .iter()
-            .copied()
-            .zip(fired.iter().cloned())
+            .zip(fired)
+            .filter_map(|(&idx, result)| Some((idx, result.as_correlation()?.group_key.clone())))
             .collect();
         let mut depth = 0;
 
@@ -1118,16 +1121,12 @@ impl<L> CorrelationEngine<L> {
             #[allow(clippy::type_complexity)]
             let mut work: Vec<(usize, Vec<(String, String)>, String)> = Vec::new();
             let mut seen = std::collections::HashSet::<(usize, String)>::new();
-            for (source_idx, result) in &pending {
-                // Only correlation results chain. Detections never reach here.
-                let Some(body) = result.as_correlation() else {
-                    continue;
-                };
+            for (source_idx, group_key) in &pending {
                 for key in self.chain_lookup_keys(*source_idx) {
                     if let Some(indices) = self.rule_index.get(&key) {
                         for &corr_idx in indices {
                             if seen.insert((corr_idx, key.clone())) {
-                                work.push((corr_idx, body.group_key.clone(), key.clone()));
+                                work.push((corr_idx, group_key.clone(), key.clone()));
                             }
                         }
                     }
@@ -1202,6 +1201,7 @@ impl<L> CorrelationEngine<L> {
                     }
 
                     let corr = &self.correlations[corr_idx];
+                    let fired_group_key = group_key.to_pairs(&corr.group_by);
                     let result = EvaluationResult {
                         header: RuleHeader {
                             rule_title: corr.title.clone(),
@@ -1213,7 +1213,7 @@ impl<L> CorrelationEngine<L> {
                         },
                         body: ResultBody::Correlation(CorrelationBody {
                             correlation_type: corr_type,
-                            group_key: group_key.to_pairs(&corr.group_by),
+                            group_key: fired_group_key.clone(),
                             aggregated_value: agg_value,
                             timespan_secs: timespan,
                             // Chained correlations don't include events
@@ -1223,7 +1223,7 @@ impl<L> CorrelationEngine<L> {
                             event_refs: None,
                         }),
                     };
-                    next_pending.push((corr_idx, result.clone()));
+                    next_pending.push((corr_idx, fired_group_key));
                     out.push(result);
                     out_indices.push(corr_idx);
                     self.last_alert.insert(alert_key.clone(), ts);
