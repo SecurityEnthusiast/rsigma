@@ -188,7 +188,7 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 | `EndsWith` | `\|endswith` | Suffix match |
 | `Regex` | `\|re` | `\|i` adds `(?i)`, `\|m` adds multiline, `\|s` adds dotall |
 | `Cidr` | `\|cidr` | IP network matching via `IpNet` |
-| `NumericEq/Gt/Gte/Lt/Lte` | `\|gt`, `\|gte`, etc. | f64 comparison |
+| `NumericEq/Gt/Gte/Lt/Lte` | `\|gt`, `\|gte`, etc. | Holds a `NumericLiteral`: integer literals compare exactly, including above 2^53; float literals compare as f64 |
 | `Exists` | `\|exists` | Field presence; a field set to null is present. Accepts `true`/`yes`/`false`/`no` as values |
 | `FieldRef` | `\|fieldref` | Compares against another field. Optional `\|contains`, `\|startswith`, or `\|endswith` after `\|fieldref`. Case-insensitive unless `\|cased`. |
 | `Null` | - | Matches null or missing values |

@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Integer literals above 2^53 match exactly
+
+Rule integers were stored as `f64` from lowering onward, so any literal above 2^53 rounded to a neighbor: `pid: 9007199254740993` matched `9007199254740992` and not itself, `pid|gt: 9007199254740992` missed `9007199254740993`, an integer keyword searched for the rounded digits, and `backend convert` and `backend reverse` emitted the rounded number. Integers now stay exact end to end: `IrNumber::Literal` holds a new `rsigma_ir::NumericLiteral` (`Integer(i64)` or `Float(f64)`), equality and the `gt`, `gte`, `lt`, and `lte` comparisons are exact against integer, string, and float event values, and conversion renders the exact digits. Fractional values still compare as `f64`.
+
+This changes public API. `CompiledMatcher::NumericEq`, `NumericGt`, `NumericGte`, `NumericLt`, and `NumericLte` hold a `NumericLiteral` instead of an `f64`, and the `Backend` methods `convert_field_eq_num`, `convert_field_compare_op`, and `convert_keyword_num` take a `NumericLiteral`; a custom backend renders it with `to_string()`. `HIR_SCHEMA_VERSION` is now 4, so `Engine::load_hir` and `decode_rules` reject a HIR cache written by an earlier version; rebuild it from the rules.
+
 ### Boolean keywords match the word instead of nothing (#609)
 
 A `keywords:` detection with a YAML boolean, such as `keywords: [true]`, parsed, compiled, and passed lint, but never fired, because keyword evaluation runs only string matchers and the value lowered to a boolean equality check; `backend convert` rejected the same rule with `UnsupportedKeyword`. Boolean keywords now lower to a case-insensitive substring search for the word `true` or `false`, like any other keyword, so `keywords: [true]` matches `"true"` and `flag is TRUE now` in eval and converts as the term `true`. Keyword search still does not visit JSON booleans; use a field match such as `a: true` for those. Fixes #587.
