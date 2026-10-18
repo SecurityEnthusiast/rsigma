@@ -271,15 +271,20 @@ impl LogProcessor {
         format: &InputFormat,
         event_filter: Option<&EventFilter>,
     ) -> BatchProcessOutcome {
-        let engine_guard = self.engine.load();
-        let concurrent = engine_guard.read().allows_concurrent_detection();
+        let mut engine_guard = self.engine.load();
+        let mut concurrent = engine_guard.read().allows_concurrent_detection();
         // Correlation (and tap-visible global order) still serialize batches.
         // Detection-only engines skip the order lock so the daemon can keep
         // multiple batches in flight under shared reads.
         let _order_guard = if concurrent {
             None
         } else {
-            Some(self.processing_order.lock())
+            let guard = self.processing_order.lock();
+            // A reload may have swapped engines while this batch waited; running
+            // against the retired engine would advance state the swap discarded.
+            engine_guard = self.engine.load();
+            concurrent = engine_guard.read().allows_concurrent_detection();
+            Some(guard)
         };
 
         // Live event tap: load the active-session snapshot once for the whole
@@ -1356,6 +1361,43 @@ correlation:
             1,
             "the fifth event fires only if all four earlier ones survived the reload"
         );
+    }
+
+    #[test]
+    fn a_batch_waiting_on_the_order_lock_runs_against_the_swapped_engine() {
+        let dir = tempfile::tempdir().unwrap();
+        let rule_path = dir.path().join("test.yml");
+        std::fs::write(&rule_path, counting_rules("Base A")).unwrap();
+        let mut engine = RuntimeEngine::new(
+            rule_path.clone(),
+            vec![],
+            CorrelationConfig::default(),
+            false,
+        );
+        engine.load_rules().unwrap();
+        let proc = Arc::new(LogProcessor::new(engine, Arc::new(NoopMetrics)));
+
+        std::fs::write(&rule_path, counting_rules("Base B")).unwrap();
+        let (new_engine, _) = proc.prepare_reload().unwrap();
+
+        let order_guard = proc.processing_order.lock();
+        let worker = {
+            let proc = proc.clone();
+            std::thread::spawn(move || alice_event(&proc))
+        };
+        // Let the worker load the current engine and block on the lock.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        proc.swap_engine(new_engine);
+        drop(order_guard);
+
+        let result = worker.join().unwrap();
+        let titles: Vec<&str> = result
+            .iter()
+            .map(|r| r.header.rule_title.as_str())
+            .collect();
+        assert_eq!(titles, ["Base B"]);
+
+        std::mem::forget(dir);
     }
 
     // --- Tests for process_batch_with_format ---
