@@ -635,12 +635,22 @@ pub(crate) struct DaemonArgs {
     ///
     /// By default the daemon refuses to start on a public address
     /// (`0.0.0.0`, `::`, or any non-loopback IP) unless either
-    /// `--tls-cert`/`--tls-key` is supplied or this flag is set.
-    /// Loopback (`127.0.0.0/8`, `::1`) is always allowed in plaintext
-    /// to keep local development friction-free.
-    #[cfg(feature = "daemon-tls")]
+    /// `--tls-cert`/`--tls-key` is supplied (in a `daemon-tls` build) or this
+    /// flag is set. Loopback (`127.0.0.0/8`, `::1`) and `unix://` addresses
+    /// are always allowed in plaintext.
     #[arg(long = "allow-plaintext")]
     pub allow_plaintext: bool,
+
+    /// Allow the daemon to serve the API on a non-loopback `--api-addr`
+    /// without authentication.
+    ///
+    /// By default the daemon refuses to start on a public address unless
+    /// bearer tokens are configured (`--api-token-env` or `daemon.api.auth`),
+    /// the listener requires client certificates (`--tls-client-ca`), or this
+    /// flag is set. Use it only when an authenticating proxy or network policy
+    /// fronts the daemon. Loopback and `unix://` addresses are always allowed.
+    #[arg(long = "allow-unauthenticated")]
+    pub allow_unauthenticated: bool,
 }
 
 /// Helper struct grouping NATS connection / auth flags so `cmd_daemon` does
@@ -796,8 +806,8 @@ pub(crate) fn cmd_daemon(
         tls_client_ca,
         #[cfg(feature = "daemon-tls")]
         tls_min_version,
-        #[cfg(feature = "daemon-tls")]
         allow_plaintext,
+        allow_unauthenticated,
     } = args;
 
     let rules_path = rules_opt.unwrap_or_else(|| {
@@ -848,7 +858,6 @@ pub(crate) fn cmd_daemon(
         key_password: tls_key_password,
         client_ca: tls_client_ca,
         min_version: tls_min_version,
-        allow_plaintext,
     };
 
     // A batch cannot contain more events than the source queue can hold.
@@ -934,6 +943,8 @@ pub(crate) fn cmd_daemon(
         capture,
         api_auth,
         audit,
+        allow_plaintext,
+        allow_unauthenticated,
         #[cfg(feature = "daemon-tls")]
         tls_args,
     );
@@ -1315,6 +1326,16 @@ fn apply_daemon_config(
         {
             args.api_addr = v;
         }
+        if !explicit("allow_plaintext")
+            && let Some(v) = api.tls.as_ref().and_then(|t| t.allow_plaintext)
+        {
+            args.allow_plaintext = v;
+        }
+        if !explicit("allow_unauthenticated")
+            && let Some(v) = api.allow_unauthenticated
+        {
+            args.allow_unauthenticated = v;
+        }
         #[cfg(feature = "daemon-tls")]
         if let Some(tls) = api.tls {
             if !explicit("tls_cert")
@@ -1336,11 +1357,6 @@ fn apply_daemon_config(
                 && let Some(v) = tls.min_version
             {
                 args.tls_min_version = v;
-            }
-            if !explicit("allow_plaintext")
-                && let Some(v) = tls.allow_plaintext
-            {
-                args.allow_plaintext = v;
             }
         }
     }
@@ -1637,7 +1653,6 @@ pub(crate) struct TlsCliArgs {
     pub key_password: Option<String>,
     pub client_ca: Option<PathBuf>,
     pub min_version: String,
-    pub allow_plaintext: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1705,6 +1720,8 @@ fn run_daemon(
     capture: daemon::server::CaptureSettings,
     api_auth: Option<daemon::auth::ApiAuth>,
     audit: daemon::audit::AuditSettings,
+    allow_plaintext: bool,
+    allow_unauthenticated: bool,
     #[cfg(feature = "daemon-tls")] tls_args: TlsCliArgs,
 ) {
     use rsigma_eval::resolve_builtin_pipeline;
@@ -1765,6 +1782,22 @@ fn run_daemon(
 
     #[cfg(feature = "daemon-tls")]
     let tls_state = build_tls_state(&tls_args, &addr);
+    #[cfg(feature = "daemon-tls")]
+    let (tls_enabled, client_certs_required) = (
+        tls_state.is_some(),
+        tls_state.is_some() && tls_args.client_ca.is_some(),
+    );
+    #[cfg(not(feature = "daemon-tls"))]
+    let (tls_enabled, client_certs_required) = (false, false);
+    enforce_listener_policy(
+        &addr,
+        ListenerSecurity {
+            tls: tls_enabled,
+            authenticated: api_auth.is_some() || client_certs_required,
+        },
+        allow_plaintext,
+        allow_unauthenticated,
+    );
 
     #[cfg(feature = "daemon-nats")]
     let nats_config = rsigma_runtime::NatsConnectConfig {
@@ -1925,8 +1958,54 @@ pub(crate) fn parse_input_format(
     }
 }
 
-/// Build the TLS state from CLI flags and enforce the
-/// "no plaintext on non-loopback" policy. Returns `None` when TLS is not
+/// What protects the API listener, as input to [`enforce_listener_policy`].
+struct ListenerSecurity {
+    /// The listener terminates TLS.
+    tls: bool,
+    /// Requests must carry a bearer token or a verified client certificate.
+    authenticated: bool,
+}
+
+/// Refuse to start on a non-loopback TCP address that serves plaintext or
+/// accepts unauthenticated requests without the matching opt-in flag, and
+/// warn when the operator opts out of authentication. A `unix://` address is
+/// gated by filesystem permissions and is exempt. Exits with `CONFIG_ERROR`
+/// so the operator sees the problem before the daemon spins up.
+fn enforce_listener_policy(
+    addr: &daemon::listen::ListenAddr,
+    security: ListenerSecurity,
+    allow_plaintext: bool,
+    allow_unauthenticated: bool,
+) {
+    use daemon::listen::{enforce_auth_policy, enforce_plaintext_policy};
+
+    let tcp_addr = match addr {
+        daemon::listen::ListenAddr::Tcp(sa) => *sa,
+        #[cfg(unix)]
+        daemon::listen::ListenAddr::Unix(_) => return,
+    };
+
+    if !security.tls
+        && let Err(msg) = enforce_plaintext_policy(tcp_addr, allow_plaintext)
+    {
+        eprintln!("{msg}");
+        process::exit(exit_code::CONFIG_ERROR);
+    }
+    if let Err(msg) = enforce_auth_policy(tcp_addr, security.authenticated, allow_unauthenticated) {
+        eprintln!("{msg}");
+        process::exit(exit_code::CONFIG_ERROR);
+    }
+    if !security.authenticated && !tcp_addr.ip().is_loopback() {
+        tracing::warn!(
+            addr = %tcp_addr,
+            "API authentication is disabled on a non-loopback address; any client \
+             that can reach it can reload rules, change silences and dispositions, \
+             and read detection state"
+        );
+    }
+}
+
+/// Build the TLS state from CLI flags. Returns `None` when TLS is not
 /// requested. Exits with `CONFIG_ERROR` on validation failure so the
 /// operator sees the problem before the daemon spins up.
 #[cfg(feature = "daemon-tls")]
@@ -1934,13 +2013,13 @@ fn build_tls_state(
     args: &TlsCliArgs,
     addr: &daemon::listen::ListenAddr,
 ) -> Option<daemon::tls::TlsState> {
-    use daemon::tls::{TlsCliConfig, TlsMinVersion, TlsState, enforce_plaintext_policy};
+    use daemon::tls::{TlsCliConfig, TlsMinVersion, TlsState};
 
     // TLS terminates on a TCP socket. A unix:// listener is gated by filesystem
     // permissions instead, so cert/key on a UDS address is a configuration
-    // error and plaintext over a UDS needs no `--allow-plaintext` opt-in.
-    let tcp_addr = match addr {
-        daemon::listen::ListenAddr::Tcp(sa) => *sa,
+    // error.
+    match addr {
+        daemon::listen::ListenAddr::Tcp(_) => {}
         #[cfg(unix)]
         daemon::listen::ListenAddr::Unix(_) => {
             if args.cert.is_some() || args.key.is_some() {
@@ -1975,13 +2054,7 @@ fn build_tls_state(
                 }
             }
         }
-        (None, None) => {
-            if let Err(msg) = enforce_plaintext_policy(tcp_addr, args.allow_plaintext) {
-                eprintln!("{msg}");
-                process::exit(exit_code::CONFIG_ERROR);
-            }
-            None
-        }
+        (None, None) => None,
         _ => {
             // clap's `requires` should make this unreachable, but guard
             // anyway in case the validator is bypassed (e.g. tests).

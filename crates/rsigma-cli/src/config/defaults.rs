@@ -148,6 +148,7 @@ pub(crate) fn defaults_partial() -> RsigmaConfigPartial {
                 addr: Some(API_ADDR.to_string()),
                 tls: None,
                 auth: None,
+                allow_unauthenticated: Some(false),
                 audit: None,
             }),
             input: Some(InputPartial {

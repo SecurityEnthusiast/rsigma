@@ -263,27 +263,6 @@ pub fn read_cert_expiry(path: &Path) -> Result<i64, TlsError> {
     Ok(parsed.validity().not_after.timestamp())
 }
 
-/// Decide whether the operator may bind plaintext on `addr` without TLS.
-///
-/// Loopback addresses (`127.0.0.0/8`, `::1`) are always allowed for local
-/// development. Public binds require an explicit `--allow-plaintext`
-/// opt-in so a careless `--api-addr 0.0.0.0:9090` never silently ships
-/// detection events over cleartext.
-pub fn enforce_plaintext_policy(addr: SocketAddr, allow_plaintext: bool) -> Result<(), String> {
-    if is_loopback(addr) || allow_plaintext {
-        return Ok(());
-    }
-    Err(format!(
-        "refusing to bind plaintext on non-loopback address {addr}; \
-         pass --tls-cert/--tls-key to enable TLS or --allow-plaintext to opt out \
-         (e.g. when terminating TLS at a sidecar reverse proxy)"
-    ))
-}
-
-fn is_loopback(addr: SocketAddr) -> bool {
-    addr.ip().is_loopback()
-}
-
 /// An `axum::serve::Listener` adapter that performs a TLS handshake on
 /// every accepted TCP connection.
 ///
@@ -415,32 +394,12 @@ impl tokio::io::AsyncWrite for TrackedTlsStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     #[test]
     fn parse_min_version() {
         assert_eq!("1.2".parse::<TlsMinVersion>().unwrap(), TlsMinVersion::V1_2);
         assert_eq!("1.3".parse::<TlsMinVersion>().unwrap(), TlsMinVersion::V1_3);
         assert!("1.1".parse::<TlsMinVersion>().is_err());
-    }
-
-    #[test]
-    fn loopback_bypasses_plaintext_check() {
-        let addr_v4 = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
-        assert!(enforce_plaintext_policy(addr_v4, false).is_ok());
-
-        let addr_v6 = SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 0);
-        assert!(enforce_plaintext_policy(addr_v6, false).is_ok());
-    }
-
-    #[test]
-    fn public_bind_requires_explicit_opt_in() {
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 9090);
-        let err = enforce_plaintext_policy(addr, false).unwrap_err();
-        assert!(err.contains("refusing to bind plaintext"));
-        assert!(err.contains("--allow-plaintext"));
-
-        assert!(enforce_plaintext_policy(addr, true).is_ok());
     }
 
     #[test]

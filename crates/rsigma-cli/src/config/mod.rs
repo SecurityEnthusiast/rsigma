@@ -312,7 +312,9 @@ pub(crate) fn inactive_sections(config: &RsigmaConfigPartial) -> Vec<&'static st
         .as_ref()
         .and_then(|d| d.api.as_ref())
         .and_then(|a| a.tls.as_ref())
-        .is_some()
+        .is_some_and(|t| {
+            t.cert.is_some() || t.key.is_some() || t.client_ca.is_some() || t.min_version.is_some()
+        })
     {
         inactive.push("daemon.api.tls");
     }

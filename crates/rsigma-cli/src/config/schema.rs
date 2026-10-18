@@ -212,13 +212,20 @@ pub(crate) struct ApiPartial {
     /// unix:// address).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub addr: Option<String>,
-    /// TLS settings. Ignored unless built with `daemon-tls`.
+    /// TLS settings. Ignored unless built with `daemon-tls`, except
+    /// `allow_plaintext`, which applies to every build.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tls: Option<TlsPartial>,
     /// Bearer-token authentication with `resource:action` permissions.
-    /// Absent = no authentication (all routes open, as before).
+    /// Absent = no authentication, which a non-loopback TCP address refuses
+    /// unless `allow_unauthenticated` is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthPartial>,
+    /// Serve the API without authentication on a non-loopback TCP address
+    /// (no `auth` block, no `--api-token-env`, no TLS client CA). Default:
+    /// false, so such a daemon refuses to start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_unauthenticated: Option<bool>,
     /// Control-plane API audit trail (requires `--state-db`). Auto-enabled
     /// when a state database is configured; tune retention or disable here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -235,6 +242,7 @@ impl Merge for ApiPartial {
             // config (a token granted in /etc could survive an override in
             // ./rsigma.yaml).
             auth: over.auth.or(self.auth),
+            allow_unauthenticated: over.allow_unauthenticated.or(self.allow_unauthenticated),
             audit: over.audit.or(self.audit),
         }
     }
@@ -313,6 +321,8 @@ pub(crate) struct TlsPartial {
     pub client_ca: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_version: Option<String>,
+    /// Serve plaintext on a non-loopback TCP address. Applies to every build,
+    /// with or without `daemon-tls`. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_plaintext: Option<bool>,
 }
@@ -1167,6 +1177,7 @@ mod tests {
                     addr: Some("0.0.0.0:9090".into()),
                     tls: None,
                     auth: None,
+                    allow_unauthenticated: None,
                     audit: None,
                 }),
                 ..Default::default()
@@ -1180,6 +1191,7 @@ mod tests {
                     addr: Some("127.0.0.1:8080".into()),
                     tls: None,
                     auth: None,
+                    allow_unauthenticated: None,
                     audit: None,
                 }),
                 ..Default::default()
