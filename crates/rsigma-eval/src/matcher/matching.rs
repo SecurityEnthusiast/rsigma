@@ -182,6 +182,10 @@ impl CompiledMatcher {
                     "false" | "0" | "no" => !*expected,
                     _ => false,
                 },
+                EventValue::Int(1) => *expected,
+                EventValue::Int(0) => !*expected,
+                EventValue::Float(f) if *f == 1.0 => *expected,
+                EventValue::Float(f) if *f == 0.0 => !*expected,
                 EventValue::Array(arr) => arr.iter().any(|v| self.matches(v, event)),
                 _ => false,
             },
@@ -503,6 +507,40 @@ mod tests {
         assert!(m.matches(&EventValue::Bool(true), &event));
         assert!(!m.matches(&EventValue::Bool(false), &event));
         assert!(m.matches(&EventValue::Str("true".into()), &event));
+    }
+
+    #[test]
+    fn test_bool_accepts_numeric_one_and_zero() {
+        let e = empty_event();
+        let event = JsonEvent::borrow(&e);
+        let is_true = CompiledMatcher::BoolEq(true);
+        let is_false = CompiledMatcher::BoolEq(false);
+
+        for (value, truthy) in [
+            (EventValue::Int(1), true),
+            (EventValue::Float(1.0), true),
+            (EventValue::Str("1".into()), true),
+            (EventValue::Int(0), false),
+            (EventValue::Float(0.0), false),
+            (EventValue::Float(-0.0), false),
+            (EventValue::Str("0".into()), false),
+        ] {
+            assert_eq!(is_true.matches(&value, &event), truthy, "{value:?}");
+            assert_eq!(is_false.matches(&value, &event), !truthy, "{value:?}");
+        }
+
+        for value in [
+            EventValue::Int(2),
+            EventValue::Int(-1),
+            EventValue::Float(0.5),
+            EventValue::Float(f64::NAN),
+        ] {
+            assert!(!is_true.matches(&value, &event), "{value:?}");
+            assert!(!is_false.matches(&value, &event), "{value:?}");
+        }
+
+        let arr = EventValue::Array(vec![EventValue::Int(7), EventValue::Int(1)]);
+        assert!(is_true.matches(&arr, &event));
     }
 
     #[test]

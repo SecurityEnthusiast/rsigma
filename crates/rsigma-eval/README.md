@@ -207,7 +207,7 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 
 - **Arrays**: string matchers use OR semantics (`any element matches`).
 - **Numbers**: coerced to string for string matchers.
-- **Booleans**: `"true"`, `"1"`, `"yes"` → true; `"false"`, `"0"`, `"no"` → false.
+- **Booleans**: a boolean rule value matches the event booleans, the strings `"true"`, `"1"`, `"yes"` (for true) and `"false"`, `"0"`, `"no"` (for false), and the numbers `1` and `0`.
 
 ### Filter Rule Behavior
 
