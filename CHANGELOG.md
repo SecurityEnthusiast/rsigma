@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Refuse public plaintext and unauthenticated daemon APIs in every build
+### Refuse public plaintext and unauthenticated daemon APIs in every build (#601)
 
 **Breaking:** `engine daemon` now refuses to start on a non-loopback TCP `--api-addr` that serves an unauthenticated API, unless bearer tokens (`--api-token-env` or `daemon.api.auth`) or client certificates (`--tls-client-ca`) authenticate callers, or the operator passes the new `--allow-unauthenticated` flag (config `daemon.api.allow_unauthenticated`). The plaintext refusal and `--allow-plaintext` used to exist only in `daemon-tls` builds, so a default `cargo install rsigma` daemon served an anonymous control API on every interface; both checks now apply to every build, and `daemon.api.tls.allow_plaintext` is honored without `daemon-tls`. Opting out of authentication on a non-loopback address logs a startup warning. Loopback and `unix://` addresses are unaffected. To upgrade a public deployment, configure a token, or pass `--allow-unauthenticated` when an authenticating proxy fronts the daemon. The deployment guides now configure a token. Fixes #582.
 
