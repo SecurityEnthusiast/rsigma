@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### `value_percentile` thresholds apply, sink retries stop repeating lines, and smaller eval and runtime fixes
+### `value_percentile` thresholds apply, sink retries stop repeating lines, and smaller eval and runtime fixes (#621)
 
 `value_percentile` correlations ignored their condition: the percentile was computed and the correlation fired whenever the window held a finite value, so a rule with `lte: 50` fired on a window whose percentile was 50.5. The predicates now apply to the percentile as they do for the other numeric aggregates.
 
