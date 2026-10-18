@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Percentile and median checks no longer sort the window
+### Percentile and median checks no longer sort the window (#619)
 
 `value_percentile` and `value_median` correlations sorted every finite value in the group's window on each event fed into the group. They now select the needed ranks with `select_nth_unstable_by`, which is O(n) on average and returns exactly the same values, including interpolated percentiles and even-count medians. In the new `correlation_numeric_window` benchmark, a group checked against a 5,000-value window processes events about 4x faster. Chained correlations also stop cloning every fired result, including its retained events in full event mode, just to read which correlation fired and for which group.
 
