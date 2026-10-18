@@ -15,7 +15,7 @@ use super::conditions::{
 use super::finalizers::Finalizer;
 use super::sources::{
     DataFormat, DynamicSource, ErrorPolicy, ExtractExpr, RefLocation, RefreshPolicy, SourceRef,
-    SourceType,
+    SourceType, is_valid_source_id, scan_source_templates,
 };
 use super::transformations::Transformation;
 use super::{Pipeline, TransformationItem};
@@ -1299,6 +1299,11 @@ pub fn parse_dynamic_source(value: &yaml_serde::Value) -> Result<DynamicSource> 
         .and_then(|v| v.as_str())
         .ok_or_else(|| EvalError::Pipeline("source must have an 'id' field".to_string()))?
         .to_string();
+    if !is_valid_source_id(&id) {
+        return Err(EvalError::Pipeline(format!(
+            "source id '{id}' is invalid: use only ASCII letters, digits, '_', and '-' so ${{source.<id>}} can reference it"
+        )));
+    }
 
     let type_str = obj
         .get(ykey("type"))
@@ -1647,14 +1652,16 @@ pub fn validate_source_refs(
 // Template reference scanning
 // =============================================================================
 
-/// Regex matching `${source.<id>}` or `${source.<id>.<sub_path>}` templates.
-fn source_ref_regex() -> &'static Regex {
-    use std::sync::OnceLock;
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"\$\{source\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z0-9_.]+))?\}")
-            .expect("source ref regex is valid")
-    })
+/// Record every `${source.*}` template in `text`, each at `location`.
+fn push_source_refs(text: &str, location: impl Fn() -> RefLocation, refs: &mut Vec<SourceRef>) {
+    for template in scan_source_templates(text) {
+        refs.push(SourceRef {
+            source_id: template.source_id.to_string(),
+            sub_path: template.sub_path.map(str::to_string),
+            location: location(),
+            raw_template: template.raw.to_string(),
+        });
+    }
 }
 
 /// Scan the entire pipeline YAML for `${source.*}` template references and
@@ -1680,16 +1687,13 @@ pub(crate) fn scan_source_refs(obj: &yaml_serde::Mapping) -> Vec<SourceRef> {
                 if let Some(include_val) = mapping.get(ykey("include"))
                     && let Some(s) = yaml_value_as_str(include_val)
                 {
-                    for cap in source_ref_regex().captures_iter(s) {
-                        refs.push(SourceRef {
-                            source_id: cap[1].to_string(),
-                            sub_path: cap.get(2).map(|m| m.as_str().to_string()),
-                            location: RefLocation::Include {
-                                transform_index: idx,
-                            },
-                            raw_template: cap[0].to_string(),
-                        });
-                    }
+                    push_source_refs(
+                        s,
+                        || RefLocation::Include {
+                            transform_index: idx,
+                        },
+                        &mut refs,
+                    );
                 }
 
                 // Scan all other string values in the mapping
@@ -1725,16 +1729,13 @@ pub(crate) fn scan_source_refs(obj: &yaml_serde::Mapping) -> Vec<SourceRef> {
 fn scan_var_value_for_refs(value: &yaml_serde::Value, var_name: &str, refs: &mut Vec<SourceRef>) {
     match value {
         yaml_serde::Value::String(s) => {
-            for cap in source_ref_regex().captures_iter(s) {
-                refs.push(SourceRef {
-                    source_id: cap[1].to_string(),
-                    sub_path: cap.get(2).map(|m| m.as_str().to_string()),
-                    location: RefLocation::Var {
-                        var_name: var_name.to_string(),
-                    },
-                    raw_template: cap[0].to_string(),
-                });
-            }
+            push_source_refs(
+                s,
+                || RefLocation::Var {
+                    var_name: var_name.to_string(),
+                },
+                refs,
+            );
         }
         yaml_serde::Value::Sequence(seq) => {
             for item in seq {
@@ -1759,17 +1760,14 @@ fn scan_yaml_value_for_refs(
 ) {
     match value {
         yaml_serde::Value::String(s) => {
-            for cap in source_ref_regex().captures_iter(s) {
-                refs.push(SourceRef {
-                    source_id: cap[1].to_string(),
-                    sub_path: cap.get(2).map(|m| m.as_str().to_string()),
-                    location: RefLocation::TransformationField {
-                        transform_index,
-                        field_name: field_name.to_string(),
-                    },
-                    raw_template: cap[0].to_string(),
-                });
-            }
+            push_source_refs(
+                s,
+                || RefLocation::TransformationField {
+                    transform_index,
+                    field_name: field_name.to_string(),
+                },
+                refs,
+            );
         }
         yaml_serde::Value::Mapping(m) => {
             for (k, v) in m {

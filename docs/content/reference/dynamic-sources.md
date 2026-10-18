@@ -71,6 +71,8 @@ sources:
 
 The full Rust type lives at [`rsigma_eval::pipeline::sources::DynamicSource`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-eval/src/pipeline/sources.rs). The parser is at [`rsigma_eval::pipeline::parsing`](https://github.com/timescale/rsigma/blob/main/crates/rsigma-eval/src/pipeline/parsing.rs).
 
+A source ID is one or more ASCII letters, digits, `_`, or `-` (for example `ip_blocklist`, `threat-intel`, or `1st_feed`), which is exactly what a `${source.<id>}` reference can name. A declaration with any other character, such as a dot or a space, fails to load with an error naming the ID. {{ added "unreleased" }}
+
 ### Collision semantics
 
 Source IDs must be unique across every `--source` file (and across every directory the flag expands into). If the same ID appears in two different declaration sites the daemon exits at startup with an error naming both file paths, so there is exactly one canonical declaration site per source ID.

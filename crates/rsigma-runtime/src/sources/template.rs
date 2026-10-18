@@ -5,12 +5,8 @@
 
 use std::collections::HashMap;
 
-use regex::Regex;
 use rsigma_eval::Pipeline;
-use std::sync::LazyLock;
-
-static SOURCE_TEMPLATE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\$\{source\.([a-zA-Z0-9_]+)(?:\.([a-zA-Z0-9_.]+))?\}").unwrap());
+use rsigma_eval::pipeline::sources::{SourceTemplate, scan_source_templates};
 
 /// Expands `${source.*}` template references in a pipeline using resolved source data.
 pub struct TemplateExpander;
@@ -54,50 +50,38 @@ impl TemplateExpander {
         }
 
         // If the entire value is a single template reference, replace it directly
-        if let Some(caps) = SOURCE_TEMPLATE_RE.captures(value)
-            && caps.get(0).unwrap().as_str() == value
+        if let Some(template) = scan_source_templates(value).next()
+            && template.raw == value
         {
-            let source_id = caps.get(1).unwrap().as_str();
-            let sub_path = caps.get(2).map(|m| m.as_str());
-
-            if let Some(data) = resolved.get(source_id) {
-                let target = if let Some(path) = sub_path {
-                    navigate_path(data, path)
-                } else {
-                    Some(data)
-                };
-
-                if let Some(val) = target {
-                    return Some(json_to_string_vec(val));
-                }
-            }
-
-            return None;
+            return resolve(&template, resolved).map(json_to_string_vec);
         }
 
         // Otherwise, do substring replacement (inline templates within larger strings)
-        let result = SOURCE_TEMPLATE_RE
-            .replace_all(value, |caps: &regex::Captures| {
-                let source_id = caps.get(1).unwrap().as_str();
-                let sub_path = caps.get(2).map(|m| m.as_str());
-
-                if let Some(data) = resolved.get(source_id) {
-                    let target = if let Some(path) = sub_path {
-                        navigate_path(data, path)
-                    } else {
-                        Some(data)
-                    };
-
-                    if let Some(val) = target {
-                        return json_to_single_string(val);
-                    }
-                }
-
-                caps.get(0).unwrap().as_str().to_string()
-            })
-            .to_string();
+        let mut result = String::with_capacity(value.len());
+        let mut copied = 0;
+        for template in scan_source_templates(value) {
+            result.push_str(&value[copied..template.start]);
+            match resolve(&template, resolved) {
+                Some(val) => result.push_str(&json_to_single_string(val)),
+                None => result.push_str(template.raw),
+            }
+            copied = template.start + template.raw.len();
+        }
+        result.push_str(&value[copied..]);
 
         Some(vec![result])
+    }
+}
+
+/// The resolved data a template points at, if its source and path exist.
+fn resolve<'a>(
+    template: &SourceTemplate<'_>,
+    resolved: &'a HashMap<String, serde_json::Value>,
+) -> Option<&'a serde_json::Value> {
+    let data = resolved.get(template.source_id)?;
+    match template.sub_path {
+        Some(path) => navigate_path(data, path),
+        None => Some(data),
     }
 }
 
@@ -176,6 +160,38 @@ mod tests {
         assert_eq!(
             expanded.vars.get("admin_emails").unwrap(),
             &vec!["admin@corp.com".to_string(), "root@corp.com".to_string()]
+        );
+    }
+
+    #[test]
+    fn expand_digit_leading_and_hyphenated_ids() {
+        let mut vars = HashMap::new();
+        vars.insert("feed".to_string(), vec!["${source.1st_feed}".to_string()]);
+        vars.insert(
+            "url".to_string(),
+            vec!["https://${source.threat-intel.host}/x?id=${source.missing}".to_string()],
+        );
+        let pipeline = Pipeline {
+            name: "test".to_string(),
+            priority: 0,
+            vars,
+            transformations: vec![],
+            finalizers: vec![],
+            source_refs: vec![],
+        };
+        let resolved = HashMap::from([
+            ("1st_feed".to_string(), serde_json::json!(["a", "b"])),
+            (
+                "threat-intel".to_string(),
+                serde_json::json!({"host": "intel.example"}),
+            ),
+        ]);
+
+        let expanded = TemplateExpander::expand(&pipeline, &resolved);
+        assert_eq!(expanded.vars["feed"], ["a", "b"]);
+        assert_eq!(
+            expanded.vars["url"],
+            ["https://intel.example/x?id=${source.missing}"]
         );
     }
 

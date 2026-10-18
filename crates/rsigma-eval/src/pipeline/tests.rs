@@ -1457,6 +1457,48 @@ transformations:
 }
 
 #[test]
+fn test_digit_leading_and_hyphenated_source_refs_are_dynamic() {
+    // Ids the runtime expands must also register as references here, or a
+    // pipeline whose only reference uses one is treated as static and keeps
+    // the literal template.
+    let yaml = r#"
+name: Id Shapes
+vars:
+  feed: "${source.1st_feed}"
+  intel: "${source.threat-intel.ips}"
+transformations:
+  - type: value_placeholders
+"#;
+    let pipeline = parse_pipeline(yaml).unwrap();
+    assert!(pipeline.is_dynamic());
+    let ids: Vec<_> = pipeline
+        .source_refs
+        .iter()
+        .map(|r| (r.source_id.as_str(), r.sub_path.as_deref()))
+        .collect();
+    assert_eq!(ids, [("1st_feed", None), ("threat-intel", Some("ips"))]);
+}
+
+#[test]
+fn test_source_ids_templates_cannot_reference_are_rejected() {
+    for id in ["bad.id", "has space", "\"\"", "café"] {
+        let yaml = format!(
+            "sources:\n  - id: {id}\n    type: file\n    path: /tmp/x.json\n    format: json\n"
+        );
+        let err = parse_source_list(&yaml)
+            .expect_err(&format!("id {id} must be rejected"))
+            .to_string();
+        assert!(err.contains("is invalid"), "id {id}: {err}");
+    }
+    for id in ["threat-intel", "1st_feed", "ip_blocklist"] {
+        let yaml = format!(
+            "sources:\n  - id: {id}\n    type: file\n    path: /tmp/x.json\n    format: json\n"
+        );
+        assert_eq!(parse_source_list(&yaml).unwrap()[0].id, id);
+    }
+}
+
+#[test]
 fn test_unknown_source_type_fails() {
     let yaml = r#"
 name: Bad Source Type

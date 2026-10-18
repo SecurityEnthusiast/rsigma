@@ -97,6 +97,8 @@ A non-short-circuiting, bloom-free recording evaluator that backs `rsigma engine
 | `parse_sources_file(path: &Path)` | Parse a standalone source YAML file (top-level `sources:` list) |
 | `parse_sources_dir(dir: &Path)` | Parse all `*.yml`/`*.yaml` source files in a directory |
 | `validate_source_refs(pipeline, external_ids)` | Validate that `${source.*}` references resolve against declared and/or external source IDs |
+| `sources::scan_source_templates(text)` | Find every `${source.<id>}` or `${source.<id>.<path>}` template in a string, with its id, path, and byte offset; the one reference grammar used by pipeline parsing and runtime expansion |
+| `sources::is_valid_source_id(id)` | Whether an id is declarable: ASCII letters, digits, `_`, and `-` |
 | `apply_pipelines(pipelines, rule)` | Apply all pipelines to a rule, in slice order |
 | `apply_pipelines_with_state(pipelines, rule)` | Same ordering, and returns the merged `PipelineState` (for backends) |
 | `merge_pipelines(pipelines)` | Sort a pipeline slice by `priority` in place, lower first. Despite the name it does not combine or apply them; call it before the `apply_*` / `transform_*` functions, which walk the slice as given |
