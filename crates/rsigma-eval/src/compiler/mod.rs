@@ -184,6 +184,7 @@ where
                 bloom,
             );
             debug_assert!(matched, "detail pass must agree with boolean pass");
+            dedup_in_order(&mut matched_selections);
             let matched_fields =
                 collect_field_matches(&matched_selections, &rule.detections, event, level);
 
@@ -241,21 +242,25 @@ fn compile_detection_item(item: &DetectionItem) -> Result<CompiledDetectionItem>
 
 /// Evaluate a condition expression against the event using compiled detections.
 ///
-/// Returns `true` if the condition is satisfied. Populates `matched_selections`
-/// with the names of detections that were evaluated and returned true.
+/// Returns `true` if the condition is satisfied. Appends to
+/// `matched_selections`, once each, the matched detections that decide the
+/// result: for `(a and b) or c` firing on `c` alone, only `c`, and for
+/// `a and not b`, only `a`.
 pub fn eval_condition(
     expr: &ConditionExpr,
     detections: &HashMap<String, CompiledDetection>,
     event: &impl Event,
     matched_selections: &mut Vec<String>,
 ) -> bool {
-    eval_condition_with_bloom(
+    let result = eval_condition_with_bloom(
         expr,
         detections,
         event,
         matched_selections,
         &crate::engine::bloom_index::NoBloom,
-    )
+    );
+    dedup_in_order(matched_selections);
+    result
 }
 
 /// Evaluate a condition without collecting match details.
@@ -343,13 +348,33 @@ where
             }
         }
 
-        ConditionExpr::And(exprs) => exprs
-            .iter()
-            .all(|e| eval_condition_with_bloom(e, detections, event, matched_selections, bloom)),
+        // A false `and` is explained by its failing child alone, and a true
+        // `or` by its true child alone, so drop what the other children
+        // recorded. `not` keeps its child's names unchanged: they explain the
+        // child's value, which decides the negation.
+        ConditionExpr::And(exprs) => {
+            let mark = matched_selections.len();
+            for e in exprs {
+                let child_mark = matched_selections.len();
+                if !eval_condition_with_bloom(e, detections, event, matched_selections, bloom) {
+                    matched_selections.drain(mark..child_mark);
+                    return false;
+                }
+            }
+            true
+        }
 
-        ConditionExpr::Or(exprs) => exprs
-            .iter()
-            .any(|e| eval_condition_with_bloom(e, detections, event, matched_selections, bloom)),
+        ConditionExpr::Or(exprs) => {
+            let mark = matched_selections.len();
+            for e in exprs {
+                let child_mark = matched_selections.len();
+                if eval_condition_with_bloom(e, detections, event, matched_selections, bloom) {
+                    matched_selections.drain(mark..child_mark);
+                    return true;
+                }
+            }
+            false
+        }
 
         ConditionExpr::Not(inner) => {
             !eval_condition_with_bloom(inner, detections, event, matched_selections, bloom)
@@ -364,21 +389,27 @@ where
                 .filter(|name| pattern.matches_detection_name(name))
                 .collect();
 
-            let mut match_count = 0u64;
-            for name in &matching_names {
-                if let Some(det) = detections.get(*name)
-                    && eval_detection_with_bloom(det, event, bloom)
-                {
-                    match_count += 1;
-                    matched_selections.push((*name).clone());
-                }
-            }
+            let matched: Vec<&String> = matching_names
+                .iter()
+                .copied()
+                .filter(|name| {
+                    detections
+                        .get(*name)
+                        .is_some_and(|det| eval_detection_with_bloom(det, event, bloom))
+                })
+                .collect();
 
-            match quantifier {
-                Quantifier::Any => match_count >= 1,
-                Quantifier::All => match_count == matching_names.len() as u64,
-                Quantifier::Count(n) => match_count >= n.get(),
+            let holds = match quantifier {
+                Quantifier::Any => !matched.is_empty(),
+                Quantifier::All => matched.len() == matching_names.len(),
+                Quantifier::Count(n) => matched.len() as u64 >= n.get(),
+            };
+            // Matched members explain a quantifier that holds; when it fails,
+            // only the members that did not match do, and those report nothing.
+            if holds {
+                matched_selections.extend(matched.into_iter().cloned());
             }
+            holds
         }
     }
 }
@@ -476,6 +507,12 @@ where
 /// at `Summary` / `Full`. A single high-cardinality event (many string
 /// leaves) cannot blow up the output line.
 const MAX_KEYWORD_MATCHES: usize = 16;
+
+/// Drop repeated names, keeping the first occurrence of each.
+fn dedup_in_order(names: &mut Vec<String>) {
+    let mut seen = std::collections::HashSet::new();
+    names.retain(|name| seen.insert(name.clone()));
+}
 
 /// Collect field matches from matched selections for the detection result.
 ///

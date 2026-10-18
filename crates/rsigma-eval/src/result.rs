@@ -133,7 +133,9 @@ pub enum ResultBody {
 /// Detection-specific result fields.
 #[derive(Debug, Clone, Serialize)]
 pub struct DetectionBody {
-    /// Which named detections (selections) matched.
+    /// The matched detections (selections) that decide the condition, each
+    /// once. A selection that matched but did not make the rule fire, such
+    /// as `a` in `(a and b) or c` firing on `c`, is left out.
     pub matched_selections: Vec<String>,
     /// Specific field matches that triggered the detection.
     pub matched_fields: Vec<FieldMatch>,
