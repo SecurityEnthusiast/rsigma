@@ -1,8 +1,8 @@
 //! Correlation engine benchmarks for rsigma-eval.
 //!
 //! Measures event_count and temporal correlation performance, end-to-end
-//! throughput with mixed detection + correlation, and state map pressure
-//! from many unique group keys.
+//! throughput with mixed detection + correlation, state map pressure from
+//! many unique group keys, and percentile/median checks over large windows.
 
 mod datagen;
 
@@ -376,6 +376,88 @@ level: high
 }
 
 // ---------------------------------------------------------------------------
+// Benchmark: percentile and median over large windows
+// ---------------------------------------------------------------------------
+
+fn bench_correlation_numeric_window(c: &mut Criterion) {
+    let mut group = c.benchmark_group("correlation_numeric_window");
+    group.sample_size(20);
+
+    // One group fed one event per second into a sliding window of `size`
+    // seconds, so after the warm-up every measured event is checked against
+    // a full window of `size` values.
+    let yaml_for = |corr_type: &str, size: usize| {
+        format!(
+            r#"
+title: Latency Sample
+id: bench-latency-001
+logsource:
+    product: web
+detection:
+    selection:
+        EventType: 'request'
+    condition: selection
+level: low
+---
+title: Latency Window
+id: corr-latency-001
+correlation:
+    type: {corr_type}
+    rules:
+        - bench-latency-001
+    group-by:
+        - Host
+    timespan: {size}s
+    condition:
+        field: latency
+        percentile: 95
+        gte: 1000000000
+level: high
+"#
+        )
+    };
+
+    let n_events = 1_000usize;
+    let mut rng = datagen::rng();
+    let event_values: Vec<serde_json::Value> = (0..n_events)
+        .map(|_| {
+            serde_json::json!({
+                "EventType": "request",
+                "Host": "web-01",
+                "latency": rng.random_range(0.0..5_000.0),
+            })
+        })
+        .collect();
+    let events: Vec<JsonEvent> = event_values.iter().map(JsonEvent::borrow).collect();
+
+    for corr_type in ["value_percentile", "value_median"] {
+        for size in [1_000usize, 5_000] {
+            let collection = parse_sigma_yaml(&yaml_for(corr_type, size)).unwrap();
+            let mut engine = CorrelationEngine::new(CorrelationConfig::default());
+            engine.add_collection(&collection).unwrap();
+            let mut ts = 1_000_000i64;
+            for i in 0..size {
+                let _ = engine.process_event_at(&events[i % n_events], ts);
+                ts += 1;
+            }
+
+            group.throughput(criterion::Throughput::Elements(n_events as u64));
+            group.bench_with_input(BenchmarkId::new(corr_type, size), &events, |b, events| {
+                b.iter(|| {
+                    for event in events {
+                        let result = engine.process_event_at(black_box(event), ts);
+                        black_box(&result);
+                        ts += 1;
+                    }
+                });
+            });
+        }
+    }
+
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
 // Criterion harness
 // ---------------------------------------------------------------------------
 
@@ -387,5 +469,6 @@ criterion_group!(
     bench_correlation_batch,
     bench_correlation_state_pressure,
     bench_correlation_window_modes,
+    bench_correlation_numeric_window,
 );
 criterion_main!(benches);
