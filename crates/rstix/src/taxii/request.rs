@@ -38,8 +38,6 @@ pub(crate) struct TaxiiResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Vec<u8>,
-    #[allow(dead_code)]
-    pub clock_skew: Option<i64>,
 }
 
 impl TaxiiHttp {
@@ -170,7 +168,6 @@ impl TaxiiHttp {
             status,
             headers,
             body,
-            clock_skew,
         })
     }
 

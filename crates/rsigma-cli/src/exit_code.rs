@@ -8,7 +8,6 @@
 /// For `eval`: events were processed (detections may or may not have fired).
 /// For `lint`: no findings at the configured severity threshold.
 /// For `validate`: all rules parsed and compiled.
-#[allow(dead_code)]
 pub const SUCCESS: i32 = 0;
 
 /// Findings were produced.

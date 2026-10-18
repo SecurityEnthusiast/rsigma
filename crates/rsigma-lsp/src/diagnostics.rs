@@ -8,14 +8,6 @@ use tower_lsp_server::ls_types::*;
 
 use crate::position::{LineIndex, resolve_path};
 
-/// Produce LSP diagnostics for a Sigma YAML document (default config).
-///
-/// Convenience wrapper around [`diagnose_with_config`] with no suppression.
-#[allow(dead_code)]
-pub fn diagnose(text: &str) -> Vec<Diagnostic> {
-    diagnose_with_config(text, &LintConfig::default())
-}
-
 /// Produce LSP diagnostics with lint config suppression.
 pub fn diagnose_with_config(text: &str, config: &LintConfig) -> Vec<Diagnostic> {
     let index = LineIndex::new(text);
