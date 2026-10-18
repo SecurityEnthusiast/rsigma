@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Daemon state saves are one consistent, atomic cut
+### Daemon state saves are one consistent, atomic cut (#606)
 
 With `--state-db`, the periodic and shutdown saves exported the correlation snapshot before reading the NATS source position, then wrote the correlation, alert-pipeline, risk, and disposition snapshots as four separate statements with awaits in between. An event acked between the export and the position read was claimed by the position but missing from the snapshot, so a replay from that position skipped its correlation state, and a crash between the writes paired snapshots from different moments. The daemon now reads the position first, captures every snapshot back to back, and writes them in one SQLite transaction, so a failed save leaves the previous one intact. The ack task publishes the position with release ordering to match. Each save also serializes the correlation snapshot once instead of twice. Fixes #580.
 
