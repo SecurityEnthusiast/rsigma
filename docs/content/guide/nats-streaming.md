@@ -110,7 +110,7 @@ rsigma engine daemon -r rules/ --input nats://localhost:4222/events.> \
 
 ### State restore during replay
 
-The daemon stores the last-acked NATS stream sequence and timestamp alongside the SQLite correlation snapshot. On restart, `decide_state_restore` compares the replay start point against the stored position:
+The daemon stores the last-acked NATS stream sequence and timestamp alongside the SQLite correlation snapshot. It reads the position before taking the snapshots, so the saved state always covers every event up to the stored position; events acked just after it may also be included and are redelivered as duplicates, which the at-least-once model already allows. {{ added "unreleased" }} On restart, `decide_state_restore` compares the replay start point against the stored position:
 
 | Situation | Decision |
 |-----------|----------|

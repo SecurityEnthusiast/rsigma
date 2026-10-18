@@ -131,10 +131,12 @@ impl LogProcessor {
         self.engine.store(Arc::new(RwLock::new(new_engine)));
     }
 
-    /// Load a snapshot of the current engine for use during reload.
+    /// Load a snapshot of the current engine, for example to inspect its
+    /// configuration.
     ///
-    /// The caller can lock the returned guard to export state, build a new
-    /// engine, import state, and then call `swap_engine`.
+    /// To replace the engine while keeping correlation state, use
+    /// [`reload_rules`](Self::reload_rules): state exported from this snapshot
+    /// goes stale as soon as the next ordered batch runs.
     pub fn engine_snapshot(&self) -> arc_swap::Guard<Arc<RwLock<RuntimeEngine>>> {
         self.engine.load()
     }
@@ -269,15 +271,20 @@ impl LogProcessor {
         format: &InputFormat,
         event_filter: Option<&EventFilter>,
     ) -> BatchProcessOutcome {
-        let engine_guard = self.engine.load();
-        let concurrent = engine_guard.read().allows_concurrent_detection();
+        let mut engine_guard = self.engine.load();
+        let mut concurrent = engine_guard.read().allows_concurrent_detection();
         // Correlation (and tap-visible global order) still serialize batches.
         // Detection-only engines skip the order lock so the daemon can keep
         // multiple batches in flight under shared reads.
         let _order_guard = if concurrent {
             None
         } else {
-            Some(self.processing_order.lock())
+            let guard = self.processing_order.lock();
+            // A reload may have swapped engines while this batch waited; running
+            // against the retired engine would advance state the swap discarded.
+            engine_guard = self.engine.load();
+            concurrent = engine_guard.read().allows_concurrent_detection();
+            Some(guard)
         };
 
         // Live event tap: load the active-session snapshot once for the whole
@@ -466,17 +473,24 @@ impl LogProcessor {
     /// Reload rules (and pipelines) without blocking in-flight event processing.
     ///
     /// Builds a fresh `RuntimeEngine` with the same configuration as the
-    /// current one, re-reads pipeline files from disk (if paths are set),
-    /// loads rules into it, imports the old engine's correlation state, and
-    /// atomically swaps. In-flight batches that already hold an `Arc` to
-    /// the old engine finish undisturbed.
+    /// current one, re-reads pipeline files from disk (if paths are set), and
+    /// loads rules into it while batches keep flowing through the old engine.
+    /// Then, behind the batch-order lock, it moves the live correlation state
+    /// into the new engine and atomically swaps, so no window update made
+    /// during the load is lost. In-flight batches that already hold an `Arc`
+    /// to the old engine finish undisturbed.
     ///
     /// If pipeline or rule loading fails, the old engine remains active.
     pub fn reload_rules(&self) -> Result<crate::engine::EngineStats, String> {
-        // Parsing no longer holds the engine mutex, so use the ordering lock to
-        // keep the initial state/configuration snapshot behind any in-flight
-        // batch just as the old engine-mutex boundary did.
-        let order_guard = self.processing_order.lock();
+        let (new_engine, stats) = self.prepare_reload()?;
+        self.commit_reload(new_engine);
+        Ok(stats)
+    }
+
+    /// Build and load the replacement engine without holding the batch-order
+    /// lock, so rule parsing and dynamic-source resolution do not stall
+    /// processing.
+    fn prepare_reload(&self) -> Result<(RuntimeEngine, crate::engine::EngineStats), String> {
         // Snapshot the old engine's configuration AND tuning so the
         // replacement reaches `load_rules()` with the same flags. Daemon
         // startup typically sets `set_bloom_prefilter`/`set_bloom_max_bytes`
@@ -485,7 +499,6 @@ impl LogProcessor {
         // silently undoing them.
         let snapshot = self.engine.load();
         let old = snapshot.read();
-        let old_state = old.export_state();
         let rules_path = old.rules_path().to_path_buf();
         let pipelines = old.pipelines().to_vec();
         let pipeline_paths = old.pipeline_paths().to_vec();
@@ -503,7 +516,6 @@ impl LogProcessor {
         let cross_rule_ac = old.cross_rule_ac();
         drop(old);
         drop(snapshot);
-        drop(order_guard);
 
         let mut new_engine = RuntimeEngine::new(rules_path, pipelines, corr_config, include_event);
         new_engine.set_pipeline_paths(pipeline_paths);
@@ -525,17 +537,23 @@ impl LogProcessor {
         // Carry the logsource extractor so pruning survives hot-reload.
         new_engine.set_logsource_extractor(logsource_extractor);
         let stats = new_engine.load_rules()?;
+        Ok((new_engine, stats))
+    }
 
-        if let Some(state) = old_state
+    /// Move the live engine's correlation state into `new_engine` and swap it
+    /// in, all under the batch-order lock so no batch advances the old
+    /// windows between the export and the swap.
+    fn commit_reload(&self, mut new_engine: RuntimeEngine) {
+        let _order_guard = self.processing_order.lock();
+        let live_state = self.engine.load().read().export_state();
+        if let Some(state) = live_state
             && !new_engine.import_state(&state)
         {
             tracing::warn!(
                 "Incompatible correlation snapshot version during reload, starting fresh"
             );
         }
-
         self.swap_engine(new_engine);
-        Ok(stats)
     }
 
     /// Return the rules path from the current engine.
@@ -1277,6 +1295,107 @@ detection:
         for h in handles {
             h.join().unwrap();
         }
+
+        std::mem::forget(dir);
+    }
+
+    fn counting_rules(marker_title: &str) -> String {
+        format!(
+            r#"
+title: {marker_title}
+status: test
+logsource:
+    category: test
+detection:
+    selection:
+        EventID: 1
+    condition: selection
+---
+title: Base
+id: base-rule
+status: test
+logsource:
+    category: test
+detection:
+    selection:
+        EventID: 1
+    condition: selection
+---
+title: Corr
+status: test
+correlation:
+    type: event_count
+    rules:
+        - base-rule
+    group-by:
+        - User
+    timespan: 1h
+    condition:
+        gte: 5
+"#
+        )
+    }
+
+    fn alice_event(proc: &LogProcessor) -> ProcessResult {
+        let batch = vec![r#"{"EventID": 1, "User": "alice"}"#.to_string()];
+        proc.process_batch_with_format(&batch, &InputFormat::Json, None)
+            .remove(0)
+    }
+
+    #[test]
+    fn reload_keeps_window_updates_made_while_rules_load() {
+        let proc = make_processor(&counting_rules("Base"));
+        for _ in 0..2 {
+            assert_eq!(alice_event(&proc).correlation_count(), 0);
+        }
+
+        let (new_engine, _) = proc.prepare_reload().unwrap();
+        // These land on the old engine while the replacement is loading.
+        for _ in 0..2 {
+            assert_eq!(alice_event(&proc).correlation_count(), 0);
+        }
+        proc.commit_reload(new_engine);
+
+        assert_eq!(
+            alice_event(&proc).correlation_count(),
+            1,
+            "the fifth event fires only if all four earlier ones survived the reload"
+        );
+    }
+
+    #[test]
+    fn a_batch_waiting_on_the_order_lock_runs_against_the_swapped_engine() {
+        let dir = tempfile::tempdir().unwrap();
+        let rule_path = dir.path().join("test.yml");
+        std::fs::write(&rule_path, counting_rules("Base A")).unwrap();
+        let mut engine = RuntimeEngine::new(
+            rule_path.clone(),
+            vec![],
+            CorrelationConfig::default(),
+            false,
+        );
+        engine.load_rules().unwrap();
+        let proc = Arc::new(LogProcessor::new(engine, Arc::new(NoopMetrics)));
+
+        std::fs::write(&rule_path, counting_rules("Base B")).unwrap();
+        let (new_engine, _) = proc.prepare_reload().unwrap();
+
+        let order_guard = proc.processing_order.lock();
+        let worker = {
+            let proc = proc.clone();
+            std::thread::spawn(move || alice_event(&proc))
+        };
+        // Let the worker load the current engine and block on the lock.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        proc.swap_engine(new_engine);
+        drop(order_guard);
+
+        let result = worker.join().unwrap();
+        let titles: Vec<&str> = result
+            .iter()
+            .map(|r| r.header.rule_title.as_str())
+            .collect();
+        assert_eq!(titles, ["Base B"]);
 
         std::mem::forget(dir);
     }

@@ -54,7 +54,7 @@ use super::health::HealthState;
 use super::listen::ListenAddr;
 use super::metrics::Metrics;
 use super::reload;
-use super::store::{SourcePosition, SqliteStateStore};
+use super::store::{SourcePosition, SqliteStateStore, StateCut};
 use crate::EventFilter;
 
 /// The bound API listener: a TCP socket, or a Unix domain socket on Unix.
@@ -1331,20 +1331,26 @@ pub async fn run_daemon(config: DaemonConfig) {
 
             // Reload the alert pipeline. Failures keep the previous pipeline
             // in place so a typo cannot take down dedup in production. The
-            // in-flight active-alert store is owned by the sink task and
-            // survives a config swap; stale alerts age out via the new
-            // pipeline's resolve_timeout.
+            // in-flight active-alert and incident stores survive a config
+            // swap; stale entries age out via the new pipeline's
+            // resolve_timeout, and anything above its caps is trimmed now.
             if let Some(path) = reload_alert_pipeline_path.as_deref() {
                 match load_alert_pipeline_file(path).and_then(build_alert_pipeline) {
                     Ok(new_pipeline) => {
                         // Re-seed static silences (replacing the previous static
-                        // set); API-created silences are preserved.
-                        if let Ok(mut state) = reload_alert_state.write() {
-                            state
-                                .silences
-                                .set_static(new_pipeline.static_silences().to_vec());
-                        }
+                        // set; API-created silences are preserved), trim to the
+                        // new caps, and swap under the state lock the sink task
+                        // processes under, so no batch refills the stores under
+                        // the old caps.
+                        let mut state = reload_alert_state
+                            .write()
+                            .unwrap_or_else(|e| e.into_inner());
+                        state
+                            .silences
+                            .set_static(new_pipeline.static_silences().to_vec());
+                        new_pipeline.enforce_caps(&mut state);
                         reload_alert_pipeline_swap.store(Arc::new(Some(Arc::new(new_pipeline))));
+                        drop(state);
                         tracing::info!(path = %path.display(), "Alert pipeline reloaded");
                     }
                     Err(e) => {
@@ -1418,18 +1424,22 @@ pub async fn run_daemon(config: DaemonConfig) {
     let high_water_seq = Arc::new(AtomicU64::new(0));
     let high_water_ts = Arc::new(AtomicI64::new(0));
 
+    let state_sources = StateSources {
+        processor: processor.clone(),
+        high_water_seq: high_water_seq.clone(),
+        high_water_ts: high_water_ts.clone(),
+        alert_pipeline: alert_pipeline_swap.clone(),
+        alert_state: alert_state.clone(),
+        risk_layer: risk_swap.clone(),
+        risk_state: risk_state.clone(),
+        dispositions: disposition_state_for_save.clone(),
+    };
+
     // Spawn periodic state saver
     if let Some(ref store) = state_store {
-        let save_processor = processor.clone();
         let save_store = store.clone();
+        let save_sources = state_sources.clone();
         let save_interval_secs = config.state_save_interval;
-        let save_hw_seq = high_water_seq.clone();
-        let save_hw_ts = high_water_ts.clone();
-        let save_alert_swap = alert_pipeline_swap.clone();
-        let save_alert_state = alert_state.clone();
-        let save_risk_swap = risk_swap.clone();
-        let save_risk_state = risk_state.clone();
-        let save_dispositions = disposition_state_for_save.clone();
         let save_audit = audit_for_save.clone();
         tokio::spawn(async move {
             let mut interval =
@@ -1437,53 +1447,21 @@ pub async fn run_daemon(config: DaemonConfig) {
             interval.tick().await; // skip first immediate tick
             loop {
                 interval.tick().await;
-                if let Some(snapshot) = save_processor.export_state() {
-                    let position = source_position_from_atomics(&save_hw_seq, &save_hw_ts);
-                    let snapshot_size = serde_json::to_vec(&snapshot).map(|v| v.len()).unwrap_or(0);
-                    let window_count = snapshot.windows.len();
-                    let save_start = std::time::Instant::now();
-                    if let Err(e) = save_store.save(&snapshot, position.as_ref()).await {
-                        tracing::warn!(
-                            error = %e,
-                            size_bytes = snapshot_size,
-                            windows = window_count,
-                            "Failed to save periodic state snapshot",
-                        );
-                    } else {
-                        tracing::debug!(
-                            duration_ms = save_start.elapsed().as_millis() as u64,
-                            size_bytes = snapshot_size,
-                            windows = window_count,
-                            "Periodic state snapshot saved",
-                        );
-                    }
-                }
-                // Persist the alert-pipeline state when configured.
-                if let Some(pipeline) = save_alert_swap.load_full().as_ref() {
-                    let snap = {
-                        let st = save_alert_state.read().unwrap_or_else(|e| e.into_inner());
-                        pipeline.snapshot(&st)
-                    };
-                    if let Err(e) = save_store.save_alert_pipeline(&snap).await {
-                        tracing::warn!(error = %e, "Failed to save alert-pipeline snapshot");
-                    }
-                }
-                // Persist the risk-accumulator state when configured.
-                if let Some(risk_layer) = save_risk_swap.load_full().as_ref() {
-                    let snap = {
-                        let st = save_risk_state.read().unwrap_or_else(|e| e.into_inner());
-                        risk_layer.snapshot(&st)
-                    };
-                    if let Err(e) = save_store.save_risk(&snap).await {
-                        tracing::warn!(error = %e, "Failed to save risk snapshot");
-                    }
-                }
-                // Persist the disposition store when the triage loop is enabled.
-                if let Some(dispositions) = save_dispositions.as_ref()
-                    && let Some(snap) = dispositions.snapshot()
-                    && let Err(e) = save_store.save_dispositions(&snap).await
-                {
-                    tracing::warn!(error = %e, "Failed to save disposition snapshot");
+                let cut = save_sources.capture();
+                let window_count = cut.correlation.as_ref().map_or(0, |s| s.windows.len());
+                let save_start = std::time::Instant::now();
+                match save_store.save_all(&cut).await {
+                    Ok(size_bytes) => tracing::debug!(
+                        duration_ms = save_start.elapsed().as_millis() as u64,
+                        size_bytes,
+                        windows = window_count,
+                        "Periodic state snapshot saved",
+                    ),
+                    Err(e) => tracing::warn!(
+                        error = %e,
+                        windows = window_count,
+                        "Failed to save periodic state snapshot",
+                    ),
                 }
                 if let Some(audit) = save_audit.as_ref() {
                     audit.prune().await;
@@ -2170,6 +2148,11 @@ pub async fn run_daemon(config: DaemonConfig) {
                             let mut st = alert_state_for_sink
                                 .write()
                                 .unwrap_or_else(|e| e.into_inner());
+                            // A reload trims the stores and swaps the pipeline
+                            // under this lock; re-read it so this batch cannot
+                            // refill them under the retired pipeline's caps.
+                            let current = alert_pipeline_swap_for_sink.load_full();
+                            let alert_pipeline = current.as_ref().as_ref().unwrap_or(alert_pipeline);
                             match capture_ring_for_sink.as_ref() {
                                 Some(ring) => {
                                     let mut ring = ring.lock().unwrap_or_else(|e| e.into_inner());
@@ -2317,8 +2300,11 @@ pub async fn run_daemon(config: DaemonConfig) {
         while let Some(token) = ack_rx.recv().await {
             #[cfg(feature = "daemon-nats")]
             if let Some((seq, ts)) = token.nats_stream_position() {
-                ack_hw_seq.fetch_max(seq, Ordering::Relaxed);
+                // Release pairs with the saver's acquire load of the sequence,
+                // so a saver that sees this position also sees the evaluation
+                // that preceded the ack.
                 ack_hw_ts.fetch_max(ts, Ordering::Relaxed);
+                ack_hw_seq.fetch_max(seq, Ordering::Release);
             }
             token.ack().await;
         }
@@ -2452,65 +2438,74 @@ pub async fn run_daemon(config: DaemonConfig) {
         tracing::debug!("Ack task finished");
     }
 
-    // Save state on shutdown
-    if let Some(ref store) = state_store
-        && let Some(snapshot) = processor.export_state()
-    {
-        let position = source_position_from_atomics(&high_water_seq, &high_water_ts);
-        match store.save(&snapshot, position.as_ref()).await {
-            Ok(()) => {
-                if let Some(ref pos) = position {
-                    tracing::info!(
-                        source_sequence = pos.sequence,
-                        "Correlation state saved to database on shutdown"
-                    );
-                } else {
-                    tracing::info!("Correlation state saved to database on shutdown");
-                }
-            }
+    // Save state on shutdown. After a drain timeout the ack task may still be
+    // advancing the position; `capture` reads it before exporting, so the
+    // saved position never runs ahead of the snapshots.
+    if let Some(ref store) = state_store {
+        let cut = state_sources.capture();
+        match store.save_all(&cut).await {
+            Ok(_) => match cut.position {
+                Some(pos) => tracing::info!(
+                    source_sequence = pos.sequence,
+                    "State saved to database on shutdown"
+                ),
+                None => tracing::info!("State saved to database on shutdown"),
+            },
             Err(e) => tracing::error!(error = %e, "Failed to save state on shutdown"),
         }
     }
+}
 
-    // Save the alert-pipeline state on shutdown when configured.
-    if let Some(ref store) = state_store
-        && let Some(pipeline) = alert_pipeline_swap.load_full().as_ref()
-    {
-        let snap = {
-            let st = alert_state.read().unwrap_or_else(|e| e.into_inner());
-            pipeline.snapshot(&st)
-        };
-        match store.save_alert_pipeline(&snap).await {
-            Ok(()) => tracing::info!("Alert-pipeline state saved to database on shutdown"),
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to save alert-pipeline state on shutdown")
-            }
-        }
+/// The live state the periodic and shutdown savers persist.
+#[derive(Clone)]
+struct StateSources {
+    processor: Arc<LogProcessor>,
+    high_water_seq: Arc<AtomicU64>,
+    high_water_ts: Arc<AtomicI64>,
+    alert_pipeline: Arc<ArcSwap<Option<Arc<AlertPipeline>>>>,
+    alert_state: Arc<std::sync::RwLock<AlertPipelineState>>,
+    risk_layer: Arc<ArcSwap<Option<Arc<RiskLayer>>>>,
+    risk_state: Arc<std::sync::RwLock<RiskState>>,
+    dispositions: Option<super::dispositions::DispositionState>,
+}
+
+impl StateSources {
+    /// Capture one cut of every persisted state, for
+    /// [`SqliteStateStore::save_all`].
+    fn capture(&self) -> StateCut {
+        capture_cut(
+            || source_position_from_atomics(&self.high_water_seq, &self.high_water_ts),
+            || StateCut {
+                correlation: self.processor.export_state(),
+                position: None,
+                alert_pipeline: self.alert_pipeline.load_full().as_ref().as_ref().map(|p| {
+                    let st = self.alert_state.read().unwrap_or_else(|e| e.into_inner());
+                    p.snapshot(&st)
+                }),
+                risk: self.risk_layer.load_full().as_ref().as_ref().map(|layer| {
+                    let st = self.risk_state.read().unwrap_or_else(|e| e.into_inner());
+                    layer.snapshot(&st)
+                }),
+                dispositions: self.dispositions.as_ref().and_then(|d| d.snapshot()),
+            },
+        )
     }
+}
 
-    // Save the risk-accumulator state on shutdown when configured.
-    if let Some(ref store) = state_store
-        && let Some(risk_layer) = risk_swap.load_full().as_ref()
-    {
-        let snap = {
-            let st = risk_state.read().unwrap_or_else(|e| e.into_inner());
-            risk_layer.snapshot(&st)
-        };
-        match store.save_risk(&snap).await {
-            Ok(()) => tracing::info!("Risk state saved to database on shutdown"),
-            Err(e) => tracing::error!(error = %e, "Failed to save risk state on shutdown"),
-        }
-    }
-
-    // Save the disposition state on shutdown when the triage loop is enabled.
-    if let Some(ref store) = state_store
-        && let Some(dispositions) = disposition_state_for_save.as_ref()
-        && let Some(snap) = dispositions.snapshot()
-    {
-        match store.save_dispositions(&snap).await {
-            Ok(()) => tracing::info!("Disposition state saved to database on shutdown"),
-            Err(e) => tracing::error!(error = %e, "Failed to save disposition state on shutdown"),
-        }
+/// Read the source position, then take the snapshots. Every event acked up to
+/// the position was evaluated before its ack, so snapshots taken afterwards
+/// cover at least that much; reading the position last could let it run
+/// ahead of them, and a replay from it would skip those events' state. The
+/// snapshots are synchronous, so they are taken back to back with no `.await`
+/// in between.
+fn capture_cut(
+    position: impl FnOnce() -> Option<SourcePosition>,
+    snapshots: impl FnOnce() -> StateCut,
+) -> StateCut {
+    let position = position();
+    StateCut {
+        position,
+        ..snapshots()
     }
 }
 
@@ -2967,7 +2962,7 @@ pub(crate) fn warn_if_cert_expiring_soon(expiry_unix: i64) {
 /// Build a `SourcePosition` from the high-water mark atomics.
 /// Returns `None` if no NATS messages have been acked yet (sequence == 0).
 fn source_position_from_atomics(seq: &AtomicU64, ts: &AtomicI64) -> Option<SourcePosition> {
-    let s = seq.load(Ordering::Relaxed);
+    let s = seq.load(Ordering::Acquire);
     if s == 0 {
         return None;
     }
@@ -4528,6 +4523,24 @@ mod tests {
         assert_eq!(default_detect_inflight(4), 3);
         assert_eq!(default_detect_inflight(8), 5);
         assert_eq!(default_detect_inflight(16), 5);
+    }
+
+    #[test]
+    fn an_ack_during_the_state_capture_never_moves_the_position_past_the_snapshots() {
+        let seq = AtomicU64::new(5);
+        let ts = AtomicI64::new(50);
+        let cut = capture_cut(
+            || source_position_from_atomics(&seq, &ts),
+            || {
+                // An ack lands while the snapshots are being taken; they may
+                // include its event, but the position must not claim it.
+                ts.fetch_max(60, Ordering::Relaxed);
+                seq.fetch_max(6, Ordering::Release);
+                StateCut::default()
+            },
+        );
+        let pos = cut.position.expect("an acked position");
+        assert_eq!((pos.sequence, pos.timestamp), (5, 50));
     }
 
     #[cfg(feature = "daemon-otlp")]

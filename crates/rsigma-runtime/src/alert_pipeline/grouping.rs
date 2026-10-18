@@ -294,7 +294,8 @@ impl IncidentStore {
         on_guard: &mut impl FnMut(OvermergeGuard),
     ) -> Option<String> {
         // Extract joinable entity pairs, applying the stop-list and
-        // per-value cardinality ceiling.
+        // per-value cardinality ceiling. Counters only move for values an
+        // incident stores, once the result is accepted (below).
         let mut pairs: Vec<(String, String)> = Vec::new();
         for sel in &cfg.entities {
             let Some(value) = sel.resolve(result) else {
@@ -309,21 +310,25 @@ impl IncidentStore {
                 continue;
             }
             let key = (sel.as_str(), value);
-            let count = self.value_counts.entry(key.clone()).or_insert(0);
-            *count += 1;
-            if *count > cfg.caps.max_value_cardinality {
+            if self.value_counts.get(&key).copied().unwrap_or(0) >= cfg.caps.max_value_cardinality {
                 on_guard(OvermergeGuard::CardinalityCeiling);
                 continue;
             }
             pairs.push(key);
         }
 
-        // Incidents already touched by any of these entity values.
+        // Incidents already touched by any of these entity values. An entry
+        // naming an incident that is no longer open is stale: drop it rather
+        // than let a merge into a dead id discard a live incident.
         let mut touched: Vec<String> = Vec::new();
         for pair in &pairs {
-            if let Some(id) = self.entity_index.get(pair)
-                && !touched.contains(id)
-            {
+            let Some(id) = self.entity_index.get(pair) else {
+                continue;
+            };
+            if !self.incidents.contains_key(id) {
+                self.entity_index.remove(pair);
+                self.value_counts.remove(pair);
+            } else if !touched.contains(id) {
                 touched.push(id.clone());
             }
         }
@@ -347,17 +352,23 @@ impl IncidentStore {
             }
         };
 
-        // Register the entity values and absorb the result.
+        // Register the entity values and absorb the result. Only values the
+        // incident stores are indexed and counted: resolve and merge evict by
+        // the stored set, so anything else would leak and go stale. A merge can
+        // leave a set above the cap, so a value already stored still counts.
+        let mut stored: Vec<(String, String)> = Vec::with_capacity(pairs.len());
         if let Some(incident) = self.incidents.get_mut(&survivor_id) {
-            for (sel, value) in &pairs {
+            for (sel, value) in pairs {
                 let set = incident.entities.entry(sel.clone()).or_default();
-                if set.len() < cfg.caps.max_entities_per_incident {
+                if set.contains(&value) || set.len() < cfg.caps.max_entities_per_incident {
                     set.insert(value.clone());
+                    stored.push((sel, value));
                 }
             }
             incident.absorb(result, now, cfg);
         }
-        for pair in pairs {
+        for pair in stored {
+            *self.value_counts.entry(pair.clone()).or_insert(0) += 1;
             self.entity_index.insert(pair, survivor_id.clone());
         }
         Some(survivor_id)
@@ -466,21 +477,88 @@ impl IncidentStore {
         self.incidents.values().cloned().collect()
     }
 
-    /// Restore incidents, dropping any already past `resolve_timeout` at `now`,
-    /// and rebuild the entity index from the restored incidents' entity values
-    /// (the index and cardinality counters are not themselves persisted).
-    pub(crate) fn restore(&mut self, incidents: Vec<Incident>, now: i64, resolve_secs: i64) {
+    /// Restore incidents, dropping any already past `resolve_timeout` at `now`
+    /// and trimming to `caps` (see [`enforce_caps`](Self::enforce_caps)), then
+    /// rebuild the entity index from what remains (the index and cardinality
+    /// counters are not themselves persisted). Returns how many incidents the
+    /// open-incident cap evicted.
+    pub(crate) fn restore(
+        &mut self,
+        incidents: Vec<Incident>,
+        now: i64,
+        resolve_secs: i64,
+        caps: &Caps,
+    ) -> usize {
         for inc in incidents {
-            if now - inc.last_seen >= resolve_secs {
-                continue;
+            if now - inc.last_seen < resolve_secs {
+                self.incidents.insert(inc.id.clone(), inc);
             }
+        }
+        let evicted = self.enforce_caps(caps);
+        self.entity_index.clear();
+        for inc in self.incidents.values() {
             for (sel, values) in &inc.entities {
                 for value in values {
                     self.entity_index
                         .insert((sel.clone(), value.clone()), inc.id.clone());
                 }
             }
-            self.incidents.insert(inc.id.clone(), inc);
+        }
+        evicted
+    }
+
+    /// Bring the store within `caps`: evict the least recently seen incidents
+    /// beyond `max_open_incidents` (without a `resolved` emission), and cut
+    /// each incident's samples to `max_results_per_incident` and its entity
+    /// values to `max_entities_per_incident` per selector. Dropped entity
+    /// values stop acting as join keys. Returns how many incidents were
+    /// evicted. The live path stays within the caps; this bounds a store
+    /// restored or carried across a reload under lower ones.
+    pub(crate) fn enforce_caps(&mut self, caps: &Caps) -> usize {
+        let excess = self.incidents.len().saturating_sub(caps.max_open_incidents);
+        if excess > 0 {
+            let mut by_age: Vec<(i64, String)> = self
+                .incidents
+                .values()
+                .map(|inc| (inc.last_seen, inc.id.clone()))
+                .collect();
+            by_age.sort_unstable();
+            for (_, id) in by_age.into_iter().take(excess) {
+                if let Some(inc) = self.incidents.remove(&id) {
+                    for (sel, values) in inc.entities {
+                        for value in values {
+                            self.forget_value(&id, (sel.clone(), value));
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut dropped: Vec<(String, (String, String))> = Vec::new();
+        for inc in self.incidents.values_mut() {
+            inc.refs.truncate(caps.max_results_per_incident);
+            inc.results.truncate(caps.max_results_per_incident);
+            for (sel, values) in inc.entities.iter_mut() {
+                while values.len() > caps.max_entities_per_incident {
+                    let Some(value) = values.pop_last() else {
+                        break;
+                    };
+                    dropped.push((inc.id.clone(), (sel.clone(), value)));
+                }
+            }
+        }
+        for (id, key) in dropped {
+            self.forget_value(&id, key);
+        }
+        excess
+    }
+
+    /// Drop an entity value's index entry and cardinality counter, but only
+    /// while the index still attributes the value to incident `id`.
+    fn forget_value(&mut self, id: &str, key: (String, String)) {
+        if self.entity_index.get(&key).is_some_and(|owner| owner == id) {
+            self.entity_index.remove(&key);
+            self.value_counts.remove(&key);
         }
     }
 }
@@ -1009,5 +1087,138 @@ mod tests {
         assert!(guards >= 2, "cardinality guard fired after the ceiling");
         // The 2nd and 3rd did not join the 1st, so they each opened their own.
         assert_eq!(store.len(), 3);
+    }
+
+    fn assign(
+        store: &mut IncidentStore,
+        cfg: &GroupConfig,
+        ip: &str,
+        user: &str,
+        now: i64,
+    ) -> Option<String> {
+        store.assign(cfg, &detection("r", ip, user, Level::High), now, |_| {})
+    }
+
+    fn resolve_all(store: &mut IncidentStore, cfg: &GroupConfig, now: i64) {
+        store.tick(cfg, now); // group_wait 0 opens every incident
+        store.tick(cfg, now + 5000); // past resolve_timeout
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn over_cap_values_are_not_indexed_and_resolve_leaves_nothing_behind() {
+        let mut cfg = entity_cfg();
+        cfg.caps.max_entities_per_incident = 1;
+        let mut store = IncidentStore::default();
+        let a = assign(&mut store, &cfg, "10.0.0.1", "alice", 0).unwrap();
+        // Joins via the IP; `bob` does not fit the incident's User set.
+        assert_eq!(assign(&mut store, &cfg, "10.0.0.1", "bob", 1).unwrap(), a);
+        assert!(
+            !store
+                .entity_index
+                .contains_key(&("match.User".to_string(), "bob".to_string())),
+            "an over-cap value must not become a join key"
+        );
+
+        resolve_all(&mut store, &cfg, 2);
+        assert!(store.entity_index.is_empty(), "{:?}", store.entity_index);
+        assert!(store.value_counts.is_empty(), "{:?}", store.value_counts);
+    }
+
+    #[test]
+    fn a_merged_victim_leaves_no_entries_after_the_survivor_resolves() {
+        let mut cfg = entity_cfg();
+        cfg.caps.max_entities_per_incident = 1;
+        let mut store = IncidentStore::default();
+        assign(&mut store, &cfg, "10.0.0.1", "alice", 0);
+        assign(&mut store, &cfg, "10.0.0.1", "bob", 1); // `bob` is over the cap
+        assign(&mut store, &cfg, "10.0.0.2", "carol", 2);
+        // Bridges the two incidents into one.
+        assign(&mut store, &cfg, "10.0.0.2", "alice", 3);
+        assert_eq!(store.len(), 1);
+
+        resolve_all(&mut store, &cfg, 4);
+        assert!(store.entity_index.is_empty(), "{:?}", store.entity_index);
+        assert!(store.value_counts.is_empty(), "{:?}", store.value_counts);
+    }
+
+    #[test]
+    fn a_stale_index_entry_never_discards_a_live_incident() {
+        let cfg = entity_cfg();
+        let mut store = IncidentStore::default();
+        let live = assign(&mut store, &cfg, "10.0.0.2", "carol", 0).unwrap();
+        let stale_key = ("match.SourceIp".to_string(), "10.0.0.9".to_string());
+        store
+            .entity_index
+            .insert(stale_key.clone(), "resolved-incident".to_string());
+        store.value_counts.insert(stale_key.clone(), 7);
+
+        // The stale id comes first in the touched set (SourceIp before User).
+        let got = assign(&mut store, &cfg, "10.0.0.9", "carol", 1).unwrap();
+        assert_eq!(got, live, "the live incident absorbs the result");
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.incidents[&live].result_count, 2);
+        assert_eq!(store.entity_index[&stale_key], live);
+        assert_eq!(
+            store.value_counts[&stale_key], 1,
+            "the stale counter is reset"
+        );
+    }
+
+    #[test]
+    fn enforce_caps_evicts_the_oldest_incident_and_its_join_keys() {
+        let cfg = entity_cfg();
+        let mut store = IncidentStore::default();
+        assign(&mut store, &cfg, "10.0.0.1", "alice", 0);
+        let newer = assign(&mut store, &cfg, "10.0.0.2", "bob", 1).unwrap();
+
+        let caps = Caps {
+            max_open_incidents: 1,
+            ..Caps::default()
+        };
+        assert_eq!(store.enforce_caps(&caps), 1);
+        assert_eq!(store.incidents.keys().collect::<Vec<_>>(), [&newer]);
+        let mut keys: Vec<&str> = store.entity_index.keys().map(|(_, v)| v.as_str()).collect();
+        keys.sort();
+        assert_eq!(keys, ["10.0.0.2", "bob"]);
+        assert_eq!(store.value_counts.len(), 2);
+    }
+
+    #[test]
+    fn restore_applies_the_per_incident_caps_before_indexing() {
+        let cfg = entity_cfg();
+        let mut store = IncidentStore::default();
+        let id = assign(&mut store, &cfg, "10.0.0.1", "alice", 0).unwrap();
+        assign(&mut store, &cfg, "10.0.0.1", "bob", 1);
+        assign(&mut store, &cfg, "10.0.0.2", "bob", 2);
+        assert_eq!(store.incidents[&id].refs.len(), 3);
+
+        let caps = Caps {
+            max_entities_per_incident: 1,
+            max_results_per_incident: 2,
+            ..Caps::default()
+        };
+        let mut restored = IncidentStore::default();
+        assert_eq!(restored.restore(store.export(), 3, 3600, &caps), 0);
+        let inc = &restored.incidents[&id];
+        assert_eq!(inc.refs.len(), 2);
+        assert!(inc.entities.values().all(|values| values.len() == 1));
+        assert_eq!(
+            restored.entity_index.len(),
+            2,
+            "only kept values are join keys"
+        );
+    }
+
+    #[test]
+    fn a_result_rejected_by_max_open_incidents_moves_no_counters() {
+        let mut cfg = entity_cfg();
+        cfg.caps.max_open_incidents = 1;
+        let mut store = IncidentStore::default();
+        assign(&mut store, &cfg, "10.0.0.1", "alice", 0).unwrap();
+        let before = store.value_counts.clone();
+        assert!(assign(&mut store, &cfg, "10.0.0.2", "bob", 1).is_none());
+        assert_eq!(store.value_counts, before);
+        assert_eq!(store.entity_index.len(), 2);
     }
 }

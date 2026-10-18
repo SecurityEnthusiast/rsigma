@@ -409,20 +409,67 @@ impl AlertPipeline {
         }
         // Silences are independent of the configured stages.
         state.silences.restore_api(snap.silences, now);
+        let mut trim = CapTrim::default();
         if let Some(cfg) = self.dedup.as_ref() {
             state
                 .dedup
                 .restore(snap.dedup, now, cfg.resolve_timeout.as_secs() as i64);
+            trim.dedup_alerts = state.dedup.enforce_cap(cfg.max_active_alerts);
         }
         if let Some(g) = self.group.as_ref() {
-            state
-                .incidents
-                .restore(snap.incidents, now, g.resolve_timeout.as_secs() as i64);
+            trim.incidents = state.incidents.restore(
+                snap.incidents,
+                now,
+                g.resolve_timeout.as_secs() as i64,
+                &g.caps,
+            );
         }
         if let Some(icfg) = self.inhibit.as_ref() {
             state.inhibit.restore(snap.inhibit_sources, icfg, now);
         }
+        trim.log("restore");
         true
+    }
+
+    /// Trim carried-over state to this pipeline's caps: the least recently
+    /// seen dedup alerts beyond `max_active_alerts` and incidents beyond
+    /// `max_open_incidents` are evicted without a `resolved` record, and each
+    /// incident is cut to the per-incident caps. Call it when this pipeline
+    /// replaces another on hot-reload, while holding the state lock the
+    /// pipeline processes under, so a lowered cap applies at once.
+    /// [`restore`](Self::restore) applies the same trim.
+    pub fn enforce_caps(&self, state: &mut AlertPipelineState) -> CapTrim {
+        let mut trim = CapTrim::default();
+        if let Some(cfg) = self.dedup.as_ref() {
+            trim.dedup_alerts = state.dedup.enforce_cap(cfg.max_active_alerts);
+        }
+        if let Some(g) = self.group.as_ref() {
+            trim.incidents = state.incidents.enforce_caps(&g.caps);
+        }
+        trim.log("reload");
+        trim
+    }
+}
+
+/// What [`AlertPipeline::enforce_caps`] evicted.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CapTrim {
+    /// Dedup active alerts evicted by `max_active_alerts`.
+    pub dedup_alerts: usize,
+    /// Incidents evicted by `max_open_incidents`.
+    pub incidents: usize,
+}
+
+impl CapTrim {
+    fn log(&self, context: &str) {
+        if self.dedup_alerts > 0 || self.incidents > 0 {
+            tracing::warn!(
+                context,
+                dedup_alerts = self.dedup_alerts,
+                incidents = self.incidents,
+                "Evicted the least recently seen alert-pipeline state to fit the configured caps"
+            );
+        }
     }
 }
 
@@ -650,6 +697,73 @@ mod tests {
             aged.incidents.is_empty(),
             "stale incident pruned on restore"
         );
+    }
+
+    const UNCAPPED: &str = "dedup:\n  fingerprint: [match.SourceIp]\n  resolve_timeout: 1h\ngroup:\n  by: [match.SourceIp]\n  group_wait: 1h\n  resolve_timeout: 1h\n";
+    const CAPPED: &str = "dedup:\n  fingerprint: [match.SourceIp]\n  resolve_timeout: 1h\n  max_active_alerts: 3\ngroup:\n  by: [match.SourceIp]\n  group_wait: 1h\n  resolve_timeout: 1h\n  caps:\n    max_open_incidents: 3\n";
+
+    fn ip(i: i64) -> String {
+        format!("10.0.0.{i}")
+    }
+
+    /// Six alerts and incidents, one per IP, with IP `i` last seen at `i`.
+    fn six_alerts() -> AlertPipelineState {
+        let p = pipeline(UNCAPPED);
+        let mut st = AlertPipelineState::default();
+        for i in 0..6 {
+            run(&p, &ip(i), Level::High, &mut st, i);
+        }
+        assert_eq!((st.dedup.len(), st.incidents.len()), (6, 6));
+        st
+    }
+
+    /// Assert the state holds exactly the three most recently seen IPs.
+    fn assert_keeps_newest_three(p: &AlertPipeline, st: &mut AlertPipelineState) {
+        let mut grouped: Vec<String> = st
+            .incidents
+            .snapshot(IncludeMode::Refs)
+            .iter()
+            .map(|inc| inc.group_by["match.SourceIp"].as_str().unwrap().to_string())
+            .collect();
+        grouped.sort();
+        assert_eq!(grouped, [ip(3), ip(4), ip(5)]);
+        assert_eq!(st.dedup.len(), 3);
+        for i in 3..6 {
+            assert!(
+                run(p, &ip(i), Level::High, st, 10).is_empty(),
+                "{} folds",
+                ip(i)
+            );
+        }
+        assert_eq!(
+            run(p, &ip(2), Level::High, st, 10).len(),
+            1,
+            "evicted alert emits"
+        );
+    }
+
+    #[test]
+    fn restore_keeps_the_most_recent_entries_within_lowered_caps() {
+        let snap = pipeline(UNCAPPED).snapshot(&six_alerts());
+        let capped = pipeline(CAPPED);
+        let mut st = AlertPipelineState::default();
+        assert!(capped.restore(&mut st, snap, 10));
+        assert_keeps_newest_three(&capped, &mut st);
+    }
+
+    #[test]
+    fn enforce_caps_trims_state_carried_into_a_reloaded_pipeline() {
+        let mut st = six_alerts();
+        let capped = pipeline(CAPPED);
+        assert_eq!(
+            capped.enforce_caps(&mut st),
+            CapTrim {
+                dedup_alerts: 3,
+                incidents: 3
+            }
+        );
+        assert_keeps_newest_three(&capped, &mut st);
+        assert_eq!(capped.enforce_caps(&mut st), CapTrim::default());
     }
 
     #[test]

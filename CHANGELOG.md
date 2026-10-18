@@ -4,6 +4,22 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Daemon state saves are one consistent, atomic cut (#606)
+
+With `--state-db`, the periodic and shutdown saves exported the correlation snapshot before reading the NATS source position, then wrote the correlation, alert-pipeline, risk, and disposition snapshots as four separate statements with awaits in between. An event acked between the export and the position read was claimed by the position but missing from the snapshot, so a replay from that position skipped its correlation state, and a crash between the writes paired snapshots from different moments. The daemon now reads the position first, captures every snapshot back to back, and writes them in one SQLite transaction, so a failed save leaves the previous one intact. The ack task publishes the position with release ordering to match. Each save also serializes the correlation snapshot once instead of twice. Fixes #580.
+
+### Restore and alert-pipeline reload enforce the dedup and incident caps (#605)
+
+Restoring from `--state-db` kept every dedup alert and incident still inside its `resolve_timeout`, and an alert-pipeline hot-reload swapped in new caps without touching the carried-over stores, so after an operator lowered `dedup.max_active_alerts` or `group.caps.max_open_incidents` the stores stayed above the bound until entries aged out. Both now evict the least recently seen alerts and incidents down to the cap, without a `resolved` record, and cut each incident to `max_results_per_incident` and `max_entities_per_incident`, logging the eviction counts. The daemon trims and swaps the reloaded pipeline under the alert-state lock, and the sink task re-reads the pipeline after taking that lock, so no batch refills the stores under the old caps. In `rsigma-runtime`, `AlertPipeline::enforce_caps` applies the trim and returns a `CapTrim`. Fixes #590.
+
+### Hot-reload no longer rolls back correlation state (#604)
+
+A rule reload (`SIGHUP`, the file watcher, or `POST /api/v1/reload`) snapshotted correlation state before loading the new rules and imported that snapshot after, so every window update made by events processed during the load was lost and counts silently rewound on each reload under traffic. Rules still load without pausing processing, but the state is now exported from the live engine, imported, and swapped behind the batch-order lock. An ordered batch that was waiting on that lock during the swap now evaluates against the new engine instead of advancing the retired one. Fixes #579.
+
+### Entity-graph grouping no longer leaks join keys or drops live incidents (#603)
+
+In `entity_graph` grouping, a value that arrived after its incident's selector was full (`max_entities_per_incident`) was not stored on the incident but was still indexed as a join key. Resolve and merge only evict stored values, so those keys outlived the incident: the index grew without bound on a long-running daemon, and a later result carrying such a value could be merged into the dead incident id, which silently discarded the live incident it should have joined. Only stored values are now indexed, a stale index entry is dropped instead of being merged into, and `max_value_cardinality` counters move only for values an accepted result actually records, so a result refused by `max_open_incidents` or an over-cap value no longer inflates them. Fixes #583.
+
 ### Refuse public plaintext and unauthenticated daemon APIs in every build (#601)
 
 **Breaking:** `engine daemon` now refuses to start on a non-loopback TCP `--api-addr` that serves an unauthenticated API, unless bearer tokens (`--api-token-env` or `daemon.api.auth`) or client certificates (`--tls-client-ca`) authenticate callers, or the operator passes the new `--allow-unauthenticated` flag (config `daemon.api.allow_unauthenticated`). The plaintext refusal and `--allow-plaintext` used to exist only in `daemon-tls` builds, so a default `cargo install rsigma` daemon served an anonymous control API on every interface; both checks now apply to every build, and `daemon.api.tls.allow_plaintext` is honored without `daemon-tls`. Opting out of authentication on a non-loopback address logs a startup warning. Loopback and `unix://` addresses are unaffected. To upgrade a public deployment, configure a token, or pass `--allow-unauthenticated` when an authenticating proxy fronts the daemon. The deployment guides now configure a token. Fixes #582.

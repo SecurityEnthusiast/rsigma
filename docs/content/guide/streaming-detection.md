@@ -166,6 +166,8 @@ Three triggers cause the daemon to re-read its rules and pipelines, debounced at
 
 If the new configuration fails to parse, the daemon keeps the old engine running and increments `rsigma_reloads_failed_total`. Successful reloads atomically swap the in-memory engine via `ArcSwap`, so in-flight events finish on the old engine and new events evaluate against the new one without dropping any.
 
+Correlation windows carry over to the new engine for correlations that still exist after the reload. Rules load while events keep flowing through the old engine; the window state is then copied across and the engines swapped while ordered batches are briefly paused, so counts and windows include every event processed during the load.
+
 Builtin pipelines (`ecs_windows`, `sysmon`) are embedded in the binary and are not file-watched.
 
 ## State persistence
@@ -176,7 +178,7 @@ Without `--state-db`, correlation state lives only in memory and is lost on rest
 rsigma engine daemon -r rules/ --state-db /var/lib/rsigma/state.db
 ```
 
-The daemon loads any existing snapshot on startup, saves periodically (every 30 s by default, tunable with `--state-save-interval`), and saves on graceful shutdown. The database is a single SQLite file in WAL journal mode that holds one JSON snapshot row.
+The daemon loads any existing snapshot on startup, saves periodically (every 30 s by default, tunable with `--state-save-interval`), and saves on graceful shutdown. The database is a single SQLite file in WAL journal mode that holds one JSON snapshot row per kind of state (correlation, alert pipeline, risk, and dispositions). Each save captures all of them back to back and writes them in one transaction, so a crash mid-save leaves the previous save intact rather than a mix of old and new state. {{ added "unreleased" }}
 
 This means an `event_count` correlation that has seen 4 of 5 required events resumes at 4 after a restart, not 0.
 

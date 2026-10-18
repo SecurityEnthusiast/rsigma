@@ -18,6 +18,18 @@ pub struct SourcePosition {
     pub timestamp: i64,
 }
 
+/// One cut of the daemon's persisted state, written together by
+/// [`SqliteStateStore::save_all`]. A `None` snapshot leaves its table as is.
+#[derive(Debug, Default)]
+pub struct StateCut {
+    pub correlation: Option<CorrelationSnapshot>,
+    /// Source position the correlation snapshot covers, stored with it.
+    pub position: Option<SourcePosition>,
+    pub alert_pipeline: Option<AlertPipelineSnapshot>,
+    pub risk: Option<RiskStateSnapshot>,
+    pub dispositions: Option<DispositionSnapshot>,
+}
+
 /// SQLite-backed state store for persisting correlation state across restarts.
 ///
 /// Follows the same pattern as helr's `SqliteStateStore`: a single
@@ -112,36 +124,72 @@ impl SqliteStateStore {
         Ok(())
     }
 
-    /// Save a correlation snapshot (and optional source position) to the database.
-    /// Replaces any existing snapshot (single-row table).
-    pub async fn save(
-        &self,
-        snapshot: &CorrelationSnapshot,
-        position: Option<&SourcePosition>,
-    ) -> Result<(), String> {
-        let json =
-            serde_json::to_string(snapshot).map_err(|e| format!("serialize snapshot: {e}"))?;
+    /// Write every snapshot present in `state` in one transaction, replacing
+    /// the stored ones (single-row tables). Either every table is updated or,
+    /// on error, none is. Returns the total serialized size in bytes.
+    pub async fn save_all(&self, state: &StateCut) -> Result<usize, String> {
+        fn to_json<T: serde::Serialize>(
+            snapshot: Option<&T>,
+            what: &str,
+        ) -> Result<Option<String>, String> {
+            snapshot
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| format!("serialize {what} snapshot: {e}"))
+        }
+        let correlation = to_json(state.correlation.as_ref(), "correlation")?;
+        let alert_pipeline = to_json(state.alert_pipeline.as_ref(), "alert-pipeline")?;
+        let risk = to_json(state.risk.as_ref(), "risk")?;
+        let dispositions = to_json(state.dispositions.as_ref(), "disposition")?;
+        let bytes = [&correlation, &alert_pipeline, &risk, &dispositions]
+            .into_iter()
+            .flatten()
+            .map(String::len)
+            .sum();
+        let seq = state.position.map(|p| p.sequence as i64);
+        let ts = state.position.map(|p| p.timestamp);
         let conn = self.conn.clone();
         let updated_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        let seq = position.map(|p| p.sequence as i64);
-        let ts = position.map(|p| p.timestamp);
 
         tokio::task::spawn_blocking(move || {
-            let c = conn.lock().map_err(|_| "state store lock poisoned")?;
-            c.execute(
-                "INSERT INTO rsigma_correlation_state
-                    (id, snapshot, updated_at, source_sequence, source_timestamp)
-                 VALUES (1, ?1, ?2, ?3, ?4)
-                 ON CONFLICT (id) DO UPDATE SET
-                    snapshot = ?1, updated_at = ?2,
-                    source_sequence = ?3, source_timestamp = ?4",
-                rusqlite::params![&json, updated_at, seq, ts],
-            )
-            .map_err(|e| format!("save snapshot: {e}"))?;
-            Ok(())
+            let mut c = conn.lock().map_err(|_| "state store lock poisoned")?;
+            let tx = c
+                .transaction()
+                .map_err(|e| format!("begin state save: {e}"))?;
+            if let Some(json) = &correlation {
+                tx.execute(
+                    "INSERT INTO rsigma_correlation_state
+                        (id, snapshot, updated_at, source_sequence, source_timestamp)
+                     VALUES (1, ?1, ?2, ?3, ?4)
+                     ON CONFLICT (id) DO UPDATE SET
+                        snapshot = ?1, updated_at = ?2,
+                        source_sequence = ?3, source_timestamp = ?4",
+                    rusqlite::params![json, updated_at, seq, ts],
+                )
+                .map_err(|e| format!("save snapshot: {e}"))?;
+            }
+            for (table, json) in [
+                ("rsigma_alert_pipeline_state", &alert_pipeline),
+                ("rsigma_risk_state", &risk),
+                ("rsigma_disposition_state", &dispositions),
+            ] {
+                if let Some(json) = json {
+                    tx.execute(
+                        &format!(
+                            "INSERT INTO {table} (id, snapshot, updated_at)
+                             VALUES (1, ?1, ?2)
+                             ON CONFLICT (id) DO UPDATE SET snapshot = ?1, updated_at = ?2"
+                        ),
+                        rusqlite::params![json, updated_at],
+                    )
+                    .map_err(|e| format!("save {table}: {e}"))?;
+                }
+            }
+            tx.commit().map_err(|e| format!("commit state save: {e}"))?;
+            Ok(bytes)
         })
         .await
         .map_err(|e| format!("spawn_blocking: {e}"))?
@@ -191,33 +239,6 @@ impl SqliteStateStore {
         .map_err(|e| format!("spawn_blocking: {e}"))?
     }
 
-    /// Save the alert-pipeline snapshot, replacing any existing one.
-    pub async fn save_alert_pipeline(
-        &self,
-        snapshot: &AlertPipelineSnapshot,
-    ) -> Result<(), String> {
-        let json = serde_json::to_string(snapshot)
-            .map_err(|e| format!("serialize alert-pipeline snapshot: {e}"))?;
-        let conn = self.conn.clone();
-        let updated_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        tokio::task::spawn_blocking(move || {
-            let c = conn.lock().map_err(|_| "state store lock poisoned")?;
-            c.execute(
-                "INSERT INTO rsigma_alert_pipeline_state (id, snapshot, updated_at)
-                 VALUES (1, ?1, ?2)
-                 ON CONFLICT (id) DO UPDATE SET snapshot = ?1, updated_at = ?2",
-                rusqlite::params![&json, updated_at],
-            )
-            .map_err(|e| format!("save alert-pipeline snapshot: {e}"))?;
-            Ok(())
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking: {e}"))?
-    }
-
     /// Load the most recent alert-pipeline snapshot, if any.
     pub async fn load_alert_pipeline(&self) -> Result<Option<AlertPipelineSnapshot>, String> {
         let conn = self.conn.clone();
@@ -240,30 +261,6 @@ impl SqliteStateStore {
         .map_err(|e| format!("spawn_blocking: {e}"))?
     }
 
-    /// Save the disposition snapshot, replacing any existing one.
-    pub async fn save_dispositions(&self, snapshot: &DispositionSnapshot) -> Result<(), String> {
-        let json = serde_json::to_string(snapshot)
-            .map_err(|e| format!("serialize disposition snapshot: {e}"))?;
-        let conn = self.conn.clone();
-        let updated_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        tokio::task::spawn_blocking(move || {
-            let c = conn.lock().map_err(|_| "state store lock poisoned")?;
-            c.execute(
-                "INSERT INTO rsigma_disposition_state (id, snapshot, updated_at)
-                 VALUES (1, ?1, ?2)
-                 ON CONFLICT (id) DO UPDATE SET snapshot = ?1, updated_at = ?2",
-                rusqlite::params![&json, updated_at],
-            )
-            .map_err(|e| format!("save disposition snapshot: {e}"))?;
-            Ok(())
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking: {e}"))?
-    }
-
     /// Load the most recent disposition snapshot, if any.
     pub async fn load_dispositions(&self) -> Result<Option<DispositionSnapshot>, String> {
         let conn = self.conn.clone();
@@ -281,30 +278,6 @@ impl SqliteStateStore {
             } else {
                 Ok(None)
             }
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking: {e}"))?
-    }
-
-    /// Save the risk-accumulator snapshot, replacing any existing one.
-    pub async fn save_risk(&self, snapshot: &RiskStateSnapshot) -> Result<(), String> {
-        let json =
-            serde_json::to_string(snapshot).map_err(|e| format!("serialize risk snapshot: {e}"))?;
-        let conn = self.conn.clone();
-        let updated_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        tokio::task::spawn_blocking(move || {
-            let c = conn.lock().map_err(|_| "state store lock poisoned")?;
-            c.execute(
-                "INSERT INTO rsigma_risk_state (id, snapshot, updated_at)
-                 VALUES (1, ?1, ?2)
-                 ON CONFLICT (id) DO UPDATE SET snapshot = ?1, updated_at = ?2",
-                rusqlite::params![&json, updated_at],
-            )
-            .map_err(|e| format!("save risk snapshot: {e}"))?;
-            Ok(())
         })
         .await
         .map_err(|e| format!("spawn_blocking: {e}"))?
@@ -478,6 +451,21 @@ mod tests {
         }
     }
 
+    async fn save_correlation(
+        store: &SqliteStateStore,
+        snapshot: CorrelationSnapshot,
+        position: Option<SourcePosition>,
+    ) {
+        store
+            .save_all(&StateCut {
+                correlation: Some(snapshot),
+                position,
+                ..StateCut::default()
+            })
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn round_trip_without_position() {
         let dir = tempfile::tempdir().unwrap();
@@ -485,7 +473,7 @@ mod tests {
         let store = SqliteStateStore::open(&db).unwrap();
 
         let snap = empty_snapshot();
-        store.save(&snap, None).await.unwrap();
+        save_correlation(&store, snap, None).await;
 
         let (loaded, pos) = store.load().await.unwrap().unwrap();
         assert_eq!(loaded.version, 1);
@@ -503,7 +491,7 @@ mod tests {
             sequence: 42,
             timestamp: 1714500000,
         };
-        store.save(&snap, Some(&pos)).await.unwrap();
+        save_correlation(&store, snap, Some(pos)).await;
 
         let (loaded, loaded_pos) = store.load().await.unwrap().unwrap();
         assert_eq!(loaded.version, 1);
@@ -523,13 +511,13 @@ mod tests {
             sequence: 10,
             timestamp: 1000,
         };
-        store.save(&snap, Some(&pos1)).await.unwrap();
+        save_correlation(&store, snap, Some(pos1)).await;
 
         let pos2 = SourcePosition {
             sequence: 50,
             timestamp: 5000,
         };
-        store.save(&snap, Some(&pos2)).await.unwrap();
+        save_correlation(&store, empty_snapshot(), Some(pos2)).await;
 
         let (_, loaded_pos) = store.load().await.unwrap().unwrap();
         let p = loaded_pos.unwrap();
@@ -576,7 +564,7 @@ mod tests {
             sequence: 99,
             timestamp: 9999,
         };
-        store.save(&loaded, Some(&new_pos)).await.unwrap();
+        save_correlation(&store, loaded, Some(new_pos)).await;
         let (_, loaded_pos) = store.load().await.unwrap().unwrap();
         assert_eq!(loaded_pos.unwrap().sequence, 99);
     }
@@ -606,7 +594,13 @@ mod tests {
         .unwrap();
         let state = rsigma_runtime::AlertPipelineState::default();
         let snap = pipeline.snapshot(&state);
-        store.save_alert_pipeline(&snap).await.unwrap();
+        store
+            .save_all(&StateCut {
+                alert_pipeline: Some(snap),
+                ..StateCut::default()
+            })
+            .await
+            .unwrap();
 
         let loaded = store.load_alert_pipeline().await.unwrap().unwrap();
         assert_eq!(loaded.version, rsigma_runtime::SNAPSHOT_VERSION);
@@ -627,7 +621,13 @@ mod tests {
         let d = rsigma_runtime::Disposition::from_raw(raw, 1000).unwrap();
         disp_store.apply(&d, 1000);
         let snap = disp_store.snapshot();
-        store.save_dispositions(&snap).await.unwrap();
+        store
+            .save_all(&StateCut {
+                dispositions: Some(snap),
+                ..StateCut::default()
+            })
+            .await
+            .unwrap();
 
         let loaded = store.load_dispositions().await.unwrap().unwrap();
         assert_eq!(
@@ -651,10 +651,105 @@ mod tests {
         )
         .unwrap();
         let snap = layer.snapshot(&rsigma_runtime::RiskState::default());
-        store.save_risk(&snap).await.unwrap();
+        store
+            .save_all(&StateCut {
+                risk: Some(snap),
+                ..StateCut::default()
+            })
+            .await
+            .unwrap();
 
         let loaded = store.load_risk().await.unwrap().unwrap();
         assert_eq!(loaded.version, rsigma_runtime::RISK_SNAPSHOT_VERSION);
+    }
+
+    fn risk_snapshot() -> RiskStateSnapshot {
+        rsigma_runtime::parse_risk_config(
+            "score:\n  default_score: 60\nobjects:\n  - type: user\n    selector: enrichment.user\nincident:\n  score_threshold: 100\n  window: 1h\n",
+        )
+        .unwrap()
+        .snapshot(&rsigma_runtime::RiskState::default())
+    }
+
+    #[tokio::test]
+    async fn save_all_writes_every_table_in_one_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SqliteStateStore::open(&dir.path().join("test.db")).unwrap();
+        let alert_pipeline =
+            rsigma_runtime::parse_alert_pipeline_config("dedup:\n  fingerprint: [rule]\n")
+                .unwrap()
+                .snapshot(&rsigma_runtime::AlertPipelineState::default());
+        let dispositions =
+            rsigma_runtime::DispositionStore::new(rsigma_runtime::DispositionConfig::default())
+                .snapshot();
+        let cut = StateCut {
+            correlation: Some(empty_snapshot()),
+            position: Some(SourcePosition {
+                sequence: 7,
+                timestamp: 70,
+            }),
+            alert_pipeline: Some(alert_pipeline),
+            risk: Some(risk_snapshot()),
+            dispositions: Some(dispositions),
+        };
+        let expected_bytes = serde_json::to_string(cut.correlation.as_ref().unwrap())
+            .unwrap()
+            .len()
+            + serde_json::to_string(cut.alert_pipeline.as_ref().unwrap())
+                .unwrap()
+                .len()
+            + serde_json::to_string(cut.risk.as_ref().unwrap())
+                .unwrap()
+                .len()
+            + serde_json::to_string(cut.dispositions.as_ref().unwrap())
+                .unwrap()
+                .len();
+
+        assert_eq!(store.save_all(&cut).await.unwrap(), expected_bytes);
+        let (_, pos) = store.load().await.unwrap().unwrap();
+        assert_eq!(pos.unwrap().sequence, 7);
+        assert!(store.load_alert_pipeline().await.unwrap().is_some());
+        assert!(store.load_risk().await.unwrap().is_some());
+        assert!(store.load_dispositions().await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn a_failed_save_leaves_every_table_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SqliteStateStore::open(&dir.path().join("test.db")).unwrap();
+        let old = SourcePosition {
+            sequence: 10,
+            timestamp: 100,
+        };
+        save_correlation(&store, empty_snapshot(), Some(old)).await;
+
+        // The risk write runs after the correlation write; make it fail.
+        store
+            .conn
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TABLE rsigma_risk_state")
+            .unwrap();
+        let err = store
+            .save_all(&StateCut {
+                correlation: Some(empty_snapshot()),
+                position: Some(SourcePosition {
+                    sequence: 50,
+                    timestamp: 500,
+                }),
+                risk: Some(risk_snapshot()),
+                ..StateCut::default()
+            })
+            .await
+            .unwrap_err();
+        assert!(err.contains("rsigma_risk_state"), "{err}");
+
+        let (_, pos) = store.load().await.unwrap().unwrap();
+        assert_eq!(
+            pos.unwrap().sequence,
+            10,
+            "the correlation write rolled back"
+        );
     }
 
     #[tokio::test]
