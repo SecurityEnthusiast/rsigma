@@ -4,6 +4,20 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### `value_percentile` thresholds apply, sink retries stop repeating lines, and smaller eval and runtime fixes
+
+`value_percentile` correlations ignored their condition: the percentile was computed and the correlation fired whenever the window held a finite value, so a rule with `lte: 50` fired on a window whose percentile was 50.5. The predicates now apply to the percentile as they do for the other numeric aggregates.
+
+When a delivery to the file or `unix://` sink was retried, the whole result was written again, duplicating lines that had already gone out, and a file line of 8 KiB or more cut off by a failed write was continued by the retry's first line with no newline in between. Each result's lines now go out in one write, a retry of the same delivery resumes after the lines already written, and a line a failed file write cut off is ended before anything else is appended. A Unix socket sink that loses its connection reconnects and resends from the first line that did not fully reach the old connection.
+
+The remaining fixes:
+
+- Library users on a current-thread Tokio runtime no longer panic in `block_in_place`. The stdout and file sinks write inline there, and `RuntimeEngine::load_rules` returns an error instead of resolving dynamic pipeline sources, which it can only do on a multi-threaded runtime.
+- In the correlation engine, an event timestamp before 1970, a non-finite number, or a date past the representable range no longer counts as a timestamp. These used to clamp to 1970 or saturate to a far-future time; now the next timestamp field and then `timestamp_fallback` apply.
+- `temporal_ordered` checks the order with one pass over each referenced rule's hits instead of a recursive search whose cost grew as the product of the hit counts. Results are unchanged, including for rules referenced more than once.
+- A boolean rule value now matches the numbers `1` and `0`, as it already matched the strings `"1"` and `"0"`.
+- When correlation state reaches `max_state_entries`, eviction selects the stalest 10% without cloning and sorting every group key, and clones only the keys it removes.
+
 ### Engines no longer retain rule HIR by default, and source references share one grammar (#620)
 
 `Engine` kept every loaded rule's lowered HIR beside its compiled form, only so `save_hir` could write a restart cache, which nothing in the CLI, daemon, MCP server, or LSP calls. Retention is now opt-in through `Engine::set_retain_hir(true)`, which must be on before rules are loaded; loading the 3,132 SigmaHQ rules with `engine eval` peaks about 12 to 16 MB (roughly 6%) lower without it. This changes library behavior: `save_hir` now returns `EvalError::HirCache` unless retention was on for every rule loaded from parsed Sigma, rather than writing a cache that silently misses rules.
