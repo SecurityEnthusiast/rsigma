@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Engines no longer retain rule HIR by default, and source references share one grammar
+
+`Engine` kept every loaded rule's lowered HIR beside its compiled form, only so `save_hir` could write a restart cache, which nothing in the CLI, daemon, MCP server, or LSP calls. Retention is now opt-in through `Engine::set_retain_hir(true)`, which must be on before rules are loaded; loading the 3,132 SigmaHQ rules with `engine eval` peaks about 12 to 16 MB (roughly 6%) lower without it. This changes library behavior: `save_hir` now returns `EvalError::HirCache` unless retention was on for every rule loaded from parsed Sigma, rather than writing a cache that silently misses rules.
+
+The `${source.*}` reference grammar existed twice, and the copies disagreed. Pipeline parsing ignored ids starting with a digit, so a pipeline whose only reference was `${source.1st_feed}` was treated as static and kept the literal template, and ids containing `-`, such as `threat-intel`, matched neither copy. Both sides now use `rsigma_eval::pipeline::sources::scan_source_templates`, and a reference id is one or more ASCII letters, digits, `_`, or `-`. A source declaration whose id uses any other character, such as a dot or a space, now fails to load with an error naming the id, since no template could reference it.
+
 ### Percentile and median checks no longer sort the window (#619)
 
 `value_percentile` and `value_median` correlations sorted every finite value in the group's window on each event fed into the group. They now select the needed ranks with `select_nth_unstable_by`, which is O(n) on average and returns exactly the same values, including interpolated percentiles and even-count medians. In the new `correlation_numeric_window` benchmark, a group checked against a 5,000-value window processes events about 4x faster. Chained correlations also stop cloning every fired result, including its retained events in full event mode, just to read which correlation fired and for which group.
