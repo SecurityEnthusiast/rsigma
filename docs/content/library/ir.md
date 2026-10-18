@@ -47,7 +47,7 @@ The crate is sync-only (no tokio/reqwest).
 
 ## HIR cache
 
-`cache::*` serializes lowered rules to a versioned, self-describing blob, the on-disk HIR cache. It is what [`rsigma-eval`](eval.md)'s `Engine::save_hir` / `load_hir` use for a daemon restart cache that skips parse, pipeline, and lowering.
+`cache::*` serializes lowered rules to a versioned, self-describing blob, the on-disk HIR cache. It is what [`rsigma-eval`](eval.md)'s `Engine::save_hir` / `load_hir` use for a restart cache that skips parse, pipeline, and lowering; the engine keeps the HIR to save only after `Engine::set_retain_hir(true)`.
 
 - The blob is a `HirCacheHeader` (schema version + producing crate version) followed by the rules. `decode_rules` reads and version-checks the header before decoding the rules, rejecting a blob written under an incompatible `HIR_SCHEMA_VERSION`.
 - CBOR is the binary format: the HIR embeds `LogSource`, whose `#[serde(flatten)]` custom-key map serializes with an unknown length that fixed-layout encoders reject.

@@ -38,7 +38,7 @@ use crate::logsource::{ExtractLogSource, LogSourceExtractor};
 use crate::pipeline::{Pipeline, apply_pipelines, apply_pipelines_to_correlation};
 use crate::result::{CorrelationBody, EvaluationResult, ResultBody, RuleHeader};
 use crate::rule_metadata::{RuleBundleMetadata, RuleMetadataLookup};
-use crate::timestamp::{normalize_epoch, parse_timestamp_str};
+use crate::timestamp::{epoch_seconds_from_float, epoch_seconds_from_int, parse_timestamp_str};
 
 type RuleIdentity = (Option<String>, Option<String>);
 
@@ -1104,10 +1104,13 @@ impl<L> CorrelationEngine<L> {
         out_indices: &mut Vec<usize>,
     ) {
         debug_assert_eq!(fired.len(), fired_indices.len());
-        let mut pending: Vec<(usize, EvaluationResult)> = fired_indices
+        // Chaining only needs which correlation fired and for which group, so
+        // `pending` carries that instead of cloning results and their events.
+        // Only correlation results chain. Detections never reach here.
+        let mut pending: Vec<(usize, Vec<(String, String)>)> = fired_indices
             .iter()
-            .copied()
-            .zip(fired.iter().cloned())
+            .zip(fired)
+            .filter_map(|(&idx, result)| Some((idx, result.as_correlation()?.group_key.clone())))
             .collect();
         let mut depth = 0;
 
@@ -1118,16 +1121,12 @@ impl<L> CorrelationEngine<L> {
             #[allow(clippy::type_complexity)]
             let mut work: Vec<(usize, Vec<(String, String)>, String)> = Vec::new();
             let mut seen = std::collections::HashSet::<(usize, String)>::new();
-            for (source_idx, result) in &pending {
-                // Only correlation results chain. Detections never reach here.
-                let Some(body) = result.as_correlation() else {
-                    continue;
-                };
+            for (source_idx, group_key) in &pending {
                 for key in self.chain_lookup_keys(*source_idx) {
                     if let Some(indices) = self.rule_index.get(&key) {
                         for &corr_idx in indices {
                             if seen.insert((corr_idx, key.clone())) {
-                                work.push((corr_idx, body.group_key.clone(), key.clone()));
+                                work.push((corr_idx, group_key.clone(), key.clone()));
                             }
                         }
                     }
@@ -1202,6 +1201,7 @@ impl<L> CorrelationEngine<L> {
                     }
 
                     let corr = &self.correlations[corr_idx];
+                    let fired_group_key = group_key.to_pairs(&corr.group_by);
                     let result = EvaluationResult {
                         header: RuleHeader {
                             rule_title: corr.title.clone(),
@@ -1213,7 +1213,7 @@ impl<L> CorrelationEngine<L> {
                         },
                         body: ResultBody::Correlation(CorrelationBody {
                             correlation_type: corr_type,
-                            group_key: group_key.to_pairs(&corr.group_by),
+                            group_key: fired_group_key.clone(),
                             aggregated_value: agg_value,
                             timespan_secs: timespan,
                             // Chained correlations don't include events
@@ -1223,7 +1223,7 @@ impl<L> CorrelationEngine<L> {
                             event_refs: None,
                         }),
                     };
-                    next_pending.push((corr_idx, result.clone()));
+                    next_pending.push((corr_idx, fired_group_key));
                     out.push(result);
                     out_indices.push(corr_idx);
                     self.last_alert.insert(alert_key.clone(), ts);
@@ -1259,7 +1259,8 @@ impl<L> CorrelationEngine<L> {
     /// - Numeric values (epoch seconds, or epoch millis if > 1e12)
     /// - ISO 8601 strings (e.g., "2024-07-10T12:30:00Z")
     ///
-    /// Returns `None` if no field yields a valid timestamp.
+    /// Returns `None` if no field yields a valid timestamp; a value before
+    /// 1970 or past the representable range does not count as one.
     fn extract_event_timestamp(&self, event: &impl Event) -> Option<i64> {
         for field_name in &self.config.timestamp_fields {
             if let Some(val) = event.get_field(field_name)
@@ -1371,16 +1372,24 @@ impl<L> CorrelationEngine<L> {
                 target,
             );
 
-            // Collect keys with their latest timestamp, sort by oldest first
+            // Partition by latest timestamp so the `excess` stalest entries
+            // come first, and clone only their keys.
             let mut by_staleness: Vec<_> = self
                 .state
                 .iter()
-                .map(|(k, v)| (k.clone(), v.latest_timestamp().unwrap_or(i64::MIN)))
+                .map(|(k, v)| (k, v.latest_timestamp().unwrap_or(i64::MIN)))
                 .collect();
-            by_staleness.sort_unstable_by_key(|&(_, ts)| ts);
+            if excess < by_staleness.len() {
+                by_staleness.select_nth_unstable_by_key(excess, |&(_, ts)| ts);
+            }
+            let stalest: Vec<_> = by_staleness
+                .iter()
+                .take(excess)
+                .map(|&(k, _)| k.clone())
+                .collect();
 
-            // Drop the oldest entries (and their associated event buffers)
-            for (key, _) in by_staleness.into_iter().take(excess) {
+            // Drop the stalest entries (and their associated event buffers)
+            for key in stalest {
                 self.state.remove(&key);
                 self.last_alert.remove(&key);
                 self.event_buffers.remove(&key);
@@ -1613,11 +1622,16 @@ fn extract_event_ts(event: &impl Event, timestamp_fields: &[String]) -> Option<i
 }
 
 /// Parse an [`EventValue`] as a Unix epoch timestamp in seconds.
+///
+/// Values before 1970, non-finite floats, and dates past the representable
+/// range are `None`, so the next timestamp field or the fallback applies.
 fn parse_timestamp_value(val: &EventValue) -> Option<i64> {
     match val {
-        EventValue::Int(i) => Some(normalize_epoch(*i)),
-        EventValue::Float(f) => Some(normalize_epoch(*f as i64)),
-        EventValue::Str(s) => parse_timestamp_str(s).map(|dt| dt.timestamp()),
+        EventValue::Int(i) => epoch_seconds_from_int(*i),
+        EventValue::Float(f) => epoch_seconds_from_float(*f),
+        EventValue::Str(s) => parse_timestamp_str(s)
+            .map(|dt| dt.timestamp())
+            .filter(|ts| *ts >= 0),
         _ => None,
     }
 }

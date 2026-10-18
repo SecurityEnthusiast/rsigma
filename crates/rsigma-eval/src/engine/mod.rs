@@ -32,7 +32,7 @@ use crate::pipeline::{Pipeline, TransformedRule, apply_pipelines, transform_coll
 use crate::result::{EvaluationResult, MatchDetailLevel};
 use crate::rule_metadata::{RuleBundleMetadata, RuleMetadataLookup};
 
-use bloom_index::{BloomCache, FieldBloomIndex};
+use bloom_index::{BloomCache, BloomLookup, FieldBloomIndex};
 
 pub use filters::apply_filters;
 use filters::{
@@ -90,10 +90,16 @@ pub(crate) struct IdentifiedEvaluation {
 pub struct Engine<L = LogSourceExtractor> {
     rules: Vec<CompiledRule>,
     /// Post-pipeline, pre-filter HIR for rules added via the parsed-rule paths,
-    /// retained so [`Engine::save_hir`] can serialize a restart cache. Kept in
-    /// step with `rules` for those paths; rules added via `add_compiled_rule`
-    /// have no HIR and are not represented here.
+    /// retained so [`Engine::save_hir`] can serialize a restart cache. Empty
+    /// unless [`Engine::set_retain_hir`] enabled retention; rules added via
+    /// `add_compiled_rule` have no HIR and are not represented here.
     ir_rules: Vec<IrRule>,
+    /// Whether the parsed-rule paths keep each rule's HIR in `ir_rules`.
+    retain_hir: bool,
+    /// Rules added via the parsed-rule paths while retention was off. A
+    /// non-zero count makes `save_hir` fail instead of writing a cache that
+    /// silently misses them.
+    unretained_hir: usize,
     pipelines: Vec<Pipeline>,
     /// Global override: include the full event JSON in all match results.
     /// When `true`, overrides per-rule `rsigma.include_event` custom attributes.
@@ -186,6 +192,8 @@ impl<L> Engine<L> {
         Engine {
             rules: Vec::new(),
             ir_rules: Vec::new(),
+            retain_hir: false,
+            unretained_hir: 0,
             pipelines,
             include_event: false,
             match_detail: MatchDetailLevel::Off,
@@ -341,6 +349,26 @@ impl<L> Engine<L> {
         self.cross_rule_ac_enabled
     }
 
+    /// Enable or disable retention of each loaded rule's HIR for
+    /// [`Engine::save_hir`].
+    ///
+    /// Off by default: nothing on the evaluation path reads the HIR, so
+    /// keeping it only costs memory. Enable it before loading rules when the
+    /// engine's rules will be saved as a restart cache. Disabling it drops
+    /// any HIR already retained.
+    pub fn set_retain_hir(&mut self, enabled: bool) {
+        if !enabled {
+            self.unretained_hir += self.ir_rules.len();
+            self.ir_rules = Vec::new();
+        }
+        self.retain_hir = enabled;
+    }
+
+    /// Returns whether loaded rules keep their HIR for [`Engine::save_hir`].
+    pub fn retain_hir_enabled(&self) -> bool {
+        self.retain_hir
+    }
+
     /// Set global `include_event` — when `true`, all match results include
     /// the full event JSON regardless of per-rule custom attributes.
     pub fn set_include_event(&mut self, include: bool) {
@@ -431,18 +459,27 @@ impl<L> Engine<L> {
     }
 
     /// Lower a rule to HIR (applying any configured pipelines first), compile
-    /// it, and store both the HIR and the compiled rule. Shared by the single-
-    /// and batched-add paths so they stay behaviourally identical, and so the
-    /// retained HIR (`ir_rules`) tracks `rules` for [`Engine::save_hir`].
+    /// it, and store the compiled rule, plus its HIR when retention is on.
+    /// Shared by the single- and batched-add paths so they stay behaviourally
+    /// identical, and so the retained HIR (`ir_rules`) tracks `rules` for
+    /// [`Engine::save_hir`].
     ///
     /// Both pushes happen only after lowering and compilation succeed, so a
     /// failing rule leaves neither vector mutated.
     fn compile_and_store(&mut self, rule: &SigmaRule) -> Result<()> {
         let ir = self.lower_with_pipelines(rule)?;
         let compiled = compile_to_compiled(&ir)?;
-        self.ir_rules.push(ir);
-        self.rules.push(compiled);
+        self.store(ir, compiled);
         Ok(())
+    }
+
+    fn store(&mut self, ir: IrRule, compiled: CompiledRule) {
+        if self.retain_hir {
+            self.ir_rules.push(ir);
+        } else {
+            self.unretained_hir += 1;
+        }
+        self.rules.push(compiled);
     }
 
     /// Lower a rule to HIR, applying any configured pipelines first.
@@ -465,7 +502,23 @@ impl<L> Engine<L> {
     /// injections (applied to the compiled rules) or rules added via
     /// [`Engine::add_compiled_rule`] / [`Engine::extend_compiled_rules`].
     /// Re-apply any filters after [`Engine::load_hir`] if the engine used them.
+    ///
+    /// Requires HIR retention ([`Engine::set_retain_hir`]) to have been on
+    /// for every rule loaded through those paths; otherwise this returns
+    /// [`EvalError::HirCache`] rather than a cache that misses rules.
     pub fn save_hir(&self) -> Result<Vec<u8>> {
+        if !self.retain_hir {
+            return Err(EvalError::HirCache(
+                "HIR retention is off; call Engine::set_retain_hir(true) before loading rules"
+                    .to_string(),
+            ));
+        }
+        if self.unretained_hir > 0 {
+            return Err(EvalError::HirCache(format!(
+                "{} rules were loaded while HIR retention was off and cannot be saved",
+                self.unretained_hir
+            )));
+        }
         Ok(rsigma_ir::encode_rules(&self.ir_rules)?)
     }
 
@@ -474,13 +527,13 @@ impl<L> Engine<L> {
     ///
     /// Rules are appended to any already loaded, so a warm start loads into a
     /// fresh [`Engine::new`]. A blob whose schema version differs from this
-    /// build's is rejected (see [`rsigma_ir::decode_rules`]).
+    /// build's is rejected (see [`rsigma_ir::decode_rules`]). The loaded HIR
+    /// is retained only when [`Engine::set_retain_hir`] is on.
     pub fn load_hir(&mut self, bytes: &[u8]) -> Result<()> {
         let rules = rsigma_ir::decode_rules(bytes)?;
         for ir in rules {
             let compiled = compile_to_compiled(&ir)?;
-            self.ir_rules.push(ir);
-            self.rules.push(compiled);
+            self.store(ir, compiled);
         }
         self.rebuild_index();
         Ok(())
@@ -748,9 +801,12 @@ impl<L> Engine<L> {
         event_logsource: Option<&LogSource>,
     ) -> Vec<IdentifiedEvaluation> {
         if self.bloom_prefilter {
-            self.evaluate_with_bloom_path(event, event_logsource)
+            let bloom = BloomCache::new(&self.bloom_index, event);
+            self.evaluate_candidates(event, event_logsource, &bloom)
         } else {
-            self.evaluate_no_bloom_path(event, event_logsource)
+            // `NoBloom` is zero-sized, so this instantiation compiles to the
+            // same straight-line code as an engine without a bloom filter.
+            self.evaluate_candidates(event, event_logsource, &bloom_index::NoBloom)
         }
     }
 
@@ -818,14 +874,12 @@ impl<L> Engine<L> {
         }
     }
 
-    fn evaluate_no_bloom_path<E: Event>(
+    fn evaluate_candidates<E: Event, B: BloomLookup>(
         &self,
         event: &E,
         event_logsource: Option<&LogSource>,
+        bloom: &B,
     ) -> Vec<IdentifiedEvaluation> {
-        // Pass the zero-sized `NoBloom` lookup so this monomorphizes to the
-        // same straight-line code as the pre-bloom engine while still
-        // threading the configured match-detail level.
         let keep = self.cross_rule_ac_keep_mask(event);
         // `event_logsource` is `None` (the default) unless pruning is enabled,
         // leaving the loop's behaviour unchanged.
@@ -845,15 +899,7 @@ impl<L> Engine<L> {
                 pruned += 1;
                 continue;
             }
-            if let Some(mut m) =
-                evaluate_rule_with_bloom(rule, event, &bloom_index::NoBloom, self.match_detail)
-            {
-                if self.include_event
-                    && let Some(d) = m.as_detection_mut()
-                    && d.event.is_none()
-                {
-                    d.event = Some(event.to_json());
-                }
+            if let Some(m) = self.evaluate_one(rule, event, bloom) {
                 results.push(IdentifiedEvaluation {
                     result: m,
                     rule_id: rule.id.clone(),
@@ -865,47 +911,21 @@ impl<L> Engine<L> {
         results
     }
 
-    fn evaluate_with_bloom_path<E: Event>(
+    /// Evaluate one rule, attaching the event when `include_event` is set.
+    fn evaluate_one<E: Event, B: BloomLookup>(
         &self,
+        rule: &CompiledRule,
         event: &E,
-        event_logsource: Option<&LogSource>,
-    ) -> Vec<IdentifiedEvaluation> {
-        let bloom = BloomCache::new(&self.bloom_index, event);
-        let keep = self.cross_rule_ac_keep_mask(event);
-        // `event_logsource` is `None` (the default) unless pruning is enabled,
-        // leaving the loop's behaviour unchanged.
-        let candidates = self.logsource_candidates(event, event_logsource);
-        let mut results = Vec::new();
-        let mut pruned = 0u64;
-        for idx in candidates {
-            if let Some(ref mask) = keep
-                && !mask[idx]
-            {
-                continue;
-            }
-            let rule = &self.rules[idx];
-            if let Some(event_ls) = event_logsource
-                && !logsource_compatible(&rule.logsource, event_ls)
-            {
-                pruned += 1;
-                continue;
-            }
-            if let Some(mut m) = evaluate_rule_with_bloom(rule, event, &bloom, self.match_detail) {
-                if self.include_event
-                    && let Some(d) = m.as_detection_mut()
-                    && d.event.is_none()
-                {
-                    d.event = Some(event.to_json());
-                }
-                results.push(IdentifiedEvaluation {
-                    result: m,
-                    rule_id: rule.id.clone(),
-                    rule_name: rule.name.clone(),
-                });
-            }
+        bloom: &B,
+    ) -> Option<EvaluationResult> {
+        let mut m = evaluate_rule_with_bloom(rule, event, bloom, self.match_detail)?;
+        if self.include_event
+            && let Some(d) = m.as_detection_mut()
+            && d.event.is_none()
+        {
+            d.event = Some(event.to_json());
         }
-        self.record_logsource_pruned(pruned);
-        results
+        Some(m)
     }
 
     /// Fold one event's residual logsource-conflict tally into the counter.
@@ -929,16 +949,18 @@ impl<L> Engine<L> {
         event_logsource: &LogSource,
     ) -> Vec<EvaluationResult> {
         if self.bloom_prefilter {
-            self.evaluate_with_logsource_with_bloom(event, event_logsource)
+            let bloom = BloomCache::new(&self.bloom_index, event);
+            self.evaluate_matching_logsource(event, event_logsource, &bloom)
         } else {
-            self.evaluate_with_logsource_no_bloom(event, event_logsource)
+            self.evaluate_matching_logsource(event, event_logsource, &bloom_index::NoBloom)
         }
     }
 
-    fn evaluate_with_logsource_no_bloom<E: Event>(
+    fn evaluate_matching_logsource<E: Event, B: BloomLookup>(
         &self,
         event: &E,
         event_logsource: &LogSource,
+        bloom: &B,
     ) -> Vec<EvaluationResult> {
         let keep = self.cross_rule_ac_keep_mask(event);
         let mut results = Vec::new();
@@ -950,46 +972,8 @@ impl<L> Engine<L> {
             }
             let rule = &self.rules[idx];
             if logsource_matches(&rule.logsource, event_logsource)
-                && let Some(mut m) =
-                    evaluate_rule_with_bloom(rule, event, &bloom_index::NoBloom, self.match_detail)
+                && let Some(m) = self.evaluate_one(rule, event, bloom)
             {
-                if self.include_event
-                    && let Some(d) = m.as_detection_mut()
-                    && d.event.is_none()
-                {
-                    d.event = Some(event.to_json());
-                }
-                results.push(m);
-            }
-        }
-        results
-    }
-
-    fn evaluate_with_logsource_with_bloom<E: Event>(
-        &self,
-        event: &E,
-        event_logsource: &LogSource,
-    ) -> Vec<EvaluationResult> {
-        let bloom = BloomCache::new(&self.bloom_index, event);
-        let keep = self.cross_rule_ac_keep_mask(event);
-        let mut results = Vec::new();
-        for idx in self.rule_index.candidates(event) {
-            if let Some(ref mask) = keep
-                && !mask[idx]
-            {
-                continue;
-            }
-            let rule = &self.rules[idx];
-            if logsource_matches(&rule.logsource, event_logsource)
-                && let Some(mut m) =
-                    evaluate_rule_with_bloom(rule, event, &bloom, self.match_detail)
-            {
-                if self.include_event
-                    && let Some(d) = m.as_detection_mut()
-                    && d.event.is_none()
-                {
-                    d.event = Some(event.to_json());
-                }
                 results.push(m);
             }
         }
@@ -1062,15 +1046,7 @@ impl<L> Engine<L> {
             if !keep(rule) {
                 continue;
             }
-            if let Some(mut m) =
-                evaluate_rule_with_bloom(rule, event, &bloom_index::NoBloom, self.match_detail)
-            {
-                if self.include_event
-                    && let Some(d) = m.as_detection_mut()
-                    && d.event.is_none()
-                {
-                    d.event = Some(event.to_json());
-                }
+            if let Some(m) = self.evaluate_one(rule, event, &bloom_index::NoBloom) {
                 results.push(m);
             }
         }

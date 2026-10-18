@@ -120,7 +120,7 @@ Both evaluation and conversion route through a shared intermediate representatio
 
 ### HIR to compiled rules (`rsigma-eval::compiler`)
 
-`Engine::add_collection` first runs every loaded pipeline against each rule, in priority order, then lowers each rewritten rule to HIR (`lower_rule`) and materializes it into a `CompiledRule` via `compile_to_compiled`. Materialization builds the matcher tree, a tree of nodes per detection item with the concrete `Regex` / Aho-Corasick / `IpNet` matchers, and the matcher optimizer transforms subtrees in-place. `Engine::save_hir` / `load_hir` persist and reload that lowered rule set through the HIR cache, so a warm process skips parse, pipeline, and lowering on restart.
+`Engine::add_collection` first runs every loaded pipeline against each rule, in priority order, then lowers each rewritten rule to HIR (`lower_rule`) and materializes it into a `CompiledRule` via `compile_to_compiled`. Materialization builds the matcher tree, a tree of nodes per detection item with the concrete `Regex` / Aho-Corasick / `IpNet` matchers, and the matcher optimizer transforms subtrees in-place. `Engine::save_hir` / `load_hir` persist and reload that lowered rule set through the HIR cache, so a warm process skips parse, pipeline, and lowering on restart. The engine keeps the lowered rules for this only when `Engine::set_retain_hir(true)` is set before loading; by default it drops them after compilation.
 
 The matcher optimizer makes three transparent rewrites:
 

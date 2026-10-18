@@ -62,6 +62,13 @@ fn test_parse_timestamp_every_form() {
         (json!(1720614600500_i64), Some(1720614600)),
         (json!(1720614600.5), Some(1720614600)),
         (json!("garbage"), None),
+        (json!(-1), None),
+        (json!(-1720614600500_i64), None),
+        (json!(-0.5), None),
+        (json!(1e300), None),
+        (json!(u64::MAX), None),
+        (json!(i64::MAX), None),
+        (json!("1969-12-31T23:59:59Z"), None),
     ] {
         let event = json!({ "ts": val });
         let event = JsonEvent::borrow(&event);
@@ -103,6 +110,81 @@ fn test_extract_timestamp_fallback_fields() {
     let event = JsonEvent::borrow(&v);
     let ts = engine.extract_event_timestamp(&event);
     assert_eq!(ts, Some(1720613400));
+}
+
+#[test]
+fn test_extract_timestamp_skips_out_of_range_fields() {
+    let config = CorrelationConfig {
+        timestamp_fields: vec!["@timestamp".to_string(), "timestamp".to_string()],
+        ..Default::default()
+    };
+    let engine = CorrelationEngine::new(config);
+
+    for bad in [
+        json!(-5),
+        json!(1e300),
+        json!(i64::MAX),
+        json!("1900-01-01T00:00:00Z"),
+    ] {
+        let v = json!({"@timestamp": bad, "timestamp": 1720613400});
+        let event = JsonEvent::borrow(&v);
+        assert_eq!(
+            engine.extract_event_timestamp(&event),
+            Some(1720613400),
+            "{bad} should fall through to the next field",
+        );
+
+        let v = json!({"@timestamp": bad});
+        let event = JsonEvent::borrow(&v);
+        assert_eq!(engine.extract_event_timestamp(&event), None, "{bad}");
+    }
+}
+
+#[test]
+fn test_out_of_range_timestamp_uses_the_skip_fallback() {
+    let yaml = r#"
+title: test rule
+id: ts-range-rule
+logsource:
+    product: test
+detection:
+    selection:
+        action: click
+    condition: selection
+level: low
+---
+title: test correlation
+correlation:
+    type: event_count
+    rules:
+        - ts-range-rule
+    group-by:
+        - User
+    timespan: 10s
+    condition:
+        gte: 2
+level: high
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    let mut engine = CorrelationEngine::new(CorrelationConfig {
+        timestamp_fallback: TimestampFallback::Skip,
+        emit_detections: true,
+        ..Default::default()
+    });
+    engine.add_collection(&collection).unwrap();
+
+    for ts in [json!(-100), json!(-200), json!(1e300), json!(1e301)] {
+        let v = json!({"action": "click", "User": "alice", "@timestamp": ts});
+        let event = JsonEvent::borrow(&v);
+        let r = engine.process_event(&event);
+        assert!(r.detection_count() > 0, "detection should still fire");
+        assert_eq!(
+            r.correlation_count(),
+            0,
+            "{ts} must not feed correlation state"
+        );
+    }
+    assert_eq!(engine.state_count(), 0);
 }
 
 #[test]
@@ -571,6 +653,57 @@ fn windowed_engine_with_group_cap(window_lines: &str, cap: usize) -> Correlation
     let mut engine = CorrelationEngine::new(config);
     engine.add_collection(&collection).unwrap();
     engine
+}
+
+#[test]
+fn test_hard_cap_evicts_the_stalest_groups() {
+    let collection = parse_sigma_yaml(&window_mode_yaml("    timespan: 1h")).unwrap();
+    let mut engine = CorrelationEngine::new(CorrelationConfig {
+        max_state_entries: 20,
+        ..Default::default()
+    });
+    engine.add_collection(&collection).unwrap();
+
+    // Twenty groups whose latest timestamps arrive out of order.
+    let latest = |i: i64| 100 + (i * 7) % 20;
+    for i in 0..20 {
+        let v = json!({"action": "click", "User": format!("user_{i}")});
+        engine.process_event_at(&JsonEvent::borrow(&v), latest(i));
+    }
+    assert_eq!(engine.state_count(), 20);
+
+    // The cap is reached, so the next new group trims the state to 90% first:
+    // the two groups with the oldest latest timestamps go.
+    let v = json!({"action": "click", "User": "newcomer"});
+    engine.process_event_at(&JsonEvent::borrow(&v), 200);
+
+    let users: std::collections::HashSet<String> = engine
+        .state
+        .keys()
+        .filter_map(|(_, key)| key.0[0].clone())
+        .collect();
+    assert_eq!(users.len(), 19);
+    assert!(users.contains("newcomer"));
+    let evicted: Vec<String> = (0..20)
+        .filter(|&i| latest(i) < 102)
+        .map(|i| format!("user_{i}"))
+        .collect();
+    assert_eq!(evicted.len(), 2);
+    for user in &evicted {
+        assert!(!users.contains(user), "{user} is among the stalest");
+    }
+
+    // A cap of one evicts every entry before each new group.
+    let mut engine = CorrelationEngine::new(CorrelationConfig {
+        max_state_entries: 1,
+        ..Default::default()
+    });
+    engine.add_collection(&collection).unwrap();
+    for i in 0..3 {
+        let v = json!({"action": "click", "User": format!("user_{i}")});
+        engine.process_event_at(&JsonEvent::borrow(&v), 100 + i);
+        assert_eq!(engine.state_count(), 1);
+    }
 }
 
 #[test]
@@ -2989,6 +3122,73 @@ level: high
             );
         }
     }
+}
+
+#[test]
+fn test_chaining_in_full_event_mode() {
+    // Child results carry retained events in full mode; the chained parent
+    // still sees the child's group and fires without events of its own.
+    let yaml = r#"
+title: click
+id: det-rule
+logsource:
+    product: test
+detection:
+    selection:
+        action: click
+    condition: selection
+---
+title: correlation A
+id: corr-a
+correlation:
+    type: event_count
+    rules:
+        - det-rule
+    group-by:
+        - User
+    timespan: 5m
+    condition:
+        gte: 2
+level: high
+---
+title: correlation B
+id: corr-b
+correlation:
+    type: event_count
+    rules:
+        - corr-a
+    group-by:
+        - User
+    timespan: 5m
+    condition:
+        gte: 2
+level: high
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+    let mut engine = CorrelationEngine::new(CorrelationConfig {
+        correlation_event_mode: CorrelationEventMode::Full,
+        max_correlation_events: 10,
+        ..emit_every_hop()
+    });
+    engine.add_collection(&collection).unwrap();
+
+    let mut last = None;
+    for i in 0..3 {
+        let v = json!({"action": "click", "User": "alice"});
+        last = Some(engine.process_event_at(&JsonEvent::borrow(&v), 1_000 + i));
+    }
+    let result = last.unwrap();
+    let bodies: Vec<_> = result
+        .correlations()
+        .map(|c| (c.header.rule_title.as_str(), c.as_correlation().unwrap()))
+        .collect();
+    let [("correlation A", a), ("correlation B", b)] = bodies.as_slice() else {
+        panic!("expected A then chained B, got {bodies:?}");
+    };
+    assert_eq!(a.events.as_ref().map(Vec::len), Some(3));
+    assert!(b.events.is_none());
+    assert_eq!(b.group_key, [("User".to_string(), "alice".to_string())]);
+    assert_eq!(b.aggregated_value, 2.0);
 }
 
 #[test]

@@ -41,9 +41,7 @@ use regex::Regex;
 use rsigma_eval::{EvaluationResult, ResultBody};
 use rsigma_parser::Level;
 
-use super::{
-    EnrichError, EnrichErrorKind, Enricher, EnricherKind, OnError, Scope, inject_enrichment,
-};
+use super::{EnrichError, Enricher, EnricherKind, OnError, Scope, inject_enrichment};
 
 /// Matches `${<contents>}` where contents is anything except `}`.
 ///
@@ -487,14 +485,6 @@ impl Enricher for TemplateEnricher {
         );
         Ok(())
     }
-}
-
-// `EnrichError` / `EnrichErrorKind` are referenced by the trait definition
-// above via `super::*`; this `_use` keeps unused-import warnings off when
-// future expansions fold in custom errors here without changing the bound.
-#[allow(dead_code)]
-fn _use_err(_e: EnrichError) -> EnrichErrorKind {
-    EnrichErrorKind::TemplateRender(String::new())
 }
 
 #[cfg(test)]

@@ -24,4 +24,4 @@ use rsigma_parser::{ConditionExpr, ConditionOperator, CorrelationType};
 #[cfg(test)]
 use std::collections::{HashMap, VecDeque};
 #[cfg(test)]
-use window::{eval_temporal_expr, percentile_linear_interp};
+use window::{check_temporal_ordered, eval_temporal_expr, percentile_linear_interp};

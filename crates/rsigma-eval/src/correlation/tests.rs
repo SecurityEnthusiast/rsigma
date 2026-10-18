@@ -451,13 +451,13 @@ fn test_check_condition_with_extended_expr() {
 
 #[test]
 fn test_percentile_linear_interp_single() {
-    assert!((percentile_linear_interp(&[42.0], 50.0) - 42.0).abs() < f64::EPSILON);
+    assert!((percentile_linear_interp(&mut [42.0], 50.0) - 42.0).abs() < f64::EPSILON);
 }
 
 #[test]
 fn test_percentile_linear_interp_basic() {
     // Values: [1, 2, 3, 4, 5]
-    let values = &[1.0, 2.0, 3.0, 4.0, 5.0];
+    let values = &mut [1.0, 2.0, 3.0, 4.0, 5.0];
     // 0th percentile = 1.0
     assert!((percentile_linear_interp(values, 0.0) - 1.0).abs() < f64::EPSILON);
     // 25th percentile = 2.0
@@ -473,7 +473,7 @@ fn test_percentile_linear_interp_basic() {
 #[test]
 fn test_percentile_linear_interp_interpolation() {
     // Values: [10, 20, 30, 40]
-    let values = &[10.0, 20.0, 30.0, 40.0];
+    let values = &mut [10.0, 20.0, 30.0, 40.0];
     // 50th percentile: rank = 0.5 * 3 = 1.5, interp between 20 and 30 = 25
     assert!((percentile_linear_interp(values, 50.0) - 25.0).abs() < f64::EPSILON);
 }
@@ -481,10 +481,90 @@ fn test_percentile_linear_interp_interpolation() {
 #[test]
 fn test_percentile_linear_interp_1st_percentile() {
     // Values: [1, 2, 3, ..., 100]
-    let values: Vec<f64> = (1..=100).map(|x| x as f64).collect();
+    let mut values: Vec<f64> = (1..=100).map(|x| x as f64).collect();
     // 1st percentile = 1.0 + 0.01 * 99 * (2.0 - 1.0) ~ 1.99
-    let p1 = percentile_linear_interp(&values, 1.0);
+    let p1 = percentile_linear_interp(&mut values, 1.0);
     assert!((p1 - 1.99).abs() < 0.01);
+}
+
+/// Percentile by full sort, the definition the selection-based version must
+/// reproduce exactly.
+fn sorted_percentile(values: &[f64], percentile: f64) -> f64 {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let n = sorted.len();
+    if n == 1 {
+        return sorted[0];
+    }
+    let rank = percentile.clamp(0.0, 100.0) / 100.0 * (n - 1) as f64;
+    let (lower, upper) = (rank.floor() as usize, rank.ceil() as usize);
+    if lower == upper || upper >= n {
+        sorted[lower.min(n - 1)]
+    } else {
+        sorted[lower] + (rank - lower as f64) * (sorted[upper] - sorted[lower])
+    }
+}
+
+/// Deterministic unsorted samples with repeats and signed zeros.
+fn scrambled_samples(n: usize) -> Vec<f64> {
+    let mut x: u64 = 0x9E37_79B9_7F4A_7C15 ^ n as u64;
+    (0..n)
+        .map(|i| {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            match i % 7 {
+                0 => 0.0,
+                1 => -0.0,
+                2 => ((x >> 40) % 16) as f64,
+                _ => ((x >> 11) as f64 / (1u64 << 53) as f64 - 0.5) * 1e6,
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn test_percentile_selection_matches_sorted_reference() {
+    for n in (1..=64).chain([99, 100, 1_000, 5_001]) {
+        let samples = scrambled_samples(n);
+        for p in (0..=100).map(f64::from).chain([0.5, 33.3, 99.9]) {
+            let got = percentile_linear_interp(&mut samples.clone(), p);
+            let want = sorted_percentile(&samples, p);
+            assert_eq!(
+                got.to_bits(),
+                want.to_bits(),
+                "n={n} p={p}: {got} != {want}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_window_median_matches_sorted_reference() {
+    let cond = CompiledCondition {
+        field: Some(vec!["latency".to_string()]),
+        predicates: vec![(ConditionOperator::Gte, f64::MIN)],
+        percentile: None,
+    };
+    for n in (1..=64).chain([99, 100, 1_000, 5_000]) {
+        let samples = scrambled_samples(n);
+        let mut state = WindowState::new_for(CorrelationType::ValueMedian);
+        for (i, v) in samples.iter().enumerate() {
+            state.push_numeric(i as i64, *v);
+        }
+        let mut sorted = samples.clone();
+        sorted.sort_by(f64::total_cmp);
+        let mid = n / 2;
+        let want = if n % 2 == 0 {
+            (sorted[mid - 1] + sorted[mid]) / 2.0
+        } else {
+            sorted[mid]
+        };
+        let checked = state.check_condition(&cond, CorrelationType::ValueMedian, &[], None);
+        let current = state.current_value(CorrelationType::ValueMedian, &[], None);
+        assert_eq!(checked.map(f64::to_bits), Some(want.to_bits()), "n={n}");
+        assert_eq!(current.map(f64::to_bits), Some(want.to_bits()), "n={n}");
+    }
 }
 
 #[test]
@@ -495,28 +575,36 @@ fn test_value_percentile_check_condition() {
         state.push_numeric(1000 + i, i as f64);
     }
 
-    let cond = CompiledCondition {
+    let cond = |op, threshold| CompiledCondition {
         field: Some(vec!["latency".to_string()]),
-        predicates: vec![(ConditionOperator::Lte, 50.0)],
+        predicates: vec![(op, threshold)],
         percentile: None,
     };
-    // 50th percentile of 1..100 should be ~50.5
-    let result = state.check_condition(&cond, CorrelationType::ValuePercentile, &[], None);
-    assert!(result.is_some());
-    let val = result.unwrap();
-    assert!((val - 50.5).abs() < 1.0, "expected ~50.5, got {val}");
+    let check = |c: &CompiledCondition| {
+        state.check_condition(c, CorrelationType::ValuePercentile, &[], None)
+    };
+
+    // The 50th percentile of 1..=100 is 50.5.
+    let val = check(&cond(ConditionOperator::Lte, 51.0)).expect("50.5 <= 51");
+    assert!(
+        (val - 50.5).abs() < f64::EPSILON,
+        "expected 50.5, got {val}"
+    );
+    assert_eq!(check(&cond(ConditionOperator::Lte, 50.0)), None);
+    assert_eq!(check(&cond(ConditionOperator::Gte, 51.0)), None);
+    assert!(check(&cond(ConditionOperator::Gt, 50.0)).is_some());
 }
 
 #[test]
 fn test_percentile_0th_and_100th() {
-    let values = &[5.0, 10.0, 15.0, 20.0];
+    let values = &mut [5.0, 10.0, 15.0, 20.0];
     assert!((percentile_linear_interp(values, 0.0) - 5.0).abs() < f64::EPSILON);
     assert!((percentile_linear_interp(values, 100.0) - 20.0).abs() < f64::EPSILON);
 }
 
 #[test]
 fn test_percentile_two_values() {
-    let values = &[10.0, 20.0];
+    let values = &mut [10.0, 20.0];
     // 50th percentile between 10 and 20 = 15
     assert!((percentile_linear_interp(values, 50.0) - 15.0).abs() < f64::EPSILON);
     // 25th percentile = 12.5
@@ -525,7 +613,7 @@ fn test_percentile_two_values() {
 
 #[test]
 fn test_percentile_clamps_out_of_range() {
-    let values = &[1.0, 2.0, 3.0];
+    let values = &mut [1.0, 2.0, 3.0];
     // Negative percentile clamps to 0
     assert!((percentile_linear_interp(values, -10.0) - 1.0).abs() < f64::EPSILON);
     // > 100 clamps to 100
@@ -1211,4 +1299,93 @@ fn test_truncate_oldest_temporal_caps_each_rule_deque() {
     // rule_a trimmed to its 2 newest hits; rule_b untouched (1 <= cap).
     assert_eq!(state.earliest_timestamp(), Some(3));
     assert_eq!(state.latest_timestamp(), Some(10));
+}
+
+/// The exhaustive search `check_temporal_ordered` used to run.
+fn temporal_ordered_by_search(
+    rule_refs: &[String],
+    rule_hits: &HashMap<String, VecDeque<i64>>,
+    idx: usize,
+    min_ts: i64,
+) -> bool {
+    let Some(rule_ref) = rule_refs.get(idx) else {
+        return true;
+    };
+    rule_hits.get(rule_ref).is_some_and(|hits| {
+        hits.iter().any(|&ts| {
+            ts >= min_ts && temporal_ordered_by_search(rule_refs, rule_hits, idx + 1, ts)
+        })
+    })
+}
+
+#[test]
+fn test_temporal_ordered_matches_exhaustive_search() {
+    let names = ["a", "b", "c", "d"];
+    let mut x: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = |bound: u64| {
+        x = x
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (x >> 33) % bound
+    };
+    let mut matched = 0;
+    for _ in 0..5_000 {
+        let rule_refs: Vec<String> = (0..1 + next(5))
+            .map(|_| names[next(4) as usize].to_string())
+            .collect();
+        let mut rule_hits = HashMap::new();
+        for name in names {
+            if next(5) == 0 {
+                continue;
+            }
+            let hits: VecDeque<i64> = (0..next(6)).map(|_| next(20) as i64).collect();
+            rule_hits.insert(name.to_string(), hits);
+        }
+        let expected = temporal_ordered_by_search(&rule_refs, &rule_hits, 0, i64::MIN);
+        assert_eq!(
+            check_temporal_ordered(&rule_refs, &rule_hits),
+            expected,
+            "refs {rule_refs:?}, hits {rule_hits:?}"
+        );
+        matched += usize::from(expected);
+    }
+    assert!(
+        matched > 500 && matched < 4_500,
+        "the cases should mix both outcomes; {matched} matched"
+    );
+}
+
+#[test]
+fn test_temporal_ordered_with_many_hits_per_rule() {
+    // Every earlier rule has many hits that each fit the order, and the last
+    // rule fired too early for all of them, so an exhaustive search would try
+    // every combination of the earlier hits before giving up.
+    let rule_refs: Vec<String> = (0..8).map(|i| format!("r{i}")).collect();
+    let mut rule_hits: HashMap<String, VecDeque<i64>> = rule_refs
+        .iter()
+        .take(7)
+        .map(|r| (r.clone(), (1_000..1_200).collect()))
+        .collect();
+    rule_hits.insert("r7".to_string(), (0..200).collect());
+    assert!(!check_temporal_ordered(&rule_refs, &rule_hits));
+
+    rule_hits.insert("r7".to_string(), (0..1_200).collect());
+    assert!(check_temporal_ordered(&rule_refs, &rule_hits));
+}
+
+#[test]
+fn test_temporal_ordered_repeated_rule_can_reuse_a_hit() {
+    let refs = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+    let rule_hits = HashMap::from([
+        ("a".to_string(), VecDeque::from([5])),
+        ("b".to_string(), VecDeque::from([3, 9])),
+    ]);
+    assert!(check_temporal_ordered(&refs(&["a", "a", "b"]), &rule_hits));
+    assert!(check_temporal_ordered(&refs(&["b", "a", "b"]), &rule_hits));
+    assert!(!check_temporal_ordered(&refs(&["a", "b", "a"]), &rule_hits));
+    assert!(!check_temporal_ordered(
+        &refs(&["a", "missing"]),
+        &rule_hits
+    ));
+    assert!(check_temporal_ordered(&[], &rule_hits));
 }

@@ -1,5 +1,6 @@
 mod delivery;
 mod file;
+mod lines;
 #[cfg(feature = "nats")]
 pub mod nats_config;
 #[cfg(feature = "nats")]
@@ -274,6 +275,22 @@ pub trait EventSource: Send + 'static {
     fn recv(&mut self) -> impl std::future::Future<Output = Option<RawEvent>> + Send;
 }
 
+/// Run a synchronous sink write from async code.
+///
+/// On a multi-threaded Tokio runtime this goes through `block_in_place`, so
+/// the worker's other tasks move to another thread while the write blocks.
+/// `block_in_place` panics on a current-thread runtime, which has no other
+/// worker to hand tasks to, so there (and outside any runtime) the write runs
+/// inline.
+fn blocking_write<R>(write: impl FnOnce() -> R) -> R {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(write)
+        }
+        _ => write(),
+    }
+}
+
 /// Enum dispatch for output adapters.
 ///
 /// Uses enum dispatch instead of `dyn Trait` because:
@@ -302,9 +319,9 @@ pub enum Sink {
 impl Sink {
     /// Serialize and deliver a ProcessResult to this sink.
     ///
-    /// Synchronous sinks (Stdout, File) use `block_in_place` to avoid blocking
-    /// the Tokio runtime. Uses `Box::pin` for the FanOut case to handle
-    /// recursive async.
+    /// Synchronous sinks (Stdout, File) write through `blocking_write` to
+    /// avoid stalling a multi-threaded Tokio runtime. Uses `Box::pin` for the
+    /// FanOut case to handle recursive async.
     pub fn send<'a>(
         &'a mut self,
         result: &'a ProcessResult,
@@ -315,12 +332,12 @@ impl Sink {
                 Sink::Stdout(s) => {
                     let s = &*s;
                     let result = result;
-                    tokio::task::block_in_place(|| s.send(result))
+                    blocking_write(|| s.send(result))
                 }
                 Sink::File(s) => {
                     let s = &mut *s;
                     let result = result;
-                    tokio::task::block_in_place(|| s.send(result))
+                    blocking_write(|| s.send(result))
                 }
                 #[cfg(feature = "nats")]
                 Sink::Nats(s) => s.send(result).await,
@@ -358,8 +375,8 @@ impl Sink {
     {
         Box::pin(async move {
             match self {
-                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_with_context(result, ctx)),
-                Sink::File(s) => tokio::task::block_in_place(|| s.send_with_context(result, ctx)),
+                Sink::Stdout(s) => blocking_write(|| s.send_with_context(result, ctx)),
+                Sink::File(s) => blocking_write(|| s.send_with_context(result, ctx)),
                 #[cfg(feature = "nats")]
                 Sink::Nats(s) => s.send_with_context(result, ctx).await,
                 #[cfg(feature = "otlp")]
@@ -393,8 +410,8 @@ impl Sink {
     {
         Box::pin(async move {
             match self {
-                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_raw(json)),
-                Sink::File(s) => tokio::task::block_in_place(|| s.send_raw(json)),
+                Sink::Stdout(s) => blocking_write(|| s.send_raw(json)),
+                Sink::File(s) => blocking_write(|| s.send_raw(json)),
                 #[cfg(feature = "nats")]
                 Sink::Nats(s) => s.send_raw(json).await,
                 #[cfg(feature = "otlp")]
@@ -437,8 +454,8 @@ impl Sink {
     {
         Box::pin(async move {
             match self {
-                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_raw(&env.json)),
-                Sink::File(s) => tokio::task::block_in_place(|| s.send_raw(&env.json)),
+                Sink::Stdout(s) => blocking_write(|| s.send_raw(&env.json)),
+                Sink::File(s) => blocking_write(|| s.send_raw(&env.json)),
                 #[cfg(feature = "nats")]
                 Sink::Nats(s) => {
                     s.send_incident(&env.json, env.nats_subject.as_deref())
@@ -475,8 +492,8 @@ impl Sink {
     {
         Box::pin(async move {
             match self {
-                Sink::Stdout(s) => tokio::task::block_in_place(|| s.send_raw(env.line(s.format()))),
-                Sink::File(s) => tokio::task::block_in_place(|| s.send_raw(env.line(s.format()))),
+                Sink::Stdout(s) => blocking_write(|| s.send_raw(env.line(s.format()))),
+                Sink::File(s) => blocking_write(|| s.send_raw(env.line(s.format()))),
                 #[cfg(feature = "nats")]
                 Sink::Nats(s) => {
                     s.send_incident(env.line(s.format()), env.native().nats_subject.as_deref())
@@ -659,5 +676,26 @@ mod tests {
         assert_eq!(first.now_ms(), second.now_ms());
         assert_eq!(first.uid(), second.uid());
         assert_eq!(first.uid(), second.uid());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn file_sink_writes_on_a_current_thread_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.ndjson");
+        let mut sink = Sink::File(file::FileSink::open(&path).unwrap());
+
+        sink.send(&Vec::new()).await.unwrap();
+        sink.send_with_context(&Vec::new(), &DeliveryContext::new())
+            .await
+            .unwrap();
+        sink.send_raw("{\"a\":1}").await.unwrap();
+        sink.send_incident(&IncidentEnvelope::new("{\"b\":2}".to_string(), None))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"a\":1}\n{\"b\":2}\n"
+        );
     }
 }

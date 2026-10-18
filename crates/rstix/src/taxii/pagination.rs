@@ -6,25 +6,13 @@ use super::TaxiiError;
 use super::filter::{ObjectByIdFilter, TaxiiFilter, VersionsQueryFilter};
 
 pub(crate) trait PaginatedFilter {
-    #[allow(dead_code)]
-    fn added_after(&self) -> Option<TaxiiTimestamp>;
     fn set_added_after(&mut self, ts: Option<TaxiiTimestamp>);
-    #[allow(dead_code)]
-    fn next(&self) -> Option<&str>;
     fn set_next(&mut self, cursor: Option<String>);
 }
 
 impl PaginatedFilter for TaxiiFilter {
-    fn added_after(&self) -> Option<TaxiiTimestamp> {
-        self.added_after.clone()
-    }
-
     fn set_added_after(&mut self, ts: Option<TaxiiTimestamp>) {
         self.added_after = ts;
-    }
-
-    fn next(&self) -> Option<&str> {
-        self.next.as_deref()
     }
 
     fn set_next(&mut self, cursor: Option<String>) {
@@ -33,16 +21,8 @@ impl PaginatedFilter for TaxiiFilter {
 }
 
 impl PaginatedFilter for ObjectByIdFilter {
-    fn added_after(&self) -> Option<TaxiiTimestamp> {
-        self.added_after.clone()
-    }
-
     fn set_added_after(&mut self, ts: Option<TaxiiTimestamp>) {
         self.added_after = ts;
-    }
-
-    fn next(&self) -> Option<&str> {
-        self.next.as_deref()
     }
 
     fn set_next(&mut self, cursor: Option<String>) {
@@ -51,16 +31,8 @@ impl PaginatedFilter for ObjectByIdFilter {
 }
 
 impl PaginatedFilter for VersionsQueryFilter {
-    fn added_after(&self) -> Option<TaxiiTimestamp> {
-        self.added_after.clone()
-    }
-
     fn set_added_after(&mut self, ts: Option<TaxiiTimestamp>) {
         self.added_after = ts;
-    }
-
-    fn next(&self) -> Option<&str> {
-        self.next.as_deref()
     }
 
     fn set_next(&mut self, cursor: Option<String>) {

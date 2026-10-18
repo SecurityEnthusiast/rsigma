@@ -106,6 +106,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 For a streaming daemon shape, wire an `EventSource` (`StdinSource`, `NatsSource`, …) through `spawn_source` into your own loop, batch the channel into `Vec<String>`, and feed it to `process_batch_lines`. The daemon code in `rsigma-cli/src/daemon/server.rs` is the reference implementation.
 
+Sinks work on both multi-threaded and current-thread Tokio runtimes; on a current-thread runtime the stdout and file sinks write inline. `load_rules` is synchronous, so it can only resolve dynamic pipeline sources on a multi-threaded runtime and returns an error on a current-thread one, leaving the previous engine in place. {{ added "unreleased" }}
+
 ## Hot-reload
 
 `LogProcessor` holds the live `RuntimeEngine` in an `ArcSwap`. `processor.reload_rules()` rebuilds it from disk and atomically swaps it in; in-flight batches finish against the old engine, the next batch sees the new one. Wire a file watcher (`notify`), a `SIGHUP` handler, or an HTTP endpoint to call it:

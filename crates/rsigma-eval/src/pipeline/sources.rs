@@ -6,7 +6,10 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::Duration;
+
+use regex::Regex;
 
 // =============================================================================
 // Dynamic source declaration
@@ -142,6 +145,50 @@ pub struct SourceRef {
     pub raw_template: String,
 }
 
+/// Whether `id` can be declared as a dynamic source id: one or more ASCII
+/// letters, digits, `_`, or `-`. These are exactly the ids a
+/// `${source.<id>}` template can name.
+pub fn is_valid_source_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// One `${source.<id>}` or `${source.<id>.<sub_path>}` template found by
+/// [`scan_source_templates`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceTemplate<'a> {
+    /// The whole template, from `${` to `}`.
+    pub raw: &'a str,
+    /// Byte offset of `raw` in the scanned text.
+    pub start: usize,
+    /// The referenced source id.
+    pub source_id: &'a str,
+    /// The dot-path into the source data, if any.
+    pub sub_path: Option<&'a str>,
+}
+
+/// Find every `${source.*}` template in `text`, left to right.
+///
+/// This is the single grammar for source references: pipeline parsing uses it
+/// to record [`SourceRef`]s and the runtime uses it to expand them.
+pub fn scan_source_templates(text: &str) -> impl Iterator<Item = SourceTemplate<'_>> {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\$\{source\.([A-Za-z0-9_-]+)(?:\.([A-Za-z0-9_.]+))?\}")
+            .expect("source template regex is valid")
+    });
+    RE.captures_iter(text).map(|caps| {
+        let whole = caps.get(0).expect("group 0 always participates");
+        SourceTemplate {
+            raw: whole.as_str(),
+            start: whole.start(),
+            source_id: caps.get(1).expect("the id group is required").as_str(),
+            sub_path: caps.get(2).map(|m| m.as_str()),
+        }
+    })
+}
+
 /// Where in the pipeline a source reference appears.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefLocation {
@@ -169,4 +216,45 @@ pub enum SourceStatus {
     Resolved,
     /// Source resolution failed.
     Failed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_source_ids() {
+        for id in ["ip_blocklist", "threat-intel", "1st_feed", "A9", "_", "-"] {
+            assert!(is_valid_source_id(id), "{id}");
+        }
+        for id in ["", "bad.id", "has space", "café", "a/b", "${x}"] {
+            assert!(!is_valid_source_id(id), "{id}");
+        }
+    }
+
+    #[test]
+    fn scan_finds_templates_with_offsets() {
+        let text = "a ${source.threat-intel.ips.0} b ${source.1st_feed} ${source.bad id}";
+        let found: Vec<_> = scan_source_templates(text).collect();
+        assert_eq!(
+            found,
+            [
+                SourceTemplate {
+                    raw: "${source.threat-intel.ips.0}",
+                    start: 2,
+                    source_id: "threat-intel",
+                    sub_path: Some("ips.0"),
+                },
+                SourceTemplate {
+                    raw: "${source.1st_feed}",
+                    start: 33,
+                    source_id: "1st_feed",
+                    sub_path: None,
+                },
+            ]
+        );
+        for t in &found {
+            assert_eq!(&text[t.start..t.start + t.raw.len()], t.raw);
+        }
+    }
 }

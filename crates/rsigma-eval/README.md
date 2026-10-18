@@ -36,6 +36,9 @@ The free function `apply_filters(collection: &SigmaCollection) -> Vec<SigmaRule>
 | `bloom_max_bytes()` | Configured bloom memory budget, or `None` if using the default |
 | `set_cross_rule_ac(enabled: bool)` | Enable opt-in cross-rule Aho-Corasick pre-filter (requires `daachorse-index` feature; see [Cross-Rule AC Index](#cross-rule-aho-corasick-index-opt-in-feature-gated)) |
 | `cross_rule_ac_enabled()` | Whether the cross-rule AC pre-filter is currently enabled (`daachorse-index` only) |
+| `set_retain_hir(enabled: bool)` | Keep each loaded rule's HIR for `save_hir` (off by default; enable before loading rules) |
+| `retain_hir_enabled()` | Whether loaded rules keep their HIR |
+| `save_hir()` / `load_hir(bytes)` | Write the retained HIR as a versioned restart cache, and load rules from one; `save_hir` errors unless retention was on for every rule loaded from parsed Sigma |
 | `rule_count()` | Number of loaded rules |
 | `rules()` | Access the compiled rules slice |
 | `transform_rule(rule: &SigmaRule)` | Apply the engine's pipelines and return the rewritten rule as a `TransformedRule`, without compiling or loading (inspection only) |
@@ -94,6 +97,8 @@ A non-short-circuiting, bloom-free recording evaluator that backs `rsigma engine
 | `parse_sources_file(path: &Path)` | Parse a standalone source YAML file (top-level `sources:` list) |
 | `parse_sources_dir(dir: &Path)` | Parse all `*.yml`/`*.yaml` source files in a directory |
 | `validate_source_refs(pipeline, external_ids)` | Validate that `${source.*}` references resolve against declared and/or external source IDs |
+| `sources::scan_source_templates(text)` | Find every `${source.<id>}` or `${source.<id>.<path>}` template in a string, with its id, path, and byte offset; the one reference grammar used by pipeline parsing and runtime expansion |
+| `sources::is_valid_source_id(id)` | Whether an id is declarable: ASCII letters, digits, `_`, and `-` |
 | `apply_pipelines(pipelines, rule)` | Apply all pipelines to a rule, in slice order |
 | `apply_pipelines_with_state(pipelines, rule)` | Same ordering, and returns the merged `PipelineState` (for backends) |
 | `merge_pipelines(pipelines)` | Sort a pipeline slice by `priority` in place, lower first. Despite the name it does not combine or apply them; call it before the `apply_*` / `transform_*` functions, which walk the slice as given |
@@ -202,7 +207,7 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 
 - **Arrays**: string matchers use OR semantics (`any element matches`).
 - **Numbers**: coerced to string for string matchers.
-- **Booleans**: `"true"`, `"1"`, `"yes"` → true; `"false"`, `"0"`, `"no"` → false.
+- **Booleans**: a boolean rule value matches the event booleans, the strings `"true"`, `"1"`, `"yes"` (for true) and `"false"`, `"0"`, `"no"` (for false), and the numbers `1` and `0`.
 
 ### Filter Rule Behavior
 
@@ -285,7 +290,7 @@ Stateful processing with sliding time windows, group-by aggregation, and all 8 c
 ### Timestamp Extraction
 
 - **Field priority list**: configurable ordered list of fields to try (default: `@timestamp`, `timestamp`, `EventTime`, `TimeCreated`, `eventTime`)
-- **Format support**: RFC 3339, `%Y-%m-%dT%H:%M:%S` and `%Y-%m-%d %H:%M:%S` with an optional fractional second (read as UTC), epoch seconds, epoch milliseconds (auto-detected if value > 10^12). The time-part modifiers (`|hour`, `|day`, and the others) accept the same formats.
+- **Format support**: RFC 3339, `%Y-%m-%dT%H:%M:%S` and `%Y-%m-%d %H:%M:%S` with an optional fractional second (read as UTC), epoch seconds, epoch milliseconds (auto-detected if value > 10^12). The time-part modifiers (`|hour`, `|day`, and the others) accept the same formats. For correlation, a value before 1970, a non-finite number, or a date past the representable range does not count as a timestamp, so the next timestamp field and then `timestamp_fallback` apply.
 - **Fallback policy**: `WallClock` (use `Utc::now()`, good for real-time streaming) or `Skip` (skip event from correlation, recommended for batch/replay)
 
 ### Value Percentile

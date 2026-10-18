@@ -267,47 +267,15 @@ impl WindowState {
                 }
             }
             (WindowState::NumericAgg { entries }, CorrelationType::ValuePercentile) => {
-                // Proper percentile calculation using linear interpolation.
-                // The condition threshold represents a percentile rank (0-100).
-                // We compute the value at that percentile from the window data.
-                if entries.is_empty() {
-                    return None;
-                }
-                let mut values: Vec<f64> = entries
-                    .iter()
-                    .map(|(_, v)| *v)
-                    .filter(|v| v.is_finite())
-                    .collect();
-                if values.is_empty() {
-                    return None;
-                }
-                values.sort_by(|a, b| a.total_cmp(b));
-                let percentile_rank = condition.percentile.map(|p| p as f64).unwrap_or(50.0);
-                let pval = percentile_linear_interp(&values, percentile_rank);
-                return Some(pval);
+                // The value at the condition's percentile rank (0-100), by
+                // linear interpolation; the predicates then apply to it.
+                window_percentile(entries, condition.percentile)?
             }
             (WindowState::NumericAgg { entries }, CorrelationType::ValueMedian) => {
                 // An empty window has no median. Returning `0.0` here would
                 // spuriously satisfy predicates like `lte: 0` or `eq: 0`, so
                 // match the percentile branch and skip evaluation.
-                if entries.is_empty() {
-                    return None;
-                }
-                let mut values: Vec<f64> = entries
-                    .iter()
-                    .map(|(_, v)| *v)
-                    .filter(|v| v.is_finite())
-                    .collect();
-                if values.is_empty() {
-                    return None;
-                }
-                values.sort_by(|a, b| a.total_cmp(b));
-                let mid = values.len() / 2;
-                if values.len().is_multiple_of(2) && values.len() >= 2 {
-                    (values[mid - 1] + values[mid]) / 2.0
-                } else {
-                    values[mid]
-                }
+                window_median(entries)?
             }
             _ => return None, // mismatched state/type
         };
@@ -370,35 +338,10 @@ impl WindowState {
                 }
             }
             (WindowState::NumericAgg { entries }, CorrelationType::ValuePercentile) => {
-                let mut values: Vec<f64> = entries
-                    .iter()
-                    .map(|(_, v)| *v)
-                    .filter(|v| v.is_finite())
-                    .collect();
-                if values.is_empty() {
-                    return None;
-                }
-                values.sort_by(|a, b| a.total_cmp(b));
-                let rank = percentile.map(|p| p as f64).unwrap_or(50.0);
-                Some(percentile_linear_interp(&values, rank))
+                window_percentile(entries, percentile)
             }
             (WindowState::NumericAgg { entries }, CorrelationType::ValueMedian) => {
-                let mut values: Vec<f64> = entries
-                    .iter()
-                    .map(|(_, v)| *v)
-                    .filter(|v| v.is_finite())
-                    .collect();
-                if values.is_empty() {
-                    return None;
-                }
-                values.sort_by(|a, b| a.total_cmp(b));
-                let mid = values.len() / 2;
-                let v = if values.len().is_multiple_of(2) && values.len() >= 2 {
-                    (values[mid - 1] + values[mid]) / 2.0
-                } else {
-                    values[mid]
-                };
-                Some(v)
+                window_median(entries)
             }
             _ => None,
         }
@@ -509,44 +452,25 @@ fn count_fired_rules(rule_refs: &[String], rule_hits: &HashMap<String, VecDeque<
 /// For `temporal_ordered`, each rule must have at least one hit, and there
 /// must exist a sequence of timestamps (one per rule) that is non-decreasing
 /// and follows the rule ordering.
-fn check_temporal_ordered(
+///
+/// Taking the earliest hit at or after the previous rule's choice is enough:
+/// any valid sequence can swap in that earlier hit and stay valid, so the
+/// check is one pass over each rule's hits.
+pub(super) fn check_temporal_ordered(
     rule_refs: &[String],
     rule_hits: &HashMap<String, VecDeque<i64>>,
 ) -> bool {
-    if rule_refs.is_empty() {
-        return true;
-    }
-
-    // All rules must have at least one hit
-    for r in rule_refs {
-        if rule_hits.get(r.as_str()).is_none_or(|ts| ts.is_empty()) {
-            return false;
+    let mut previous = i64::MIN;
+    for rule_ref in rule_refs {
+        let earliest = rule_hits
+            .get(rule_ref.as_str())
+            .and_then(|hits| hits.iter().copied().filter(|&ts| ts >= previous).min());
+        match earliest {
+            Some(ts) => previous = ts,
+            None => return false,
         }
     }
-
-    // Check if there's a valid ordered sequence: for each rule in order,
-    // find a timestamp >= the previous rule's chosen timestamp.
-    fn find_ordered(
-        rule_refs: &[String],
-        rule_hits: &HashMap<String, VecDeque<i64>>,
-        idx: usize,
-        min_ts: i64,
-    ) -> bool {
-        if idx >= rule_refs.len() {
-            return true;
-        }
-        let Some(timestamps) = rule_hits.get(&rule_refs[idx]) else {
-            return false;
-        };
-        for &ts in timestamps {
-            if ts >= min_ts && find_ordered(rule_refs, rule_hits, idx + 1, ts) {
-                return true;
-            }
-        }
-        false
-    }
-
-    find_ordered(rule_refs, rule_hits, 0, i64::MIN)
+    true
 }
 
 /// Evaluate a boolean condition expression against the set of rules that have
@@ -572,12 +496,50 @@ pub(super) fn eval_temporal_expr(
     }
 }
 
+/// The window's finite values, in arrival order.
+fn finite_values(entries: &VecDeque<(i64, f64)>) -> Vec<f64> {
+    entries
+        .iter()
+        .map(|(_, v)| *v)
+        .filter(|v| v.is_finite())
+        .collect()
+}
+
+/// Value at `percentile` (default 50) across the window's finite values, or
+/// `None` when there are none.
+fn window_percentile(entries: &VecDeque<(i64, f64)>, percentile: Option<u64>) -> Option<f64> {
+    let mut values = finite_values(entries);
+    if values.is_empty() {
+        return None;
+    }
+    let rank = percentile.map(|p| p as f64).unwrap_or(50.0);
+    Some(percentile_linear_interp(&mut values, rank))
+}
+
+/// Median of the window's finite values, averaging the two middle values for
+/// an even count, or `None` when there are none.
+fn window_median(entries: &VecDeque<(i64, f64)>) -> Option<f64> {
+    let mut values = finite_values(entries);
+    let n = values.len();
+    if n == 0 {
+        return None;
+    }
+    let (below, &mut upper, _) = values.select_nth_unstable_by(n / 2, f64::total_cmp);
+    if n.is_multiple_of(2) {
+        let lower = below.iter().copied().max_by(f64::total_cmp)?;
+        Some((lower + upper) / 2.0)
+    } else {
+        Some(upper)
+    }
+}
+
 /// Compute the value at a given percentile rank using linear interpolation.
 ///
-/// Returns 0.0 if `values` is empty.
-/// `values` must be sorted in ascending order.
+/// Returns 0.0 if `values` is empty. `values` may be in any order and is
+/// partially reordered in place, which keeps this O(n) on average instead of
+/// a full sort per evaluation.
 /// `percentile` is from 0.0 to 100.0.
-pub(super) fn percentile_linear_interp(values: &[f64], percentile: f64) -> f64 {
+pub(super) fn percentile_linear_interp(values: &mut [f64], percentile: f64) -> f64 {
     if values.is_empty() {
         return 0.0;
     }
@@ -596,9 +558,13 @@ pub(super) fn percentile_linear_interp(values: &[f64], percentile: f64) -> f64 {
     let upper = rank.ceil() as usize;
     let fraction = rank - lower as f64;
 
+    let (_, &mut low, above) = values.select_nth_unstable_by(lower.min(n - 1), f64::total_cmp);
     if lower == upper || upper >= n {
-        values[lower.min(n - 1)]
+        low
     } else {
-        values[lower] + fraction * (values[upper] - values[lower])
+        // `above` holds every value ordered after `low`, so its minimum is
+        // the next value in sorted order.
+        let high = above.iter().copied().min_by(f64::total_cmp).unwrap_or(low);
+        low + fraction * (high - low)
     }
 }
