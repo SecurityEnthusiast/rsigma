@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Time-part modifiers accept space-separated fractional timestamps
+### Time-part modifiers accept space-separated fractional timestamps (#611)
 
 `rsigma-eval` had two string timestamp parsers, and the one behind `|minute`, `|hour`, `|day`, `|week`, `|month`, and `|year` lacked the `%Y-%m-%d %H:%M:%S%.f` form that the correlation engine accepted, so `"2024-07-10 12:30:00.500"` worked as a correlation timestamp but made `ts|hour: 12` never match. Both now share one parser: RFC 3339, or a `T`- or space-separated naive timestamp with an optional fractional second, plus epoch seconds and milliseconds.
 
