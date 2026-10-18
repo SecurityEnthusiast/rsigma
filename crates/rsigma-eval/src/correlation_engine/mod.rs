@@ -20,6 +20,7 @@ mod types;
 pub use introspect::{CorrelationInfo, CorrelationStateSnapshot, GroupKeyPart, GroupStateInfo};
 pub use types::*;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use chrono::Utc;
@@ -1597,15 +1598,12 @@ fn parse_timestamp_value(val: &EventValue) -> Option<i64> {
     }
 }
 
-/// Convert an [`EventValue`] to a string for value_count purposes.
+/// Render a value for a `value_count` distinct key. Unlike a group key, a
+/// null counts as the distinct value `null`.
 fn value_to_string_for_count(v: &EventValue) -> Option<String> {
     match v {
-        EventValue::Str(s) => Some(s.to_string()),
-        EventValue::Int(n) => Some(n.to_string()),
-        EventValue::Float(f) => Some(f.to_string()),
-        EventValue::Bool(b) => Some(b.to_string()),
         EventValue::Null => Some("null".to_string()),
-        _ => None,
+        v => v.as_str().map(Cow::into_owned),
     }
 }
 
