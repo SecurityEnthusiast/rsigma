@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### The inhibit store is capped, and long unbounded correlation windows warn at load
+
+`InhibitStore` was the only alert-pipeline store without a count cap: sources were pruned by `duration` only, so `equal` selectors over attacker-influenced values (source IPs, usernames) could grow it without bound. A new top-level `max_inhibit_sources` key (default 100000) caps tracked sources across all `inhibit_rules`. At the cap, a result that would open a new source is still checked as a target but is not tracked, and the refusal is counted on the new `rsigma_inhibit_sources_refused_total{rule}` counter; already-tracked sources keep refreshing. Restore and hot-reload trim the store to the cap, evicting the least recently seen sources, and `CapTrim` reports them as `inhibit_sources`. For library users, `AlertPipelineFile` gains `max_inhibit_sources`, and `MetricsHook` gains `on_inhibit_source_refused`, which defaults to a no-op.
+
+`max_group_entries` stays unbounded by default, because a finite default would silently stop `event_count` rules whose threshold exceeds it. Instead, a correlation whose `timespan` is longer than one hour and that has no per-group cap, from `--max-group-entries` or `rsigma.max_group_entries`, now logs a warning at load, since a busy group's window grows with `timespan` x event rate.
+
 ### Delivery failures without a DLQ sink are logged (#615)
 
 When a sink exhausted its retries and no `--dlq` was set, the daemon counted the dropped result on `rsigma_dlq_events_total` and logged it once, at `debug`, so every later dropped alert left no trace in the logs. Each drop now produces a `warn` log, rate-limited to one every 10 seconds; each warning carries the number of results dropped since the previous one and the last delivery error. A failed write to a configured DLQ sink is now counted on the new `rsigma_dlq_write_failures_total` counter, and the delivery layer and the daemon's DLQ bridge log a failure they could not queue instead of discarding it silently. The docs now say that a sink commits a failed result by handing it to the DLQ writer, so the source ack does not wait for the DLQ sink's write.
