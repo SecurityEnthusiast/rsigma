@@ -391,6 +391,72 @@ fn inhibition_mutes_high_while_critical_active() {
     assert_eq!(lines, 2, "only the same-IP high target is muted");
 }
 
+fn open_incident_keys(daemon: &DaemonProcess) -> Vec<String> {
+    let (_, body) = http_get(&daemon.url("/api/v1/incidents"));
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+    v["incidents"]
+        .as_array()
+        .map(|incidents| {
+            incidents
+                .iter()
+                .filter_map(|i| i["group_by"]["match.CommandLine"].as_str())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn reload_with_a_lowered_incident_cap_trims_open_incidents() {
+    let rule = temp_file(".yml", common::SIMPLE_RULE);
+    let pipeline = "group:\n  by: [match.CommandLine]\n  group_wait: 1h\n  resolve_timeout: 1h\n";
+    let alert_pipeline = temp_file(".yml", pipeline);
+
+    let daemon = DaemonProcess::spawn(&[
+        "engine",
+        "daemon",
+        "-r",
+        rule.path().to_str().unwrap(),
+        "--alert-pipeline",
+        alert_pipeline.path().to_str().unwrap(),
+        "--input",
+        "http",
+        "--api-addr",
+        "127.0.0.1:0",
+    ]);
+
+    let post = |cmd: &str| {
+        let body = serde_json::to_string(&serde_json::json!({"CommandLine": cmd})).unwrap();
+        assert_eq!(http_post(&daemon.url("/api/v1/events"), &body).0, 200);
+    };
+    post("malware a");
+    post("malware b");
+    // Incident recency has one-second resolution.
+    std::thread::sleep(Duration::from_millis(1100));
+    post("malware c");
+    let opened = poll_until(Duration::from_secs(5), || {
+        (open_incident_keys(&daemon).len() == 3).then_some(())
+    });
+    assert!(opened.is_some(), "three incidents should open");
+
+    std::fs::write(
+        alert_pipeline.path(),
+        format!("{pipeline}  caps:\n    max_open_incidents: 1\n"),
+    )
+    .unwrap();
+    assert_eq!(http_post(&daemon.url("/api/v1/reload"), "").0, 200);
+
+    let kept = poll_until(Duration::from_secs(5), || {
+        let keys = open_incident_keys(&daemon);
+        (keys.len() == 1).then_some(keys)
+    });
+    assert_eq!(
+        kept,
+        Some(vec!["malware c".to_string()]),
+        "the reload keeps only the most recently seen incident"
+    );
+}
+
 #[test]
 fn alert_pipeline_state_survives_restart() {
     let rule = temp_file(".yml", common::SIMPLE_RULE);

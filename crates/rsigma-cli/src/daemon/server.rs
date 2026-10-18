@@ -1331,20 +1331,26 @@ pub async fn run_daemon(config: DaemonConfig) {
 
             // Reload the alert pipeline. Failures keep the previous pipeline
             // in place so a typo cannot take down dedup in production. The
-            // in-flight active-alert store is owned by the sink task and
-            // survives a config swap; stale alerts age out via the new
-            // pipeline's resolve_timeout.
+            // in-flight active-alert and incident stores survive a config
+            // swap; stale entries age out via the new pipeline's
+            // resolve_timeout, and anything above its caps is trimmed now.
             if let Some(path) = reload_alert_pipeline_path.as_deref() {
                 match load_alert_pipeline_file(path).and_then(build_alert_pipeline) {
                     Ok(new_pipeline) => {
                         // Re-seed static silences (replacing the previous static
-                        // set); API-created silences are preserved.
-                        if let Ok(mut state) = reload_alert_state.write() {
-                            state
-                                .silences
-                                .set_static(new_pipeline.static_silences().to_vec());
-                        }
+                        // set; API-created silences are preserved), trim to the
+                        // new caps, and swap under the state lock the sink task
+                        // processes under, so no batch refills the stores under
+                        // the old caps.
+                        let mut state = reload_alert_state
+                            .write()
+                            .unwrap_or_else(|e| e.into_inner());
+                        state
+                            .silences
+                            .set_static(new_pipeline.static_silences().to_vec());
+                        new_pipeline.enforce_caps(&mut state);
                         reload_alert_pipeline_swap.store(Arc::new(Some(Arc::new(new_pipeline))));
+                        drop(state);
                         tracing::info!(path = %path.display(), "Alert pipeline reloaded");
                     }
                     Err(e) => {
@@ -2170,6 +2176,11 @@ pub async fn run_daemon(config: DaemonConfig) {
                             let mut st = alert_state_for_sink
                                 .write()
                                 .unwrap_or_else(|e| e.into_inner());
+                            // A reload trims the stores and swaps the pipeline
+                            // under this lock; re-read it so this batch cannot
+                            // refill them under the retired pipeline's caps.
+                            let current = alert_pipeline_swap_for_sink.load_full();
+                            let alert_pipeline = current.as_ref().as_ref().unwrap_or(alert_pipeline);
                             match capture_ring_for_sink.as_ref() {
                                 Some(ring) => {
                                     let mut ring = ring.lock().unwrap_or_else(|e| e.into_inner());
