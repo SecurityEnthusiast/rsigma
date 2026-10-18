@@ -232,6 +232,7 @@ The `Event` wrapper provides flexible field access over `serde_json::Value`:
 - **Keyword detection**: `matches_keyword` searches all string values across all fields recursively, and numbers as their JSON text.
 - **Field enumeration**: `field_keys()` returns the leaf field paths in dot-notation (e.g. `actor.id`), with intermediate object names included so callers can inspect coverage at any nesting level. Used by the daemon's opt-in field observer; not on the detection hot path. Ships with a default impl that walks `to_json()`; `JsonEvent` overrides with a zero-copy recursive walk.
 - **Max nesting depth**: recursive traversal stops at depth **64** (`MAX_NESTING_DEPTH`).
+- **Unwrapping**: `JsonEvent::into_value` returns the wrapped `serde_json::Value`, cloning only when the event borrows it.
 
 ## Correlation Engine
 

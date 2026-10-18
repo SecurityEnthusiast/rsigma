@@ -4,6 +4,12 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Match detail costs one evaluation pass
+
+With `MatchDetailLevel` above `Off`, a rule that fired was evaluated again to collect its selection names and then walked a third time to collect its field matches, re-running every matcher, including regexes. Field matches are now recorded while the selections are evaluated, so a firing rule costs one detail pass, and array members are matched once per quantifier instead of again for the report. The output is unchanged. On the `eval_matched_detail` benchmark (200 rules that all fire), `Full` drops from 314 to 307 µs and `Off` from 252 to 244 µs.
+
+The daemon and `engine eval` also stop copying each parsed JSON line before the event filter: with no filter or a `--jq` filter the line moves through, and a `--jsonpath` filter copies only the nodes it matches. This changes public API: `rsigma_runtime::EventFilter` is now `dyn Fn(serde_json::Value) -> Vec<serde_json::Value>`, taking the parsed line by value, so a custom filter returns `vec![v]` instead of `vec![v.clone()]`. `JsonEvent::into_value` is new and unwraps the JSON value, cloning only when the event borrows it.
+
 ### Match detail reports only the selections that decide the match (#612)
 
 `matched_selections` and `matched_fields` were built from every selection the detail pass saw match, even inside a sub-expression that ended up false, so `(s1 and s2) or s3` firing on `s3` also reported `s1` when it matched, `not sel_b or sel_a` reported `sel_b`, `a and not all of filter_*` reported the matching filters, and `a and (a or b)` reported `a` and its fields twice. Enrichment templates, OCSF findings, and `engine eval` output attributed alerts to selections that did not make them fire. Now a false `and` keeps only its failing child's selections, a true `or` keeps only its true child's, a selector reports its members only when its quantifier holds, and each name appears once. `eval_condition` follows the same rules.
