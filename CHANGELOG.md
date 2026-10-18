@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### OTLP log decoding is fuzzed
+### OTLP log decoding is fuzzed (#617)
 
 OTLP log ingestion decodes untrusted protobuf and flattens each record to JSON, but it was the only untrusted input surface without a `cargo-fuzz` harness. The new `fuzz_otlp_logs_decode` target decodes arbitrary bytes as `ExportLogsServiceRequest`, converts whatever decodes with `logs_request_to_raw_events`, and asserts each event is valid JSON. It runs in the weekly fuzz workflow from a committed seed corpus. Conversion recurses once per nested `AnyValue`, so its depth depends on prost's decode recursion limit; a new unit test fails if a dependency turns that limit off through prost's `no-recursion-limit` feature.
 
