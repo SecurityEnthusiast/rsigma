@@ -176,3 +176,72 @@ fn otlps_tls_sink_with_ca_routes_unreachable_to_dlq() {
         "an unreachable otlps sink should still build TLS and route to the DLQ",
     );
 }
+
+/// A collector that accepts connections and never answers must not stall the
+/// sink: the per-attempt `?timeout=` deadline fails the export, and with
+/// `--sink-retry-max 0` the result lands in the DLQ well before the default
+/// deadline would have fired.
+#[cfg(feature = "daemon-otlp")]
+#[test]
+fn otlp_sink_silent_collector_times_out_to_dlq() {
+    for scheme in ["otlp", "otlphttp"] {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for stream in listener.incoming().flatten() {
+                held.push(stream);
+            }
+        });
+
+        let rule = temp_file(".yml", SIMPLE_RULE);
+        let dlq = temp_file(".ndjson", "");
+        let dlq_spec = format!("file://{}", dlq.path().display());
+        let out_spec = format!("{scheme}://{addr}?timeout=300ms");
+        let daemon = DaemonProcess::spawn_http_with_args(
+            rule.path().to_str().unwrap(),
+            &[
+                "--output",
+                &out_spec,
+                "--dlq",
+                &dlq_spec,
+                "--sink-retry-max",
+                "0",
+            ],
+        );
+
+        let (status, _) = http_post(&daemon.url("/api/v1/events"), MATCHING_EVENT);
+        assert_eq!(status, 200);
+
+        let dlqd = poll_until(Duration::from_secs(5), || {
+            file_contains(dlq.path(), "timed out").then_some(())
+        });
+        assert!(
+            dlqd.is_some(),
+            "a silent {scheme} collector should time out and route to the DLQ: {}",
+            std::fs::read_to_string(dlq.path()).unwrap_or_default(),
+        );
+    }
+}
+
+#[cfg(feature = "daemon-otlp")]
+#[test]
+fn otlp_sink_invalid_timeout_is_a_startup_error() {
+    let rule = temp_file(".yml", SIMPLE_RULE);
+    common::rsigma()
+        .args([
+            "engine",
+            "daemon",
+            "-r",
+            rule.path().to_str().unwrap(),
+            "--api-addr",
+            "127.0.0.1:0",
+            "--output",
+            "otlp://127.0.0.1:1?timeout=soon",
+        ])
+        .timeout(Duration::from_secs(15))
+        .assert()
+        .failure()
+        .code(3)
+        .stderr(predicates::str::contains("invalid OTLP sink timeout"));
+}
