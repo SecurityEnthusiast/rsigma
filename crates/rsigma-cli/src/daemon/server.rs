@@ -2328,8 +2328,11 @@ pub async fn run_daemon(config: DaemonConfig) {
         while let Some(token) = ack_rx.recv().await {
             #[cfg(feature = "daemon-nats")]
             if let Some((seq, ts)) = token.nats_stream_position() {
-                ack_hw_seq.fetch_max(seq, Ordering::Relaxed);
+                // Release pairs with the saver's acquire load of the sequence,
+                // so a saver that sees this position also sees the evaluation
+                // that preceded the ack.
                 ack_hw_ts.fetch_max(ts, Ordering::Relaxed);
+                ack_hw_seq.fetch_max(seq, Ordering::Release);
             }
             token.ack().await;
         }
@@ -2978,7 +2981,7 @@ pub(crate) fn warn_if_cert_expiring_soon(expiry_unix: i64) {
 /// Build a `SourcePosition` from the high-water mark atomics.
 /// Returns `None` if no NATS messages have been acked yet (sequence == 0).
 fn source_position_from_atomics(seq: &AtomicU64, ts: &AtomicI64) -> Option<SourcePosition> {
-    let s = seq.load(Ordering::Relaxed);
+    let s = seq.load(Ordering::Acquire);
     if s == 0 {
         return None;
     }
