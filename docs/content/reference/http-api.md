@@ -240,6 +240,8 @@ The endpoint returns `200 OK` for any source ID regardless of whether that ID is
 
 OTLP log ingestion over HTTP. Accepts `application/x-protobuf` or `application/json`, optionally gzip-encoded. Returns `application/x-protobuf` (or `application/json` matching the request) with the standard OTLP `ExportLogsServiceResponse`. Requires the daemon to be built with `daemon-otlp`.
 
+The request body is limited to 2 MiB as sent. A gzip-encoded body is also limited to 4 MiB after decompression, the same limit the gRPC transport applies, and a larger body is rejected with `413 Payload Too Large`. {{ added "unreleased" }}
+
 ### gRPC `LogsService/Export`
 
 The same OTLP gRPC service binds on the same `--api-addr`. Use `grpcurl` or any OTLP client to publish:

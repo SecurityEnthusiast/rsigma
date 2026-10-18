@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### OTLP/HTTP gzip bodies are capped at 4 MiB after decompression (security)
+
+`POST /v1/logs` inflated a `Content-Encoding: gzip` body into an unbounded buffer, so one small request could expand to gigabytes and get the daemon killed for running out of memory ([GHSA-vwg6-4q3h-8pvq](https://github.com/timescale/rsigma/security/advisories/GHSA-vwg6-4q3h-8pvq)). The decompressed body is now limited to 4 MiB, matching the decoded-message limit on the OTLP/gRPC transport. A body that inflates past the limit is rejected with `413 Payload Too Large` before decoding and counted as `rsigma_otlp_errors_total{transport="http",reason="body_too_large"}`. Affects builds with `daemon-otlp`, which includes the prebuilt binaries and the Docker image.
+
 ### Custom logsource extractors (#578)
 
 `rsigma-eval` adds the `ExtractLogSource<E>` trait so an embedder can prune rules by a logsource its event type carries outside the matchable fields, such as metadata beside the payload. `Engine`, `CorrelationEngine`, and `SchemaRouter` are generic over the extractor type, which defaults to `LogSourceExtractor`, and call it once per event with static dispatch. Build one with `Engine::with_logsource_extractor`, `CorrelationEngine::with_logsource_extractor`, or `SchemaRouter::build_with_logsource_extractor`. Correlation through `process_event`, `process_event_at`, and `process_batch` keeps each compiled rule's identity, which precomputed detections lose for rules without an `id` that share a title. Existing code is unaffected: `LogSourceExtractor` keeps its name and inherent methods, and `SchemaRouter::build` still accepts `None`. Based on work by John Sonnenschein in #500.
