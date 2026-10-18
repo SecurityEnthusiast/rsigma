@@ -1,6 +1,8 @@
+use std::borrow::Cow;
+
 use serde::Serialize;
 
-use crate::event::{Event, EventValue};
+use crate::event::Event;
 
 use super::types::GroupByField;
 
@@ -31,7 +33,7 @@ impl GroupKey {
                 let field_name = field.resolve(rule_refs);
                 event
                     .get_field(field_name)
-                    .and_then(|v| value_to_string(&v))
+                    .and_then(|v| v.as_str().map(Cow::into_owned))
                     .map(Some)
             })
             .collect();
@@ -68,16 +70,5 @@ impl GroupKey {
                     .map(|v| (field.name().to_string(), v.clone()))
             })
             .collect()
-    }
-}
-
-/// Convert an [`EventValue`] to a string for group-key purposes.
-fn value_to_string(v: &EventValue) -> Option<String> {
-    match v {
-        EventValue::Str(s) => Some(s.to_string()),
-        EventValue::Int(n) => Some(n.to_string()),
-        EventValue::Float(f) => Some(f.to_string()),
-        EventValue::Bool(b) => Some(b.to_string()),
-        _ => None,
     }
 }

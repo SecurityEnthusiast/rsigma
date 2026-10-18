@@ -16,7 +16,7 @@ use regex::{Regex, RegexSet};
 use crate::event::Event;
 use crate::result::MatcherKind;
 use ipnet::IpNet;
-use rsigma_ir::IrStrOp;
+use rsigma_ir::{IrStrOp, NumericLiteral};
 
 /// Upper bound on the length of a `pattern` string recorded in match
 /// detail. Long Aho-Corasick / regex-set joins are truncated with an
@@ -54,7 +54,7 @@ fn truncate_pattern(s: String) -> String {
     out
 }
 
-fn numeric_descriptor(op: &str, n: f64) -> MatchDescriptor {
+fn numeric_descriptor(op: &str, n: NumericLiteral) -> MatchDescriptor {
     MatchDescriptor {
         kind: MatcherKind::Numeric,
         pattern: Some(format!("{op} {n}")),
@@ -163,15 +163,15 @@ pub enum CompiledMatcher {
 
     // -- Numeric --
     /// Numeric equality.
-    NumericEq(f64),
+    NumericEq(NumericLiteral),
     /// Numeric greater-than.
-    NumericGt(f64),
+    NumericGt(NumericLiteral),
     /// Numeric greater-than-or-equal.
-    NumericGte(f64),
+    NumericGte(NumericLiteral),
     /// Numeric less-than.
-    NumericLt(f64),
+    NumericLt(NumericLiteral),
     /// Numeric less-than-or-equal.
-    NumericLte(f64),
+    NumericLte(NumericLiteral),
 
     // -- Special --
     /// Field existence check. `true` = field must exist, `false` = must not exist.
@@ -463,7 +463,7 @@ mod describe_tests {
 
     #[test]
     fn numeric_exists_and_null_descriptors() {
-        let gt = CompiledMatcher::NumericGt(5.0).describe();
+        let gt = CompiledMatcher::NumericGt(5.into()).describe();
         assert_eq!(gt.kind, MatcherKind::Numeric);
         assert_eq!(gt.pattern.as_deref(), Some("> 5"));
 

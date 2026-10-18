@@ -24,7 +24,7 @@ use rsigma_parser::{
 use crate::error::IrError;
 use crate::{
     IrCondition, IrDetection, IrDetectionItem, IrEncoding, IrExpandPart, IrMatcher, IrNumber,
-    IrPattern, IrPatternPart, IrRule, IrStrOp, IrTimePart,
+    IrPattern, IrPatternPart, IrRule, IrStrOp, IrTimePart, NumericLiteral,
 };
 
 type Result<T> = std::result::Result<T, IrError>;
@@ -407,13 +407,8 @@ fn time_modifier(part: IrTimePart) -> Modifier {
 
 fn number_value(number: &IrNumber) -> Result<SigmaValue> {
     match number {
-        IrNumber::Literal(f) => {
-            if f.fract() == 0.0 && *f >= i64::MIN as f64 && *f <= i64::MAX as f64 {
-                Ok(SigmaValue::Integer(*f as i64))
-            } else {
-                Ok(SigmaValue::Float(*f))
-            }
-        }
+        IrNumber::Literal(NumericLiteral::Integer(n)) => Ok(SigmaValue::Integer(*n)),
+        IrNumber::Literal(NumericLiteral::Float(f)) => Ok(SigmaValue::Float(*f)),
         IrNumber::DynamicSourceRef { source_id, .. } => Err(IrError::Lowering(format!(
             "cannot raise a dynamic source reference (${{source.{source_id}}}) to a static value"
         ))),

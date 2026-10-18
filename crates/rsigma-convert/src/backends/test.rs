@@ -10,7 +10,7 @@ use rsigma_eval::pipeline::state::PipelineState;
 use rsigma_ir::encoding::expand_encoded_matcher;
 use rsigma_ir::{
     IrCondition, IrDetection, IrDetectionItem, IrMatcher, IrNumber, IrPattern, IrPatternPart,
-    IrRule, IrStrOp,
+    IrRule, IrStrOp, NumericLiteral,
 };
 use rsigma_parser::*;
 
@@ -199,14 +199,6 @@ fn quote_value(config: &TextQueryConfig, parts: &[IrPatternPart]) -> String {
     out
 }
 
-fn format_num(value: f64) -> String {
-    if value.fract() == 0.0 {
-        (value as i64).to_string()
-    } else {
-        value.to_string()
-    }
-}
-
 fn has_encoded(matcher: &IrMatcher) -> bool {
     match matcher {
         IrMatcher::Encoded { .. } => true,
@@ -354,7 +346,7 @@ impl TextQueryTestBackend {
                     pattern,
                     case_insensitive: true,
                 } => Some(quote_value(c, &full_value(*op, pattern))),
-                IrMatcher::NumericEq(IrNumber::Literal(n)) => Some(format_num(*n)),
+                IrMatcher::NumericEq(IrNumber::Literal(n)) => Some(n.to_string()),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()?;
@@ -616,15 +608,11 @@ impl Backend for TextQueryTestBackend {
     fn convert_field_eq_num(
         &self,
         field: &str,
-        value: f64,
+        value: NumericLiteral,
         _state: &mut ConversionState,
     ) -> Result<String> {
         let f = text_escape_and_quote_field(self.config, field);
-        if value.fract() == 0.0 {
-            Ok(format!("{f}={}", value as i64))
-        } else {
-            Ok(format!("{f}={value}"))
-        }
+        Ok(format!("{f}={value}"))
     }
 
     fn convert_field_eq_bool(
@@ -693,7 +681,7 @@ impl Backend for TextQueryTestBackend {
         &self,
         field: &str,
         op: CompareOp,
-        value: f64,
+        value: NumericLiteral,
         _state: &mut ConversionState,
     ) -> Result<String> {
         let f = text_escape_and_quote_field(self.config, field);
@@ -716,11 +704,7 @@ impl Backend for TextQueryTestBackend {
             .compare_op_expression
             .ok_or_else(|| ConvertError::UnsupportedModifier("compare".into()))?;
 
-        let val_str = if value.fract() == 0.0 {
-            (value as i64).to_string()
-        } else {
-            value.to_string()
-        };
+        let val_str = value.to_string();
         Ok(expr
             .replace("{field}", &f)
             .replace("{op}", op_token)
@@ -812,16 +796,16 @@ impl Backend for TextQueryTestBackend {
         Ok(expr.replace("{value}", &v))
     }
 
-    fn convert_keyword_num(&self, value: f64, _state: &mut ConversionState) -> Result<String> {
+    fn convert_keyword_num(
+        &self,
+        value: NumericLiteral,
+        _state: &mut ConversionState,
+    ) -> Result<String> {
         let expr = self
             .config
             .unbound_value_num_expression
             .ok_or(ConvertError::UnsupportedKeyword)?;
-        let s = if value.fract() == 0.0 {
-            (value as i64).to_string()
-        } else {
-            value.to_string()
-        };
+        let s = value.to_string();
         Ok(expr.replace("{value}", &s))
     }
 
@@ -947,7 +931,7 @@ impl Backend for MandatoryPipelineTestBackend {
     fn convert_field_eq_num(
         &self,
         field: &str,
-        value: f64,
+        value: NumericLiteral,
         state: &mut ConversionState,
     ) -> Result<String> {
         self.0.convert_field_eq_num(field, value, state)
@@ -989,7 +973,7 @@ impl Backend for MandatoryPipelineTestBackend {
         &self,
         field: &str,
         op: CompareOp,
-        value: f64,
+        value: NumericLiteral,
         state: &mut ConversionState,
     ) -> Result<String> {
         self.0.convert_field_compare_op(field, op, value, state)
@@ -1034,7 +1018,11 @@ impl Backend for MandatoryPipelineTestBackend {
         self.0.convert_keyword_str(pattern, state)
     }
 
-    fn convert_keyword_num(&self, value: f64, state: &mut ConversionState) -> Result<String> {
+    fn convert_keyword_num(
+        &self,
+        value: NumericLiteral,
+        state: &mut ConversionState,
+    ) -> Result<String> {
         self.0.convert_keyword_num(value, state)
     }
 
@@ -1608,6 +1596,22 @@ detection:
 "#,
         );
         assert_eq!(queries, vec!["not (_=\"whoami\" or _=\"ipconfig\")"]);
+    }
+
+    #[test]
+    fn test_bool_keyword_converts_as_text() {
+        let queries = convert_rule_yaml(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    keywords:
+        - true
+    condition: keywords
+"#,
+        );
+        assert_eq!(queries, vec!["_=\"true\""]);
     }
 
     #[test]

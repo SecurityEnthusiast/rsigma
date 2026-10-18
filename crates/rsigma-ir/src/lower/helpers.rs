@@ -7,6 +7,7 @@
 use rsigma_parser::SigmaValue;
 use rsigma_parser::value::SpecialChar;
 
+use crate::NumericLiteral;
 use crate::error::IrError;
 
 pub(super) type Result<T> = std::result::Result<T, IrError>;
@@ -65,15 +66,13 @@ pub(super) fn value_to_plain_string(value: &SigmaValue) -> Result<String> {
     }
 }
 
-pub(super) fn value_to_f64(value: &SigmaValue) -> Result<f64> {
+pub(super) fn value_to_number(value: &SigmaValue) -> Result<NumericLiteral> {
     match value {
-        SigmaValue::Integer(n) => Ok(*n as f64),
-        SigmaValue::Float(n) => Ok(*n),
+        SigmaValue::Integer(n) => Ok(NumericLiteral::Integer(*n)),
+        SigmaValue::Float(n) => Ok(NumericLiteral::Float(*n)),
         SigmaValue::String(s) => {
             let plain = s.as_plain().unwrap_or_else(|| s.original.clone());
-            plain
-                .parse::<f64>()
-                .map_err(|_| IrError::ExpectedNumeric(plain))
+            NumericLiteral::parse(&plain).ok_or(IrError::ExpectedNumeric(plain))
         }
         _ => Err(IrError::ExpectedNumeric(format!("{value:?}"))),
     }

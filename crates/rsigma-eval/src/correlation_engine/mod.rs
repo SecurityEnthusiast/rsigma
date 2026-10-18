@@ -20,9 +20,10 @@ mod types;
 pub use introspect::{CorrelationInfo, CorrelationStateSnapshot, GroupKeyPart, GroupStateInfo};
 pub use types::*;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::Utc;
 
 use rsigma_parser::{CorrelationRule, CorrelationType, SigmaCollection, SigmaRule, WindowMode};
 
@@ -37,6 +38,7 @@ use crate::logsource::{ExtractLogSource, LogSourceExtractor};
 use crate::pipeline::{Pipeline, apply_pipelines, apply_pipelines_to_correlation};
 use crate::result::{CorrelationBody, EvaluationResult, ResultBody, RuleHeader};
 use crate::rule_metadata::{RuleBundleMetadata, RuleMetadataLookup};
+use crate::timestamp::{normalize_epoch, parse_timestamp_str};
 
 type RuleIdentity = (Option<String>, Option<String>);
 
@@ -1591,53 +1593,17 @@ fn parse_timestamp_value(val: &EventValue) -> Option<i64> {
     match val {
         EventValue::Int(i) => Some(normalize_epoch(*i)),
         EventValue::Float(f) => Some(normalize_epoch(*f as i64)),
-        EventValue::Str(s) => parse_timestamp_string(s),
+        EventValue::Str(s) => parse_timestamp_str(s).map(|dt| dt.timestamp()),
         _ => None,
     }
 }
 
-/// Normalize an epoch value: if it looks like milliseconds (> year 33658),
-/// convert to seconds.
-fn normalize_epoch(v: i64) -> i64 {
-    if v > 1_000_000_000_000 { v / 1000 } else { v }
-}
-
-/// Parse a timestamp string. Tries ISO 8601 with timezone, then without.
-fn parse_timestamp_string(s: &str) -> Option<i64> {
-    // Try RFC 3339 / ISO 8601 with timezone
-    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
-        return Some(dt.timestamp());
-    }
-
-    // Try ISO 8601 without timezone (assume UTC)
-    // Common formats: "2024-07-10T12:30:00", "2024-07-10 12:30:00"
-    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
-        return Some(Utc.from_utc_datetime(&naive).timestamp());
-    }
-    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-        return Some(Utc.from_utc_datetime(&naive).timestamp());
-    }
-
-    // Try with fractional seconds
-    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f") {
-        return Some(Utc.from_utc_datetime(&naive).timestamp());
-    }
-    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f") {
-        return Some(Utc.from_utc_datetime(&naive).timestamp());
-    }
-
-    None
-}
-
-/// Convert an [`EventValue`] to a string for value_count purposes.
+/// Render a value for a `value_count` distinct key. Unlike a group key, a
+/// null counts as the distinct value `null`.
 fn value_to_string_for_count(v: &EventValue) -> Option<String> {
     match v {
-        EventValue::Str(s) => Some(s.to_string()),
-        EventValue::Int(n) => Some(n.to_string()),
-        EventValue::Float(f) => Some(f.to_string()),
-        EventValue::Bool(b) => Some(b.to_string()),
         EventValue::Null => Some("null".to_string()),
-        _ => None,
+        v => v.as_str().map(Cow::into_owned),
     }
 }
 

@@ -15,7 +15,7 @@
 //! [`ConvertError::UnsupportedConstruct`]: boosting (`^`), fuzzy and proximity
 //! (`~`), and non-numeric ranges.
 
-use rsigma_ir::{IrMatcher, IrNumber, IrPattern, IrPatternPart};
+use rsigma_ir::{IrMatcher, IrNumber, IrPattern, IrPatternPart, NumericLiteral};
 
 use crate::error::{ConvertError, Result};
 
@@ -155,11 +155,13 @@ fn split_range(inner: &str) -> Option<(&str, &str)> {
 }
 
 fn range_number(s: &str) -> Result<IrNumber> {
-    s.parse::<f64>().map(IrNumber::Literal).map_err(|_| {
-        ConvertError::UnsupportedConstruct(format!(
-            "non-numeric range bound '{s}' has no Sigma equivalent"
-        ))
-    })
+    NumericLiteral::parse(s)
+        .map(IrNumber::Literal)
+        .ok_or_else(|| {
+            ConvertError::UnsupportedConstruct(format!(
+                "non-numeric range bound '{s}' has no Sigma equivalent"
+            ))
+        })
 }
 
 fn parse_comparison(value: &str) -> Result<Option<IrMatcher>> {
@@ -175,7 +177,7 @@ fn parse_comparison(value: &str) -> Result<Option<IrMatcher>> {
     } else {
         return Ok(None);
     };
-    let n = rest.trim().parse::<f64>().map_err(|_| {
+    let n = NumericLiteral::parse(rest.trim()).ok_or_else(|| {
         ConvertError::UnsupportedConstruct(format!("non-numeric comparison bound '{rest}'"))
     })?;
     Ok(Some(ctor(IrNumber::Literal(n))))
@@ -199,14 +201,10 @@ fn scalar_matcher(value: &str) -> Result<IrMatcher> {
         _ => {}
     }
 
-    let has_wildcard = has_unescaped_wildcard(value);
-    if !has_wildcard {
-        if let Ok(n) = value.parse::<i64>() {
-            return Ok(IrMatcher::NumericEq(IrNumber::Literal(n as f64)));
-        }
-        if let Ok(f) = value.parse::<f64>() {
-            return Ok(IrMatcher::NumericEq(IrNumber::Literal(f)));
-        }
+    if !has_unescaped_wildcard(value)
+        && let Some(n) = NumericLiteral::parse(value)
+    {
+        return Ok(IrMatcher::NumericEq(IrNumber::Literal(n)));
     }
 
     Ok(infer_str_matcher(&lucene_value_to_sigma(value), true))

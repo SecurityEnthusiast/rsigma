@@ -48,7 +48,7 @@ struct EvaluatedBatch {
 }
 
 /// Shared event filter for concurrent detection workers (`spawn_blocking`).
-type SharedEventFilter = Arc<dyn Fn(&serde_json::Value) -> Vec<serde_json::Value> + Send + Sync>;
+type SharedEventFilter = Arc<dyn Fn(serde_json::Value) -> Vec<serde_json::Value> + Send + Sync>;
 
 use super::health::HealthState;
 use super::listen::ListenAddr;
@@ -1691,7 +1691,7 @@ pub async fn run_daemon(config: DaemonConfig) {
         // Arc so spawn_blocking workers can share a 'static event filter.
         let runtime_filter: Option<SharedEventFilter> = if event_filter_enabled {
             let filter = event_filter.clone();
-            Some(Arc::new(move |v: &serde_json::Value| {
+            Some(Arc::new(move |v: serde_json::Value| {
                 crate::apply_event_filter(v, filter.as_ref())
             }))
         } else {

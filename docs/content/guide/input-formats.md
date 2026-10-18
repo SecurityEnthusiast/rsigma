@@ -261,9 +261,11 @@ transformations:
 |--------|---------|
 | RFC 3339 | `2026-05-15T14:30:00Z`, `2026-05-15T14:30:00+02:00` |
 | ISO 8601 without zone | `2026-05-15T14:30:00`, `2026-05-15T14:30:00.123` |
-| Space-separated | `2026-05-15 14:30:00` |
+| Space-separated | `2026-05-15 14:30:00`, `2026-05-15 14:30:00.123` |
 | Epoch seconds | `1747315800` |
 | Epoch milliseconds | `1747315800000` (auto-detected when value > 10^12) |
+
+The time-part modifiers (`|minute`, `|hour`, `|day`, `|week`, `|month`, `|year`) read a field value with the same formats. {{ added "unreleased" }}
 
 When an event has no parseable timestamp, the correlation engine falls back to the wall clock by default. Pass `--timestamp-fallback skip` to instead drop the event from correlation state updates (detections still fire). The `skip` mode is the right choice for forensic replay of historical data, where wall-clock substitution would corrupt the temporal windows.
 

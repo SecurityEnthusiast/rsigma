@@ -1,0 +1,10 @@
+title: Large Integers
+logsource:
+    category: test
+detection:
+    selection:
+        pid: 9007199254740993
+        session_id|gt: 9007199254740993
+    keywords:
+        - 9007199254740993
+    condition: selection and keywords

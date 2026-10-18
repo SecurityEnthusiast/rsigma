@@ -42,7 +42,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "io-ut
 | `LogProcessor` | An ordered batch processor that parses formatted inputs in parallel before locking its live `RuntimeEngine`. `process_batch_with_format_detailed` returns `BatchProcessOutcome`, including input indices that failed parsing for single-parse DLQ routing. The daemon glues this to its bounded mpsc plumbing. |
 | `EventSource` trait, `Sink` trait | The plug-in surfaces for inputs and outputs. Built-in: `StdinSource`, `StdoutSink`, `FileSink`, and `NatsSource`/`NatsSink` under the `nats` feature. |
 | `spawn_source(source) -> mpsc::Receiver<RawEvent>` | Convenience helper that runs an `EventSource` on its own task. |
-| `EventFilter` | Type alias for `dyn Fn(&Value) -> Vec<Value>`: optional jq/JSONPath-style pre-extraction applied to each input line. |
+| `EventFilter` | Type alias for `dyn Fn(Value) -> Vec<Value>`: optional jq/JSONPath-style pre-extraction applied to each input line. The filter takes the parsed line by value, so it can move payloads out instead of cloning them. {{ added "unreleased" }} |
 | `MetricsHook` trait + `NoopMetrics` | The plug-in surface that the daemon uses to wire `prometheus` counters. Reimplement to ship metrics elsewhere (Datadog, OpenTelemetry, custom registry). |
 | `input::parse_line(...)` | Format-aware line parser. Auto-detects JSON, syslog, plain text; honors format hints. |
 | `EvtxFileReader` (feature `evtx`) | Streaming `.evtx` reader. |

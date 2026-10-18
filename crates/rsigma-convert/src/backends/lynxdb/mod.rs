@@ -18,7 +18,7 @@
 //!   `search` cannot match exactly put the whole rule in `where`.
 
 use rsigma_eval::pipeline::state::PipelineState;
-use rsigma_ir::{IrPattern, IrPatternPart, IrStrOp};
+use rsigma_ir::{IrPattern, IrPatternPart, IrStrOp, NumericLiteral};
 use rsigma_parser::*;
 
 use crate::backend::*;
@@ -256,16 +256,6 @@ fn raw_field(field: &str) -> String {
     format!("json_extract(_raw, {})", quote_str(field))
 }
 
-/// Format a number without a fractional part when it has none and is
-/// exactly representable as an integer.
-fn format_num(value: f64) -> String {
-    if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
-        (value as i64).to_string()
-    } else {
-        value.to_string()
-    }
-}
-
 // =============================================================================
 // LynxDbBackend
 // =============================================================================
@@ -437,11 +427,11 @@ impl Backend for LynxDbBackend {
     fn convert_field_eq_num(
         &self,
         field: &str,
-        value: f64,
+        value: NumericLiteral,
         _state: &mut ConversionState,
     ) -> Result<String> {
         let f = text_escape_and_quote_field(self.config, field);
-        let v = format_num(value);
+        let v = value.to_string();
         if self.where_mode {
             Ok(format!("coalesce(tonumber({f})={v}, false)"))
         } else {
@@ -507,7 +497,7 @@ impl Backend for LynxDbBackend {
         &self,
         field: &str,
         op: CompareOp,
-        value: f64,
+        value: NumericLiteral,
         state: &mut ConversionState,
     ) -> Result<String> {
         if let Some(placeholder) = self.needs_where(state) {
@@ -527,7 +517,7 @@ impl Backend for LynxDbBackend {
         Ok(expr
             .replace("{field}", &f)
             .replace("{op}", op_token)
-            .replace("{value}", &format_num(value)))
+            .replace("{value}", &value.to_string()))
     }
 
     fn convert_field_exists(
@@ -600,8 +590,12 @@ impl Backend for LynxDbBackend {
         Ok(expr.replace("{value}", &v))
     }
 
-    fn convert_keyword_num(&self, value: f64, _state: &mut ConversionState) -> Result<String> {
-        let s = format_num(value);
+    fn convert_keyword_num(
+        &self,
+        value: NumericLiteral,
+        _state: &mut ConversionState,
+    ) -> Result<String> {
+        let s = value.to_string();
         if self.where_mode {
             return Ok(format!("match(_raw, {})", quote_str(&regex::escape(&s))));
         }
@@ -1684,8 +1678,10 @@ detection:
 
     #[test]
     fn large_numbers_keep_their_magnitude() {
-        assert_eq!(format_num(4688.0), "4688");
-        assert_eq!(format_num(12345678901234567890.0), "12345678901234567000");
-        assert_eq!(format_num(1e300), 1e300.to_string());
+        let num = |n: NumericLiteral| n.to_string();
+        assert_eq!(num(4688.0.into()), "4688");
+        assert_eq!(num(12345678901234567890.0.into()), "12345678901234567000");
+        assert_eq!(num(1e300.into()), 1e300.to_string());
+        assert_eq!(num(9007199254740993.into()), "9007199254740993");
     }
 }

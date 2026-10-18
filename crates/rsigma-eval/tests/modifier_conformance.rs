@@ -437,3 +437,113 @@ fn duplicate_modifiers_are_rejected() {
         assert!(error.contains("more than once"), "{key}: {error}");
     }
 }
+
+#[test]
+fn two_regexes_with_partial_case_insensitivity_match_the_original_text() {
+    let events = [json!({"CommandLine": "FOOBAR"})];
+    // `i` scoped to `foo`: `BAR` must still match case-sensitively.
+    assert_eq!(
+        matching(
+            "selection:\n  CommandLine|re: ['(?i:foo)BAR', '(?i)baz']",
+            &events
+        ),
+        [0]
+    );
+    assert!(
+        matching(
+            "selection:\n  CommandLine|re: ['(?i:foo)bar', '(?i)baz']",
+            &events
+        )
+        .is_empty()
+    );
+    // `|re|i` prepends `(?i)`, and the pattern clears it again before `BAR`.
+    assert_eq!(
+        matching(
+            "selection:\n  CommandLine|re|i: ['foo(?-i)BAR', 'baz']",
+            &events
+        ),
+        [0]
+    );
+}
+
+// 2^53 + 1 is the first integer an f64 cannot represent; it rounds to 2^53.
+const ABOVE_2_53: &str = "9007199254740993";
+
+#[test]
+fn integers_above_2_53_match_exactly() {
+    let events = [
+        json!({"pid": 9007199254740992_i64}),
+        json!({"pid": 9007199254740993_i64}),
+        json!({"pid": "9007199254740992"}),
+        json!({"pid": "9007199254740993"}),
+        json!({"pid": 9007199254740992.0}),
+    ];
+    assert_eq!(
+        matching(&format!("selection:\n  pid: {ABOVE_2_53}"), &events),
+        [1, 3]
+    );
+    assert_eq!(
+        matching("selection:\n  pid: 9007199254740992", &events),
+        [0, 2, 4]
+    );
+}
+
+#[test]
+fn integer_comparisons_above_2_53_are_exact() {
+    let events = [
+        json!({"pid": 9007199254740992_i64}),
+        json!({"pid": 9007199254740993_i64}),
+        json!({"pid": "9007199254740993"}),
+        json!({"pid": 9007199254740994.0}),
+    ];
+    assert_eq!(
+        matching("selection:\n  pid|gt: 9007199254740992", &events),
+        [1, 2, 3]
+    );
+    assert_eq!(
+        matching(&format!("selection:\n  pid|gte: {ABOVE_2_53}"), &events),
+        [1, 2, 3]
+    );
+    assert_eq!(
+        matching(&format!("selection:\n  pid|lt: {ABOVE_2_53}"), &events),
+        [0]
+    );
+    assert_eq!(
+        matching(&format!("selection:\n  pid|lte: {ABOVE_2_53}"), &events),
+        [0, 1, 2]
+    );
+}
+
+#[test]
+fn integer_keywords_above_2_53_search_for_the_exact_digits() {
+    let events = [
+        json!({"msg": "pid=9007199254740992"}),
+        json!({"msg": "pid=9007199254740993"}),
+    ];
+    assert_eq!(
+        matching(&format!("selection:\n  - {ABOVE_2_53}"), &events),
+        [1]
+    );
+}
+
+#[test]
+fn time_part_modifiers_accept_every_timestamp_form() {
+    let events = [
+        json!({"ts": "2024-07-10T12:30:00Z"}),
+        json!({"ts": "2024-07-10T12:30:00.500Z"}),
+        json!({"ts": "2024-07-10T14:30:00+02:00"}),
+        json!({"ts": "2024-07-10T12:30:00"}),
+        json!({"ts": "2024-07-10T12:30:00.500"}),
+        json!({"ts": "2024-07-10 12:30:00"}),
+        json!({"ts": "2024-07-10 12:30:00.500"}),
+        json!({"ts": 1720614600}),
+        json!({"ts": 1720614600500_i64}),
+        json!({"ts": 1720614600.5}),
+        json!({"ts": "garbage"}),
+        json!({"ts": "2024-07-10 13:30:00.500"}),
+    ];
+    assert_eq!(
+        matching("selection:\n  ts|hour: 12", &events),
+        (0..10).collect::<Vec<_>>()
+    );
+}

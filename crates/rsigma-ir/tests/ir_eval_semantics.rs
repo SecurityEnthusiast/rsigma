@@ -130,6 +130,38 @@ detection:
     );
 }
 
+const BOOL_KEYWORD: &str = r#"
+title: Bool Keyword
+logsource: { category: test }
+detection:
+    keywords:
+        - true
+    condition: keywords
+"#;
+
+#[test]
+fn bool_keywords_search_for_the_word() {
+    let cases = [
+        (json!({"a": "true"}), true),
+        (json!({"msg": "flag is TRUE now"}), true),
+        (json!({"a": "false"}), false),
+        // Keyword search covers string and number values, not JSON booleans.
+        (json!({"a": true}), false),
+    ];
+    assert_matches(BOOL_KEYWORD, &cases);
+
+    let mut engine = rsigma_eval::Engine::new();
+    engine
+        .add_collection(&collection_from(BOOL_KEYWORD))
+        .expect("compile");
+    for (event, expected) in &cases {
+        let hit = !engine.evaluate(&JsonEvent::borrow(event)).is_empty();
+        assert_eq!(hit, *expected, "engine match mismatch for event {event}");
+    }
+    let plain = rsigma_eval::PlainEvent::new("debug=true".to_string());
+    assert!(!engine.evaluate(&plain).is_empty(), "plain-text event");
+}
+
 #[test]
 fn include_event_attr_captures_event() {
     let yaml = r#"

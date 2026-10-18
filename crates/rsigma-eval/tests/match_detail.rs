@@ -510,3 +510,101 @@ detection:
         .expect("exists:false entry");
     assert_eq!(sandbox.value, serde_json::Value::Null);
 }
+
+/// The selections and field names a rule with `detection` reports for `event`.
+fn attribution(detection: &str, event: serde_json::Value) -> (Vec<String>, Vec<String>) {
+    let yaml = format!("title: t\nlogsource: {{category: test}}\ndetection:\n{detection}\n");
+    let collection = parse_sigma_yaml(&yaml).unwrap();
+    let mut engine = Engine::new();
+    engine.add_collection(&collection).unwrap();
+    let results = engine.evaluate(&JsonEvent::borrow(&event));
+    assert_eq!(results.len(), 1, "rule fires:\n{detection}");
+    let det = results[0].as_detection().unwrap();
+    let fields = det.matched_fields.iter().map(|f| f.field.clone()).collect();
+    (det.matched_selections.clone(), fields)
+}
+
+/// One selection per name, each matching `f_<name>: hit`.
+fn selections(names: &[&str]) -> String {
+    names
+        .iter()
+        .map(|n| format!("  {n}:\n    f_{n}: hit\n"))
+        .collect()
+}
+
+fn names(list: &[&str]) -> Vec<String> {
+    list.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn selections_under_a_false_negation_are_not_reported() {
+    let detection = format!("{}  condition: not b or a", selections(&["a", "b"]));
+    let (sels, fields) = attribution(&detection, json!({"f_a": "hit", "f_b": "hit"}));
+    assert_eq!(sels, names(&["a"]));
+    assert_eq!(fields, names(&["f_a"]));
+}
+
+#[test]
+fn a_failed_conjunction_under_not_reports_nothing() {
+    let detection = format!(
+        "{}  condition: a and not (b and c)",
+        selections(&["a", "b", "c"])
+    );
+    let (sels, fields) = attribution(&detection, json!({"f_a": "hit", "f_b": "hit"}));
+    assert_eq!(sels, names(&["a"]));
+    assert_eq!(fields, names(&["f_a"]));
+}
+
+#[test]
+fn a_failed_conjunction_inside_or_is_not_reported() {
+    let detection = format!(
+        "{}  condition: (a and b) or c",
+        selections(&["a", "b", "c"])
+    );
+    let (sels, fields) = attribution(&detection, json!({"f_a": "hit", "f_c": "hit"}));
+    assert_eq!(sels, names(&["c"]));
+    assert_eq!(fields, names(&["f_c"]));
+}
+
+#[test]
+fn a_negated_all_of_does_not_report_its_matching_members() {
+    let detection = format!(
+        "{}  condition: a and not all of filter_*",
+        selections(&["a", "filter_1", "filter_2"])
+    );
+    let (sels, _) = attribution(&detection, json!({"f_a": "hit", "f_filter_1": "hit"}));
+    assert_eq!(sels, names(&["a"]));
+}
+
+#[test]
+fn a_failed_all_of_inside_or_is_not_reported() {
+    let detection = format!(
+        "{}  condition: all of sel_* or x",
+        selections(&["sel_1", "sel_2", "x"])
+    );
+    let (sels, _) = attribution(&detection, json!({"f_x": "hit", "f_sel_1": "hit"}));
+    assert_eq!(sels, names(&["x"]));
+}
+
+#[test]
+fn a_selection_named_twice_is_reported_once() {
+    let detection = format!("{}  condition: a and (a or b)", selections(&["a", "b"]));
+    let (sels, fields) = attribution(&detection, json!({"f_a": "hit", "f_b": "hit"}));
+    assert_eq!(sels, names(&["a"]));
+    assert_eq!(fields, names(&["f_a"]));
+}
+
+#[test]
+fn a_double_negation_reports_the_selection() {
+    let detection = format!("{}  condition: not not a", selections(&["a"]));
+    let (sels, _) = attribution(&detection, json!({"f_a": "hit"}));
+    assert_eq!(sels, names(&["a"]));
+}
+
+#[test]
+fn a_selection_that_falsifies_a_negated_conjunction_is_reported() {
+    // `not (a and not b)` holds because `b` matched.
+    let detection = format!("{}  condition: not (a and not b)", selections(&["a", "b"]));
+    let (sels, _) = attribution(&detection, json!({"f_a": "hit", "f_b": "hit"}));
+    assert_eq!(sels, names(&["b"]));
+}

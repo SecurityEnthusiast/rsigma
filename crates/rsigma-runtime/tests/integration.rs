@@ -14,8 +14,8 @@ fn build_processor(rules_yaml: &str) -> (LogProcessor, tempfile::TempDir) {
     (proc, dir)
 }
 
-fn identity_filter(v: &serde_json::Value) -> Vec<serde_json::Value> {
-    vec![v.clone()]
+fn identity_filter(v: serde_json::Value) -> Vec<serde_json::Value> {
+    vec![v]
 }
 
 #[test]

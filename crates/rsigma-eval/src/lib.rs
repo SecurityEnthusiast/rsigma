@@ -112,6 +112,7 @@ pub mod rule_metadata;
 pub mod rule_tune;
 pub mod schema;
 pub mod schema_discovery;
+mod timestamp;
 mod witness;
 
 // Re-export the most commonly used types and functions at crate root

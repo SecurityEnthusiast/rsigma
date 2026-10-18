@@ -154,3 +154,8 @@ fn golden_chained_correlation_generate() {
 fn golden_encodings() {
     run_golden("encodings");
 }
+
+#[test]
+fn golden_large_integers() {
+    run_golden("large_integers");
+}

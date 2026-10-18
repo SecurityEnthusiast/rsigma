@@ -10,7 +10,9 @@
 
 use std::collections::HashMap;
 
-use rsigma_ir::{IrCondition, IrDetection, IrDetectionItem, IrMatcher, IrNumber, IrStrOp};
+use rsigma_ir::{
+    IrCondition, IrDetection, IrDetectionItem, IrMatcher, IrNumber, IrStrOp, NumericLiteral,
+};
 use rsigma_parser::{Quantifier, SelectorPattern};
 
 use crate::backend::{Backend, CompareOp, TokenType};
@@ -167,7 +169,7 @@ fn resolve(res: ConvertResult, state: &mut ConversionState) -> Option<String> {
     }
 }
 
-fn number(n: &IrNumber) -> Result<f64> {
+fn number(n: &IrNumber) -> Result<NumericLiteral> {
     match n {
         IrNumber::Literal(v) => Ok(*v),
         IrNumber::DynamicSourceRef { source_id, .. } => Err(ConvertError::UnsupportedValue(

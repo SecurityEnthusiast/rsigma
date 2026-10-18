@@ -173,16 +173,18 @@ fn process_line<P: EventProcessor>(
     };
     // For JSON events, apply the event filter (which may produce multiple
     // payloads). Non-JSON events evaluate directly (no event filter).
-    if matches!(decoded, rsigma_runtime::EventInputDecoded::Json(_)) {
-        let json_value = decoded.to_json();
-        for payload in crate::apply_event_filter(&json_value, event_filter) {
-            let event = JsonEvent::borrow(&payload);
-            observe_event(observe, &event);
-            processor.process(&event, on_result);
+    match decoded {
+        rsigma_runtime::EventInputDecoded::Json(json_event) => {
+            for payload in crate::apply_event_filter(json_event.into_value(), event_filter) {
+                let event = JsonEvent::borrow(&payload);
+                observe_event(observe, &event);
+                processor.process(&event, on_result);
+            }
         }
-    } else {
-        observe_event(observe, &decoded);
-        processor.process(&decoded, on_result);
+        decoded => {
+            observe_event(observe, &decoded);
+            processor.process(&decoded, on_result);
+        }
     }
 }
 
@@ -203,7 +205,7 @@ fn process_line_json<P: EventProcessor>(
         }
     };
 
-    for payload in crate::apply_event_filter(&value, event_filter) {
+    for payload in crate::apply_event_filter(value, event_filter) {
         let event = JsonEvent::borrow(&payload);
         observe_event(observe, &event);
         processor.process(&event, on_result);
@@ -239,7 +241,7 @@ pub(crate) fn stream_evtx_events<P: EventProcessor>(
             }
         };
 
-        for payload in crate::apply_event_filter(&value, event_filter) {
+        for payload in crate::apply_event_filter(value, event_filter) {
             let event = JsonEvent::borrow(&payload);
             observe_event(observe, &event);
             processor.process(&event, on_result);

@@ -18,6 +18,8 @@ detection:
 
 Keyword values are strings in the specification, so a number matches its decimal text: `4624` matches the numeric value `4624` and the string `logon 4624 succeeded`. The evaluator searches numeric event values as their JSON text, so `4624` also matches `46240`.
 
+A YAML boolean keyword is the word: `true` matches `"true"` and `flag is TRUE now`, and converts as the term `true`. {{ added "unreleased" }} Keyword search covers string and numeric event values, not JSON booleans, so neither `true` nor `'true'` matches the boolean value `{"a": true}`; match a boolean field with `a: true` instead.
+
 ## Field-less values with modifiers
 
 A detection key made only of modifiers, such as `'|all':`, applies its values to the whole event like a keyword. A value without a string operator matches as a substring, and the modifiers combine as they do for a field:

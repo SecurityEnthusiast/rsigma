@@ -264,6 +264,7 @@ Key methods:
 | `convert_field_str` | String matching over an `IrStrOp` + wildcard-aware `IrPattern` |
 | `convert_field_regex` | Regex matching with explicit `RegexFlags`; `RegexFlags::inline_prefix` renders `i`, `m`, and `s` as an inline `(?ims)` group |
 | `convert_field_eq_cidr` | CIDR matching |
+| `convert_field_eq_num` | Numeric equality |
 | `convert_field_compare_op` | Numeric comparison via `CompareOp` (`gt`, `gte`, `lt`, `lte`) |
 | `convert_field_exists` | Field existence check |
 | `convert_keyword_str` / `convert_keyword_num` | Unbound/keyword value matching |
@@ -272,6 +273,8 @@ Key methods:
 | `finish_query` | Assemble final query with deferred parts |
 | `finalize_query` | Apply output format to a query |
 | `finalize_output` | Finalize the complete output |
+
+The numeric leaves (`convert_field_eq_num`, `convert_field_compare_op`, `convert_keyword_num`) take a `NumericLiteral`, which keeps a rule integer as an exact `i64`. Its `Display` renders integers digit for digit and whole floats without a fractional part.
 
 ## TextQueryConfig
 

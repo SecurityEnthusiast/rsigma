@@ -309,7 +309,7 @@ fn analyze_matcher(matcher: &IrMatcher, field: Option<&str>) -> Analysis {
         IrMatcher::NumericEq(IrNumber::Literal(n)) => Witnesses(vec![Witness {
             kind: WitnessKind::ExactField,
             field: field.map(str::to_string),
-            literal: Some(format_number(*n)),
+            literal: Some(n.to_string()),
         }]),
         IrMatcher::NumericEq(IrNumber::DynamicSourceRef { .. }) => Open("dynamic-source"),
         IrMatcher::NumericGt(_)
@@ -380,14 +380,6 @@ fn analyze_str(op: IrStrOp, pattern: &IrPattern, field: Option<&str>) -> Analysi
         field: field.map(str::to_string),
         literal: Some(longest.to_lowercase()),
     }])
-}
-
-fn format_number(n: f64) -> String {
-    if n.fract() == 0.0 && n.abs() < 1e15 {
-        format!("{}", n as i64)
-    } else {
-        n.to_string()
-    }
 }
 
 // ---------------------------------------------------------------------------

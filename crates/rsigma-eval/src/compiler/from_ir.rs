@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use rsigma_ir::{
     IrCondition, IrDetection, IrDetectionItem, IrExpandPart, IrMatcher, IrNumber, IrPattern,
-    IrPatternPart, IrRule, IrStrOp, IrTimePart,
+    IrPatternPart, IrRule, IrStrOp, IrTimePart, NumericLiteral,
 };
 use rsigma_parser::ConditionExpr;
 
@@ -262,7 +262,7 @@ fn compile_keyword_matcher(matcher: &IrMatcher) -> Result<CompiledMatcher> {
         } => compile_encoded(encodings, IrStrOp::Contains, pattern, *case_insensitive),
         IrMatcher::NumericEq(n) => {
             let pattern = IrPattern {
-                parts: vec![IrPatternPart::Literal(decimal_text(ir_number_literal(n)?))],
+                parts: vec![IrPatternPart::Literal(ir_number_literal(n)?.to_string())],
             };
             compile_str(IrStrOp::Contains, &pattern, true)
         }
@@ -278,15 +278,6 @@ fn compile_keyword_matcher(matcher: &IrMatcher) -> Result<CompiledMatcher> {
             Ok(CompiledMatcher::AllOf(compiled?))
         }
         other => compile_ir_matcher(other),
-    }
-}
-
-/// Decimal text of a number, without a fractional part for whole numbers.
-fn decimal_text(n: f64) -> String {
-    if n.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&n) {
-        (n as i64).to_string()
-    } else {
-        n.to_string()
     }
 }
 
@@ -310,7 +301,7 @@ fn ir_condition_to_expr(cond: &IrCondition) -> ConditionExpr {
     }
 }
 
-fn ir_number_literal(n: &IrNumber) -> Result<f64> {
+fn ir_number_literal(n: &IrNumber) -> Result<NumericLiteral> {
     match n {
         IrNumber::Literal(v) => Ok(*v),
         IrNumber::DynamicSourceRef { source_id, .. } => Err(EvalError::IncompatibleValue(format!(

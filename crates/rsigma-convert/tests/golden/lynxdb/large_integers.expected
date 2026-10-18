@@ -1,0 +1,1 @@
+FROM main | where coalesce(tonumber(pid)=9007199254740993, false) AND coalesce(tonumber(session_id)>9007199254740993, false) AND match(_raw, "9007199254740993")

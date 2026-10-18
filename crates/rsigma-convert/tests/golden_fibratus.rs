@@ -159,3 +159,8 @@ fn golden_envelope_yaml() {
 fn golden_encodings() {
     run_golden("encodings", "expr");
 }
+
+#[test]
+fn golden_large_integers() {
+    run_golden("large_integers", "expr");
+}

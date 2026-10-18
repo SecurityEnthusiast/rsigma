@@ -199,30 +199,65 @@ pub(crate) fn is_pre_lowerable(m: &CompiledMatcher) -> bool {
     }
 }
 
-/// Best-effort detector for an inline `i` flag in a regex pattern string.
+/// Conservative detector for a regex that is case-insensitive over its whole
+/// pattern, so matching it against lowercased text is equivalent.
 ///
-/// Recognizes `(?i)` and `(?...i...)` flag groups at the start of the pattern.
-/// A negated form like `(?-i)` is rejected. False negatives are safe (the
-/// regex stays out of the CI group); false positives would be a correctness
-/// bug.
+/// True only when the pattern opens with a global flag group that enables `i`
+/// (`(?i)`, `(?im)`, ...) and no later flag group, global or scoped, clears it
+/// again (`(?-i)`, `(?m-i)`, `(?s-i:...)`). A scoped `(?i:...)` covers only
+/// part of the pattern and is rejected. False negatives are safe (the regex
+/// stays out of the CI group); false positives would be a correctness bug.
 fn regex_is_case_insensitive(pattern: &str) -> bool {
-    let bytes = pattern.as_bytes();
-    if bytes.len() < 4 || bytes[0] != b'(' || bytes[1] != b'?' {
+    use regex_syntax::ast::{Ast, parse::Parser};
+
+    let Ok(ast) = Parser::new().parse(pattern) else {
         return false;
-    }
-    // Walk the flag set until the first character that ends the group:
-    // ')', ':', or '-' (negation onset).
-    let mut i = 2;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'i' => return true,
-            b')' | b':' | b'-' => return false,
-            b'a'..=b'z' | b'A'..=b'Z' => {}
-            _ => return false,
+    };
+    let items = match &ast {
+        Ast::Concat(concat) => concat.asts.as_slice(),
+        other => std::slice::from_ref(other),
+    };
+    let Some((Ast::Flags(lead), rest)) = items.split_first() else {
+        return false;
+    };
+    flags_set_case_insensitive(&lead.flags) == Some(true)
+        && rest.iter().all(never_clears_case_insensitive)
+}
+
+/// What a flag group does to `i`: `Some(true)` enables it, `Some(false)`
+/// clears it (it follows a `-`), and `None` leaves it alone.
+fn flags_set_case_insensitive(flags: &regex_syntax::ast::Flags) -> Option<bool> {
+    use regex_syntax::ast::{Flag, FlagsItemKind};
+
+    let mut negated = false;
+    let mut effect = None;
+    for item in &flags.items {
+        match item.kind {
+            FlagsItemKind::Negation => negated = true,
+            FlagsItemKind::Flag(Flag::CaseInsensitive) => effect = Some(!negated),
+            FlagsItemKind::Flag(_) => {}
         }
-        i += 1;
     }
-    false
+    effect
+}
+
+fn never_clears_case_insensitive(ast: &regex_syntax::ast::Ast) -> bool {
+    use regex_syntax::ast::{Ast, GroupKind};
+
+    match ast {
+        Ast::Flags(set) => flags_set_case_insensitive(&set.flags) != Some(false),
+        Ast::Group(group) => {
+            let clears = matches!(
+                &group.kind,
+                GroupKind::NonCapturing(flags) if flags_set_case_insensitive(flags) == Some(false)
+            );
+            !clears && never_clears_case_insensitive(&group.ast)
+        }
+        Ast::Concat(concat) => concat.asts.iter().all(never_clears_case_insensitive),
+        Ast::Alternation(alt) => alt.asts.iter().all(never_clears_case_insensitive),
+        Ast::Repetition(rep) => never_clears_case_insensitive(&rep.ast),
+        _ => true,
+    }
 }
 
 /// Consume a bucket of `Regex` matchers, building a single `RegexSetMatch`
@@ -477,7 +512,7 @@ mod tests {
             Regex::new(r"^foo").unwrap()
         )));
         // Numeric and CIDR are never pre-lowerable.
-        assert!(!is_pre_lowerable(&CompiledMatcher::NumericEq(42.0)));
+        assert!(!is_pre_lowerable(&CompiledMatcher::NumericEq(42.into())));
         assert!(!is_pre_lowerable(&CompiledMatcher::Cidr(
             "10.0.0.0/8".parse().unwrap()
         )));
@@ -495,10 +530,24 @@ mod tests {
         // Empty / malformed.
         assert!(!regex_is_case_insensitive(""));
         assert!(!regex_is_case_insensitive("(?"));
-        // Negated flag (not yet trusted to keep things simple).
+        // Negated flag.
         assert!(!regex_is_case_insensitive("(?-i)foo"));
-        // Group with subpattern (we conservatively bail at ':').
+        // Non-capturing group without flags.
         assert!(!regex_is_case_insensitive("(?:foo)"));
+        // A scoped flag group covers only part of the pattern.
+        assert!(!regex_is_case_insensitive("(?i:foo)BAR"));
+        // A later flag group clears `i`, globally or in scope, alone or with
+        // other flags, at any nesting depth.
+        assert!(!regex_is_case_insensitive("(?i)foo(?-i)BAR"));
+        assert!(!regex_is_case_insensitive("(?i)foo(?m-i)BAR"));
+        assert!(!regex_is_case_insensitive("(?i)foo(?s-i:BAR)"));
+        assert!(!regex_is_case_insensitive("(?i)(a|(b(?-i)C))+"));
+        // Later groups that leave `i` alone keep the pattern eligible.
+        assert!(regex_is_case_insensitive("(?i)foo(?m)bar(?s-m:baz)"));
+        // A literal `(?-i)` is not a flag group.
+        assert!(regex_is_case_insensitive(r"(?i)foo\(\?-i\)[(?-i)]"));
+        // Unparseable patterns are never trusted.
+        assert!(!regex_is_case_insensitive("(?i)foo("));
     }
 
     #[test]

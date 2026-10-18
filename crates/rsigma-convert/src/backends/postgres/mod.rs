@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use rsigma_eval::pipeline::state::PipelineState;
-use rsigma_ir::{IrDetection, IrPattern, IrPatternPart, IrStrOp};
+use rsigma_ir::{IrDetection, IrPattern, IrPatternPart, IrStrOp, NumericLiteral};
 use rsigma_parser::*;
 
 use crate::backend::*;
@@ -593,15 +593,11 @@ impl Backend for PostgresBackend {
     fn convert_field_eq_num(
         &self,
         field: &str,
-        value: f64,
+        value: NumericLiteral,
         state: &mut ConversionState,
     ) -> Result<String> {
         let f = self.numeric_expr(field, state)?;
-        if value.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&value) {
-            Ok(format!("{f} = {}", value as i64))
-        } else {
-            Ok(format!("{f} = {value}"))
-        }
+        Ok(format!("{f} = {value}"))
     }
 
     fn convert_field_eq_bool(
@@ -668,7 +664,7 @@ impl Backend for PostgresBackend {
         &self,
         field: &str,
         op: CompareOp,
-        value: f64,
+        value: NumericLiteral,
         state: &mut ConversionState,
     ) -> Result<String> {
         let f = self.numeric_expr(field, state)?;
@@ -678,12 +674,7 @@ impl Backend for PostgresBackend {
             CompareOp::Gt => ">",
             CompareOp::Gte => ">=",
         };
-        let val_str =
-            if value.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&value) {
-                (value as i64).to_string()
-            } else {
-                value.to_string()
-            };
+        let val_str = value.to_string();
         Ok(format!("{f} {op_token} {val_str}"))
     }
 
@@ -757,13 +748,13 @@ impl Backend for PostgresBackend {
         ))
     }
 
-    fn convert_keyword_num(&self, value: f64, state: &mut ConversionState) -> Result<String> {
+    fn convert_keyword_num(
+        &self,
+        value: NumericLiteral,
+        state: &mut ConversionState,
+    ) -> Result<String> {
         let search_target = self.keyword_search_target(state);
-        let v = if value.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&value) {
-            (value as i64).to_string()
-        } else {
-            value.to_string()
-        };
+        let v = value.to_string();
         Ok(format!(
             "to_tsvector('simple', {search_target}) @@ plainto_tsquery('simple', '{v}')"
         ))

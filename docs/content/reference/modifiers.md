@@ -55,6 +55,14 @@ A regex is case-sensitive unless the key has `|i`. `|m` makes `^` and `$` match 
 
 A `cidr` value is an IPv4 or IPv6 network written as `address/prefix`, such as `10.0.0.0/8` or `2001:db8::/32`. As in pySigma, a value with host bits set, such as `10.1.2.3/8`, is rejected when the rule is compiled or converted, because the address would silently stand for a different network. {{ added "0.24.0" }}
 
+## Numbers
+
+An integer value, with or without `gt`, `gte`, `lt`, or `lte`, matches and compares exactly, including above 2^53, where a 64-bit float can no longer represent every integer. `pid: 9007199254740993` matches the event value `9007199254740993` and the string `"9007199254740993"`, but not `9007199254740992`. Against a float event value, the comparison is exact too: `9007199254740992.0` equals `9007199254740992` and is less than `9007199254740993`. A value with a fractional part compares as a 64-bit float. Backends render the integer digits exactly, and an integer keyword searches for exactly those digits. {{ added "unreleased" }}
+
+## Time parts
+
+`minute`, `hour`, `day`, `week` (ISO week), `month`, and `year` read the field as a timestamp in UTC and match the extracted component, so `ts|hour: 12` matches `2024-07-10 12:30:00.500`. The field may be an RFC 3339 string, `YYYY-MM-DD` followed by `T` or a space and `HH:MM:SS` with an optional fractional second, or an epoch number in seconds or milliseconds (values above 10^12 are milliseconds). These are the formats the correlation engine accepts for event timestamps. A value in any other format never matches. {{ added "unreleased" }}
+
 ## `exists`
 
 `Field|exists: true` matches when the field is present in the event, including when its value is `null`. `Field|exists: false` matches only when the field is absent.

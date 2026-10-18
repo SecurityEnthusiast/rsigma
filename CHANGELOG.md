@@ -4,6 +4,34 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Match detail costs one evaluation pass (#613)
+
+With `MatchDetailLevel` above `Off`, a rule that fired was evaluated again to collect its selection names and then walked a third time to collect its field matches, re-running every matcher, including regexes. Field matches are now recorded while the selections are evaluated, so a firing rule costs one detail pass, and array members are matched once per quantifier instead of again for the report. The output is unchanged. On the `eval_matched_detail` benchmark (200 rules that all fire), `Full` drops from 314 to 307 µs and `Off` from 252 to 244 µs.
+
+The daemon and `engine eval` also stop copying each parsed JSON line before the event filter: with no filter or a `--jq` filter the line moves through, and a `--jsonpath` filter copies only the nodes it matches. This changes public API: `rsigma_runtime::EventFilter` is now `dyn Fn(serde_json::Value) -> Vec<serde_json::Value>`, taking the parsed line by value, so a custom filter returns `vec![v]` instead of `vec![v.clone()]`. `JsonEvent::into_value` is new and unwraps the JSON value, cloning only when the event borrows it.
+
+### Match detail reports only the selections that decide the match (#612)
+
+`matched_selections` and `matched_fields` were built from every selection the detail pass saw match, even inside a sub-expression that ended up false, so `(s1 and s2) or s3` firing on `s3` also reported `s1` when it matched, `not sel_b or sel_a` reported `sel_b`, `a and not all of filter_*` reported the matching filters, and `a and (a or b)` reported `a` and its fields twice. Enrichment templates, OCSF findings, and `engine eval` output attributed alerts to selections that did not make them fire. Now a false `and` keeps only its failing child's selections, a true `or` keeps only its true child's, a selector reports its members only when its quantifier holds, and each name appears once. `eval_condition` follows the same rules.
+
+### Time-part modifiers accept space-separated fractional timestamps (#611)
+
+`rsigma-eval` had two string timestamp parsers, and the one behind `|minute`, `|hour`, `|day`, `|week`, `|month`, and `|year` lacked the `%Y-%m-%d %H:%M:%S%.f` form that the correlation engine accepted, so `"2024-07-10 12:30:00.500"` worked as a correlation timestamp but made `ts|hour: 12` never match. Both now share one parser: RFC 3339, or a `T`- or space-separated naive timestamp with an optional fractional second, plus epoch seconds and milliseconds.
+
+### Integer literals above 2^53 match exactly (#610)
+
+Rule integers were stored as `f64` from lowering onward, so any literal above 2^53 rounded to a neighbor: `pid: 9007199254740993` matched `9007199254740992` and not itself, `pid|gt: 9007199254740992` missed `9007199254740993`, an integer keyword searched for the rounded digits, and `backend convert` and `backend reverse` emitted the rounded number. Integers now stay exact end to end: `IrNumber::Literal` holds a new `rsigma_ir::NumericLiteral` (`Integer(i64)` or `Float(f64)`), equality and the `gt`, `gte`, `lt`, and `lte` comparisons are exact against integer, string, and float event values, and conversion renders the exact digits. Fractional values still compare as `f64`.
+
+This changes public API. `CompiledMatcher::NumericEq`, `NumericGt`, `NumericGte`, `NumericLt`, and `NumericLte` hold a `NumericLiteral` instead of an `f64`, and the `Backend` methods `convert_field_eq_num`, `convert_field_compare_op`, and `convert_keyword_num` take a `NumericLiteral`; a custom backend renders it with `to_string()`. `HIR_SCHEMA_VERSION` is now 4, so `Engine::load_hir` and `decode_rules` reject a HIR cache written by an earlier version; rebuild it from the rules.
+
+### Boolean keywords match the word instead of nothing (#609)
+
+A `keywords:` detection with a YAML boolean, such as `keywords: [true]`, parsed, compiled, and passed lint, but never fired, because keyword evaluation runs only string matchers and the value lowered to a boolean equality check; `backend convert` rejected the same rule with `UnsupportedKeyword`. Boolean keywords now lower to a case-insensitive substring search for the word `true` or `false`, like any other keyword, so `keywords: [true]` matches `"true"` and `flag is TRUE now` in eval and converts as the term `true`. Keyword search still does not visit JSON booleans; use a field match such as `a: true` for those. Fixes #587.
+
+### Partly case-insensitive regex pairs match the original text again (#608)
+
+When a field had exactly two regex values that both looked case-insensitive, the optimizer grouped them to lowercase the event value once and match each regex against the lowercased text. The check stopped at the first `i` after `(?`, so a scoped flag such as `(?i:foo)BAR`, or a pattern that clears the flag later such as the `(?i)foo(?-i)BAR` that `|re|i` builds from `foo(?-i)BAR`, was treated as fully case-insensitive: such rules missed events they should match and matched events they should not. The optimizer now parses the pattern and groups a regex only when a leading global flag enables `i` and no later flag group, global or scoped, clears it. Fixes #584.
+
 ### Daemon state saves are one consistent, atomic cut (#606)
 
 With `--state-db`, the periodic and shutdown saves exported the correlation snapshot before reading the NATS source position, then wrote the correlation, alert-pipeline, risk, and disposition snapshots as four separate statements with awaits in between. An event acked between the export and the position read was claimed by the position but missing from the snapshot, so a replay from that position skipped its correlation state, and a crash between the writes paired snapshots from different moments. The daemon now reads the position first, captures every snapshot back to back, and writes them in one SQLite transaction, so a failed save leaves the previous one intact. The ack task publishes the position with release ordering to match. Each save also serializes the correlation snapshot once instead of twice. Fixes #580.

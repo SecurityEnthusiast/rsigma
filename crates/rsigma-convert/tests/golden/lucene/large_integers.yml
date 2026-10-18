@@ -1,0 +1,8 @@
+title: Golden Test
+logsource:
+    product: windows
+detection:
+    selection:
+        pid: 9007199254740993
+        session_id|gt: 9007199254740993
+    condition: selection

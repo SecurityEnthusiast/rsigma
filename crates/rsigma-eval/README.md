@@ -188,7 +188,7 @@ Contrasts false-positive events with required true-positive exemplars and emits 
 | `EndsWith` | `\|endswith` | Suffix match |
 | `Regex` | `\|re` | `\|i` adds `(?i)`, `\|m` adds multiline, `\|s` adds dotall |
 | `Cidr` | `\|cidr` | IP network matching via `IpNet` |
-| `NumericEq/Gt/Gte/Lt/Lte` | `\|gt`, `\|gte`, etc. | f64 comparison |
+| `NumericEq/Gt/Gte/Lt/Lte` | `\|gt`, `\|gte`, etc. | Holds a `NumericLiteral`: integer literals compare exactly, including above 2^53; float literals compare as f64 |
 | `Exists` | `\|exists` | Field presence; a field set to null is present. Accepts `true`/`yes`/`false`/`no` as values |
 | `FieldRef` | `\|fieldref` | Compares against another field. Optional `\|contains`, `\|startswith`, or `\|endswith` after `\|fieldref`. Case-insensitive unless `\|cased`. |
 | `Null` | - | Matches null or missing values |
@@ -232,6 +232,7 @@ The `Event` wrapper provides flexible field access over `serde_json::Value`:
 - **Keyword detection**: `matches_keyword` searches all string values across all fields recursively, and numbers as their JSON text.
 - **Field enumeration**: `field_keys()` returns the leaf field paths in dot-notation (e.g. `actor.id`), with intermediate object names included so callers can inspect coverage at any nesting level. Used by the daemon's opt-in field observer; not on the detection hot path. Ships with a default impl that walks `to_json()`; `JsonEvent` overrides with a zero-copy recursive walk.
 - **Max nesting depth**: recursive traversal stops at depth **64** (`MAX_NESTING_DEPTH`).
+- **Unwrapping**: `JsonEvent::into_value` returns the wrapped `serde_json::Value`, cloning only when the event borrows it.
 
 ## Correlation Engine
 
@@ -284,7 +285,7 @@ Stateful processing with sliding time windows, group-by aggregation, and all 8 c
 ### Timestamp Extraction
 
 - **Field priority list**: configurable ordered list of fields to try (default: `@timestamp`, `timestamp`, `EventTime`, `TimeCreated`, `eventTime`)
-- **Format support**: RFC 3339, `%Y-%m-%dT%H:%M:%S`, `%Y-%m-%dT%H:%M:%S%.f`, `%Y-%m-%d %H:%M:%S`, epoch seconds, epoch milliseconds (auto-detected if value > 10^12)
+- **Format support**: RFC 3339, `%Y-%m-%dT%H:%M:%S` and `%Y-%m-%d %H:%M:%S` with an optional fractional second (read as UTC), epoch seconds, epoch milliseconds (auto-detected if value > 10^12). The time-part modifiers (`|hour`, `|day`, and the others) accept the same formats.
 - **Fallback policy**: `WallClock` (use `Utc::now()`, good for real-time streaming) or `Skip` (skip event from correlation, recommended for batch/replay)
 
 ### Value Percentile
@@ -323,7 +324,7 @@ Accessors: `is_detection()` / `is_correlation()`, `as_detection() -> Option<&Det
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `matched_selections` | `Vec<String>` | Detection names that matched |
+| `matched_selections` | `Vec<String>` | Matched detection names that decide the condition, each once (`(a and b) or c` firing on `c` reports only `c`) |
 | `matched_fields` | `Vec<FieldMatch>` | Field/value pairs that contributed to the match. Array object-scope matches record binding members with indexed paths (`connections[0].protocol`), capped at 32 members; `[none]` and vacuous `[all_or_empty]` keep the container. |
 | `event` | `Option<Value>` | Full event JSON when `include_event` is enabled |
 
