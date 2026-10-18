@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Match detail reports only the selections that decide the match
+### Match detail reports only the selections that decide the match (#612)
 
 `matched_selections` and `matched_fields` were built from every selection the detail pass saw match, even inside a sub-expression that ended up false, so `(s1 and s2) or s3` firing on `s3` also reported `s1` when it matched, `not sel_b or sel_a` reported `sel_b`, `a and not all of filter_*` reported the matching filters, and `a and (a or b)` reported `a` and its fields twice. Enrichment templates, OCSF findings, and `engine eval` output attributed alerts to selections that did not make them fire. Now a false `and` keeps only its failing child's selections, a true `or` keeps only its true child's, a selector reports its members only when its quantifier holds, and each name appears once. `eval_condition` follows the same rules.
 
