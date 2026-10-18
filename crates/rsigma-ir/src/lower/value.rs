@@ -311,7 +311,12 @@ pub(super) fn lower_value_keywords(value: &SigmaValue) -> Result<IrMatcher> {
         }),
         SigmaValue::Integer(n) => Ok(IrMatcher::NumericEq(IrNumber::Literal(*n as f64))),
         SigmaValue::Float(n) => Ok(IrMatcher::NumericEq(IrNumber::Literal(*n))),
-        SigmaValue::Bool(b) => Ok(IrMatcher::BoolEq(*b)),
+        // Keywords search text, so a YAML boolean is the word `true`/`false`.
+        SigmaValue::Bool(b) => Ok(IrMatcher::Str {
+            op: IrStrOp::Contains,
+            pattern: plain_pattern(if *b { "true" } else { "false" }),
+            case_insensitive: ci,
+        }),
         SigmaValue::Null => Ok(IrMatcher::Null),
     }
 }

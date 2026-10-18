@@ -1611,6 +1611,22 @@ detection:
     }
 
     #[test]
+    fn test_bool_keyword_converts_as_text() {
+        let queries = convert_rule_yaml(
+            r#"
+title: Test
+logsource:
+    category: test
+detection:
+    keywords:
+        - true
+    condition: keywords
+"#,
+        );
+        assert_eq!(queries, vec!["_=\"true\""]);
+    }
+
+    #[test]
     fn test_anchored_field_less_value_is_unsupported() {
         let err = convert_rule_yaml_err(
             r#"
