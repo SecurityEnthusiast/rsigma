@@ -34,6 +34,11 @@ impl<'a> JsonEvent<'a> {
             inner: Cow::Owned(v),
         }
     }
+
+    /// Unwrap the JSON value, cloning only when the event borrows it.
+    pub fn into_value(self) -> Value {
+        self.inner.into_owned()
+    }
 }
 
 impl<'a> From<&'a Value> for JsonEvent<'a> {
@@ -377,6 +382,13 @@ fn visit_string_values_json(v: &Value, visit: &mut dyn FnMut(&str), depth: usize
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn into_value_returns_the_wrapped_value() {
+        let v = json!({"records": [{"EventID": 1}]});
+        assert_eq!(JsonEvent::owned(v.clone()).into_value(), v);
+        assert_eq!(JsonEvent::borrow(&v).into_value(), v);
+    }
 
     #[test]
     fn json_flat_field() {

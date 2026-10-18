@@ -892,14 +892,14 @@ pub(crate) fn build_correlation_config(
 ///   (e.g., `.records[]`).
 /// - `EventFilter::JsonPath`: queries the input, returning all matched nodes.
 pub(crate) fn apply_event_filter(
-    value: &serde_json::Value,
+    value: serde_json::Value,
     filter: &EventFilter,
 ) -> Vec<serde_json::Value> {
     match filter {
-        EventFilter::None => vec![value.clone()],
+        EventFilter::None => vec![value],
 
         EventFilter::Jq(f) => {
-            let input = json_to_val(value.clone());
+            let input = json_to_val(value);
             let ctx = Ctx::<data::JustLut<Val>>::new(&f.lut, Vars::new([]));
             f.id.run((ctx, input))
                 .map(unwrap_valr)
@@ -914,7 +914,7 @@ pub(crate) fn apply_event_filter(
         }
 
         EventFilter::JsonPath(path) => {
-            let nodes = path.query(value);
+            let nodes = path.query(&value);
             nodes.all().into_iter().cloned().collect()
         }
     }

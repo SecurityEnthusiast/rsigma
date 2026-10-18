@@ -766,7 +766,7 @@ fn cmd_eval_routed(
                     process::exit(crate::exit_code::RULE_ERROR);
                 }
             };
-            for payload in crate::apply_event_filter(&value, event_filter) {
+            for payload in crate::apply_event_filter(value, event_filter) {
                 let event = JsonEvent::borrow(&payload);
                 if let Some(octx) = observe {
                     octx.observer.observe(&event);
@@ -939,7 +939,7 @@ fn cmd_eval_with_correlations(
             };
 
             let mut had_matches = false;
-            for payload in crate::apply_event_filter(&value, event_filter) {
+            for payload in crate::apply_event_filter(value, event_filter) {
                 let event = JsonEvent::borrow(&payload);
                 if let Some(octx) = observe {
                     octx.observer.observe(&event);
@@ -1138,7 +1138,7 @@ fn cmd_eval_detection_only(
             };
 
             let mut had_matches = false;
-            let payloads = crate::apply_event_filter(&value, event_filter);
+            let payloads = crate::apply_event_filter(value, event_filter);
             if payloads.is_empty() {
                 if renderer.ctx().show_progress() {
                     eprintln!("No matches.");

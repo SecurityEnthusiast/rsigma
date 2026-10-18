@@ -18,7 +18,7 @@ use crate::tap::{TapPayload, TapRegistry, TapStage};
 ///
 /// Used by the daemon's event filter (e.g. jq/jsonpath) to explode a JSON
 /// object into sub-events (e.g. `.records[]`). Only applies to JSON input.
-pub type EventFilter = dyn Fn(&serde_json::Value) -> Vec<serde_json::Value>;
+pub type EventFilter = dyn Fn(serde_json::Value) -> Vec<serde_json::Value>;
 
 /// Results and per-line parse failures from one ordered batch.
 pub struct BatchProcessOutcome {
@@ -171,7 +171,7 @@ impl LogProcessor {
         for (line_idx, line) in batch.iter().enumerate() {
             match serde_json::from_str::<serde_json::Value>(line) {
                 Ok(value) => {
-                    let payloads = event_filter(&value);
+                    let payloads = event_filter(value);
                     if !payloads.is_empty() {
                         parsed.push((line_idx, payloads));
                     }
@@ -340,19 +340,15 @@ impl LogProcessor {
 
             // For JSON events with an event filter, apply the filter which
             // may produce multiple payloads (e.g. `.records[]`).
-            if let Some(filter) = event_filter
-                && let EventInputDecoded::Json(ref json_event) = decoded
-            {
-                let json_value = json_event.to_json();
-                let payloads = filter(&json_value);
-                for payload in payloads {
-                    decoded_events
-                        .push((line_idx, EventInputDecoded::Json(JsonEvent::owned(payload))));
+            match (event_filter, decoded) {
+                (Some(filter), EventInputDecoded::Json(json_event)) => {
+                    for payload in filter(json_event.into_value()) {
+                        decoded_events
+                            .push((line_idx, EventInputDecoded::Json(JsonEvent::owned(payload))));
+                    }
                 }
-                continue;
+                (_, decoded) => decoded_events.push((line_idx, decoded)),
             }
-
-            decoded_events.push((line_idx, decoded));
         }
         self.metrics
             .observe_batch_phase_duration("decode_merge", merge_start.elapsed().as_secs_f64());
@@ -664,8 +660,8 @@ mod tests {
     use crate::metrics::NoopMetrics;
     use rsigma_eval::CorrelationConfig;
 
-    fn identity_filter(v: &serde_json::Value) -> Vec<serde_json::Value> {
-        vec![v.clone()]
+    fn identity_filter(v: serde_json::Value) -> Vec<serde_json::Value> {
+        vec![v]
     }
 
     fn make_processor(rules_yaml: &str) -> LogProcessor {
@@ -1129,12 +1125,13 @@ detection:
         );
 
         // Filter that extracts a nested "records" array
-        let filter = |v: &serde_json::Value| -> Vec<serde_json::Value> {
-            if let Some(records) = v.get("records").and_then(|r| r.as_array()) {
-                records.clone()
-            } else {
-                vec![v.clone()]
+        let filter = |mut v: serde_json::Value| -> Vec<serde_json::Value> {
+            if v.get("records").is_some_and(serde_json::Value::is_array)
+                && let serde_json::Value::Array(records) = v["records"].take()
+            {
+                return records;
             }
+            vec![v]
         };
 
         let batch = vec![r#"{"records": [{"EventID": 1}, {"EventID": 2}]}"#.to_string()];
@@ -1514,12 +1511,13 @@ detection:
 "#,
         );
 
-        let filter = |v: &serde_json::Value| -> Vec<serde_json::Value> {
-            if let Some(records) = v.get("records").and_then(|r| r.as_array()) {
-                records.clone()
-            } else {
-                vec![v.clone()]
+        let filter = |mut v: serde_json::Value| -> Vec<serde_json::Value> {
+            if v.get("records").is_some_and(serde_json::Value::is_array)
+                && let serde_json::Value::Array(records) = v["records"].take()
+            {
+                return records;
             }
+            vec![v]
         };
 
         let batch = vec![r#"{"records": [{"EventID": 1}, {"EventID": 2}]}"#.to_string()];
