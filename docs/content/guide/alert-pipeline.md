@@ -195,6 +195,8 @@ group:
 
 `include: refs` (default) embeds lightweight `{rule, level}` references; `include: results` embeds the full (event-stripped) contributing results, bounded by `max_results_per_incident`.
 
+In `entity_graph` mode, `max_entities_per_incident` bounds the values an incident stores per selector. Once a selector is full, new values for it still let a result join through its other values, but they are not recorded on the incident and do not act as join keys for later results. They also do not count toward `max_value_cardinality`, and neither does any value of a result refused by `max_open_incidents`.
+
 ### Wire shape
 
 An `IncidentResult` is one flat NDJSON object, disambiguated downstream by the presence of an `incident_id` key. It carries the `state` (`open` / `resolved`), the `trigger` (`group_wait` / `group_interval` / `repeat` / `resolved`), the window bounds, the `max_level`, the `result_count`, per-rule `rule_counts`, the `group_by` key (group_by mode) or `entities` map (entity_graph mode), and the `refs` or `results`. Incidents are delivered to stdout, file, NATS, and unix sinks; with `nats_subject` set, incidents publish to that dedicated subject instead of the detection stream. OTLP and webhook sinks do not receive incidents.
