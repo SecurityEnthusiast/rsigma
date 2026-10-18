@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Entity-graph grouping no longer leaks join keys or drops live incidents
+
+In `entity_graph` grouping, a value that arrived after its incident's selector was full (`max_entities_per_incident`) was not stored on the incident but was still indexed as a join key. Resolve and merge only evict stored values, so those keys outlived the incident: the index grew without bound on a long-running daemon, and a later result carrying such a value could be merged into the dead incident id, which silently discarded the live incident it should have joined. Only stored values are now indexed, a stale index entry is dropped instead of being merged into, and `max_value_cardinality` counters move only for values an accepted result actually records, so a result refused by `max_open_incidents` or an over-cap value no longer inflates them. Fixes #583.
+
 ### Refuse public plaintext and unauthenticated daemon APIs in every build (#601)
 
 **Breaking:** `engine daemon` now refuses to start on a non-loopback TCP `--api-addr` that serves an unauthenticated API, unless bearer tokens (`--api-token-env` or `daemon.api.auth`) or client certificates (`--tls-client-ca`) authenticate callers, or the operator passes the new `--allow-unauthenticated` flag (config `daemon.api.allow_unauthenticated`). The plaintext refusal and `--allow-plaintext` used to exist only in `daemon-tls` builds, so a default `cargo install rsigma` daemon served an anonymous control API on every interface; both checks now apply to every build, and `daemon.api.tls.allow_plaintext` is honored without `daemon-tls`. Opting out of authentication on a non-loopback address logs a startup warning. Loopback and `unix://` addresses are unaffected. To upgrade a public deployment, configure a token, or pass `--allow-unauthenticated` when an authenticating proxy fronts the daemon. The deployment guides now configure a token. Fixes #582.
