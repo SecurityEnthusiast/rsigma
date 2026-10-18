@@ -129,6 +129,9 @@ pub trait MetricsHook: Send + Sync {
     fn on_alert_pipeline_inhibited(&self, _rule: &str) {}
     /// Report the current number of active inhibition sources.
     fn set_inhibit_sources_active(&self, _count: i64) {}
+    /// A result that would have opened a new inhibition source for `rule` was
+    /// not tracked because `max_inhibit_sources` was reached.
+    fn on_inhibit_source_refused(&self, _rule: &str) {}
 
     /// A risk-annotation outcome. `action` is one of `scored` / `no_entity` /
     /// `skipped` (out of scope).

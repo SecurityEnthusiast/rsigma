@@ -72,13 +72,13 @@ rsigma engine daemon -r rules/ \
 
 ## At-least-once delivery
 
-When `--input nats://...` is used, the daemon switches from at-most-once to at-least-once semantics. Each message is wrapped in an `AckToken` that is held until every output sink has committed the corresponding result (delivered or DLQ-parked). A dedicated ack task resolves tokens after that confirmation.
+When `--input nats://...` is used, the daemon switches from at-most-once to at-least-once semantics. Each message is wrapped in an `AckToken` that is held until every output sink has committed the corresponding result: delivered it, or handed the failure to the DLQ writer. A dedicated ack task resolves tokens after that confirmation.
 
 What this guarantees:
 
 - If the daemon panics mid-processing, NATS redelivers after `ack_wait` (configured on the JetStream consumer).
 - While a sink is retrying (file write error, NATS publish-ack timeout), the source message stays unacked so a crash still redelivers.
-- After retries are exhausted (or a permanent sink error), the result is parked in the [DLQ](#dead-letter-queue) when `--dlq` is set, or dropped with a warning when it is not. Either way the source message is then acked so the same failure does not loop forever.
+- After retries are exhausted (or a permanent sink error), the result is handed to the [DLQ](#dead-letter-queue) writer and the source message is acked, so the same failure does not loop forever. With `--dlq` set, the writer then persists it; a failed DLQ write is logged and counted on `rsigma_dlq_write_failures_total`, and the result is lost. Without `--dlq`, the result is dropped with a rate-limited warning. {{ added "unreleased" }}
 - If a parse error happens before the engine, the failed event is routed to the DLQ (when configured) and the source message is acked, preventing infinite redelivery of unparseable data.
 
 What this does NOT guarantee:
@@ -177,7 +177,7 @@ Each DLQ entry is a JSON object:
 }
 ```
 
-The `rsigma_dlq_events_total` Prometheus counter tracks DLQ volume. Alert on rate-of-change to catch upstream encoding regressions early. See [Prometheus metrics reference](../reference/metrics.md).
+The `rsigma_dlq_events_total` Prometheus counter tracks DLQ volume, including delivery failures dropped for lack of a `--dlq` sink. Alert on rate-of-change to catch upstream encoding regressions early, and on `rsigma_dlq_write_failures_total` to catch a DLQ sink that cannot write. {{ added "unreleased" }} See [Prometheus metrics reference](../reference/metrics.md).
 
 ## Connection lifecycle and reconnects
 
@@ -201,7 +201,7 @@ The `rsigma_dlq_events_total` Prometheus counter tracks DLQ volume. Alert on rat
 | `--batch-size` | Events per engine mutex acquisition. Default 128, capped at `--buffer-size`; lower it when burst tail latency matters more than sustained throughput. |
 | `--drain-timeout` | Seconds to wait for in-flight events on shutdown. Default 5. Raise to 30 in production so SIGTERM does not lose work. |
 | `--state-save-interval` | Periodic SQLite snapshot interval. Default 30 s. Lower means less work to redo after a crash; higher means less disk I/O. |
-| `--dlq` | Set in production. Never set means parse errors are silently dropped. |
+| `--dlq` | Set in production. Without it, parse errors are dropped with only a metric, and delivery failures are dropped with a rate-limited warning. |
 
 ## Example: production NATS deployment
 

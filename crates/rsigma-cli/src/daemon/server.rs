@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use axum::extract::{Query, State};
@@ -37,6 +37,54 @@ struct DlqEntry {
     original_event: String,
     error: String,
     timestamp: String,
+}
+
+/// Minimum gap between two warnings about delivery failures dropped for lack
+/// of a DLQ sink.
+const DROPPED_FAILURE_WARN_INTERVAL: Duration = Duration::from_secs(10);
+
+/// Warns about delivery failures dropped because no `--dlq` sink is set. The
+/// first drop warns at once; later drops fold into at most one warning per
+/// [`DROPPED_FAILURE_WARN_INTERVAL`] that carries their count.
+#[derive(Default)]
+struct DroppedFailureLog {
+    last_warn: Option<Instant>,
+    pending: u64,
+}
+
+impl DroppedFailureLog {
+    /// Record one dropped failure. Returns the count it warned about, or
+    /// `None` when the warning is deferred to a later drop or [`Self::flush`].
+    fn record(&mut self, error: &str, now: Instant) -> Option<u64> {
+        self.pending += 1;
+        if self
+            .last_warn
+            .is_some_and(|last| now.duration_since(last) < DROPPED_FAILURE_WARN_INTERVAL)
+        {
+            return None;
+        }
+        let dropped = std::mem::take(&mut self.pending);
+        self.last_warn = Some(now);
+        tracing::warn!(
+            dropped,
+            error,
+            "Delivery failures dropped: no DLQ sink is configured (use --dlq to persist them)"
+        );
+        Some(dropped)
+    }
+
+    /// Warn about any drops still waiting for the next interval.
+    fn flush(&mut self) -> Option<u64> {
+        let dropped = std::mem::take(&mut self.pending);
+        if dropped == 0 {
+            return None;
+        }
+        tracing::warn!(
+            dropped,
+            "Delivery failures dropped: no DLQ sink is configured (use --dlq to persist them)"
+        );
+        Some(dropped)
+    }
 }
 
 /// One evaluated batch waiting for ordered sink/ack dispatch.
@@ -1999,13 +2047,17 @@ pub async fn run_daemon(config: DaemonConfig) {
     let (df_tx, mut df_rx) = mpsc::channel::<DeliveryFailure>(buffer_size);
     let df_handle = tokio::spawn(async move {
         while let Some(failure) = df_rx.recv().await {
-            let _ = dlq_tx
-                .send(DlqEntry {
-                    original_event: failure.serialized,
-                    error: failure.error,
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                })
-                .await;
+            let entry = DlqEntry {
+                original_event: failure.serialized,
+                error: failure.error,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            };
+            if let Err(mpsc::error::SendError(entry)) = dlq_tx.send(entry).await {
+                tracing::warn!(
+                    error = %entry.error,
+                    "DLQ writer closed, delivery failure dropped"
+                );
+            }
         }
     });
 
@@ -2270,24 +2322,27 @@ pub async fn run_daemon(config: DaemonConfig) {
         dispatcher.shutdown().await;
     });
 
-    // DLQ writer task: writes DLQ entries to the configured DLQ sink.
+    // DLQ writer task: writes DLQ entries to the configured DLQ sink. Without
+    // one, only delivery failures arrive here (parse errors are not routed),
+    // and they are dropped with a rate-limited warning.
     let dlq_metrics = metrics.clone();
     let dlq_handle = tokio::spawn(async move {
         tracing::debug!("DLQ task started");
         let mut dlq_sink = dlq_sink;
-        let mut no_sink_logged = false;
+        let mut dropped = DroppedFailureLog::default();
         while let Some(entry) = dlq_rx.recv().await {
             dlq_metrics.dlq_events.inc();
             if let Some(ref mut sink) = dlq_sink {
                 let json = serde_json::to_string(&entry).unwrap_or_default();
                 if let Err(e) = sink.send_raw(&json).await {
-                    tracing::warn!(error = %e, "Failed to write to DLQ sink");
+                    dlq_metrics.dlq_write_failures.inc();
+                    tracing::warn!(error = %e, "Failed to write to DLQ sink, entry dropped");
                 }
-            } else if !no_sink_logged {
-                tracing::debug!("DLQ entry counted but no sink configured (use --dlq to persist)");
-                no_sink_logged = true;
+            } else {
+                dropped.record(&entry.error, Instant::now());
             }
         }
+        dropped.flush();
         tracing::debug!("DLQ task finished");
     });
 
@@ -4515,6 +4570,23 @@ impl rsigma_runtime::LogsService for OtlpLogsGrpcService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dropped_failure_warnings_are_rate_limited() {
+        let mut log = DroppedFailureLog::default();
+        let t0 = Instant::now();
+        assert_eq!(log.record("boom", t0), Some(1));
+        assert_eq!(log.record("boom", t0 + Duration::from_secs(1)), None);
+        assert_eq!(log.record("boom", t0 + Duration::from_secs(9)), None);
+        assert_eq!(
+            log.record("boom", t0 + DROPPED_FAILURE_WARN_INTERVAL),
+            Some(3)
+        );
+        assert_eq!(log.flush(), None);
+        assert_eq!(log.record("boom", t0 + Duration::from_secs(11)), None);
+        assert_eq!(log.flush(), Some(1));
+        assert_eq!(log.flush(), None);
+    }
 
     #[test]
     fn detection_inflight_default_scales_to_five() {

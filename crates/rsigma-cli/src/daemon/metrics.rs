@@ -26,6 +26,7 @@ pub struct Metrics {
     pub pipeline_latency: Histogram,
     pub batch_size_histogram: Histogram,
     pub dlq_events: IntCounter,
+    pub dlq_write_failures: IntCounter,
     pub sink_queue_depth: IntGaugeVec,
     pub sink_retries_total: IntCounterVec,
     pub sink_dropped_total: IntCounterVec,
@@ -85,6 +86,7 @@ pub struct Metrics {
     pub silences_active: IntGauge,
     pub inhibited_total: IntCounterVec,
     pub inhibit_sources_active: IntGauge,
+    pub inhibit_sources_refused_total: IntCounterVec,
     pub rule_false_positive_ratio: GaugeVec,
     pub dispositions_total: IntCounterVec,
     pub disposition_ingest_total: IntCounterVec,
@@ -240,6 +242,11 @@ impl Metrics {
             "Events routed to dead-letter queue",
         ))
         .unwrap();
+        let dlq_write_failures = IntCounter::with_opts(Opts::new(
+            "rsigma_dlq_write_failures_total",
+            "Dead-letter queue entries the DLQ sink failed to write",
+        ))
+        .unwrap();
         let sink_queue_depth = IntGaugeVec::new(
             Opts::new(
                 "rsigma_sink_queue_depth",
@@ -357,6 +364,9 @@ impl Metrics {
             .register(Box::new(batch_size_histogram.clone()))
             .unwrap();
         registry.register(Box::new(dlq_events.clone())).unwrap();
+        registry
+            .register(Box::new(dlq_write_failures.clone()))
+            .unwrap();
         registry
             .register(Box::new(sink_queue_depth.clone()))
             .unwrap();
@@ -843,11 +853,22 @@ impl Metrics {
         ))
         .unwrap();
         inhibit_sources_active.set(0);
+        let inhibit_sources_refused_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_inhibit_sources_refused_total",
+                "Inhibition sources not tracked because max_inhibit_sources was reached, by rule name",
+            ),
+            &["rule"],
+        )
+        .unwrap();
         registry
             .register(Box::new(inhibited_total.clone()))
             .unwrap();
         registry
             .register(Box::new(inhibit_sources_active.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(inhibit_sources_refused_total.clone()))
             .unwrap();
 
         // Triage feedback loop (#70). The gauge and the per-rule disposition
@@ -1156,6 +1177,7 @@ impl Metrics {
             pipeline_latency,
             batch_size_histogram,
             dlq_events,
+            dlq_write_failures,
             sink_queue_depth,
             sink_retries_total,
             sink_dropped_total,
@@ -1215,6 +1237,7 @@ impl Metrics {
             silences_active,
             inhibited_total,
             inhibit_sources_active,
+            inhibit_sources_refused_total,
             rule_false_positive_ratio,
             dispositions_total,
             disposition_ingest_total,
@@ -1415,6 +1438,12 @@ impl MetricsHook for Metrics {
 
     fn set_inhibit_sources_active(&self, count: i64) {
         self.inhibit_sources_active.set(count);
+    }
+
+    fn on_inhibit_source_refused(&self, rule: &str) {
+        self.inhibit_sources_refused_total
+            .with_label_values(&[rule])
+            .inc();
     }
 
     fn on_capture_event_dropped(&self, reason: &str) {

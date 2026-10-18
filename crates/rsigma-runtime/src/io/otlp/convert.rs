@@ -578,6 +578,50 @@ mod tests {
         assert_eq!(json["enabled"], true);
     }
 
+    fn nested_array(depth: usize) -> AnyValue {
+        let mut value = string_val("leaf");
+        for _ in 0..depth {
+            value = AnyValue {
+                value: Some(any_value::Value::ArrayValue(ArrayValue {
+                    values: vec![value],
+                })),
+            };
+        }
+        value
+    }
+
+    /// Conversion recurses once per `AnyValue` level, so it relies on prost's
+    /// decode recursion limit to bound nesting in untrusted OTLP payloads. A
+    /// dependency enabling prost's `no-recursion-limit` feature fails here.
+    #[test]
+    fn protobuf_decode_bounds_any_value_nesting() {
+        use prost::Message;
+
+        let encode = |depth| {
+            make_request(
+                vec![],
+                None,
+                vec![LogRecord {
+                    attributes: vec![kv("deep", nested_array(depth))],
+                    ..Default::default()
+                }],
+            )
+            .encode_to_vec()
+        };
+
+        let request = ExportLogsServiceRequest::decode(encode(45).as_slice())
+            .expect("45 nested values are within the limit");
+        let events = logs_request_to_raw_events(&request);
+        let json: Value = serde_json::from_str(&events[0].payload).unwrap();
+        let leaf = (0..45).fold(&json["deep"], |v, _| &v[0]);
+        assert_eq!(leaf, "leaf");
+
+        let Err(err) = ExportLogsServiceRequest::decode(encode(200).as_slice()) else {
+            panic!("200 nested values exceed the limit");
+        };
+        assert!(err.to_string().contains("recursion limit"), "{err}");
+    }
+
     #[test]
     fn hex_encode_correctness() {
         assert_eq!(hex::encode(&[]), "");

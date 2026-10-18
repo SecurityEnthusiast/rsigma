@@ -493,7 +493,8 @@ The first three triggers all funnel through one debounced reload task that re-re
 | `rsigma_output_queue_depth` | gauge | | Current results buffered in engine-to-sink channel |
 | `rsigma_back_pressure_events_total` | counter | | Times a source was blocked on a full event channel |
 | `rsigma_uptime_seconds` | gauge | | Daemon uptime in seconds |
-| `rsigma_dlq_events_total` | counter | | Events routed to the dead-letter queue |
+| `rsigma_dlq_events_total` | counter | | Events routed to the dead-letter queue, with or without a `--dlq` sink |
+| `rsigma_dlq_write_failures_total` | counter | | Dead-letter queue entries the `--dlq` sink failed to write |
 | `rsigma_source_resolves_total` | counter | `source_id` | Total dynamic source resolution attempts |
 | `rsigma_source_resolve_errors_total` | counter | `source_id` | Total dynamic source resolution failures |
 | `rsigma_source_resolve_latency_seconds` | histogram | | Source resolution latency |

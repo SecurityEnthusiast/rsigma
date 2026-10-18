@@ -56,6 +56,11 @@ const SNAPSHOT_VERSION: u32 = 1;
 /// with a `WARN`.
 const MAX_CHAIN_DEPTH: usize = 10;
 
+/// Timespan above which a correlation without a per-group entry cap is
+/// warned about at load: a busy group's window retains `timespan` x event
+/// rate entries, which `max_state_entries` does not see.
+const LONG_WINDOW_WARN_SECS: u64 = 3600;
+
 /// Stateful correlation engine.
 ///
 /// Wraps the stateless `Engine` for detection rules and adds time-windowed
@@ -285,6 +290,15 @@ impl<L> CorrelationEngine<L> {
         self.apply_custom_attributes(&effective.custom_attributes);
 
         let compiled = compile_correlation(effective)?;
+        if self.has_unbounded_long_window(&compiled) {
+            log::warn!(
+                "Correlation '{}' has a {}s timespan and no per-group entry cap; \
+                 a busy group retains timespan x event rate entries. \
+                 Set max_group_entries (--max-group-entries) or the rsigma.max_group_entries attribute to bound it.",
+                compiled.id.as_deref().unwrap_or(&compiled.title),
+                compiled.timespan_secs
+            );
+        }
         let idx = self.correlations.len();
 
         // Index by each referenced rule ID/name
@@ -308,6 +322,16 @@ impl<L> CorrelationEngine<L> {
 
         self.correlations.push(compiled);
         Ok(())
+    }
+
+    /// Whether `corr` keeps a window longer than [`LONG_WINDOW_WARN_SECS`]
+    /// with no per-group entry cap from the rule or the engine config.
+    fn has_unbounded_long_window(&self, corr: &CompiledCorrelation) -> bool {
+        corr.timespan_secs > LONG_WINDOW_WARN_SECS
+            && corr
+                .max_group_entries
+                .or(self.config.max_group_entries)
+                .is_none()
     }
 
     /// Add all rules and correlations from a parsed collection.

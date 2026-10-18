@@ -574,6 +574,35 @@ fn windowed_engine_with_group_cap(window_lines: &str, cap: usize) -> Correlation
 }
 
 #[test]
+fn test_long_window_without_group_cap_is_flagged() {
+    let flagged = |window_lines: &str, config: CorrelationConfig| {
+        let collection = parse_sigma_yaml(&window_mode_yaml(window_lines)).unwrap();
+        let mut engine = CorrelationEngine::new(config);
+        engine.add_collection(&collection).unwrap();
+        engine.has_unbounded_long_window(&engine.correlations[0])
+    };
+    assert!(flagged("    timespan: 2h", CorrelationConfig::default()));
+    assert!(!flagged("    timespan: 1h", CorrelationConfig::default()));
+    assert!(!flagged(
+        "    timespan: 2h",
+        CorrelationConfig {
+            max_group_entries: Some(10_000),
+            ..Default::default()
+        }
+    ));
+
+    let yaml = window_mode_yaml("    timespan: 24h").replace(
+        "id: corr-win\n",
+        "id: corr-win\nrsigma.max_group_entries: '10000'\n",
+    );
+    let mut engine = CorrelationEngine::new(CorrelationConfig::default());
+    engine
+        .add_collection(&parse_sigma_yaml(&yaml).unwrap())
+        .unwrap();
+    assert!(!engine.has_unbounded_long_window(&engine.correlations[0]));
+}
+
+#[test]
 fn test_max_group_entries_caps_event_count() {
     // Cap of 2 retained entries: the gte-3 threshold can never be met,
     // no matter how many events land in the window.

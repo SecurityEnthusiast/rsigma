@@ -72,11 +72,11 @@ Every external parser rsigma ships uses panic-free libraries:
 | Pipeline YAML | `yaml_serde` 0.10 | Same. |
 | Input event JSON | `serde_json` | Bounded by `MAX_LINE_BYTES` (1 MiB) for streaming sources. |
 | HTTP request bodies | `reqwest` with explicit size limit | Bounded by `MAX_SOURCE_RESPONSE_BYTES` (10 MiB). |
-| OTLP requests | `prost` + `tonic` | The OTLP receiver enforces upstream size limits at the HTTP/gRPC layer. |
+| OTLP requests | `prost` + `tonic` | The OTLP receiver enforces upstream size limits at the HTTP/gRPC layer. Protobuf decoding stops at prost's 100-message recursion limit, which bounds `AnyValue` nesting at about 49 levels before conversion runs; a unit test fails if a dependency disables that limit, and the `fuzz_otlp_logs_decode` harness covers the decode and conversion path. {{ added "unreleased" }} |
 | EVTX records | `evtx` crate | Streaming parse; bounded record-by-record memory usage regardless of file size. |
 | CEF | `cef-parser` | Bounded line size via the input format machinery. |
 
-Fuzz testing under `cargo-fuzz` covers parser, condition, pipeline YAML, JSON event, EVTX, syslog, logfmt, CEF, and the conversion backends. Twenty-one harnesses run on a scheduled CI workflow; crashes land in the `fuzz/artifacts/` tree and ship as regression fixtures.
+Fuzz testing under `cargo-fuzz` covers parser, condition, pipeline YAML, JSON event, EVTX, syslog, logfmt, CEF, and the conversion backends. Twenty-two harnesses run on a scheduled CI workflow; crashes land in the `fuzz/artifacts/` tree and ship as regression fixtures.
 
 ## SQL injection prevention
 
