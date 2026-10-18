@@ -36,6 +36,9 @@ The free function `apply_filters(collection: &SigmaCollection) -> Vec<SigmaRule>
 | `bloom_max_bytes()` | Configured bloom memory budget, or `None` if using the default |
 | `set_cross_rule_ac(enabled: bool)` | Enable opt-in cross-rule Aho-Corasick pre-filter (requires `daachorse-index` feature; see [Cross-Rule AC Index](#cross-rule-aho-corasick-index-opt-in-feature-gated)) |
 | `cross_rule_ac_enabled()` | Whether the cross-rule AC pre-filter is currently enabled (`daachorse-index` only) |
+| `set_retain_hir(enabled: bool)` | Keep each loaded rule's HIR for `save_hir` (off by default; enable before loading rules) |
+| `retain_hir_enabled()` | Whether loaded rules keep their HIR |
+| `save_hir()` / `load_hir(bytes)` | Write the retained HIR as a versioned restart cache, and load rules from one; `save_hir` errors unless retention was on for every rule loaded from parsed Sigma |
 | `rule_count()` | Number of loaded rules |
 | `rules()` | Access the compiled rules slice |
 | `transform_rule(rule: &SigmaRule)` | Apply the engine's pipelines and return the rewritten rule as a `TransformedRule`, without compiling or loading (inspection only) |

@@ -59,6 +59,7 @@ fn save_load_round_trip_matches_original() {
     let collection = parse_sigma_yaml(RULES).expect("parse");
 
     let mut warm = Engine::new();
+    warm.set_retain_hir(true);
     warm.add_collection(&collection).expect("add");
 
     let blob = warm.save_hir().expect("save_hir");
@@ -91,6 +92,7 @@ fn save_load_round_trip_matches_original() {
 fn load_rejects_schema_mismatch() {
     let collection = parse_sigma_yaml(RULES).expect("parse");
     let mut warm = Engine::new();
+    warm.set_retain_hir(true);
     warm.add_collection(&collection).expect("add");
     let mut blob = warm.save_hir().expect("save_hir");
 
@@ -105,10 +107,45 @@ fn load_rejects_schema_mismatch() {
 
 #[test]
 fn empty_engine_round_trips() {
-    let warm = Engine::new();
+    let mut warm = Engine::new();
+    warm.set_retain_hir(true);
     let blob = warm.save_hir().expect("save_hir");
     let mut cold = Engine::new();
     cold.load_hir(&blob).expect("load_hir");
     let out = results(&cold, &json!({"CommandLine": "whoami"}));
     assert!(out.is_empty());
+}
+
+#[test]
+fn save_requires_retention() {
+    let collection = parse_sigma_yaml(RULES).expect("parse");
+    let mut engine = Engine::new();
+    assert!(!engine.retain_hir_enabled());
+    engine.add_collection(&collection).expect("add");
+    let err = engine.save_hir().expect_err("retention is off by default");
+    assert!(err.to_string().contains("set_retain_hir(true)"), "{err}");
+}
+
+#[test]
+fn save_refuses_rules_loaded_before_retention() {
+    let collection = parse_sigma_yaml(RULES).expect("parse");
+    let mut engine = Engine::new();
+    engine.add_collection(&collection).expect("add");
+    engine.set_retain_hir(true);
+    engine.add_collection(&collection).expect("add");
+    let err = engine
+        .save_hir()
+        .expect_err("a cache missing the first four rules must not be written");
+    assert!(err.to_string().contains("4 rules"), "{err}");
+}
+
+#[test]
+fn disabling_retention_drops_retained_hir() {
+    let collection = parse_sigma_yaml(RULES).expect("parse");
+    let mut engine = Engine::new();
+    engine.set_retain_hir(true);
+    engine.add_collection(&collection).expect("add");
+    engine.set_retain_hir(false);
+    engine.set_retain_hir(true);
+    assert!(engine.save_hir().is_err());
 }

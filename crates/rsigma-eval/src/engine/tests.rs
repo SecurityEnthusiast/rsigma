@@ -2721,3 +2721,27 @@ detection:
     assert!(matches(&engine, &json!({"tags": []})));
     assert!(matches(&engine, &json!({"other": 1})));
 }
+
+#[test]
+fn hir_is_retained_only_when_enabled() {
+    let yaml = r#"
+title: Detect Whoami
+logsource:
+    product: windows
+detection:
+    selection:
+        CommandLine|contains: 'whoami'
+    condition: selection
+"#;
+    let collection = parse_sigma_yaml(yaml).unwrap();
+
+    let mut engine = Engine::new();
+    engine.add_collection(&collection).unwrap();
+    assert_eq!(engine.rules.len(), 1);
+    assert!(engine.ir_rules.is_empty());
+
+    let mut engine = Engine::new();
+    engine.set_retain_hir(true);
+    engine.add_collection(&collection).unwrap();
+    assert_eq!(engine.ir_rules.len(), 1);
+}
