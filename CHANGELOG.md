@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### Partly case-insensitive regex pairs match the original text again
+
+When a field had exactly two regex values that both looked case-insensitive, the optimizer grouped them to lowercase the event value once and match each regex against the lowercased text. The check stopped at the first `i` after `(?`, so a scoped flag such as `(?i:foo)BAR`, or a pattern that clears the flag later such as the `(?i)foo(?-i)BAR` that `|re|i` builds from `foo(?-i)BAR`, was treated as fully case-insensitive: such rules missed events they should match and matched events they should not. The optimizer now parses the pattern and groups a regex only when a leading global flag enables `i` and no later flag group, global or scoped, clears it. Fixes #584.
+
 ### Daemon state saves are one consistent, atomic cut (#606)
 
 With `--state-db`, the periodic and shutdown saves exported the correlation snapshot before reading the NATS source position, then wrote the correlation, alert-pipeline, risk, and disposition snapshots as four separate statements with awaits in between. An event acked between the export and the position read was claimed by the position but missing from the snapshot, so a replay from that position skipped its correlation state, and a crash between the writes paired snapshots from different moments. The daemon now reads the position first, captures every snapshot back to back, and writes them in one SQLite transaction, so a failed save leaves the previous one intact. The ack task publishes the position with release ordering to match. Each save also serializes the correlation snapshot once instead of twice. Fixes #580.
