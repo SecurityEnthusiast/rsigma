@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### MCP server refuses unconfined writes and unconfined HTTP serving (security)
+### MCP server refuses unconfined writes and unconfined HTTP serving (security, #598)
 
 Without `--rules-dir`, `rsigma mcp serve` accepted any file path in its tools, so a prompt-injected agent or any client reaching the HTTP endpoint could read files outside a rules tree through `fix_rules`, and `fix_rules` with `write: true` could rewrite Sigma YAML anywhere the server user could write ([GHSA-33jj-q567-34gj](https://github.com/timescale/rsigma/security/advisories/GHSA-33jj-q567-34gj)).
 
