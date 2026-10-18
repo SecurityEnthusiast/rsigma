@@ -131,8 +131,8 @@ The `--output` flag is repeatable, which gives you fan-out for free. Each match 
 | `stdout` | NDJSON to stdout. Default. Line sinks also accept `?format=ocsf` for [OCSF Detection Finding](ocsf-findings.md) JSON. |
 | `file:///path/to/file.ndjson` | Append NDJSON to a file, rotating only if you wrap it externally (logrotate, etc.). |
 | `nats://host:port/subject` | Publish via JetStream with server-confirmed persistence. Requires `daemon-nats`. |
-| `otlp(s)://host:port` | Export detections over OTLP/gRPC (`s` = TLS). Requires `daemon-otlp`. |
-| `otlphttp(s)://host:port` | Export detections over OTLP/HTTP to `/v1/logs` (`s` = TLS). Requires `daemon-otlp`. |
+| `otlp(s)://host:port` | Export detections over OTLP/gRPC (`s` = TLS). Each attempt has a `10s` deadline, tunable with `?timeout=`. {{ added "unreleased" }} Requires `daemon-otlp`. |
+| `otlphttp(s)://host:port` | Export detections over OTLP/HTTP to `/v1/logs` (`s` = TLS). Each attempt has a `10s` deadline, tunable with `?timeout=`. {{ added "unreleased" }} Requires `daemon-otlp`. |
 | `unix:///path/to.sock` | Write NDJSON to a collector listening on a Unix domain socket (Unix only). Reconnects once on a transient write failure. |
 
 Failed deliveries are routed to the dead-letter queue when `--dlq` is configured:

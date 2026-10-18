@@ -380,8 +380,8 @@ pub(crate) struct OutputPartial {
     /// variants use TLS. On Unix, `unix:///path/to.sock` writes NDJSON to a
     /// local socket. Optional query suffixes: `?on_full=drop`,
     /// `?format=ndjson|ocsf` (line sinks only: stdout, file, NATS, unix),
-    /// `?compression=gzip`, and for TLS `?ca=`, `?client_cert=`, `?client_key=`,
-    /// `?tls_domain=`.
+    /// `?compression=gzip` and `?timeout=<duration>` (OTLP, default `10s`), and
+    /// for TLS `?ca=`, `?client_cert=`, `?client_key=`, `?tls_domain=`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sinks: Option<Vec<String>>,
     /// Dead-letter queue for events that fail processing.

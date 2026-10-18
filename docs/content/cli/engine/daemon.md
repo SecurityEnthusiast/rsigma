@@ -48,7 +48,7 @@ For narrative coverage see [Streaming Detection](../../guide/streaming-detection
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--output <URL>` | `stdout` | Detection sink. Schemes: `stdout`, `file://<path>`, `nats://<host>:<port>/<subject>`, `otlp(s)://<host>:<port>` (OTLP/gRPC), `otlphttp(s)://<host>:<port>` (OTLP/HTTP, posts to `/v1/logs`); the `s` variants use TLS. On Unix, `unix:///path/to.sock` writes NDJSON to a local collector socket. Repeatable for fan-out. Query params: `?on_full=drop` (best-effort), `?format=ndjson\|ocsf` (line sinks only; see [OCSF Findings](../../guide/ocsf-findings.md)), `?compression=gzip` (OTLP), and for TLS `?ca=`, `?client_cert=`, `?client_key=` (PEM paths, the last two for mutual TLS) and `?tls_domain=` (SNI override). OTLP schemes require the `daemon-otlp` build. |
+| `--output <URL>` | `stdout` | Detection sink. Schemes: `stdout`, `file://<path>`, `nats://<host>:<port>/<subject>`, `otlp(s)://<host>:<port>` (OTLP/gRPC), `otlphttp(s)://<host>:<port>` (OTLP/HTTP, posts to `/v1/logs`); the `s` variants use TLS. On Unix, `unix:///path/to.sock` writes NDJSON to a local collector socket. Repeatable for fan-out. Query params: `?on_full=drop` (best-effort), `?format=ndjson\|ocsf` (line sinks only; see [OCSF Findings](../../guide/ocsf-findings.md)), `?compression=gzip` (OTLP), `?timeout=<duration>` {{ added "unreleased" }} (OTLP per-attempt export deadline, default `10s`), and for TLS `?ca=`, `?client_cert=`, `?client_key=` (PEM paths, the last two for mutual TLS) and `?tls_domain=` (SNI override). OTLP schemes require the `daemon-otlp` build. |
 | `--dlq <URL>` | unset | Dead-letter queue for events that fail parsing or sink delivery. Same schemes as `--output`. When unset, failed events are logged and discarded. |
 | `--include-event` | off | Embed the full event JSON in every detection match. |
 | `--match-detail <LEVEL>` | `off` | Match-detail verbosity: `off` (field + value only), `summary` (adds matcher kind, selection, case sensitivity, and reports keyword/absence matches), or `full` (also records the matched pattern). Also settable via `daemon.engine.match_detail`. See [Evaluating Rules](../../guide/evaluating-rules.md#match-detail). |
@@ -392,6 +392,10 @@ rsigma engine daemon -r rules/ --input http \
 ```
 
 TLS uses the bundled public (webpki) roots by default; pass `?ca=` to verify against a private CA instead. Supplying both `?client_cert=` and `?client_key=` enables mutual TLS. Use `?tls_domain=` to override the verified server name when dialing by IP.
+
+{{ added "unreleased" }}
+
+Every OTLP export attempt is bounded by a deadline, `10s` by default, so a collector that accepts the connection but never answers cannot stall the sink task (and, under the default `on_full=block`, every other sink behind it). A timed-out attempt is retried under `--sink-retry-max` and then routed to the DLQ like any other transient failure. Override the deadline per sink with a humantime duration, for example `otlp://otel-collector:4317?timeout=3s`; zero and unparsable values are rejected at startup. Connection setup is separately capped at 10 seconds, and gRPC channels send HTTP/2 keepalive pings so a silently dropped connection is detected.
 
 ### HTTPS with mutual TLS
 
