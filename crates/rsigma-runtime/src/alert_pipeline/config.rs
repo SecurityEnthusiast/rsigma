@@ -47,6 +47,11 @@ const DEFAULT_MAX_ACTIVE_ALERTS: usize = 100_000;
 /// surface against unbounded silence creation.
 pub const DEFAULT_MAX_DYNAMIC_SILENCES: usize = 1_000;
 
+/// Default ceiling on tracked inhibition sources across all rules. Once full,
+/// results that would open a new source are not tracked, bounding memory when
+/// the `equal` selectors carry high-cardinality values.
+const DEFAULT_MAX_INHIBIT_SOURCES: usize = 100_000;
+
 /// Top-level alert-pipeline config file.
 ///
 /// ```yaml
@@ -88,6 +93,10 @@ pub struct AlertPipelineFile {
     /// Inhibition rules. An active source mutes matching targets.
     #[serde(default)]
     pub inhibit_rules: Vec<InhibitRuleFile>,
+    /// Ceiling on tracked inhibition sources across all rules. Past this, a
+    /// result that would open a new source is not tracked. Defaults to 100000.
+    #[serde(default)]
+    pub max_inhibit_sources: Option<usize>,
 }
 
 /// `inhibit_rules:` entry.
@@ -349,7 +358,11 @@ pub fn build_alert_pipeline(
     let inhibit = if file.inhibit_rules.is_empty() {
         None
     } else {
-        Some(build_inhibit(file.inhibit_rules)?)
+        Some(build_inhibit(
+            file.inhibit_rules,
+            file.max_inhibit_sources
+                .unwrap_or(DEFAULT_MAX_INHIBIT_SOURCES),
+        )?)
     };
 
     let max_silences = file.max_silences.unwrap_or(DEFAULT_MAX_DYNAMIC_SILENCES);
@@ -366,7 +379,10 @@ pub fn build_alert_pipeline(
 }
 
 /// Validate the `inhibit_rules:` list into an [`InhibitConfig`].
-fn build_inhibit(rules: Vec<InhibitRuleFile>) -> Result<InhibitConfig, AlertPipelineConfigError> {
+fn build_inhibit(
+    rules: Vec<InhibitRuleFile>,
+    max_sources: usize,
+) -> Result<InhibitConfig, AlertPipelineConfigError> {
     let mut out = Vec::with_capacity(rules.len());
     for (i, rule) in rules.into_iter().enumerate() {
         if rule.source_match.is_empty() || rule.target_match.is_empty() {
@@ -388,7 +404,10 @@ fn build_inhibit(rules: Vec<InhibitRuleFile>) -> Result<InhibitConfig, AlertPipe
             duration: rule.duration.unwrap_or(DEFAULT_INHIBIT_DURATION),
         });
     }
-    Ok(InhibitConfig { rules: out })
+    Ok(InhibitConfig {
+        rules: out,
+        max_sources,
+    })
 }
 
 /// Validate a `group:` block into a [`GroupConfig`].

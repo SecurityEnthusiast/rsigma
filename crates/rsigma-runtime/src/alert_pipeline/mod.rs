@@ -217,7 +217,9 @@ impl AlertPipeline {
             // ones about to be silenced) as active sources, so a silenced
             // source still inhibits its targets.
             if let Some(icfg) = self.inhibit.as_ref()
-                && let Some(rule) = state.inhibit.evaluate(icfg, &result, now)
+                && let Some(rule) = state.inhibit.evaluate(icfg, &result, now, |rule| {
+                    metrics.on_inhibit_source_refused(rule);
+                })
             {
                 metrics.on_alert_pipeline_inhibited(&rule);
                 continue;
@@ -426,15 +428,17 @@ impl AlertPipeline {
         }
         if let Some(icfg) = self.inhibit.as_ref() {
             state.inhibit.restore(snap.inhibit_sources, icfg, now);
+            trim.inhibit_sources = state.inhibit.enforce_cap(icfg.max_sources);
         }
         trim.log("restore");
         true
     }
 
     /// Trim carried-over state to this pipeline's caps: the least recently
-    /// seen dedup alerts beyond `max_active_alerts` and incidents beyond
-    /// `max_open_incidents` are evicted without a `resolved` record, and each
-    /// incident is cut to the per-incident caps. Call it when this pipeline
+    /// seen dedup alerts beyond `max_active_alerts`, incidents beyond
+    /// `max_open_incidents`, and inhibition sources beyond
+    /// `max_inhibit_sources` are evicted (alerts and incidents without a
+    /// `resolved` record), and each incident is cut to the per-incident caps. Call it when this pipeline
     /// replaces another on hot-reload, while holding the state lock the
     /// pipeline processes under, so a lowered cap applies at once.
     /// [`restore`](Self::restore) applies the same trim.
@@ -445,6 +449,9 @@ impl AlertPipeline {
         }
         if let Some(g) = self.group.as_ref() {
             trim.incidents = state.incidents.enforce_caps(&g.caps);
+        }
+        if let Some(icfg) = self.inhibit.as_ref() {
+            trim.inhibit_sources = state.inhibit.enforce_cap(icfg.max_sources);
         }
         trim.log("reload");
         trim
@@ -458,15 +465,18 @@ pub struct CapTrim {
     pub dedup_alerts: usize,
     /// Incidents evicted by `max_open_incidents`.
     pub incidents: usize,
+    /// Inhibition sources evicted by `max_inhibit_sources`.
+    pub inhibit_sources: usize,
 }
 
 impl CapTrim {
     fn log(&self, context: &str) {
-        if self.dedup_alerts > 0 || self.incidents > 0 {
+        if self.dedup_alerts > 0 || self.incidents > 0 || self.inhibit_sources > 0 {
             tracing::warn!(
                 context,
                 dedup_alerts = self.dedup_alerts,
                 incidents = self.incidents,
+                inhibit_sources = self.inhibit_sources,
                 "Evicted the least recently seen alert-pipeline state to fit the configured caps"
             );
         }
@@ -699,8 +709,17 @@ mod tests {
         );
     }
 
+    const INHIBIT: &str = "inhibit_rules:\n  - name: high\n    source_match:\n      - selector: level\n        op: \"=\"\n        value: high\n    target_match:\n      - selector: level\n        op: \"=\"\n        value: critical\n    equal: [match.SourceIp]\n    duration: 1h\n";
     const UNCAPPED: &str = "dedup:\n  fingerprint: [match.SourceIp]\n  resolve_timeout: 1h\ngroup:\n  by: [match.SourceIp]\n  group_wait: 1h\n  resolve_timeout: 1h\n";
-    const CAPPED: &str = "dedup:\n  fingerprint: [match.SourceIp]\n  resolve_timeout: 1h\n  max_active_alerts: 3\ngroup:\n  by: [match.SourceIp]\n  group_wait: 1h\n  resolve_timeout: 1h\n  caps:\n    max_open_incidents: 3\n";
+    const CAPPED: &str = "dedup:\n  fingerprint: [match.SourceIp]\n  resolve_timeout: 1h\n  max_active_alerts: 3\ngroup:\n  by: [match.SourceIp]\n  group_wait: 1h\n  resolve_timeout: 1h\n  caps:\n    max_open_incidents: 3\nmax_inhibit_sources: 3\n";
+
+    fn uncapped() -> AlertPipeline {
+        pipeline(&format!("{UNCAPPED}{INHIBIT}"))
+    }
+
+    fn capped() -> AlertPipeline {
+        pipeline(&format!("{CAPPED}{INHIBIT}"))
+    }
 
     fn ip(i: i64) -> String {
         format!("10.0.0.{i}")
@@ -708,12 +727,13 @@ mod tests {
 
     /// Six alerts and incidents, one per IP, with IP `i` last seen at `i`.
     fn six_alerts() -> AlertPipelineState {
-        let p = pipeline(UNCAPPED);
+        let p = uncapped();
         let mut st = AlertPipelineState::default();
         for i in 0..6 {
             run(&p, &ip(i), Level::High, &mut st, i);
         }
         assert_eq!((st.dedup.len(), st.incidents.len()), (6, 6));
+        assert_eq!(st.inhibit.snapshot().len(), 6);
         st
     }
 
@@ -728,6 +748,17 @@ mod tests {
         grouped.sort();
         assert_eq!(grouped, [ip(3), ip(4), ip(5)]);
         assert_eq!(st.dedup.len(), 3);
+        let icfg = p.inhibit.as_ref().unwrap();
+        assert_eq!(st.inhibit.active_count(icfg, 10), 3);
+        for i in 2..6 {
+            let target = detection(&ip(i), Level::Critical);
+            assert_eq!(
+                st.inhibit.evaluate(icfg, &target, 10, |_| {}).is_some(),
+                i >= 3,
+                "only the newest inhibition sources survive: {}",
+                ip(i)
+            );
+        }
         for i in 3..6 {
             assert!(
                 run(p, &ip(i), Level::High, st, 10).is_empty(),
@@ -744,8 +775,8 @@ mod tests {
 
     #[test]
     fn restore_keeps_the_most_recent_entries_within_lowered_caps() {
-        let snap = pipeline(UNCAPPED).snapshot(&six_alerts());
-        let capped = pipeline(CAPPED);
+        let snap = uncapped().snapshot(&six_alerts());
+        let capped = capped();
         let mut st = AlertPipelineState::default();
         assert!(capped.restore(&mut st, snap, 10));
         assert_keeps_newest_three(&capped, &mut st);
@@ -754,12 +785,13 @@ mod tests {
     #[test]
     fn enforce_caps_trims_state_carried_into_a_reloaded_pipeline() {
         let mut st = six_alerts();
-        let capped = pipeline(CAPPED);
+        let capped = capped();
         assert_eq!(
             capped.enforce_caps(&mut st),
             CapTrim {
                 dedup_alerts: 3,
-                incidents: 3
+                incidents: 3,
+                inhibit_sources: 3,
             }
         );
         assert_keeps_newest_three(&capped, &mut st);

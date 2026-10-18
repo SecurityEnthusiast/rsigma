@@ -54,6 +54,10 @@ pub struct InhibitRule {
 #[derive(Debug, Clone)]
 pub struct InhibitConfig {
     pub rules: Vec<InhibitRule>,
+    /// Ceiling on tracked sources across all rules. At the cap, a result that
+    /// would open a new source is still evaluated as a target but is not
+    /// tracked; already-tracked sources keep refreshing.
+    pub max_sources: usize,
 }
 
 /// Active-source index: `(rule_name, equal_key) -> last_seen`.
@@ -71,12 +75,14 @@ impl InhibitStore {
     /// Evaluate a result. If it is an inhibited target, return the inhibiting
     /// rule name (and do not record it as a source). Otherwise record it as a
     /// source for every rule whose `source_match` it satisfies, and return
-    /// `None`.
+    /// `None`. A new source refused by `max_sources` is reported to
+    /// `on_refused` with its rule name.
     pub fn evaluate(
         &mut self,
         cfg: &InhibitConfig,
         result: &EvaluationResult,
         now: i64,
+        mut on_refused: impl FnMut(&str),
     ) -> Option<String> {
         // 1. Inhibited target? Checked against sources from prior results.
         for rule in &cfg.rules {
@@ -95,7 +101,13 @@ impl InhibitStore {
         for rule in &cfg.rules {
             if rule.source_match.matches(result) {
                 let key = (rule.name.clone(), equal_key(&rule.equal, result));
-                self.sources.insert(key, now);
+                if let Some(last) = self.sources.get_mut(&key) {
+                    *last = now;
+                } else if self.sources.len() < cfg.max_sources {
+                    self.sources.insert(key, now);
+                } else {
+                    on_refused(&rule.name);
+                }
             }
         }
         None
@@ -135,6 +147,25 @@ impl InhibitStore {
                     .insert((snap.rule, snap.equal_key), snap.last_seen);
             }
         }
+    }
+
+    /// Evict the least recently seen sources beyond `max`, returning how many
+    /// were evicted.
+    pub(crate) fn enforce_cap(&mut self, max: usize) -> usize {
+        let excess = self.sources.len().saturating_sub(max);
+        if excess == 0 {
+            return 0;
+        }
+        let mut by_age: Vec<(i64, (String, String))> = self
+            .sources
+            .iter()
+            .map(|(key, &last_seen)| (last_seen, key.clone()))
+            .collect();
+        by_age.sort_unstable();
+        for (_, key) in by_age.into_iter().take(excess) {
+            self.sources.remove(&key);
+        }
+        excess
     }
 
     /// Count of currently-active sources.
@@ -216,6 +247,7 @@ mod tests {
                 equal: vec![Selector::parse("match.SourceIp").unwrap()],
                 duration: Duration::from_secs(300),
             }],
+            max_sources: 100,
         }
     }
 
@@ -225,17 +257,17 @@ mod tests {
         let mut store = InhibitStore::default();
         // A critical source on 10.0.0.1 registers.
         assert_eq!(
-            store.evaluate(&cfg, &detection("10.0.0.1", Level::Critical), 0),
+            store.evaluate(&cfg, &detection("10.0.0.1", Level::Critical), 0, |_| {}),
             None
         );
         // A high target on the same IP is inhibited.
         assert_eq!(
-            store.evaluate(&cfg, &detection("10.0.0.1", Level::High), 1),
+            store.evaluate(&cfg, &detection("10.0.0.1", Level::High), 1, |_| {}),
             Some("critical-inhibits-high".to_string())
         );
         // A high target on a different IP is not inhibited.
         assert_eq!(
-            store.evaluate(&cfg, &detection("10.0.0.2", Level::High), 2),
+            store.evaluate(&cfg, &detection("10.0.0.2", Level::High), 2, |_| {}),
             None
         );
     }
@@ -244,10 +276,10 @@ mod tests {
     fn source_expires_after_duration() {
         let cfg = cfg();
         let mut store = InhibitStore::default();
-        store.evaluate(&cfg, &detection("10.0.0.1", Level::Critical), 0);
+        store.evaluate(&cfg, &detection("10.0.0.1", Level::Critical), 0, |_| {});
         // After the 300s window, the source no longer inhibits.
         assert_eq!(
-            store.evaluate(&cfg, &detection("10.0.0.1", Level::High), 400),
+            store.evaluate(&cfg, &detection("10.0.0.1", Level::High), 400, |_| {}),
             None
         );
     }
@@ -264,12 +296,13 @@ mod tests {
                 equal: vec![Selector::parse("match.SourceIp").unwrap()],
                 duration: Duration::from_secs(300),
             }],
+            max_sources: 100,
         };
         let mut store = InhibitStore::default();
-        store.evaluate(&cfg, &detection("10.0.0.1", Level::High), 0);
+        store.evaluate(&cfg, &detection("10.0.0.1", Level::High), 0, |_| {});
         // The same kind of result is a source, not an inhibited target.
         assert_eq!(
-            store.evaluate(&cfg, &detection("10.0.0.1", Level::High), 1),
+            store.evaluate(&cfg, &detection("10.0.0.1", Level::High), 1, |_| {}),
             None
         );
     }
@@ -278,10 +311,64 @@ mod tests {
     fn gc_and_active_count() {
         let cfg = cfg();
         let mut store = InhibitStore::default();
-        store.evaluate(&cfg, &detection("10.0.0.1", Level::Critical), 0);
+        store.evaluate(&cfg, &detection("10.0.0.1", Level::Critical), 0, |_| {});
         assert_eq!(store.active_count(&cfg, 100), 1);
         assert_eq!(store.active_count(&cfg, 400), 0, "past duration");
         store.gc(&cfg, 400);
         assert!(store.is_empty());
+    }
+
+    #[test]
+    fn new_sources_past_the_cap_are_refused() {
+        let cfg = InhibitConfig {
+            max_sources: 2,
+            ..cfg()
+        };
+        let mut store = InhibitStore::default();
+        let mut refused = Vec::new();
+        for (i, ip) in ["10.0.0.1", "10.0.0.2", "10.0.0.3"].into_iter().enumerate() {
+            store.evaluate(&cfg, &detection(ip, Level::Critical), i as i64, |rule| {
+                refused.push(rule.to_string())
+            });
+        }
+        assert_eq!(refused, ["critical-inhibits-high"]);
+        assert_eq!(store.active_count(&cfg, 10), 2);
+
+        // The refused source does not inhibit; tracked ones still do and
+        // still refresh at the cap.
+        assert_eq!(
+            store.evaluate(&cfg, &detection("10.0.0.3", Level::High), 10, |_| {}),
+            None
+        );
+        store.evaluate(&cfg, &detection("10.0.0.1", Level::Critical), 200, |_| {
+            panic!("refreshing a tracked source is not a refusal")
+        });
+        assert_eq!(
+            store.evaluate(&cfg, &detection("10.0.0.1", Level::High), 450, |_| {}),
+            Some("critical-inhibits-high".to_string())
+        );
+    }
+
+    #[test]
+    fn enforce_cap_keeps_the_most_recently_seen() {
+        let cfg = cfg();
+        let mut store = InhibitStore::default();
+        for (ip, now) in [("10.0.0.1", 30), ("10.0.0.2", 10), ("10.0.0.3", 20)] {
+            store.evaluate(&cfg, &detection(ip, Level::Critical), now, |_| {});
+        }
+        assert_eq!(store.enforce_cap(5), 0);
+        assert_eq!(store.enforce_cap(2), 1);
+        assert_eq!(
+            store.evaluate(&cfg, &detection("10.0.0.2", Level::High), 40, |_| {}),
+            None,
+            "the least recently seen source was evicted"
+        );
+        for ip in ["10.0.0.1", "10.0.0.3"] {
+            assert!(
+                store
+                    .evaluate(&cfg, &detection(ip, Level::High), 40, |_| {})
+                    .is_some()
+            );
+        }
     }
 }

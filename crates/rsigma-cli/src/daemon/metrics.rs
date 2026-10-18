@@ -86,6 +86,7 @@ pub struct Metrics {
     pub silences_active: IntGauge,
     pub inhibited_total: IntCounterVec,
     pub inhibit_sources_active: IntGauge,
+    pub inhibit_sources_refused_total: IntCounterVec,
     pub rule_false_positive_ratio: GaugeVec,
     pub dispositions_total: IntCounterVec,
     pub disposition_ingest_total: IntCounterVec,
@@ -852,11 +853,22 @@ impl Metrics {
         ))
         .unwrap();
         inhibit_sources_active.set(0);
+        let inhibit_sources_refused_total = IntCounterVec::new(
+            Opts::new(
+                "rsigma_inhibit_sources_refused_total",
+                "Inhibition sources not tracked because max_inhibit_sources was reached, by rule name",
+            ),
+            &["rule"],
+        )
+        .unwrap();
         registry
             .register(Box::new(inhibited_total.clone()))
             .unwrap();
         registry
             .register(Box::new(inhibit_sources_active.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(inhibit_sources_refused_total.clone()))
             .unwrap();
 
         // Triage feedback loop (#70). The gauge and the per-rule disposition
@@ -1225,6 +1237,7 @@ impl Metrics {
             silences_active,
             inhibited_total,
             inhibit_sources_active,
+            inhibit_sources_refused_total,
             rule_false_positive_ratio,
             dispositions_total,
             disposition_ingest_total,
@@ -1425,6 +1438,12 @@ impl MetricsHook for Metrics {
 
     fn set_inhibit_sources_active(&self, count: i64) {
         self.inhibit_sources_active.set(count);
+    }
+
+    fn on_inhibit_source_refused(&self, rule: &str) {
+        self.inhibit_sources_refused_total
+            .with_label_values(&[rule])
+            .inc();
     }
 
     fn on_capture_event_dropped(&self, reason: &str) {
