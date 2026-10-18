@@ -175,18 +175,17 @@ where
 {
     for condition in &rule.conditions {
         if eval_condition_matches_with_bloom(condition, &rule.detections, event, bloom) {
-            let mut matched_selections = Vec::new();
-            let matched = eval_condition_with_bloom(
+            let mut detail = Vec::new();
+            let matched = eval_condition_detail(
                 condition,
                 &rule.detections,
                 event,
-                &mut matched_selections,
                 bloom,
+                level,
+                &mut detail,
             );
             debug_assert!(matched, "detail pass must agree with boolean pass");
-            dedup_in_order(&mut matched_selections);
-            let matched_fields =
-                collect_field_matches(&matched_selections, &rule.detections, event, level);
+            let (matched_selections, matched_fields) = flatten_detail(detail);
 
             let event_data = if rule.include_event {
                 Some(event.to_json())
@@ -252,14 +251,16 @@ pub fn eval_condition(
     event: &impl Event,
     matched_selections: &mut Vec<String>,
 ) -> bool {
-    let result = eval_condition_with_bloom(
+    let mut detail = Vec::new();
+    let result = eval_condition_detail(
         expr,
         detections,
         event,
-        matched_selections,
         &crate::engine::bloom_index::NoBloom,
+        MatchDetailLevel::Off,
+        &mut detail,
     );
-    dedup_in_order(matched_selections);
+    matched_selections.extend(flatten_detail(detail).0);
     result
 }
 
@@ -319,17 +320,36 @@ where
     }
 }
 
-/// Bloom-aware version of [`eval_condition`].
-///
-/// Identical to `eval_condition` except that positive substring leaves are
-/// short-circuited to `false` when the bloom proves no pattern can match
-/// the event's field value.
-pub(crate) fn eval_condition_with_bloom<E, B>(
+/// A matched selection and the field matches it recorded.
+struct SelectionDetail {
+    name: String,
+    fields: Vec<FieldMatch>,
+}
+
+/// Selection names, once each in first-seen order, and their field matches.
+fn flatten_detail(detail: Vec<SelectionDetail>) -> (Vec<String>, Vec<FieldMatch>) {
+    let mut seen = std::collections::HashSet::new();
+    let mut names = Vec::new();
+    let mut fields = Vec::new();
+    for selection in detail {
+        if seen.insert(selection.name.clone()) {
+            names.push(selection.name);
+            fields.extend(selection.fields);
+        }
+    }
+    (names, fields)
+}
+
+/// The detail pass: evaluate `expr` and record in `out` the matched
+/// selections that decide its value, each with the field matches it produced
+/// while being evaluated.
+fn eval_condition_detail<E, B>(
     expr: &ConditionExpr,
     detections: &HashMap<String, CompiledDetection>,
     event: &E,
-    matched_selections: &mut Vec<String>,
     bloom: &B,
+    level: MatchDetailLevel,
+    out: &mut Vec<SelectionDetail>,
 ) -> bool
 where
     E: Event,
@@ -337,15 +357,18 @@ where
 {
     match expr {
         ConditionExpr::Identifier(name) => {
-            if let Some(det) = detections.get(name) {
-                let result = eval_detection_with_bloom(det, event, bloom);
-                if result {
-                    matched_selections.push(name.clone());
-                }
-                result
-            } else {
-                false
+            let Some(det) = detections.get(name) else {
+                return false;
+            };
+            let mut fields = Vec::new();
+            let result = eval_detection_recording(name, det, event, bloom, level, &mut fields);
+            if result {
+                out.push(SelectionDetail {
+                    name: name.clone(),
+                    fields,
+                });
             }
+            result
         }
 
         // A false `and` is explained by its failing child alone, and a true
@@ -353,11 +376,11 @@ where
         // recorded. `not` keeps its child's names unchanged: they explain the
         // child's value, which decides the negation.
         ConditionExpr::And(exprs) => {
-            let mark = matched_selections.len();
+            let mark = out.len();
             for e in exprs {
-                let child_mark = matched_selections.len();
-                if !eval_condition_with_bloom(e, detections, event, matched_selections, bloom) {
-                    matched_selections.drain(mark..child_mark);
+                let child_mark = out.len();
+                if !eval_condition_detail(e, detections, event, bloom, level, out) {
+                    out.drain(mark..child_mark);
                     return false;
                 }
             }
@@ -365,11 +388,11 @@ where
         }
 
         ConditionExpr::Or(exprs) => {
-            let mark = matched_selections.len();
+            let mark = out.len();
             for e in exprs {
-                let child_mark = matched_selections.len();
-                if eval_condition_with_bloom(e, detections, event, matched_selections, bloom) {
-                    matched_selections.drain(mark..child_mark);
+                let child_mark = out.len();
+                if eval_condition_detail(e, detections, event, bloom, level, out) {
+                    out.drain(mark..child_mark);
                     return true;
                 }
             }
@@ -377,37 +400,38 @@ where
         }
 
         ConditionExpr::Not(inner) => {
-            !eval_condition_with_bloom(inner, detections, event, matched_selections, bloom)
+            !eval_condition_detail(inner, detections, event, bloom, level, out)
         }
 
         ConditionExpr::Selector {
             quantifier,
             pattern,
         } => {
-            let matching_names: Vec<&String> = detections
-                .keys()
-                .filter(|name| pattern.matches_detection_name(name))
-                .collect();
-
-            let matched: Vec<&String> = matching_names
+            let mut candidates = 0usize;
+            let mut matched = Vec::new();
+            for (name, det) in detections
                 .iter()
-                .copied()
-                .filter(|name| {
-                    detections
-                        .get(*name)
-                        .is_some_and(|det| eval_detection_with_bloom(det, event, bloom))
-                })
-                .collect();
+                .filter(|(name, _)| pattern.matches_detection_name(name))
+            {
+                candidates += 1;
+                let mut fields = Vec::new();
+                if eval_detection_recording(name, det, event, bloom, level, &mut fields) {
+                    matched.push(SelectionDetail {
+                        name: name.clone(),
+                        fields,
+                    });
+                }
+            }
 
             let holds = match quantifier {
                 Quantifier::Any => !matched.is_empty(),
-                Quantifier::All => matched.len() == matching_names.len(),
+                Quantifier::All => matched.len() == candidates,
                 Quantifier::Count(n) => matched.len() as u64 >= n.get(),
             };
             // Matched members explain a quantifier that holds; when it fails,
             // only the members that did not match do, and those report nothing.
             if holds {
-                matched_selections.extend(matched.into_iter().cloned());
+                out.extend(matched);
             }
             holds
         }
@@ -462,7 +486,7 @@ where
         // `eval_array_condition`). At the top level it degenerates to a
         // sub-rule over the event, which reuses the condition evaluator.
         CompiledDetection::Conditional { named, condition } => {
-            eval_condition_with_bloom(condition, named, event, &mut Vec::new(), bloom)
+            eval_condition_matches_with_bloom(condition, named, event, bloom)
         }
     }
 }
@@ -508,127 +532,179 @@ where
 /// leaves) cannot blow up the output line.
 const MAX_KEYWORD_MATCHES: usize = 16;
 
-/// Drop repeated names, keeping the first occurrence of each.
-fn dedup_in_order(names: &mut Vec<String>) {
-    let mut seen = std::collections::HashSet::new();
-    names.retain(|name| seen.insert(name.clone()));
-}
-
-/// Collect field matches from matched selections for the detection result.
+/// Evaluate a detection, recording its field matches in `out` when it holds.
 ///
-/// At [`MatchDetailLevel::Off`] this reproduces the historical behavior
-/// exactly: one `{ field, value }` entry per field-present `AllOf` item that
-/// matched, with keyword and absence matches omitted. At `Summary` / `Full`
-/// it attaches the matcher descriptor and reports the previously dropped
-/// keyword and `Null`-on-absent matches.
-fn collect_field_matches(
-    selection_names: &[String],
-    detections: &HashMap<String, CompiledDetection>,
-    event: &impl Event,
-    level: MatchDetailLevel,
-) -> Vec<FieldMatch> {
-    let mut matches = Vec::new();
-    for name in selection_names {
-        if let Some(det) = detections.get(name) {
-            collect_detection_fields(name, det, event, level, &mut matches);
-        }
-    }
-    matches
-}
-
-fn collect_detection_fields(
+/// At [`MatchDetailLevel::Off`] the entries keep the historical shape: one
+/// `{ field, value }` per field-present `AllOf` item, with keyword and
+/// absence matches omitted. At `Summary` / `Full` they carry the matcher
+/// descriptor, and keyword and `Null`-on-absent matches are reported too. A
+/// detection that does not hold leaves `out` unchanged.
+fn eval_detection_recording<E, B>(
     selection: &str,
     detection: &CompiledDetection,
-    event: &impl Event,
+    event: &E,
+    bloom: &B,
     level: MatchDetailLevel,
     out: &mut Vec<FieldMatch>,
-) {
+) -> bool
+where
+    E: Event,
+    B: crate::engine::bloom_index::BloomLookup,
+{
     match detection {
         CompiledDetection::AllOf(items) => {
+            let mark = out.len();
             for item in items {
-                match &item.field {
-                    Some(field_name) => {
-                        if let Some(value) = event.get_field(field_name) {
-                            if item.matcher.matches(&value, event) {
-                                out.push(make_field_match(
-                                    selection,
-                                    field_name,
-                                    value.to_json(),
-                                    &item.matcher,
-                                    level,
-                                ));
-                            }
-                        } else if level != MatchDetailLevel::Off
-                            && (item.exists == Some(false) || item.matcher.matches_absent())
-                        {
-                            // Field absent and matched by a matcher that holds
-                            // for absent fields or an `|exists: false`
-                            // assertion. Never reported at `Off` (preserves
-                            // wire shape).
-                            out.push(make_field_match(
-                                selection,
-                                field_name,
-                                serde_json::Value::Null,
-                                &item.matcher,
-                                level,
-                            ));
-                        }
-                    }
-                    None => {
-                        // Keyword item inside an `AllOf`. Only reported above `Off`.
-                        if level != MatchDetailLevel::Off {
-                            collect_keyword_matches(selection, &item.matcher, event, level, out);
-                        }
-                    }
+                if !eval_item_recording(selection, item, event, bloom, level, out) {
+                    out.truncate(mark);
+                    return false;
                 }
             }
+            true
         }
         CompiledDetection::AnyOf(dets) => {
+            // Every matching branch reports its fields, so evaluate them all.
+            let mut any = false;
             for d in dets {
-                if eval_detection_with_bloom(d, event, &crate::engine::bloom_index::NoBloom) {
-                    collect_detection_fields(selection, d, event, level, out);
-                }
+                any |= eval_detection_recording(selection, d, event, bloom, level, out);
             }
-        }
-        CompiledDetection::ArrayMatch { field, body, .. } => {
-            let value = event.get_field(field);
-            collect_array_match_fields(
-                selection,
-                field,
-                body,
-                value.as_ref(),
-                event,
-                level,
-                "",
-                out,
-            );
+            any
         }
         CompiledDetection::And(dets) => {
+            let mark = out.len();
             for d in dets {
-                if eval_detection_with_bloom(d, event, &crate::engine::bloom_index::NoBloom) {
-                    collect_detection_fields(selection, d, event, level, out);
+                if !eval_detection_recording(selection, d, event, bloom, level, out) {
+                    out.truncate(mark);
+                    return false;
                 }
             }
+            true
         }
-        // Top-level Conditional is only produced as an array body; member
-        // recording happens in `collect_array_body_fields`.
-        CompiledDetection::Conditional { .. } => {}
         CompiledDetection::Keywords(matcher) => {
-            // Keyword detections produced no entries historically; only
-            // reported above `Off`.
-            if level != MatchDetailLevel::Off {
+            let matched = matcher.matches_keyword(event);
+            if matched && level != MatchDetailLevel::Off {
                 collect_keyword_matches(selection, matcher, event, level, out);
             }
+            matched
+        }
+        CompiledDetection::ArrayMatch {
+            field,
+            quantifier,
+            body,
+        } => {
+            let value = event.get_field(field);
+            let Some(value) = value.as_ref() else {
+                return array_quantifier_matches_empty(*quantifier);
+            };
+            let (scalar, members) = array_members(value);
+            let verdicts: Vec<bool> = members
+                .iter()
+                .map(|m| array::eval_array_body(body, m, event))
+                .collect();
+            let holds = array::array_quantifier_from_member_matches(*quantifier, &verdicts);
+            if holds {
+                record_array_members(
+                    selection,
+                    field.clone(),
+                    body,
+                    value,
+                    scalar,
+                    &members,
+                    &verdicts,
+                    event,
+                    level,
+                    out,
+                );
+            }
+            holds
+        }
+        // Only produced as an array body, where members are recorded by
+        // `collect_array_body_fields`.
+        CompiledDetection::Conditional { named, condition } => {
+            eval_condition_matches_with_bloom(condition, named, event, bloom)
         }
     }
 }
 
-/// Record binding members of a matched `ArrayMatch`.
-///
-/// Matching members are emitted with indexed paths (`field[i].leaf`) up to
-/// [`array::ARRAY_MEMBER_CAP`]. A scalar treated as one member uses the
-/// un-indexed path so it still resolves through [`Event::get_field`]. `[none]`
-/// and vacuous `[all_or_empty]` have no binding member and keep the container.
+/// Evaluate one `AllOf` item, recording its field match in `out` when it holds.
+fn eval_item_recording<E, B>(
+    selection: &str,
+    item: &CompiledDetectionItem,
+    event: &E,
+    bloom: &B,
+    level: MatchDetailLevel,
+    out: &mut Vec<FieldMatch>,
+) -> bool
+where
+    E: Event,
+    B: crate::engine::bloom_index::BloomLookup,
+{
+    let Some(field_name) = &item.field else {
+        let matched = match item.exists {
+            Some(expect) => !expect,
+            None => item.matcher.matches_keyword(event),
+        };
+        if matched && level != MatchDetailLevel::Off {
+            collect_keyword_matches(selection, &item.matcher, event, level, out);
+        }
+        return matched;
+    };
+
+    match event.get_field(field_name) {
+        Some(value) => {
+            let matched = match item.exists {
+                Some(expect) => expect,
+                None => {
+                    !(item.bloom_eligible
+                        && bloom.verdict_for_field(field_name)
+                            == crate::engine::bloom_index::BloomVerdict::DefinitelyNoMatch)
+                        && item.matcher.matches(&value, event)
+                }
+            };
+            if matched {
+                out.push(make_field_match(
+                    selection,
+                    field_name,
+                    value.to_json(),
+                    &item.matcher,
+                    level,
+                ));
+            }
+            matched
+        }
+        None => {
+            let matched = match item.exists {
+                Some(expect) => !expect,
+                None => item.matcher.matches_absent(),
+            };
+            // Absent-field matches are never reported at `Off`, which keeps
+            // the historical wire shape.
+            if matched && level != MatchDetailLevel::Off {
+                out.push(make_field_match(
+                    selection,
+                    field_name,
+                    serde_json::Value::Null,
+                    &item.matcher,
+                    level,
+                ));
+            }
+            matched
+        }
+    }
+}
+
+/// The members of an array-match value and whether it is a scalar treated as
+/// one member. A null value has no members.
+fn array_members<'v>(value: &'v EventValue<'v>) -> (bool, Vec<&'v EventValue<'v>>) {
+    match value {
+        EventValue::Null => (false, Vec::new()),
+        EventValue::Array(items) => (false, items.iter().collect()),
+        single => (true, vec![single]),
+    }
+}
+
+/// Record the binding members of a nested `ArrayMatch` inside a matched
+/// array member.
 #[allow(clippy::too_many_arguments)]
 fn collect_array_match_fields<E: Event>(
     selection: &str,
@@ -640,45 +716,68 @@ fn collect_array_match_fields<E: Event>(
     path_prefix: &str,
     out: &mut Vec<FieldMatch>,
 ) {
+    let Some(value) = value else {
+        return;
+    };
+    let (scalar, members) = array_members(value);
+    let verdicts: Vec<bool> = members
+        .iter()
+        .map(|m| array::eval_array_body(body, m, outer))
+        .collect();
     let container_path = if path_prefix.is_empty() {
         field.to_string()
     } else {
         array::join_member_field(path_prefix, Some(field))
     };
+    record_array_members(
+        selection,
+        container_path,
+        body,
+        value,
+        scalar,
+        &members,
+        &verdicts,
+        outer,
+        level,
+        out,
+    );
+}
 
-    let (scalar, members): (bool, Vec<&EventValue>) = match value {
-        None => return,
-        Some(EventValue::Null) => {
-            out.push(FieldMatch::new(container_path, serde_json::Value::Null));
-            return;
-        }
-        Some(EventValue::Array(items)) if items.is_empty() => {
-            out.push(FieldMatch::new(
-                container_path,
-                serde_json::Value::Array(Vec::new()),
-            ));
-            return;
-        }
-        Some(EventValue::Array(items)) => (false, items.iter().collect()),
-        Some(single) => (true, vec![single]),
-    };
-
-    let matching: Vec<usize> = members
+/// Record the binding members of a matched `ArrayMatch` from its per-member
+/// body verdicts.
+///
+/// Matching members are emitted with indexed paths (`field[i].leaf`) up to
+/// [`array::ARRAY_MEMBER_CAP`]. A scalar treated as one member uses the
+/// un-indexed path so it still resolves through [`Event::get_field`]. With no
+/// binding member (`[none]`, vacuous `[all_or_empty]`, or a null or empty
+/// array), the container is recorded.
+#[allow(clippy::too_many_arguments)]
+fn record_array_members<E: Event>(
+    selection: &str,
+    container_path: String,
+    body: &CompiledDetection,
+    value: &EventValue,
+    scalar: bool,
+    members: &[&EventValue],
+    verdicts: &[bool],
+    outer: &E,
+    level: MatchDetailLevel,
+    out: &mut Vec<FieldMatch>,
+) {
+    let binding: Vec<usize> = verdicts
         .iter()
         .enumerate()
-        .filter(|(_, m)| array::eval_array_body(body, m, outer))
+        .filter(|(_, matched)| **matched)
         .map(|(i, _)| i)
         .take(array::ARRAY_MEMBER_CAP)
         .collect();
 
-    if matching.is_empty() {
-        if let Some(v) = value {
-            out.push(FieldMatch::new(container_path, v.to_json()));
-        }
+    if binding.is_empty() {
+        out.push(FieldMatch::new(container_path, value.to_json()));
         return;
     }
 
-    for i in matching {
+    for i in binding {
         let member_path = array::array_member_path(&container_path, i, scalar);
         let before = out.len();
         collect_array_body_fields(selection, body, members[i], outer, level, &member_path, out);
