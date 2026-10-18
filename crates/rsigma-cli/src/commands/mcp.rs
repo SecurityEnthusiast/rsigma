@@ -35,6 +35,13 @@ pub(crate) struct McpServeArgs {
     #[arg(long = "rules-dir", value_name = "PATH")]
     pub rules_dir: Option<PathBuf>,
 
+    /// Run without `--rules-dir`, letting tool calls read any file the server
+    /// user can read. Required to serve `--http` without a root; on stdio it
+    /// silences the startup warning. Off by default. Config key:
+    /// `mcp.allow_unconfined_paths`.
+    #[arg(long = "allow-unconfined-paths")]
+    pub allow_unconfined_paths: bool,
+
     /// Allow the `convert_rules` tool to delegate targets without a native
     /// backend to an installed sigma-cli (off by default). Delegated calls
     /// spawn a subprocess; path inputs stay confined to `--rules-dir`.
@@ -133,6 +140,11 @@ fn apply_mcp_config(args: &mut McpServeArgs) {
     if args.rules_dir.is_none() {
         args.rules_dir = mcp.rules_dir;
     }
+    if !args.allow_unconfined_paths
+        && let Some(allow) = mcp.allow_unconfined_paths
+    {
+        args.allow_unconfined_paths = allow;
+    }
     // A bool flag cannot distinguish "absent" from "false", so the config only
     // ever turns delegation on; an explicit --allow-sigma-cli already wins.
     if !args.allow_sigma_cli
@@ -157,6 +169,21 @@ fn apply_mcp_config(args: &mut McpServeArgs) {
 /// daemon) and serves over stdio or, when `--http` is set, Streamable HTTP.
 pub(crate) fn cmd_mcp_serve(mut args: McpServeArgs) {
     apply_mcp_config(&mut args);
+
+    match path_confinement(&args) {
+        Confinement::Confined | Confinement::UnconfinedAllowed => {}
+        Confinement::UnconfinedStdio => eprintln!(
+            "warning: --rules-dir is not set, so MCP tools can read any file this user can \
+             read and fix_rules cannot write; set --rules-dir to confine path arguments"
+        ),
+        Confinement::UnconfinedHttpRefused => {
+            eprintln!(
+                "refusing to serve --http without --rules-dir: tool calls could read any file \
+                 this user can read; set --rules-dir, or pass --allow-unconfined-paths to opt out"
+            );
+            process::exit(exit_code::CONFIG_ERROR);
+        }
+    }
 
     let lint_config = match &args.lint_config {
         Some(path) => match LintConfig::load(path) {
@@ -196,6 +223,28 @@ pub(crate) fn cmd_mcp_serve(mut args: McpServeArgs) {
     if let Err(e) = result {
         eprintln!("MCP server error: {e}");
         process::exit(exit_code::RULE_ERROR);
+    }
+}
+
+/// How tool path arguments are bounded for this invocation.
+#[derive(Debug, PartialEq, Eq)]
+enum Confinement {
+    /// `--rules-dir` is set.
+    Confined,
+    /// No root, stdio transport, no opt-out: allowed with a startup warning.
+    UnconfinedStdio,
+    /// No root, `--http`, no opt-out: refuse to start.
+    UnconfinedHttpRefused,
+    /// No root, with `--allow-unconfined-paths`.
+    UnconfinedAllowed,
+}
+
+fn path_confinement(args: &McpServeArgs) -> Confinement {
+    match (&args.rules_dir, args.allow_unconfined_paths, args.http) {
+        (Some(_), _, _) => Confinement::Confined,
+        (None, true, _) => Confinement::UnconfinedAllowed,
+        (None, false, None) => Confinement::UnconfinedStdio,
+        (None, false, Some(_)) => Confinement::UnconfinedHttpRefused,
     }
 }
 
@@ -315,4 +364,56 @@ async fn serve_http_tls(
          rebuild with `--features daemon-tls` or terminate TLS at a sidecar proxy \
          and use --allow-plaintext"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct Cli {
+        #[command(flatten)]
+        args: McpServeArgs,
+    }
+
+    fn confinement(argv: &[&str]) -> Confinement {
+        let cli = Cli::try_parse_from(std::iter::once("serve").chain(argv.iter().copied()))
+            .expect("valid args");
+        path_confinement(&cli.args)
+    }
+
+    #[test]
+    fn rules_dir_confines_every_transport() {
+        assert_eq!(confinement(&["--rules-dir", "r"]), Confinement::Confined);
+        assert_eq!(
+            confinement(&["--rules-dir", "r", "--http", "127.0.0.1:9100"]),
+            Confinement::Confined
+        );
+    }
+
+    #[test]
+    fn stdio_without_root_warns() {
+        assert_eq!(confinement(&[]), Confinement::UnconfinedStdio);
+    }
+
+    #[test]
+    fn http_without_root_is_refused() {
+        assert_eq!(
+            confinement(&["--http", "127.0.0.1:9100"]),
+            Confinement::UnconfinedHttpRefused
+        );
+    }
+
+    #[test]
+    fn opt_out_allows_unconfined_paths() {
+        assert_eq!(
+            confinement(&["--http", "127.0.0.1:9100", "--allow-unconfined-paths"]),
+            Confinement::UnconfinedAllowed
+        );
+        assert_eq!(
+            confinement(&["--allow-unconfined-paths"]),
+            Confinement::UnconfinedAllowed
+        );
+    }
 }

@@ -425,8 +425,12 @@ mcp:
   # http_addr: 127.0.0.1:9100
   # Lint config file applied by the lint_rules tool (`--lint-config`).
   # lint_config: .rsigma-lint.yml
-  # Default root for relative path-based tool calls (`--rules-dir`).
+  # Root for path-based tool calls (`--rules-dir`). Paths that leave it are
+  # refused. Without it, tools can read any file the server user can read.
   # rules_dir: ./rules
+  # Run without rules_dir (`--allow-unconfined-paths`). Required to serve
+  # http_addr without a root; on stdio it silences the startup warning.
+  # allow_unconfined_paths: false
   # Allow the convert_rules tool to delegate targets without a native backend
   # to an installed sigma-cli (`--allow-sigma-cli`). Off by default; delegated
   # path inputs stay confined to rules_dir when it is set.

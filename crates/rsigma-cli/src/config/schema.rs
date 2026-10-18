@@ -1113,6 +1113,11 @@ pub(crate) struct McpPartial {
     /// Default root for relative path-based tool calls (maps to `--rules-dir`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rules_dir: Option<PathBuf>,
+    /// Run without `rules_dir`, leaving tool path arguments unconfined (maps
+    /// to `--allow-unconfined-paths`). Required for the HTTP transport without
+    /// a root. Defaults to off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_unconfined_paths: Option<bool>,
     /// Allow the `convert_rules` tool to delegate targets without a native
     /// backend to an installed sigma-cli (maps to `--allow-sigma-cli`).
     /// Defaults to off.
@@ -1139,6 +1144,7 @@ impl Merge for McpPartial {
             http_addr: over.http_addr.or(self.http_addr),
             lint_config: over.lint_config.or(self.lint_config),
             rules_dir: over.rules_dir.or(self.rules_dir),
+            allow_unconfined_paths: over.allow_unconfined_paths.or(self.allow_unconfined_paths),
             allow_sigma_cli: over.allow_sigma_cli.or(self.allow_sigma_cli),
             daemon_url: over.daemon_url.or(self.daemon_url),
             daemon_ca: over.daemon_ca.or(self.daemon_ca),
@@ -1194,7 +1200,7 @@ mod tests {
     #[test]
     fn mcp_section_parses_and_merges() {
         let base: RsigmaConfigPartial = yaml_serde::from_str(
-            "mcp:\n  http_addr: 127.0.0.1:9100\n  rules_dir: /etc/rsigma/rules\n  allow_sigma_cli: true\n  daemon_url: http://127.0.0.1:9090\n  allow_operate_writes: true\n",
+            "mcp:\n  http_addr: 127.0.0.1:9100\n  rules_dir: /etc/rsigma/rules\n  allow_unconfined_paths: true\n  allow_sigma_cli: true\n  daemon_url: http://127.0.0.1:9090\n  allow_operate_writes: true\n",
         )
         .expect("parses mcp section");
         let over: RsigmaConfigPartial =
@@ -1204,6 +1210,7 @@ mod tests {
         // higher layer wins per-field; untouched fields are preserved
         assert_eq!(mcp.http_addr.as_deref(), Some("127.0.0.1:9100"));
         assert_eq!(mcp.rules_dir, Some(PathBuf::from("/override/rules")));
+        assert_eq!(mcp.allow_unconfined_paths, Some(true));
         assert_eq!(mcp.allow_sigma_cli, Some(true));
         assert_eq!(mcp.daemon_url.as_deref(), Some("http://127.0.0.1:9090"));
         assert_eq!(mcp.allow_operate_writes, Some(true));
