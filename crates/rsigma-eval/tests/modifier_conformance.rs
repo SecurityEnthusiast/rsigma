@@ -525,3 +525,25 @@ fn integer_keywords_above_2_53_search_for_the_exact_digits() {
         [1]
     );
 }
+
+#[test]
+fn time_part_modifiers_accept_every_timestamp_form() {
+    let events = [
+        json!({"ts": "2024-07-10T12:30:00Z"}),
+        json!({"ts": "2024-07-10T12:30:00.500Z"}),
+        json!({"ts": "2024-07-10T14:30:00+02:00"}),
+        json!({"ts": "2024-07-10T12:30:00"}),
+        json!({"ts": "2024-07-10T12:30:00.500"}),
+        json!({"ts": "2024-07-10 12:30:00"}),
+        json!({"ts": "2024-07-10 12:30:00.500"}),
+        json!({"ts": 1720614600}),
+        json!({"ts": 1720614600500_i64}),
+        json!({"ts": 1720614600.5}),
+        json!({"ts": "garbage"}),
+        json!({"ts": "2024-07-10 13:30:00.500"}),
+    ];
+    assert_eq!(
+        matching("selection:\n  ts|hour: 12", &events),
+        (0..10).collect::<Vec<_>>()
+    );
+}

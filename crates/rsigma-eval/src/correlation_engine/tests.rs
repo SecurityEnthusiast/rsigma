@@ -49,6 +49,28 @@ fn test_parse_timestamp_fractional() {
 }
 
 #[test]
+fn test_parse_timestamp_every_form() {
+    for (val, expected) in [
+        (json!("2024-07-10T12:30:00Z"), Some(1720614600)),
+        (json!("2024-07-10T12:30:00.500Z"), Some(1720614600)),
+        (json!("2024-07-10T14:30:00+02:00"), Some(1720614600)),
+        (json!("2024-07-10T12:30:00"), Some(1720614600)),
+        (json!("2024-07-10T12:30:00.500"), Some(1720614600)),
+        (json!("2024-07-10 12:30:00"), Some(1720614600)),
+        (json!("2024-07-10 12:30:00.500"), Some(1720614600)),
+        (json!(1720614600), Some(1720614600)),
+        (json!(1720614600500_i64), Some(1720614600)),
+        (json!(1720614600.5), Some(1720614600)),
+        (json!("garbage"), None),
+    ] {
+        let event = json!({ "ts": val });
+        let event = JsonEvent::borrow(&event);
+        let field = event.get_field("ts").unwrap();
+        assert_eq!(parse_timestamp_value(&field), expected, "{val}");
+    }
+}
+
+#[test]
 fn test_extract_timestamp_from_event() {
     let config = CorrelationConfig {
         timestamp_fields: vec!["@timestamp".to_string()],

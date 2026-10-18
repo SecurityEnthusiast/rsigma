@@ -8,6 +8,7 @@ use rsigma_ir::NumericLiteral;
 
 use super::{ExpandPart, TimePart};
 use crate::event::{Event, EventValue};
+use crate::timestamp::{normalize_epoch, parse_timestamp_str};
 
 /// Lowercase a `&str` with minimal allocation, falling back to full Unicode case
 /// folding only when the input contains non-ASCII bytes.
@@ -219,44 +220,13 @@ pub fn parse_expand_template(s: &str) -> Vec<ExpandPart> {
 
 /// Extract a time component from an [`EventValue`] (timestamp string or number).
 pub(super) fn extract_timestamp_part(value: &EventValue, part: TimePart) -> Option<i64> {
-    match value {
-        EventValue::Str(s) => parse_timestamp_str(s, part),
-        EventValue::Int(n) => {
-            let secs = if *n > 1_000_000_000_000 { n / 1000 } else { *n };
-            let dt = chrono::DateTime::from_timestamp(secs, 0)?;
-            Some(extract_part_from_datetime(&dt, part))
-        }
-        EventValue::Float(f) => {
-            let secs = *f as i64;
-            let secs = if secs > 1_000_000_000_000 {
-                secs / 1000
-            } else {
-                secs
-            };
-            let dt = chrono::DateTime::from_timestamp(secs, 0)?;
-            Some(extract_part_from_datetime(&dt, part))
-        }
-        _ => None,
-    }
-}
-
-fn parse_timestamp_str(ts_str: &str, part: TimePart) -> Option<i64> {
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts_str) {
-        return Some(extract_part_from_datetime(&dt.to_utc(), part));
-    }
-    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%dT%H:%M:%S") {
-        let dt = naive.and_utc();
-        return Some(extract_part_from_datetime(&dt, part));
-    }
-    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%d %H:%M:%S") {
-        let dt = naive.and_utc();
-        return Some(extract_part_from_datetime(&dt, part));
-    }
-    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%dT%H:%M:%S%.f") {
-        let dt = naive.and_utc();
-        return Some(extract_part_from_datetime(&dt, part));
-    }
-    None
+    let dt = match value {
+        EventValue::Str(s) => parse_timestamp_str(s)?,
+        EventValue::Int(n) => chrono::DateTime::from_timestamp(normalize_epoch(*n), 0)?,
+        EventValue::Float(f) => chrono::DateTime::from_timestamp(normalize_epoch(*f as i64), 0)?,
+        _ => return None,
+    };
+    Some(extract_part_from_datetime(&dt, part))
 }
 
 /// Extract a specific time component from a UTC DateTime.
