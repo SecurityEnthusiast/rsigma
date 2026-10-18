@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### OTLP/HTTP gzip bodies are capped at 4 MiB after decompression (security)
+### OTLP/HTTP gzip bodies are capped at 4 MiB after decompression (security, #597)
 
 `POST /v1/logs` inflated a `Content-Encoding: gzip` body into an unbounded buffer, so one small request could expand to gigabytes and get the daemon killed for running out of memory ([GHSA-vwg6-4q3h-8pvq](https://github.com/timescale/rsigma/security/advisories/GHSA-vwg6-4q3h-8pvq)). The decompressed body is now limited to 4 MiB, matching the decoded-message limit on the OTLP/gRPC transport. A body that inflates past the limit is rejected with `413 Payload Too Large` before decoding and counted as `rsigma_otlp_errors_total{transport="http",reason="body_too_large"}`. Affects builds with `daemon-otlp`, which includes the prebuilt binaries and the Docker image.
 
