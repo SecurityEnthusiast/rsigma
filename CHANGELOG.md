@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### Delivery failures without a DLQ sink are logged
+### Delivery failures without a DLQ sink are logged (#615)
 
 When a sink exhausted its retries and no `--dlq` was set, the daemon counted the dropped result on `rsigma_dlq_events_total` and logged it once, at `debug`, so every later dropped alert left no trace in the logs. Each drop now produces a `warn` log, rate-limited to one every 10 seconds; each warning carries the number of results dropped since the previous one and the last delivery error. A failed write to a configured DLQ sink is now counted on the new `rsigma_dlq_write_failures_total` counter, and the delivery layer and the daemon's DLQ bridge log a failure they could not queue instead of discarding it silently. The docs now say that a sink commits a failed result by handing it to the DLQ writer, so the source ack does not wait for the DLQ sink's write.
 
