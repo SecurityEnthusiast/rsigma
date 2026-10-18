@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### OTLP sink export timeouts
+### OTLP sink export timeouts (#600)
 
 OTLP output sinks no longer wait forever on a collector that accepts the connection and never answers. Every export attempt now has a deadline, 10 seconds by default and tunable per sink with `?timeout=<duration>` (for example `otlp://otel-collector:4317?timeout=3s`). A timed-out attempt is retried and then dead-lettered like any other transient failure. Before this, under the default `on_full=block`, one hung collector stalled every sink behind the shared sink task. Connection setup is capped at 10 seconds on both transports, and gRPC channels send HTTP/2 keepalive pings. In `rsigma-runtime`, `OtlpSink::with_timeout` overrides the deadline and `DEFAULT_OTLP_TIMEOUT` exposes the default. Fixes #585.
 
