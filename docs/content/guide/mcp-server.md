@@ -18,7 +18,7 @@ The server speaks JSON-RPC over **stdio**: stdin and stdout are the transport, s
 rsigma mcp serve --rules-dir /path/to/rules
 ```
 
-`--rules-dir` sets a root so an agent can pass `path` arguments relative to a rules tree, and confines every path argument to it: absolute paths, `../`, and symlinks that leave the root are refused, and so are directory inputs that contain symlinks. Set it whenever the agent processes untrusted content; without it, tools can read any file the server's OS user can read. See [Security Hardening](../reference/security.md#mcp-server-tool-surface). `--lint-config` points the `lint_rules` tool at a `.rsigma-lint.yml` (disabled rules, severity overrides, extra tag namespaces).
+`--rules-dir` sets a root so an agent can pass `path` arguments relative to a rules tree, and confines every path argument to it: absolute paths, `../`, and symlinks that leave the root are refused, and so are directory inputs that contain symlinks. Set it whenever the agent processes untrusted content; without it, tools can read any file the server's OS user can read. Without a root, stdio prints a startup warning, `fix_rules` cannot write, and `--http` refuses to start unless `--allow-unconfined-paths` is set. {{ added "unreleased" }} See [Security Hardening](../reference/security.md#mcp-server-tool-surface). `--lint-config` points the `lint_rules` tool at a `.rsigma-lint.yml` (disabled rules, severity overrides, extra tag namespaces).
 
 ## Client setup
 
@@ -62,7 +62,7 @@ Fifteen Engineer-cycle tools always register. When `--daemon-url` (or `mcp.daemo
 | `list_fields` | rules, `pipelines`, `include_filters` | Each referenced field with the rules and source kinds that use it. |
 | `resolve_pipeline` | `pipeline` (builtin name or path), `resolve_sources` | Pipeline name, priority, transformation count, dynamic sources. |
 | `list_builtin_pipelines` | (none) | The builtin pipelines (`ecs_windows`, `fibratus_windows`, `sysmon`). |
-| `fix_rules` | `yaml` or file `path`, `lint_rules`, `write` | Applies safe auto-fixes; returns the fixed YAML and applied/failed/skipped-unsafe counts. `write: true` (path only) persists to disk. |
+| `fix_rules` | `yaml` or file `path`, `lint_rules`, `write` | Applies safe auto-fixes; returns the fixed YAML and applied/failed/skipped-unsafe counts. `write: true` (path only, and only with `--rules-dir`) persists to disk. |
 | `author_ads` | `yaml` or file/dir `path` | Per rule: the current ADS sections, the required sections missing under the active config, and a `rsigma.ads.*` scaffold to complete. |
 | `tune_rules` | rules (`yaml` or confined file/dir `path`), target `rule`, inline `false_positives` and `true_positives`, optional `pipelines` and tuning bounds | A verified `TuneReport` containing filter YAML, field rationale, clusters, FP coverage, warnings, and before/after counts. |
 | `test_exemplars` | rules (`yaml` or confined file/dir `path`), optional `pipelines` | The shared exemplar report: per-entry expect/actual/pass plus rules with no exemplars. {{ added "0.22.0" }} |
@@ -212,14 +212,15 @@ A productive pattern an agent can run end to end:
 For remote agents, serve over the Streamable HTTP transport instead of stdio with `--http <addr>` (the MCP endpoint is mounted at `/mcp`):
 
 ```bash
-rsigma mcp serve --http 127.0.0.1:9100
+rsigma mcp serve --http 127.0.0.1:9100 --rules-dir /path/to/rules
 ```
 
 - **Auth.** `--auth-token <token>` (or `RSIGMA_MCP_AUTH_TOKEN`) requires a static bearer token on every request; requests without `Authorization: Bearer <token>` get `401`. The token is compared in constant time and is flag/env-only (never read from config files).
 - **TLS.** `--tls-cert`/`--tls-key` terminate TLS in-process using the same rustls loader as the daemon (requires a build with the `daemon-tls` feature). Alternatively terminate TLS at a sidecar proxy and bind plaintext with `--allow-plaintext`.
 - **Plaintext safety.** Binding plaintext on a non-loopback address is refused unless `--allow-plaintext` is set.
+- **Path confinement.** `--http` refuses to start without `--rules-dir` unless `--allow-unconfined-paths` is set. {{ added "unreleased" }}
 
-The `--http`, `--lint-config`, `--rules-dir`, `--daemon-url`, `--daemon-ca`, and `--allow-operate-writes` settings also resolve from the layered config (`mcp` section) and the `RSIGMA_MCP__*` environment layer (for example `RSIGMA_MCP__HTTP_ADDR=127.0.0.1:9100`); the MCP HTTP auth token and the daemon token stay flag/env-only.
+The `--http`, `--lint-config`, `--rules-dir`, `--allow-unconfined-paths`, `--daemon-url`, `--daemon-ca`, and `--allow-operate-writes` settings also resolve from the layered config (`mcp` section) and the `RSIGMA_MCP__*` environment layer (for example `RSIGMA_MCP__HTTP_ADDR=127.0.0.1:9100`); the MCP HTTP auth token and the daemon token stay flag/env-only.
 
 ## See also
 

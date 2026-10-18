@@ -4,6 +4,16 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### MCP server refuses unconfined writes and unconfined HTTP serving (security)
+
+Without `--rules-dir`, `rsigma mcp serve` accepted any file path in its tools, so a prompt-injected agent or any client reaching the HTTP endpoint could read files outside a rules tree through `fix_rules`, and `fix_rules` with `write: true` could rewrite Sigma YAML anywhere the server user could write ([GHSA-33jj-q567-34gj](https://github.com/timescale/rsigma/security/advisories/GHSA-33jj-q567-34gj)).
+
+- `fix_rules` with `write: true` is refused when the server has no rules root.
+- `mcp serve --http` refuses to start without `--rules-dir` unless the new `--allow-unconfined-paths` flag (config key `mcp.allow_unconfined_paths`) is set, and exits with code `3`.
+- `mcp serve` on stdio without `--rules-dir` prints a warning on stderr at startup. `--allow-unconfined-paths` silences it.
+
+Breaking changes: `mcp serve --http` without `--rules-dir` no longer starts. Pass `--rules-dir`, or `--allow-unconfined-paths` to keep the old behavior. MCP clients that called `fix_rules` with `write: true` against a server without a root now get an error.
+
 ### OTLP/HTTP gzip bodies are capped at 4 MiB after decompression (security, #597)
 
 `POST /v1/logs` inflated a `Content-Encoding: gzip` body into an unbounded buffer, so one small request could expand to gigabytes and get the daemon killed for running out of memory ([GHSA-vwg6-4q3h-8pvq](https://github.com/timescale/rsigma/security/advisories/GHSA-vwg6-4q3h-8pvq)). The decompressed body is now limited to 4 MiB, matching the decoded-message limit on the OTLP/gRPC transport. A body that inflates past the limit is rejected with `413 Payload Too Large` before decoding and counted as `rsigma_otlp_errors_total{transport="http",reason="body_too_large"}`. Affects builds with `daemon-otlp`, which includes the prebuilt binaries and the Docker image.

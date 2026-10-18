@@ -124,6 +124,7 @@ mcp:
   # http_addr: 127.0.0.1:3001   # unset means stdio; maps to --http
   # lint_config: ./.rsigma-lint.yml
   # rules_dir: ./rules
+  # allow_unconfined_paths: false   # required for http_addr without rules_dir
   allow_sigma_cli: false    # let convert_rules delegate non-native targets
   # daemon_url: http://127.0.0.1:9090
   # daemon_ca: /etc/rsigma/tls/ca.pem
@@ -200,7 +201,7 @@ Run [`rsigma config init`](../cli/config/init.md) to scaffold a full, commented 
 | `visibility` | `rule visibility` | `mapping` (logsource/field to ATT&CK data-source table path or URL; unset uses the bundled default) and `fail_on_blind_spots`. `rules` and `observed` are intentionally absent (they are invocation-specific CLI arguments). |
 | `doc` | `rule doc` | `fail_on_missing` (the CI gate). The ADS bar itself (enforced statuses and required sections) lives in `.rsigma-lint.yml` under an `ads:` block, not here. See [Detection Strategy](../guide/detection-strategy.md). |
 | `hygiene` | `rule hygiene` | `rules`, the optional sources (`metrics`, `metrics_window`, `fields`), the thresholds (`silent_threshold`, `stale_threshold`, `noisy_threshold`), and `fail_on`. See [Rule Hygiene](../guide/rule-hygiene.md). |
-| `mcp` | `mcp serve` | `mcp.http_addr` (the `--http` bind address; unset means stdio), `mcp.lint_config`, `mcp.rules_dir`, `mcp.allow_sigma_cli` (let `convert_rules` delegate non-native targets to an installed sigma-cli; off by default), `mcp.daemon_url`, `mcp.daemon_ca`, and `mcp.allow_operate_writes`. The MCP HTTP auth token and the daemon token are secrets and stay flag/env-only. Inert unless built with the `mcp` feature. |
+| `mcp` | `mcp serve` | `mcp.http_addr` (the `--http` bind address; unset means stdio), `mcp.lint_config`, `mcp.rules_dir`, `mcp.allow_unconfined_paths` {{ added "unreleased" }} (run without `rules_dir`; required to serve `http_addr` without a root; off by default), `mcp.allow_sigma_cli` (let `convert_rules` delegate non-native targets to an installed sigma-cli; off by default), `mcp.daemon_url`, `mcp.daemon_ca`, and `mcp.allow_operate_writes`. The MCP HTTP auth token and the daemon token are secrets and stay flag/env-only. Inert unless built with the `mcp` feature. |
 
 `daemon.correlation.emit_detections` defaults to `false`, so detections and correlations referenced only by correlations do not produce standalone output unless a referencing correlation has top-level `generate: true`. The inverse `daemon.correlation.no_detections` key remains accepted for compatibility but is deprecated, and the daemon prints a warning when it is set. A layer that sets only `no_detections` overrides `emit_detections` from lower layers, while `emit_detections` wins when one layer sets both. {{ added "0.24.0" }}
 
