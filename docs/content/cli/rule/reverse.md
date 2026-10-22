@@ -27,7 +27,7 @@ Explicit `--output-format` is unsupported and warns: output is always Sigma YAML
 | Flag | Default | Description |
 |------|---------|-------------|
 | `[QUERY]` | stdin | An inline query. Omit to read from `--file` or stdin. |
-| `--from <DIALECT>` | `lucene` | Source query dialect. Supported value: `lucene` (Elastic Lucene / Elasticsearch `query_string`). |
+| `--from <DIALECT>` | `lucene` | Source query dialect. Supported value: `lucene` (Elastic Lucene/Elasticsearch `query_string`). |
 | `-f, --file <PATH>` | unset | Read queries from files or directories (repeatable). Each file is one query; a directory contributes every query file it holds. |
 | `--title <TITLE>` | file name | Rule title. Single query only; multi-query runs title each rule from its file name. |
 | `--id <UUID>` | unset | Rule id. Single query only. |

@@ -14,7 +14,7 @@ rsigma hunt run [OPTIONS] --target postgres --rules <PATH>...
 
 `hunt run` closes the loop between conversion and authoring: `backend convert -t postgres` emits the SQL, and this command runs it against your PostgreSQL/TimescaleDB archive and returns the matching rows as one raw JSON event object per line, ready to feed [`rule draft`](../rule/draft.md), [`rule tune`](../rule/tune.md), [`rule test`](../rule/test.md) exemplars, or a [`rule backtest`](../rule/backtest.md) corpus.
 
-rsigma is a read-only client of a store it already generates queries for; it does not store or search logs itself. The session opens with `SET default_transaction_read_only = on` and a server-side statement timeout before any hunt SQL runs, so read-only is enforced rather than promised. Rows stream without OFFSET paging, so memory is bounded by one row regardless of result size.
+rsigma is a read-only client of a store it already generates queries for; it does not store or search logs itself. The session opens with `SET default_transaction_read_only = on` and a server-side statement timeout before any hunt SQL runs, so the server enforces read-only access. Rows stream without OFFSET paging, so memory is bounded by one row regardless of result size.
 
 The generated per-rule `SELECT` is wrapped, never edited:
 
@@ -36,7 +36,7 @@ The columns are post-pipeline names (the pipeline mapped the rule's fields to th
 
 ### Scope
 
-v1 is detection-rule hunts only. Correlation rules are rejected with a pointed error: correlation SQL returns aggregate rows (group keys plus counts), not events. `--target postgres` is the only accepted value; every other target stays convert-only (delegated sigma-cli targets by definition, since rsigma cannot execute a Splunk query), and the error points at `backend convert`.
+Hunts run detection rules only. Correlation rules are rejected with an error, because correlation SQL returns aggregate rows (group keys plus counts) instead of events. `--target postgres` is the only accepted value; every other target stays convert-only (delegated sigma-cli targets by definition, since rsigma cannot execute a Splunk query), and the error points at `backend convert`.
 
 ## Flags
 
@@ -71,7 +71,7 @@ v1 is detection-rule hunts only. Correlation rules are rejected with a pointed e
 | `--emit <MODE>` | `events` | `events` streams NDJSON; `sql` prints the wrapped queries with attribution headers and exits without connecting (works in every build, including binaries without the `hunt-postgres` feature). |
 | `-o, --output <PATH>` | stdout | Write events (or SQL) to a file instead of stdout. In events mode the file opens on the first event (or, for a successful hunt with no matches, at completion), so a hunt that fails before producing output never clobbers an existing file. |
 
-Events are always NDJSON: one raw JSON event object per line, nothing else on stdout. Per-rule row counts and the final summary (rows, elapsed, truncation) go to stderr and honor `--quiet` / `--no-stats`.
+Events are always NDJSON: one raw JSON event object per line, nothing else on stdout. Per-rule row counts and the final summary (rows, elapsed, truncation) go to stderr and honor `--quiet` and `--no-stats`.
 
 ## Examples
 

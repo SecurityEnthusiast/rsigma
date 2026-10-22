@@ -4,7 +4,7 @@
 
 Fetch objects from a TAXII 2.1 collection and persist them in a local on-disk STIX store ([`FsStore`](../../library/rstix.md#rstix-graph-marking-store)).
 
-Requires the **`taxii-sync`** Cargo feature (included in prebuilt release binaries and the GHCR image built with `--all-features`).
+Requires the `taxii-sync` Cargo feature (included in prebuilt release binaries and the GHCR image built with `--all-features`).
 
 ## Synopsis
 
@@ -14,7 +14,7 @@ rsigma taxii sync --server <URL> --collection <ID> --store <DIR> [OPTIONS]
 
 ## Description
 
-`taxii sync` calls [`ingest_collection_with_bundle_id`](../../library/rstix.md#rstix-taxii-client) with **`IngestOptions::producer_strict()`:** per-object validation before import, References phase skipped for paginated pages (see [validate-on-ingest](../../library/rstix.md#rstix-taxii-client)). The TAXII client fetches **one page at a time** (`--limit`, default **64**); forward references across pages resolve after the full collection is imported.
+`taxii sync` calls [`ingest_collection_with_bundle_id`](../../library/rstix.md#rstix-taxii-client) with `IngestOptions::producer_strict()`: per-object validation before import, with the References phase skipped for paginated pages (see [validate-on-ingest](../../library/rstix.md#rstix-taxii-client)). The TAXII client fetches one page at a time (`--limit`, default 64); forward references across pages resolve after the full collection is imported.
 
 When `--api-root` is omitted, the client runs TAXII discovery and uses the server-declared default API root. Pass `--api-root` explicitly when the feed uses a non-default root.
 
@@ -53,14 +53,14 @@ Re-running sync against the same store is idempotent: unchanged objects incremen
 | Flag | Description |
 |------|-------------|
 | `--client-cert-pem` + `--client-key-pem` | PEM certificate and private key |
-| `--client-p12` + `--client-p12-password` | PKCS#12 / PFX identity (`RSIGMA_TAXII_CLIENT_P12_PASSWORD`) |
+| `--client-p12` + `--client-p12-password` | PKCS#12/PFX identity (`RSIGMA_TAXII_CLIENT_P12_PASSWORD`) |
 
 ### Import / validation
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--bundle-id <ID>` | `bundle--00000000-0000-0000-0000-000000000001` | Synthetic bundle id for [`export_bundle`](../../library/rstix.md#rstix-graph-marking-store). |
-| `--strict` | on | Exit **1** when validation rejects one or more objects. |
+| `--strict` | on | Exit `1` when validation rejects one or more objects. |
 | `--allow-invalid` | off | Import objects even when validation fails (diagnostics still recorded; conflicts with `--strict`). |
 
 ## Output

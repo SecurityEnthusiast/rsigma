@@ -19,7 +19,7 @@ rsigma engine tap --duration 30s --output fixture.ndjson --redact-fields user.em
 rsigma engine eval -r rules/ -e @fixture.ndjson
 ```
 
-The capture is **lossy by design**: it can never apply backpressure to detection. If a session's buffer fills under load, events are dropped and counted, and the final summary record reports the gap.
+The capture is lossy by design: it can never apply backpressure to detection. If a session's buffer fills under load, events are dropped and counted, and the final summary record reports the gap.
 
 Like [`engine status`](status.md) it is a read-only client over the admin API. It uses a synchronous HTTP client and does not need the `daemon` build feature, and it follows the same address convention as [`config reload`](../config/reload.md): `--addr` defaults to `daemon.api.addr`, and wildcard binds (`0.0.0.0`, `[::]`) map to loopback.
 
@@ -31,12 +31,12 @@ The tap is **disabled by default** because it exfiltrates raw events. Enable it 
 
 The `--stage` flag selects where on the decode path the capture happens:
 
-- `decoded` (default): post-parse, post-event-filter. The capture is exactly what the engine evaluated, so it is always valid NDJSON and replays with a plain `engine eval -e @fixture.ndjson`, with no need to repeat the daemon's `--input-format` / `--jq` / `--jsonpath` flags. This is the right default for reproducing a missed detection.
+- `decoded` (default): post-parse, post-event-filter. The capture is exactly what the engine evaluated, so it is always valid NDJSON and replays with a plain `engine eval -e @fixture.ndjson`, with no need to repeat the daemon's `--input-format`, `--jq`, or `--jsonpath` flags. This is the right default for reproducing a missed detection.
 - `raw`: the input line as received, before parsing. Use it to debug the parse/filter step itself (syslog timezone issues, jq extraction bugs). The raw stage records every non-empty line, including ones that fail to parse, except on a daemon started with `--dlq`, which routes unparseable lines to the dead-letter queue before the tap sees them. Replay requires the same input-selection flags the daemon runs with, which the client prints as a hint after capture when `-o` is set.
 
 ### Redaction
 
-`--redact-fields` takes comma-separated dotted paths (e.g. `user.email,src_ip`). Redaction is **server-side**: the raw values for redacted fields never cross the wire, not even to the tapping operator's machine. Each value is replaced with a deterministic per-session token (`rsigma:redacted:<16 hex>`), so equal values still match across the fixture (correlation group keys and joins line up on replay) while the per-session salt prevents dictionary reversal and cross-fixture linkage.
+`--redact-fields` takes comma-separated dotted paths (e.g. `user.email,src_ip`). Redaction is server-side: the raw values for redacted fields never cross the wire, not even to the tapping operator's machine. Each value is replaced with a deterministic per-session token (`rsigma:redacted:<16 hex>`), so equal values still match across the fixture (correlation group keys and joins line up on replay) while the per-session salt prevents dictionary reversal and cross-fixture linkage.
 
 Paths are navigated like the [enrichment template engine](../../guide/enrichers.md): object keys descend into objects, numeric segments index arrays. One safety divergence: when a non-numeric segment meets an array, redaction fans out to every element (a fixture that leaks one array element is a leak). On the `raw` stage, redaction applies only to JSON-parseable lines; a line that fails to parse is dropped from a redacting raw capture and counted.
 
@@ -56,7 +56,7 @@ Anyone with admin API access can read live traffic through the tap. It is disabl
 | `--stage <decoded\|raw>` | `decoded` | Capture stage (see above). |
 | `-c, --config <PATH>` | discovery chain | Explicit config file used to resolve the daemon address. |
 
-The fixture is always NDJSON. An explicit `--output-format` other than `ndjson` prints a warning and is otherwise ignored. The global `--quiet` / `--no-stats` flags suppress the stderr stats line and replay hint; see [Output Formats](../../reference/output.md).
+The fixture is always NDJSON. An explicit `--output-format` other than `ndjson` prints a warning and is otherwise ignored. The global `--quiet` and `--no-stats` flags suppress the stderr stats line and replay hint; see [Output Formats](../../reference/output.md).
 
 ## Examples
 
@@ -99,7 +99,7 @@ The stream is NDJSON: one event per line, followed by a final summary record the
 {"rsigma_tap_summary":{"captured":842,"dropped":3,"duration_ms":30000,"stage":"decoded"}}
 ```
 
-A non-zero `dropped` means the session buffer filled under load (or a redacting raw line failed to parse); the fixture has gaps. With `-o` and `--no-stats` unset, stderr also prints a one-line capture summary and a replay hint (`engine eval -e @<path>`, plus a reminder to match `--input-format` / `--jq` / `--jsonpath` for `--stage raw`).
+A non-zero `dropped` means the session buffer filled under load (or a redacting raw line failed to parse); the fixture has gaps. With `-o` and `--no-stats` unset, stderr also prints a one-line capture summary and a replay hint (`engine eval -e @<path>`, plus a reminder to match `--input-format`, `--jq`, and `--jsonpath` for `--stage raw`).
 
 ## Exit codes
 

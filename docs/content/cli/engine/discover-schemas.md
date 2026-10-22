@@ -73,7 +73,7 @@ rsigma engine discover-schemas -e @events.ndjson --schema-config schemas.yml
 
 ## Output
 
-The structured report carries a `summary` (`events_mined`, `shapes`, `clusters`, `candidates`, `parse_errors`), a `candidates` array (each with `name`, `specificity`, `source` of `corpus` or `keys-only`, `support`, `coverage_of_unknown`, `predicates`, `sample_field_sets`, and any `overlap_warnings`), and a `signatures_yaml` string identical to `--emit yaml`. With `--dry-run` a `dry_run` object carries the before/after per-schema counts. In `table` format the paste-ready block prints below the table (when at least one candidate exists); summary and overlap warnings go to stderr unless `--no-stats` / quiet progress hides them.
+The structured report carries a `summary` (`events_mined`, `shapes`, `clusters`, `candidates`, `parse_errors`), a `candidates` array (each with `name`, `specificity`, `source` of `corpus` or `keys-only`, `support`, `coverage_of_unknown`, `predicates`, `sample_field_sets`, and any `overlap_warnings`), and a `signatures_yaml` string identical to `--emit yaml`. With `--dry-run` a `dry_run` object carries the before/after per-schema counts. In `table` format the paste-ready block prints below the table (when at least one candidate exists); summary and overlap warnings go to stderr unless `--no-stats` or quiet progress hides them.
 
 ## Exit codes
 

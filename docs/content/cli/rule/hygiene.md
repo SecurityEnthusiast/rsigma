@@ -2,7 +2,7 @@
 
 {{ added "0.18.0" }}
 
-Flag rule hygiene and retirement candidates in one report, the lifecycle phase a mature detection program reviews on a retirement cadence.
+Flag rule hygiene and retirement candidates in one report.
 
 ## Synopsis
 
@@ -12,7 +12,7 @@ rsigma rule hygiene --rules <PATH>... [OPTIONS]
 
 ## Description
 
-`rule hygiene` assembles the raw signals RSigma already produces into a single report of retirement and clean-up candidates. Mature detection programs treat rule management and maintenance as ongoing work (see Elastic's [DEBMM](https://www.elastic.co/security-labs/elastic-releases-debmm) and the [SANS detection engineering lifecycle](https://www.sans.org/blog/logs-alerts-introducing-detection-engineering-poster)): without a cull, the catalog fills with silent, noisy, unowned, and stale rules. This command surfaces those candidates.
+`rule hygiene` assembles the raw signals RSigma already produces into a single report of retirement and clean-up candidates. Mature detection programs treat rule management and maintenance as ongoing work (see Elastic's [DEBMM](https://www.elastic.co/security-labs/elastic-releases-debmm) and the [SANS detection engineering lifecycle](https://www.sans.org/blog/logs-alerts-introducing-detection-engineering-poster)): without a cull, the catalog fills with silent, noisy, unowned, and stale rules.
 
 It runs no event evaluation unless `--corpus` is set. The static signals read straight off the parsed rules; with `--corpus`, the command replays the corpus through the engine for per-rule fire counts; the silence and noisy signals also join a Prometheus snapshot or endpoint; the broken-coverage signal joins a field-observability snapshot. It is an offline `rule`-group command with no daemon hot-path involvement.
 

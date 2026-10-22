@@ -38,7 +38,7 @@ A rule tagged with a sub-technique (`attack.t1059.001`) counts toward its parent
 | `--baseline [<PATH_OR_URL>]` | unset | Cross-reference a baseline Navigator layer. A bare `--baseline` uses the SigmaHQ coverage heatmap; pass a local path or URL. May also be supplied via `coverage.baseline`. |
 | `--targets <FILE>` | unset | Cross-reference a target technique list (one technique ID per line; `#` comments allowed). May also be supplied via `coverage.targets`. |
 | `--fail-on-gaps` | off | Exit `1` when any requested cross-reference reports uncovered techniques. May also be supplied via `coverage.fail_on_gaps`. Same meaning under `--emit atomics-plan`. |
-| `--emit <report\|atomics-plan>` | `report` | What to print. `report` is the coverage document (default, unchanged). `atomics-plan` emits, for each uncovered-but-testable technique, the Atomic Red Team test names, GUIDs, platforms, and ready-to-paste `Invoke-AtomicTest` invocations. Requires `--atomics` (a config-file `coverage.atomics` counts). CLI-only; not a config key. {{ added "0.22.0" }} |
+| `--emit <report\|atomics-plan>` | `report` | What to print. `report` is the coverage document (default). `atomics-plan` emits, for each uncovered-but-testable technique, the Atomic Red Team test names, GUIDs, platforms, and ready-to-paste `Invoke-AtomicTest` invocations. Requires `--atomics` (a config-file `coverage.atomics` counts). CLI-only; not a config key. {{ added "0.22.0" }} |
 | `--platforms <LIST>` | unset | Comma-separated platform filter (`windows,linux,macos,...`) applied to `--emit atomics-plan`. Keeps tests whose `supported_platforms` intersect the list and drops techniques that then have no tests. Unfiltered output is the default. Ignored with a warning under `--emit report`. CLI-only. {{ added "0.22.0" }} |
 | `--config <PATH>` | unset | Load a specific YAML config file instead of running the discovery chain. |
 | `--dry-run` | off | Print the effective `coverage` section and exit `0` without running. |
@@ -132,7 +132,7 @@ rsigma rule coverage -r rules/ --targets threat-model.txt --fail-on-gaps
 ## See also
 
 - [ATT&CK Coverage](../../guide/attack-coverage.md) for the end-to-end workflow.
-- [`rule backtest`](backtest.md) for the corpus-replay test harness; coverage and backtest are the two halves of detection-as-code CI.
+- [`rule backtest`](backtest.md) for the corpus-replay test harness.
 - [`rule scorecard`](scorecard.md) to feed this JSON report (with the backtest report) into per-rule keep/tune/retire verdicts.
 - [CI/CD](../../guide/ci-cd.md) for wiring coverage into a pipeline.
 - [Configuration](../../reference/configuration.md) for the `coverage` config section.

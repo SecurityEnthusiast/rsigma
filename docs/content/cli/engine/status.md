@@ -27,9 +27,9 @@ For continuous monitoring, scrape [`/metrics`](../../reference/metrics.md) inste
 | `--addr <HOST:PORT or URL>` | from `daemon.api.addr` | Daemon API address as `host:port` or a full URL. `https://` URLs work for TLS deployments. |
 | `-c, --config <PATH>` | discovery chain | Explicit config file used to resolve the daemon address. |
 
-The global `--output-format` / `--color` / `--quiet` / `--no-stats` flags apply; see [Output Formats](../../reference/output.md). The default is TTY-aware: pretty `json` on a terminal, `ndjson` when piped. `table`, `csv`, and `tsv` render a `METRIC | VALUE` view.
+The global `--output-format`, `--color`, `--quiet`, and `--no-stats` flags apply; see [Output Formats](../../reference/output.md). The default is TTY-aware: pretty `json` on a terminal, `ndjson` when piped. `table`, `csv`, and `tsv` render a `METRIC | VALUE` view.
 
-`json` / `ndjson` echo the raw API body (including `uptime_seconds` and any future fields). The tabular views flatten known counters and humanize uptime as `uptime` (for example `5m 12s`); when `dynamic_sources` is present they append `dynamic_sources.total`, `dynamic_sources.resolves_total`, `dynamic_sources.errors_total`, and `dynamic_sources.cache_hits`.
+`json` and `ndjson` echo the raw API body (including `uptime_seconds` and any future fields). The tabular views flatten known counters and humanize uptime as `uptime` (for example `5m 12s`); when `dynamic_sources` is present they append `dynamic_sources.total`, `dynamic_sources.resolves_total`, `dynamic_sources.errors_total`, and `dynamic_sources.cache_hits`.
 
 ## Examples
 

@@ -2,7 +2,7 @@
 
 {{ added "0.17.0" }}
 
-Fuse the detection-as-code rule-side outputs into the per-rule keep/tune/retire verdict table a mature detection program reviews on a cadence.
+Fuse the detection-as-code rule-side outputs into a per-rule keep/tune/retire verdict table for periodic review.
 
 ## Synopsis
 
@@ -12,11 +12,11 @@ rsigma rule scorecard --backtest <FILE> --coverage <FILE> [OPTIONS]
 
 ## Description
 
-`rule scorecard` reads JSON the toolkit already emits and turns it into a decision. The [`rule backtest`](backtest.md) report answers "do my rules fire correctly" (and surfaces unexpected fires on a benign corpus as the false-positive signal); the [`rule coverage`](coverage.md) report answers "what does my rule set cover"; the per-rule Prometheus counters answer "how often does each rule fire in production." Each is a raw output. The scorecard is the fusion-and-verdict layer that joins them into the single artifact a program acts on: for every rule, a precision proxy, volume, ATT&CK context, and a keep/tune/retire verdict with a reason.
+`rule scorecard` reads JSON the toolkit already emits and turns it into a decision. The [`rule backtest`](backtest.md) report answers "do my rules fire correctly" (and surfaces unexpected fires on a benign corpus as the false-positive signal); the [`rule coverage`](coverage.md) report answers "what does my rule set cover"; the per-rule Prometheus counters answer "how often does each rule fire in production." The scorecard joins them into one table: for every rule, a precision proxy, volume, ATT&CK context, and a keep/tune/retire verdict with a reason.
 
 It runs no evaluation and re-reads no corpus. It fuses already-aggregated reports, so it is an offline `rule`-group command with no engine or hot-path involvement.
 
-The two JSON reports are required. The Prometheus snapshot and the triage feed are optional enrichers: a scorecard run with only the two required inputs still produces a meaningful corpus-derived table, and a missing optional input degrades the verdict rather than blocking it.
+The two JSON reports are required. The Prometheus snapshot and the triage feed are optional enrichers: a scorecard run with only the two required inputs still produces a corpus-derived table, and a missing optional input degrades the verdict rather than blocking it.
 
 ## Inputs
 
@@ -42,7 +42,7 @@ The Prometheus join inherits the caveat documented in [Metrics](../../reference/
 | `--metrics-window <DURATION>` | unset | Range-query window (e.g. `7d`, `24h`) when `--metrics` is a query-API base. May also be supplied via `scorecard.metrics_window`. |
 | `--triage <FILE>` | unset | The triage disposition feed. May also be supplied via `scorecard.triage`. |
 | `--fail-on <POLICY>` | `none` | Exit `1` when any rule's verdict is at or worse than the policy: `retire` fails on retire; `tune` fails on tune and retire; `none` reports only. May also be supplied via `scorecard.fail_on`. |
-| `--report <PATH>` | unset | Write the program artifact; `.md`/`.markdown` to markdown, `.html`/`.htm` to HTML. May also be supplied via `scorecard.report`. |
+| `--report <PATH>` | unset | Write a standalone report; `.md`/`.markdown` to markdown, `.html`/`.htm` to HTML. May also be supplied via `scorecard.report`. |
 | `--report-format <FMT>` | from extension | Override the `--report` format (`markdown` or `html`). |
 | `--min-precision <F>` | `0.80` | Keep floor: precision proxy at or above this keeps the rule. |
 | `--tune-max-precision <F>` | `0.50` | Upper edge of the review band (used in the tune reason). |

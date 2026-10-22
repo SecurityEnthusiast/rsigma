@@ -12,7 +12,7 @@ rsigma rule visibility [OPTIONS] --rules <PATH>
 
 ## Description
 
-`rule visibility` answers a different question than [`rule coverage`](coverage.md). Coverage reports the detection axis ("which techniques your rules detect"); visibility reports the data axis ("which fields and logsources you actually see"). The two are co-equal inputs to a mature detection program, and the two Navigator layers stack so the cells where you have data but no detection (or detection but no data) become visible at a glance.
+`rule visibility` answers a different question than [`rule coverage`](coverage.md). Coverage reports the detection axis ("which techniques your rules detect"); visibility reports the data axis ("which fields and logsources you actually see"). The two Navigator layers stack, so the cells where you have data but no detection (or detection but no data) stand out.
 
 The command joins three sets in one pass:
 
@@ -120,6 +120,6 @@ rsigma rule visibility -r rules/ --observed fields.json --fail-on-blind-spots
 
 - [Visibility and Data Sources](../../guide/visibility-and-data-sources.md) for the end-to-end DeTT&CT workflow.
 - [Observability](../../guide/observability.md) for the `--observe-fields` signal this command consumes.
-- [`rule coverage`](coverage.md) for the detection axis; visibility and coverage are the two halves of a mature program.
+- [`rule coverage`](coverage.md) for the detection axis.
 - [Configuration](../../reference/configuration.md) for the `visibility` config section.
 - [Exit Codes reference](../../reference/exit-codes.md) for the canonical table.
