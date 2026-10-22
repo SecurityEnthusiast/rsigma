@@ -2,7 +2,7 @@
 
 `rsigma` is a workspace of nine library crates (`rsigma-parser`, `rsigma-ir`, `rsigma-eval`, `rsigma-convert`, `rsigma-runtime`, `rsigma-mcp`, `rsigma-cli`, `rsigma-lsp`, `rstix`), several of which expose Cargo features that gate optional dependencies and code paths. This page documents every feature, its default state, what it pulls in, and how to enable it when building from source.
 
-The CLI ships with sensible defaults; the precompiled release archives and the GHCR Docker image are built with `--all-features`, so every feature documented here is available out of the box.
+The precompiled release archives and the GHCR Docker image are built with `--all-features`, so every feature documented here is available out of the box.
 
 ## `rsigma-cli`
 
@@ -10,7 +10,7 @@ The crate that produces the `rsigma` binary.
 
 | Feature | Default | Pulls in | What it enables |
 |---------|---------|----------|-----------------|
-| `daemon` | yes | `rsigma-runtime`, `tokio`, `axum`, `prometheus`, `notify`, `rusqlite`, `tower-http` | `engine daemon`, the HTTP API server, `/metrics`, hot-reload, SQLite state persistence, and `rule tune --from-dispositions`. The default; disable only for a minimal `engine eval` / `rule *` build. |
+| `daemon` | yes | `rsigma-runtime`, `tokio`, `axum`, `prometheus`, `notify`, `rusqlite`, `tower-http` | `engine daemon`, the HTTP API server, `/metrics`, hot-reload, SQLite state persistence, and `rule tune --from-dispositions`. The default; disable only for a minimal `engine eval`/`rule *` build. |
 | `mcp` | no | `rsigma-mcp` (pulls in `rmcp`, `schemars`), `tokio` | `mcp serve`, the Model Context Protocol server exposing the toolchain to AI agents. Opt-in: build with `--features mcp`. The prebuilt binaries and Docker image (`--all-features`) include it. See the [MCP server guide](../guide/mcp-server.md). |
 | `daemon-nats` | no | `daemon` + `async-nats`, `tokio-stream`, `time`, `rsigma-runtime/nats` | NATS JetStream as `--input` and `--output` (and DLQ). All `--nats-*` flags. `RSIGMA_CONSUMER_GROUP`. See [NATS Streaming](../guide/nats-streaming.md). |
 | `daemon-otlp` | no | `daemon` + `prost`, `tonic`, `flate2`, `rsigma-runtime/otlp` | OTLP/HTTP and OTLP/gRPC receivers on `/v1/logs`, plus the OTLP output sink that exports detections over OTLP/HTTP and OTLP/gRPC. See [OTLP Integration](../guide/otlp-integration.md). |
@@ -67,7 +67,7 @@ The Model Context Protocol server library. Gated into the CLI by the `mcp` featu
 
 | Feature | Default | Pulls in | What it enables |
 |---------|---------|----------|-----------------|
-| `http` | no | `axum`, `rmcp/transport-streamable-http-server` | `serve_http` / `http_router` for Streamable HTTP (`/mcp`). Bearer-token auth is configured by the CLI; TLS for the listener is provided by `rsigma-cli` when built with `daemon-tls`. |
+| `http` | no | `axum`, `rmcp/transport-streamable-http-server` | `serve_http` and `http_router` for Streamable HTTP (`/mcp`). Bearer-token auth is configured by the CLI; TLS for the listener is provided by `rsigma-cli` when built with `daemon-tls`. |
 
 ## `rstix`
 
@@ -77,7 +77,7 @@ STIX 2.1 library crate. **Data Model + Serialization** is complete with `serde` 
 |---------|---------|----------|-----------------|
 | `serde` | yes | `serde`, `serde_json`, `idna`, `url`, `email_address`, `base64`, `encoding_rs` | `Bundle::parse`, `parse_reader`, `serde` on all model types, T1 advisory `Bundle::validate`, DD-DM-001 wire format checks on domain/email/url. |
 | `pattern` | no | `serde`, `base64`, `ipnet`, `regex`, `unicode-normalization` | `Pattern::parse`, `Pattern::evaluate`, `Pattern::matches_single`, `Pattern::matches_single_with_bundle`, `Pattern::evaluate_observed_data`, `Pattern::canonical`, `IndicatorPattern` STIX AST wiring at deserialize, `PatternAst`, `ObservationContext`, `PatternScoType`, `PatternError`, `PatternMatchError`. STIX Specification §9 Levels 1-3. See [rstix Pattern Engine](../library/rstix.md#rstix-pattern-engine-stix-9). |
-| `validate` | no | `serde`, `pattern` | `Validator`, `ValidatorBuilder` (`with_allow_custom`, `with_parse_options`, `with_phase`), `ValidationPhase`, structured `STIX-E/W/I/H` diagnostics, `validate_json_str` / `validate_json_value` / `validate_bundle` / `validate_object`. See [Validation Pipeline](../library/rstix.md#rstix-validation-pipeline). |
+| `validate` | no | `serde`, `pattern` | `Validator`, `ValidatorBuilder` (`with_allow_custom`, `with_parse_options`, `with_phase`), `ValidationPhase`, structured `STIX-E/W/I/H` diagnostics, `validate_json_str`, `validate_json_value`, `validate_bundle`, `validate_object`. See [Validation Pipeline](../library/rstix.md#rstix-validation-pipeline). |
 | `graph` | no | `serde` | `StixGraph`, `EdgeTraversal`, `RelationshipExpander`, SRO + ref graph construction. See [Graph + Marking + Store](../library/rstix.md#rstix-graph-marking-store). |
 | `marking` | no | `serde` | `MarkingResolver`, `TlpV2Level`, granular selector resolution, disclosure checks. |
 | `store` | no | `serde` | `StixStore`, `MemoryStore`, `StixQuery` (typed + full-text search), `ImportReport`. |

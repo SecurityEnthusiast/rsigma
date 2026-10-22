@@ -153,7 +153,7 @@ curl -sS http://127.0.0.1:9090/api/v1/schemas
 }
 ```
 
-`unknown_shapes` is a bounded, redacted sample of the field-key sets (key names only, never values) of unknown events, so you can author a signature for what is unrecognized. `routing_pruning` is the per-schema eligible-versus-pruned rule count, present when schema routing and logsource routing are both active. The same signals are exposed as the `rsigma_events_by_schema_total{schema}`, `rsigma_events_unknown_schema_total`, `rsigma_events_ambiguous_schema_total`, and `rsigma_schema_rules_eligible{schema}` / `rsigma_schema_rules_pruned{schema}` Prometheus metrics. A rising unknown rate flags a source whose schema RSigma does not recognize; add a signature with `--schema-config`.
+`unknown_shapes` is a bounded, redacted sample of the field-key sets (key names only, never values) of unknown events, so you can author a signature for what is unrecognized. `routing_pruning` is the per-schema eligible-versus-pruned rule count, present when schema routing and logsource routing are both active. The same signals are exposed as the `rsigma_events_by_schema_total{schema}`, `rsigma_events_unknown_schema_total`, `rsigma_events_ambiguous_schema_total`, `rsigma_schema_rules_eligible{schema}`, and `rsigma_schema_rules_pruned{schema}` Prometheus metrics. A rising unknown rate flags a source whose schema RSigma does not recognize; add a signature with `--schema-config`.
 
 ### `GET /api/v1/schemas/suggestions`
 
@@ -217,7 +217,7 @@ curl -sS -N 'http://127.0.0.1:9090/api/v1/tap?duration=10s&redact=user.email,src
 {"rsigma_tap_summary":{"captured":2,"dropped":0,"duration_ms":10000,"stage":"decoded"}}
 ```
 
-**Redaction is server-side.** Raw values for redacted fields never cross the wire. Each value is replaced with a deterministic per-session token (`rsigma:redacted:<16 hex>`), so equal values map to equal tokens within one capture (preserving correlation cardinality on replay) while a random per-session salt blocks dictionary reversal and cross-fixture linkage. Paths use the same object-key / numeric-index navigation as the [enrichment template engine](../guide/enrichers.md), except a non-numeric segment meeting an array fans out to every element (fail-closed).
+**Redaction is server-side.** Raw values for redacted fields never cross the wire. Each value is replaced with a deterministic per-session token (`rsigma:redacted:<16 hex>`), so equal values map to equal tokens within one capture (preserving correlation cardinality on replay) while a random per-session salt blocks dictionary reversal and cross-fixture linkage. Paths use the same object-key/numeric-index navigation as the [enrichment template engine](../guide/enrichers.md), except a non-numeric segment meeting an array fans out to every element (fail-closed).
 
 Error semantics:
 

@@ -104,7 +104,7 @@ The `rsigma.ads.*` namespace carries the [Palantir Alerting and Detection Strate
 | `rsigma.ads.validation` | Validation (true-positive recipe) | scalar (prose) |
 | `rsigma.ads.priority` | Priority rationale (alongside `level`) | scalar (prose) |
 | `rsigma.ads.response` | Response plan | sequence |
-| `rsigma.ads.exempt` | Opt out of ADS enforcement for this rule | `true` / `false` |
+| `rsigma.ads.exempt` | Opt out of ADS enforcement for this rule | `true`/`false` |
 
 ### Example: a fully documented detection
 

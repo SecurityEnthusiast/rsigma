@@ -8,7 +8,7 @@ rsigma converts a handful of targets natively (`postgres`, `lynxdb`, `fibratus`)
 
 `rsigma backend convert -t <target>` resolves the target in this order:
 
-1. **Native backend.** If rsigma has a native backend for the target (`postgres`/`postgresql`/`pg`, `lynxdb`, `fibratus`), it is used, exactly as before. Native always wins.
+1. **Native backend.** If rsigma has a native backend for the target (`postgres`/`postgresql`/`pg`, `lynxdb`, `fibratus`), it is used.
 2. **Delegated to sigma-cli.** Otherwise, if a `sigma` executable is discoverable, rsigma runs `sigma convert` with the original rule files and a mapped flag set, and relays its output. The result is identical to running sigma-cli directly.
 3. **Error.** If neither is available, the command exits with code `3` and prints guidance to install sigma-cli (or fix the discovery override).
 

@@ -7,7 +7,7 @@
 | Code | Constant | Meaning |
 |------|----------|---------|
 | `0` | `SUCCESS` | Operation completed cleanly. For `engine eval`, events were processed (detections may have fired). For `rule lint`, no findings at or above `--fail-level`. For `rule validate`, every rule parsed and compiled. |
-| `1` | `FINDINGS` | The tool ran but produced findings. For `engine eval --fail-on-detection`, at least one detection or correlation fired. For `rule lint --fail-level <X>`, at least one finding at or above `X`. Also used by `pipeline resolve` when any source returns `"status": "error"`, and by `rule hygiene` / `rule scorecard` when `--fail-on` matches. |
+| `1` | `FINDINGS` | The tool ran but produced findings. For `engine eval --fail-on-detection`, at least one detection or correlation fired. For `rule lint --fail-level <X>`, at least one finding at or above `X`. Also used by `pipeline resolve` when any source returns `"status": "error"`, and by `rule hygiene` and `rule scorecard` when `--fail-on` matches. |
 | `2` | `RULE_ERROR` | The input rules could not be loaded or compiled. For `rule validate`, parse or compile errors. For `backend convert`, conversion failed or every rule failed. For `engine eval`, `rule lint`, `rule fields`, and `rule parse`, the rules path or file could not be read. For `rule condition`, the expression has bad syntax. For `rule stdin`, stdin could not be read. |
 | `3` | `CONFIG_ERROR` | Configuration or argument error: bad pipeline file, unknown backend target, malformed `--suppress` duration, invalid `--jq` filter, schema load/fetch/parse failure, unreachable daemon client call. |
 

@@ -64,11 +64,11 @@ Exposed when one or more pipelines declare dynamic sources. The labelled counter
 | `rsigma_source_cache_hits_total` | counter | none | Times cached source data was served on resolution failure. Aggregated across all sources. |
 | `rsigma_source_last_resolved_timestamp` | gauge | `source_id` | Unix timestamp of the last successful resolution per source. Alert on staleness. |
 
-The `error_kind` values come from `rsigma_runtime::sources::SourceErrorKind`. `Fetch` covers HTTP / file / command / NATS connect-or-read failures (per-protocol details land in the `error_message` log field, not the label). `ResourceLimit` covers the 10 MiB body cap, 30 s command exec cap, and similar.
+The `error_kind` values come from `rsigma_runtime::sources::SourceErrorKind`. `Fetch` covers HTTP, file, command, and NATS connect-or-read failures (per-protocol details land in the `error_message` log field, not the label). `ResourceLimit` covers the 10 MiB body cap, 30 s command exec cap, and similar.
 
 ## Enrichment (6 metrics)
 
-Exposed when the daemon is built with `daemon` and `--enrichers` is passed. Every `(enricher_id, kind, status)` triple and every HTTP-cache `enricher_id` row is pre-registered at startup, so all six families render with their `# HELP` / `# TYPE` lines and zeroed counters on the first scrape, even before any event has fired. Filtered (kind- or scope-mismatched) enricher calls do not increment any counter, so cardinality stays bounded by the number of configured enrichers.
+Exposed when the daemon is built with `daemon` and `--enrichers` is passed. Every `(enricher_id, kind, status)` triple and every HTTP-cache `enricher_id` row is pre-registered at startup, so all six families render with their `# HELP` and `# TYPE` lines and zeroed counters on the first scrape, even before any event has fired. Filtered (kind- or scope-mismatched) enricher calls do not increment any counter, so cardinality stays bounded by the number of configured enrichers.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
@@ -83,7 +83,7 @@ The `kind` label is carried even though `enricher_id` typically already encodes 
 
 ## Alert pipeline (13 metrics)
 
-Exposed when the daemon is built with `daemon`. The fixed label sets on `rsigma_dedup_results_total`, `rsigma_incidents_emitted_total`, and `rsigma_incident_overmerge_total`, plus the `rsigma_dedup_store_entries`, `rsigma_incidents_open`, `rsigma_silences_active`, and `rsigma_inhibit_sources_active` gauges, are pre-registered at startup, so they render with their `# HELP` / `# TYPE` lines and zeroed series on the first scrape, even before `--alert-pipeline` is passed or any event fires. The `rsigma_inhibited_total{rule}` series appears once a rule first inhibits. See the [Alert Pipeline](../guide/alert-pipeline.md) guide.
+Exposed when the daemon is built with `daemon`. The fixed label sets on `rsigma_dedup_results_total`, `rsigma_incidents_emitted_total`, and `rsigma_incident_overmerge_total`, plus the `rsigma_dedup_store_entries`, `rsigma_incidents_open`, `rsigma_silences_active`, and `rsigma_inhibit_sources_active` gauges, are pre-registered at startup, so they render with their `# HELP` and `# TYPE` lines and zeroed series on the first scrape, even before `--alert-pipeline` is passed or any event fires. The `rsigma_inhibited_total{rule}` series appears once a rule first inhibits. See the [Alert Pipeline](../guide/alert-pipeline.md) guide.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
@@ -104,7 +104,7 @@ Exposed when the daemon is built with `daemon`. The fixed label sets on `rsigma_
 
 ## Risk-based alerting (9 metrics)
 
-Exposed when the daemon is built with `daemon`. The fixed label set on `rsigma_risk_annotations_total` and `rsigma_risk_incidents_emitted_total`, plus the `rsigma_risk_entities_open` and `rsigma_risk_state_entries` gauges, are pre-registered at startup, so they render with their `# HELP` / `# TYPE` lines and zeroed series on the first scrape, even before `--risk` is passed or any event fires. See the [Risk-Based Alerting](../guide/risk-based-alerting.md) guide.
+Exposed when the daemon is built with `daemon`. The fixed label set on `rsigma_risk_annotations_total` and `rsigma_risk_incidents_emitted_total`, plus the `rsigma_risk_entities_open` and `rsigma_risk_state_entries` gauges, are pre-registered at startup, so they render with their `# HELP` and `# TYPE` lines and zeroed series on the first scrape, even before `--risk` is passed or any event fires. See the [Risk-Based Alerting](../guide/risk-based-alerting.md) guide.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|

@@ -53,7 +53,7 @@ The daemon issues HTTP requests in two places: dynamic-source resolution (a Sigm
 | `strict`     | denied                                 | denied                           | denied                    | denied                                                           |
 | `permissive` | allowed                                | allowed                          | allowed                   | allowed                                                          |
 
-The `default` preset balances safety against the common case of internal threat-intel services on private addresses. Pick `strict` if the daemon has no legitimate reason to reach private or loopback addresses; pick `permissive` only in tightly controlled environments where every source / enricher URL has been vetted. The presets are also reachable from library code via `rsigma_runtime::EgressPolicy::{default,strict,permissive}` and `set_default_egress_policy`; per-category builders (`with_block_link_local`, `with_block_cloud_metadata`, `with_block_loopback`, `with_block_private`) cover the in-between cases.
+The `default` preset balances safety against the common case of internal threat-intel services on private addresses. Pick `strict` if the daemon has no legitimate reason to reach private or loopback addresses; pick `permissive` only in tightly controlled environments where every source and enricher URL has been vetted. The presets are also reachable from library code via `rsigma_runtime::EgressPolicy::{default,strict,permissive}` and `set_default_egress_policy`; per-category builders (`with_block_link_local`, `with_block_cloud_metadata`, `with_block_loopback`, `with_block_private`) cover the in-between cases.
 
 IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) inherit the IPv4 rules: a host that resolves to `::ffff:169.254.169.254` is rejected as link-local just like the bare IPv4 form.
 
@@ -149,7 +149,7 @@ Hot-reload: cert rotation funnels through the daemon's central debounced reload 
 
 Observability: `/metrics` exposes `rsigma_tls_certificate_expiry_seconds` (signed; negative once expired) and `rsigma_tls_active_connections`. A single WARN is logged at startup (and on every successful reload) when the active cert expires within 30 days; wire that line into the existing log-based alerting.
 
-Out of scope for this feature today: ACME / Let's Encrypt automation. Operators point `--tls-cert` and `--tls-key` at renewed files (cert-manager, certbot, Vault PKI, ...) and send SIGHUP. Encrypted private keys are not supported; `--tls-key-password` / `RSIGMA_TLS_KEY_PASSWORD` is rejected at startup with a clear `openssl rsa` hint. Decrypt the key before loading it.
+Out of scope for this feature today: ACME/Let's Encrypt automation. Operators point `--tls-cert` and `--tls-key` at renewed files (cert-manager, certbot, Vault PKI, ...) and send SIGHUP. Encrypted private keys are not supported; `--tls-key-password`/`RSIGMA_TLS_KEY_PASSWORD` is rejected at startup with a clear `openssl rsa` hint. Decrypt the key before loading it.
 
 OTLP receiver authentication has two options: mTLS (`--tls-client-ca`) so every OpenTelemetry agent pins to a known CA, or a bearer token with the `events:ingest` permission (see [Daemon API authentication](#daemon-api-authentication)); the OTLP/gRPC service reads the same `authorization` metadata OpenTelemetry Collector exporters send via the `headers` setting.
 
@@ -225,7 +225,7 @@ Rules and pipeline files are read-only. The `notify` file-watcher does not write
 
 ## Dependency policy
 
-The repo uses `cargo audit` in CI on every `Cargo.toml` / `Cargo.lock` change. The audit workflow is in [`.github/workflows/audit.yml`](https://github.com/timescale/rsigma/blob/main/.github/workflows/audit.yml). Dependabot keeps direct dependencies current; transitive fixes are applied via targeted `cargo update -p <crate>` when needed.
+The repo uses `cargo audit` in CI on every `Cargo.toml` or `Cargo.lock` change. The audit workflow is in [`.github/workflows/audit.yml`](https://github.com/timescale/rsigma/blob/main/.github/workflows/audit.yml). Dependabot keeps direct dependencies current; transitive fixes are applied via targeted `cargo update -p <crate>` when needed.
 
 Supply-chain signal:
 
@@ -239,7 +239,7 @@ See [`.github/workflows/docker.yml`](https://github.com/timescale/rsigma/blob/ma
 
 ## Threat model summary
 
-In one paragraph: rsigma assumes a trusted operator providing rules, pipelines, and source declarations on disk, plus an event stream from a trusted upstream agent. The hardening here exists to defend against malformed input, unbounded resource consumption (an attacker-controlled JSON event, a rule that recurses without bound, a dynamic source serving 100 GiB of garbage), and supply-chain attacks against dependencies. Daemon HTTP and OTLP listeners can be hardened in-process by building with the `daemon-tls` feature and pairing `--tls-cert`/`--tls-key` with `--tls-client-ca` for mTLS, plus opt-in bearer-token authentication with per-token `resource:action` permissions; without TLS, deploy behind a reverse proxy. NATS connections (source, sink, DLQ) support five auth methods plus TLS-required mode.
+RSigma assumes a trusted operator providing rules, pipelines, and source declarations on disk, plus an event stream from a trusted upstream agent. The hardening here exists to defend against malformed input, unbounded resource consumption (an attacker-controlled JSON event, a rule that recurses without bound, a dynamic source serving 100 GiB of garbage), and supply-chain attacks against dependencies. Daemon HTTP and OTLP listeners can be hardened in-process by building with the `daemon-tls` feature and pairing `--tls-cert`/`--tls-key` with `--tls-client-ca` for mTLS, plus opt-in bearer-token authentication with per-token `resource:action` permissions; without TLS, deploy behind a reverse proxy. NATS connections (source, sink, DLQ) support five auth methods plus TLS-required mode.
 
 ## See also
 

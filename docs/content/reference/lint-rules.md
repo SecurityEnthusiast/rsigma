@@ -171,7 +171,7 @@ The first two apply to any document type, based on the top-level `sigma-version`
 | Rule | Severity | Fix | Description |
 |------|----------|-----|-------------|
 | `unsupported_sigma_version` | `error` | none | `sigma-version` declares a specification major newer than this build implements, so the document cannot be interpreted correctly. Upgrade RSigma or target a supported major. |
-| `array_matching_without_version` | `warning` | none | The document uses array-matching selector syntax (`field[any]`, `args[0]`, ...) but resolves below the major that enables it (absent or `sigma-version: 2`), so the brackets are read as literal field-name characters. Add `sigma-version: 3` to read them as array selectors, or escape the brackets (`\[` / `\]`) to keep them literal. |
+| `array_matching_without_version` | `warning` | none | The document uses array-matching selector syntax (`field[any]`, `args[0]`, ...) but resolves below the major that enables it (absent or `sigma-version: 2`), so the brackets are read as literal field-name characters. Add `sigma-version: 3` to read them as array selectors, or escape the brackets (`\[` and `\]`) to keep them literal. |
 | `sigma_version_mismatch` | `warning` | none | A correlation or filter and a rule it references declare different `sigma-version` majors. Cross-referencing rules must share a specification major, since the referencing rule's semantics depend on a consistent reading of the referenced ones. |
 | `unknown_rule_reference` | `warning` | none | A correlation's `rules:` or a filter's `rules:` entry references a rule (by `id` or `name`) that does not exist among the linted rules. Only emitted when linting a directory, where the rule index is complete. |
 

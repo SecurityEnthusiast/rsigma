@@ -249,7 +249,7 @@ curl -sS http://127.0.0.1:9090/api/v1/silences
 
 ### `POST /api/v1/silences`
 
-Create a silence. The body is a JSON object with `matchers` (required; each `{selector, op, value}` where `op` is `=`, `!=`, `=~`, or `!~`), optional `starts_at` / `ends_at` (RFC 3339), `created_by`, and `comment`. Returns `201` with the assigned `id`. A missing matcher list or a bad regex returns `400`. Once the dynamic-silence cap (`max_silences`, default 1000) is reached it returns `429`; delete silences or raise the cap.
+Create a silence. The body is a JSON object with `matchers` (required; each `{selector, op, value}` where `op` is `=`, `!=`, `=~`, or `!~`), optional `starts_at` and `ends_at` (RFC 3339), `created_by`, and `comment`. Returns `201` with the assigned `id`. A missing matcher list or a bad regex returns `400`. Once the dynamic-silence cap (`max_silences`, default 1000) is reached it returns `429`; delete silences or raise the cap.
 
 ```bash
 curl -sS -X POST http://127.0.0.1:9090/api/v1/silences \
@@ -307,7 +307,7 @@ The triage feedback loop. Disabled by default; both routes return `503` unless t
 
 ### `POST /api/v1/dispositions`
 
-Ingest one or more analyst dispositions. The body is a single JSON object, a JSON array of objects, or NDJSON. Each object carries `rule_id` (required for `detection` scope, with a title fallback), `verdict` (`true_positive` / `false_positive` / `benign_true_positive`), an optional `scope` (`detection` default, or `incident` with an `incident_id`), optional `fingerprint` / `incident_id` alert identities, an optional RFC 3339 `timestamp`, and optional `analyst` / `note` (`note` max 2048 bytes). Returns `200` with an ingest summary; a whole-body parse failure returns `400`. Requires `dispositions:write` when API authentication is enabled. When capture is also enabled, POST additionally requires `capture:write` and the summary may include a `capture` array (`queued`, `exists`, `miss`, `queue_full`). Disposition accounting stays accepted even if corpus spooling misses. There is no API to read the capture ring or the spool. See [Verdict-Driven Corpora](../guide/verdict-to-corpus.md).
+Ingest one or more analyst dispositions. The body is a single JSON object, a JSON array of objects, or NDJSON. Each object carries `rule_id` (required for `detection` scope, with a title fallback), `verdict` (`true_positive`, `false_positive`, or `benign_true_positive`), an optional `scope` (`detection` default, or `incident` with an `incident_id`), optional `fingerprint`/`incident_id` alert identities, an optional RFC 3339 `timestamp`, and optional `analyst` and `note` (`note` max 2048 bytes). Returns `200` with an ingest summary; a whole-body parse failure returns `400`. Requires `dispositions:write` when API authentication is enabled. When capture is also enabled, POST additionally requires `capture:write` and the summary may include a `capture` array (`queued`, `exists`, `miss`, `queue_full`). Disposition accounting stays accepted even if corpus spooling misses. There is no API to read the capture ring or the spool. See [Verdict-Driven Corpora](../guide/verdict-to-corpus.md).
 
 ```bash
 curl -sS -X POST http://127.0.0.1:9090/api/v1/dispositions \

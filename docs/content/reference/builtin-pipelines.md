@@ -15,7 +15,7 @@ The builtin registry is the source of truth (`ecs_windows`, `fibratus_windows`, 
 
 ## `ecs_windows`
 
-Maps generic Sigma / Sysmon field names to Elastic Common Schema (ECS) as produced by [Winlogbeat](https://www.elastic.co/beats/winlogbeat) and [Elastic Agent](https://www.elastic.co/elastic-agent). Derived from `pySigma-backend-elasticsearch`'s `ecs_windows` pipeline.
+Maps generic Sigma/Sysmon field names to Elastic Common Schema (ECS) as produced by [Winlogbeat](https://www.elastic.co/beats/winlogbeat) and [Elastic Agent](https://www.elastic.co/elastic-agent). Derived from `pySigma-backend-elasticsearch`'s `ecs_windows` pipeline.
 
 ```bash
 rsigma engine eval -r rules/ -p ecs_windows \
