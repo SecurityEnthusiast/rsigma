@@ -20,7 +20,7 @@ rsigma-lsp --version
 
 ## Neovim
 
-The native LSP client lands you with the smallest setup. Drop this in your config (works as-is in Lua, no plugin manager required):
+The native LSP client needs the smallest setup. Drop this in your config (works as-is in Lua, no plugin manager required):
 
 ```lua
 vim.api.nvim_create_autocmd('FileType', {
@@ -88,7 +88,7 @@ require('lspconfig').yamlls.setup({
 
 ### Code actions and quick-fixes
 
-Default bindings differ per distro; the canonical mapping is `vim.lsp.buf.code_action()`. In Lazyvim / Astrovim, `<leader>ca` is the standard. The {{ rsigma.lint.autofix }} fixable rules from the [Lint Rules reference](../reference/lint-rules.md) all surface as `quickfix`-kind actions marked `isPreferred`.
+Default bindings differ per distro; the canonical mapping is `vim.lsp.buf.code_action()`. In LazyVim and AstroNvim, `<leader>ca` is the standard. The {{ rsigma.lint.autofix }} fixable rules from the [Lint Rules reference](../reference/lint-rules.md) all surface as `quickfix`-kind actions marked `isPreferred`.
 
 ## Helix
 

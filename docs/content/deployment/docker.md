@@ -37,7 +37,7 @@ Production deployments should pin to a specific version, not `latest`:
 docker run --rm ghcr.io/timescale/rsigma:{{ rsigma.version }} --version
 ```
 
-For full immutability, pin by image digest. Pull `inspect` to find the digest, then reference it directly:
+For full immutability, pin by image digest. Run `inspect` to find the digest, then reference it directly:
 
 ```bash
 docker buildx imagetools inspect ghcr.io/timescale/rsigma:{{ rsigma.version }}
@@ -208,7 +208,7 @@ docker run --rm rsigma:local --version
 
 The Dockerfile uses two cargo build layers: one that compiles only the dependency graph (so `Cargo.toml` edits don't invalidate the full build) and one that compiles the workspace itself. Cold builds take ~5 minutes on a current laptop; subsequent builds with unchanged dependencies finish in well under a minute.
 
-## What's NOT in the image
+## What's not in the image
 
 The image ships only the runtime `rsigma` binary. It does not include:
 

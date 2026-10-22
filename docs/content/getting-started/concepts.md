@@ -139,6 +139,7 @@ A correlation firing looks like this:
 ```
 
 `events` and `event_refs` appear only when correlation event mode is `Full` or `Refs`. The [HTTP API reference](../reference/http-api.md) and [eval library docs](../library/eval.md) cover the full field set.
+
 ## Where to go next
 
 - **Tutorial path:** [quick start](quick-start.md) -> [evaluating rules](../guide/evaluating-rules.md) -> [streaming detection](../guide/streaming-detection.md).

@@ -1,6 +1,6 @@
 # Welcome to RSigma's documentation!
 
-RSigma is a [Sigma](https://sigmahq.io/) detection engineering toolkit: parser, linter, evaluator, correlation engine, conversion framework, streaming daemon, and MCP and LSP servers. It builds on open industry standards throughout: Sigma for detection rules, [OpenTelemetry](https://opentelemetry.io/) for log ingestion and detection export, and [STIX](https://oasis-open.github.io/cti-documentation/stix/intro) and [TAXII](https://oasis-open.github.io/cti-documentation/taxii/intro) for threat intelligence.
+RSigma is a [Sigma](https://sigmahq.io/) detection engineering toolkit: parser, linter, evaluator, correlation engine, conversion framework, streaming daemon, and MCP and LSP servers. It builds on open standards: Sigma for detection rules, [OpenTelemetry](https://opentelemetry.io/) for log ingestion and detection export, and [STIX](https://oasis-open.github.io/cti-documentation/stix/intro) and [TAXII](https://oasis-open.github.io/cti-documentation/taxii/intro) for threat intelligence.
 
 ::: grids
 ::: grid
@@ -47,7 +47,7 @@ Generate PostgreSQL, LynxDB, or Fibratus queries natively, or Splunk, Elasticsea
 :::
 ::: grid
 ::: card "Streaming detection" icon:radio
-Run the daemon with NATS, HTTP, or OTLP input. Hot-reload, metrics, state.
+Run the daemon with NATS, HTTP, or OTLP input. It supports hot-reload, metrics, and persisted state.
 
 [Streaming detection](./guide/streaming-detection.md)
 :::
