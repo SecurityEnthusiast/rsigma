@@ -157,7 +157,7 @@ The `--input-format` flag is parsed in `crates/rsigma-cli/src/commands/daemon.rs
 
 ## Test it
 
-Two test layers:
+Three test layers:
 
 1. **Unit tests** in `crates/rsigma-runtime/src/input/lecf.rs`:
 

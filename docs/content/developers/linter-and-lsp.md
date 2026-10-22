@@ -45,7 +45,7 @@ The compile-time catalog of severities and fix availability is [`crates/rsigma-p
 
 ## Adding a new lint rule
 
-Step 1: classify it. The four buckets and the file each lives in:
+Step 1: classify it. The five buckets and the file each lives in:
 
 | Bucket | File |
 |--------|------|
