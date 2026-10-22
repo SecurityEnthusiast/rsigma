@@ -22,7 +22,7 @@ For full rule loading, compilation, and event evaluation, layer [`rsigma-eval`](
 rsigma-parser = "{{ rsigma.version }}"
 ```
 
-The crate has no RSigma dependencies and pulls in `yaml_serde` 0.10 (the maintained `serde_yaml` fork), `regex`, `regex-syntax` and `fancy-regex` (regular-expression validation), `pest`, and `thiserror`. Default features enable YAML source fixes via the optional `fix` feature (`yamlpatch` / `yamlpath`).
+The crate has no RSigma dependencies and pulls in `yaml_serde` 0.10 (the maintained `serde_yaml` fork), `regex`, `regex-syntax` and `fancy-regex` (regular-expression validation), `pest`, and `thiserror`. Default features enable YAML source fixes via the optional `fix` feature (`yamlpatch` and `yamlpath`).
 
 ## Public surface
 

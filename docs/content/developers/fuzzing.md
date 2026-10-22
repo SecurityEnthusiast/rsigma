@@ -98,10 +98,10 @@ You can also point a regular test at the offending bytes. Reducing the input via
 
 Add a harness when you accept untrusted input and the parsing or matching code is non-trivial:
 
-- A new input format (CEF, EVTX, …) -> add to `fuzz_input_formats` or a sibling.
-- A new extract language -> mirror the `fuzz_extract_*` targets.
-- A new dynamic-source data format -> extend `fuzz_pipeline_sources_yaml` or `fuzz_http_response`.
-- A new condition operator -> extend `fuzz_condition`.
+- A new input format (CEF, EVTX, …): add to `fuzz_input_formats` or a sibling.
+- A new extract language: mirror the `fuzz_extract_*` targets.
+- A new dynamic-source data format: extend `fuzz_pipeline_sources_yaml` or `fuzz_http_response`.
+- A new condition operator: extend `fuzz_condition`.
 
 Differential fuzz harnesses (`fuzz_eval_matcher_diff`) are the canonical guard against matcher-optimizer regressions; when you touch `optimize_any_of` or the Aho-Corasick fast path, run the diff harness before opening a PR.
 

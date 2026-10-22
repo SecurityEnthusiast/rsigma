@@ -9,7 +9,7 @@ The workspace runs several test tiers. Most are gated in CI on every PR; coverag
 | Unit | `src/` modules with `#[cfg(test)] mod tests` | `cargo test --workspace --all-features --locked` | `test` job on Linux, macOS, Windows. |
 | Integration (in-process) | `crates/{rsigma-parser,rsigma-eval,rsigma-convert,rsigma-runtime}/tests/*.rs` | Same. | Same. |
 | End-to-end (binary + containers) | `crates/rsigma-cli/tests/cli_*.rs`, `crates/rsigma-runtime/tests/nats_e2e.rs`, `crates/rsigma-convert/tests/postgres_integration.rs` | Same; testcontainers-based tests skip when Docker is unavailable. | Same. |
-| Snapshot / golden | insta snapshots mainly under `crates/rsigma-parser/tests/snapshots/`; convert/runtime/cli goldens under each crate's `tests/golden/` (or fixtures); dynamic-pipeline goldens in `tests/fixtures/dynamic-pipelines/golden/` | `cargo test` plus the SigmaHQ-corpus job for the dynamic-pipelines goldens. | `test` and `sigma-corpus` jobs. |
+| Snapshot/golden | insta snapshots mainly under `crates/rsigma-parser/tests/snapshots/`; convert/runtime/cli goldens under each crate's `tests/golden/` (or fixtures); dynamic-pipeline goldens in `tests/fixtures/dynamic-pipelines/golden/` | `cargo test` plus the SigmaHQ-corpus job for the dynamic-pipelines goldens. | `test` and `sigma-corpus` jobs. |
 | SigmaHQ corpus | `.github/workflows/ci.yml` -> `sigma-corpus` | `cargo build --release --all-features --locked -p rsigma` then `target/release/rsigma rule validate …` against the pinned corpus SHA | `sigma-corpus` job, on every PR. |
 | Docs audit | `scripts/docs-audit/` | `python3 scripts/docs-audit/check_sources.py`; `cargo build --locked -p rsigma --all-features` then `python3 scripts/docs-audit/check_binary.py --bin target/debug/rsigma` | `Docs catalogues` and `Docs contracts` jobs in `docs-audit.yml`, on every PR. |
 | Coverage | `cargo-llvm-cov` (Linux) | CI: `cargo llvm-cov --workspace --all-features --locked --no-report` then `cargo llvm-cov report --lcov …`. Locally a one-shot form is fine; prefer `--locked`. | `coverage` job (advisory, not gating). |
@@ -61,8 +61,8 @@ Categories for orientation (not a contract on per-file counts):
 
 - **Core CLI**: config, convert, eval, lint, validate, parse, fields, output format.
 - **Daemon**: core daemon plus auth, TLS, tap, tail, schemas/schema routing, risk, alert pipeline, webhook, UDS, HTTP, NATS, OTLP, enrichment, fields observer, delivery, status, correlations, audit trail, sink format, incident bundle, logsource routing.
-- **Detection quality / authoring**: scorecard, backtest, coverage, tune, hygiene, visibility, doc, draft, discover, classify, explain, disposition recipes.
-- **Pipeline / sources**: pipeline diff, migrate-sources, sources deprecation, dump correlation state, logsource/schema routing.
+- **Detection quality/authoring**: scorecard, backtest, coverage, tune, hygiene, visibility, doc, draft, discover, classify, explain, disposition recipes.
+- **Pipeline/sources**: pipeline diff, migrate-sources, sources deprecation, dump correlation state, logsource/schema routing.
 
 List discovered tests with `cargo test -p rsigma --tests -- --list`. Prefer that over memorizing counts.
 
@@ -70,14 +70,14 @@ The shared harness in `crates/rsigma-cli/tests/common/mod.rs` is the canonical r
 
 ### Container E2E (NATS and Postgres via testcontainers)
 
-Four files spin up real services in Docker containers via [`testcontainers`](https://docs.rs/testcontainers). Together they cover **29 tests**, all guarded by a `can_run_linux_containers()` probe that shells out to `docker info` and checks that the daemon reports a Linux OS type. If Docker is missing or only provides Windows containers, the tests print "Skipping" and return successfully.
+Four files spin up real services in Docker containers via [`testcontainers`](https://docs.rs/testcontainers). Together they cover 29 tests, all guarded by a `can_run_linux_containers()` probe that shells out to `docker info` and checks that the daemon reports a Linux OS type. If Docker is missing or only provides Windows containers, the tests print "Skipping" and return successfully.
 
 | File | Tests | Container | What it covers |
 |------|------:|-----------|----------------|
 | `crates/rsigma-runtime/tests/nats_e2e.rs` | 6 | NATS JetStream | Replay-from-offset, replay-from-timestamp, JetStream-based DLQ, consumer groups (the highest-rigor NATS surface). |
-| `crates/rsigma-runtime/tests/nats_integration.rs` | 7 | NATS JetStream | Connection auth (token, NKey, JWT), TLS round-trips, ack semantics, source / sink fan-out. |
+| `crates/rsigma-runtime/tests/nats_integration.rs` | 7 | NATS JetStream | Connection auth (token, NKey, JWT), TLS round-trips, ack semantics, source and sink fan-out. |
 | `crates/rsigma-cli/tests/cli_daemon_nats.rs` | 8 | NATS JetStream | The full `rsigma engine daemon --input nats ...` shape: spawn the binary, point it at the container, assert against published detection matches. |
-| `crates/rsigma-convert/tests/postgres_integration.rs` | 8 | PostgreSQL | Convert real Sigma rules to SQL with `convert_collection`, execute the generated queries against a live PostgreSQL container, assert match counts against the Okta cross-tenant impersonation chain from [the detection-layer-on-postgres companion project](https://github.com/mostafa/detection-layer-on-postgres). This is the only place where the documented PostgreSQL backend output formats (`default`, `view`, `timescaledb`, `continuous_aggregate`, `sliding_window`) are tested *as SQL the database actually accepts*, rather than just as text matching a golden file. |
+| `crates/rsigma-convert/tests/postgres_integration.rs` | 8 | PostgreSQL | Convert real Sigma rules to SQL with `convert_collection`, execute the generated queries against a live PostgreSQL container, assert match counts against the Okta cross-tenant impersonation chain from [the detection-layer-on-postgres companion project](https://github.com/mostafa/detection-layer-on-postgres). This is the only place where the documented PostgreSQL backend output formats (`default`, `view`, `timescaledb`, `continuous_aggregate`, `sliding_window`) are run as SQL against a real database; the golden tests only compare them as text. |
 
 The `skip_without_docker!()` macro pattern is identical in all four:
 
@@ -96,7 +96,7 @@ Use the same `skip_without_docker!()` pattern for any new test that requires an 
 
 ### What "e2e" means here
 
-- **Goal**: cross every internal boundary the binary has, so a regression in the dispatch / IO / metric / exit-code surface fails CI rather than escaping to a user.
+- **Goal**: cross every internal boundary the binary has, so a regression in the dispatch, IO, metric, or exit-code surface fails CI rather than escaping to a user.
 - **Scope**: the compiled binary; the HTTP API; NATS JetStream wiring (via testcontainers, 21 tests across three files); the OTLP HTTP and gRPC handlers; and the PostgreSQL backend's generated SQL (via testcontainers, 8 tests).
 - **Out of scope (today)**: LynxDB, Splunk, Elastic, and KQL backends only have golden-text coverage, not live-query e2e. Kubernetes deployment has no e2e coverage in this repo.
 
@@ -216,7 +216,7 @@ Criterion microbenchmarks are not gated in CI. The numbers in [Benchmarks](../be
 
 The Criterion suites use synthetic, mostly exact-match-indexable rules, so they measure hot paths, not representative corpus throughput. For a representative before/after, materialize the pinned SigmaHQ workload with `scripts/perf/fetch-fixtures.sh` and run `scripts/perf/baseline-eval.sh` (offline eval matrix, single core, net of rule load) and `scripts/perf/daemon-matrix.sh` (daemon HTTP end to end across lanes and flag variants, wrapping `scripts/perf/baseline-daemon.sh`). Both take an `RSIGMA` override, so a pre-change build can be measured through the same harness for an honest before-and-after. The daemon matrix includes `--include-event` variants, including the match-heavy lane where event cloning matters most, and a handcrafted event-count/value-count/value-sum/temporal-ordered correlation lane because the pinned SigmaHQ tree contains no correlation rules.
 
-The Performance workflow builds the PR and its base revision on the same GitHub-hosted runner, runs the load-corrected median-of-three offline matrix through one checked-in harness, verifies match counts, and rejects only a head/base EPS ratio below 0.5. That intentionally coarse floor catches order-of-magnitude regressions without pretending shared-runner noise can support fine-grained gating. A weekly/manual job runs five samples of the full offline matrix, reports a deterministic bootstrap 95% confidence interval, runs the daemon matrix, and retains the raw artifacts for 90 days.
+The Performance workflow builds the PR and its base revision on the same GitHub-hosted runner, runs the load-corrected median-of-three offline matrix through one checked-in harness, verifies match counts, and rejects only a head/base EPS ratio below 0.5. The floor is intentionally coarse: it catches order-of-magnitude regressions, and shared-runner noise is too high for finer gating. A weekly/manual job runs five samples of the full offline matrix, reports a deterministic bootstrap 95% confidence interval, runs the daemon matrix, and retains the raw artifacts for 90 days.
 
 Weekly/manual runs also build native glibc and static musl image binaries on dedicated eight-core amd64 and arm64 runners. `scripts/perf/inflight-compare.sh` alternates five samples each at detection depths 4 and 5, then rejects a depth-5 throughput ratio below 0.98 or a backpressure-rate increase above 0.008. This gate covers the allocator and architecture behavior that the native PR comparison cannot observe.
 
