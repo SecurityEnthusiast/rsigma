@@ -20,7 +20,7 @@ rsigma engine tail --level high --rule whoami
 
 It is the detections-out counterpart to [`engine tap`](tap.md) (events-in). Where the tap records what the engine *received*, tail shows what it *fired*, after post-evaluation enrichment and regardless of which sinks are configured.
 
-The stream is **lossy by design**: it can never apply backpressure to the sink task or stall the at-least-once ack-join. If a session's buffer fills under load, detections are dropped and counted, and the final summary record reports the gap.
+The stream is lossy by design: it can never apply backpressure to the sink task or stall the at-least-once ack-join. If a session's buffer fills under load, detections are dropped and counted, and the final summary record reports the gap.
 
 Like [`engine status`](status.md) it is a read-only client over the admin API. It uses a synchronous HTTP client and does not need the `daemon` build feature, and it follows the same address convention as [`config reload`](../config/reload.md): `--addr` defaults to `daemon.api.addr`, and wildcard binds (`0.0.0.0`, `[::]`) map to loopback.
 
@@ -48,7 +48,7 @@ Both are applied at the sink, so filtered-out results never cross the wire. Inva
 | `--rule <substring>` | unset | Case-insensitive title/id substring filter (percent-encoded in the query string). |
 | `-c, --config <PATH>` | discovery chain | Explicit config file used to resolve the daemon address. |
 
-Rendered through the global `--output-format` layer: a TTY-aware default (pretty `json` on a terminal, `ndjson` when piped) plus `csv`/`tsv` row streaming and a `table` view (buffered, so `table` suits a bounded `--duration`/`--limit` tail rather than an open-ended one). The `table`/`csv`/`tsv` projection is `LEVEL | RULE | TYPE | DETAIL`, mirroring `engine eval`. The global `--quiet` / `--no-stats` flags suppress the stderr stats line. See [Output Formats](../../reference/output.md).
+Rendered through the global `--output-format` layer: a TTY-aware default (pretty `json` on a terminal, `ndjson` when piped) plus `csv`/`tsv` row streaming and a `table` view (buffered, so `table` suits a bounded `--duration`/`--limit` tail rather than an open-ended one). The `table`/`csv`/`tsv` projection is `LEVEL | RULE | TYPE | DETAIL`, mirroring `engine eval`. The global `--quiet` and `--no-stats` flags suppress the stderr stats line. See [Output Formats](../../reference/output.md).
 
 ## Examples
 

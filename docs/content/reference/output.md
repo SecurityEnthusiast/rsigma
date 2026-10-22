@@ -25,7 +25,7 @@ Highest precedence first:
 3. `global.output_format` in the discovered config file (or the file behind `--config`).
 4. TTY-aware default for structured commands:
    - `json` when stdout is a terminal (pretty-printed for human reading).
-   - `ndjson` when stdout is piped or redirected (so `| jq` / `| fluent-bit` / `>file.ndjson` do the right thing without an extra flag).
+   - `ndjson` when stdout is piped or redirected (so `| jq`, `| fluent-bit`, and `>file.ndjson` do the right thing without an extra flag).
 
 Some commands keep a legacy human default when the selector is unset (for example `rule fields`, `rule lint`, `rule validate`, `backend targets`). Passing `--output-format` always overrides that default.
 
@@ -82,7 +82,7 @@ warning: `--output-format csv` is not supported by `rule reverse`; falling back 
 
 | Command | Implicit default | Notes |
 |---------|------------------|-------|
-| `engine eval` | Pretty JSON on TTY; NDJSON when piped | `table` / `csv` / `tsv` project `LEVEL | RULE | TYPE | DETAIL`. `--pretty` still forces pretty JSON for backwards compatibility. |
+| `engine eval` | Pretty JSON on TTY; NDJSON when piped | `table`/`csv`/`tsv` project `LEVEL | RULE | TYPE | DETAIL`. `--pretty` still forces pretty JSON for backwards compatibility. |
 | `engine explain` | Human table/tree | Explicit selector overrides. |
 | `engine classify` | TTY-aware json/ndjson | Full five-format support. |
 | `engine discover-schemas` | TTY-aware json/ndjson | Full five-format support. |
@@ -90,13 +90,13 @@ warning: `--output-format csv` is not supported by `rule reverse`; falling back 
 | `engine tail` | TTY-aware json/ndjson | Streaming detections. |
 | `rule lint` | Coloured human view | Explicit `json` emits `{summary, findings}`; `ndjson` one finding per line; `csv`/`tsv` use `PATH,SEVERITY,RULE,LINE,MESSAGE`. |
 | `rule fields` | Table (even when piped) | Hidden `--json` aliases `--output-format json`. |
-| `rule backtest` / `coverage` / `scorecard` / `visibility` / `hygiene` | TTY-aware or table | Full five-format support. |
+| `rule backtest`/`coverage`/`scorecard`/`visibility`/`hygiene` | TTY-aware or table | Full five-format support. |
 | `rule draft --emit report` | TTY-aware | Full five-format support. |
 | `rule validate` | Human summary | Explicit selector emits `{summary, …}` for `json` and `PATH,STATUS,ERRORS` rows for table/csv/tsv/ndjson. |
-| `backend targets` / `backend formats` | Human listing | Explicit selector emits `PROVIDER,NAME,DESCRIPTION` or `TARGET,KIND,NAME,DESCRIPTION` rows. |
+| `backend targets`/`backend formats` | Human listing | Explicit selector emits `PROVIDER,NAME,DESCRIPTION` or `TARGET,KIND,NAME,DESCRIPTION` rows. |
 | `pipeline resolve` | Compact JSON (`--pretty` optional) | Explicit selector emits `PIPELINE,SOURCE_ID,SOURCE_TYPE,STATUS,DATA_OR_ERROR` rows. |
 | `pipeline diff` | Human unified diff | `json`/`ndjson` keep the AST envelope; `csv`/`tsv` emit per-rule rows with compact JSON in `BEFORE`/`AFTER`. |
-| `config validate` / `show` / `path` | Text / path lines | Local `--format` (when set) wins over global `--output-format` and prints a precedence warning. Global `json`/`ndjson`/`table`/`csv`/`tsv` are honored when local `--format` is unset. `show --format yaml` remains available. |
+| `config validate`/`show`/`path` | Text/path lines | Local `--format` (when set) wins over global `--output-format` and prints a precedence warning. Global `json`/`ndjson`/`table`/`csv`/`tsv` are honored when local `--format` is unset. `show --format yaml` remains available. |
 
 ### Query artifacts
 
@@ -108,7 +108,7 @@ warning: `--output-format csv` is not supported by `rule reverse`; falling back 
 
 | Command | Behaviour |
 |---------|-----------|
-| `rule parse` / `rule condition` / `rule stdin` | Pretty JSON on a TTY; compact NDJSON when piped or redirected. `table`/`csv`/`tsv` warn and fall back to JSON. |
+| `rule parse`/`rule condition`/`rule stdin` | Pretty JSON on a TTY; compact NDJSON when piped or redirected. `table`/`csv`/`tsv` warn and fall back to JSON. |
 
 ### Fixed artifacts and protocols
 
@@ -120,7 +120,7 @@ warning: `--output-format csv` is not supported by `rule reverse`; falling back 
 | `engine tap` | Replayable NDJSON fixture | Warn unless `ndjson`; never array-wrap or pretty-print. |
 | `engine daemon` | Configured sink wire format | Warn; sinks unchanged. |
 | `mcp serve` | MCP protocol stream | Warn; protocol unchanged. |
-| `config init` / `config reload` | File write / HTTP status | Warn; no stdout data product. |
+| `config init`/`config reload` | File write/HTTP status | Warn; no stdout data product. |
 | `config schema` | JSON Schema document | `json`/`ndjson` supported; `table`/`csv`/`tsv` warn and fall back to JSON. |
 
 ## Examples

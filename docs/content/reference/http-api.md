@@ -36,12 +36,12 @@ All bodies are JSON unless otherwise noted. All responses include a `Content-Typ
 | `/api/v1/schemas` | DELETE | `schemas:write` | Reset the schema observer's counters and samples (including the discovery sample). Requires `--observe-schemas`. |
 | `/api/v1/schemas/suggestions` | GET | `schemas:read` | Candidate schema signatures mined from the unrecognized-event sample. Requires `--discover-schemas`. |
 | `/api/v1/tap` | GET | `tap:read` | Stream a bounded, optionally-redacted window of the live event stream as chunked NDJSON. Disabled by default; enable with `daemon.tap.enabled: true`. |
-| `/api/v1/detections/stream` | GET | `detections:read` | Stream live detections as chunked NDJSON, with optional `level` / `rule` filters. Disabled by default; enable with `daemon.tail.enabled: true`. |
+| `/api/v1/detections/stream` | GET | `detections:read` | Stream live detections as chunked NDJSON, with optional `level` and `rule` filters. Disabled by default; enable with `daemon.tail.enabled: true`. |
 | `/api/v1/audit` | GET | `audit:read` | Paginated control-plane mutation audit log (who, what, when, outcome). Requires `--state-db`; auto-enabled when a state database is configured. |
 | `/v1/logs` | POST | `events:ingest` | OTLP/HTTP log ingestion (`application/x-protobuf` or `application/json`, optionally gzip-encoded). Requires `daemon-otlp`. |
 | OTLP/gRPC `LogsService/Export` | gRPC | `events:ingest` | OTLP over gRPC on the same `--api-addr`. Requires `daemon-otlp`. |
 
-The Permission column applies only when authentication is enabled; without it every route is open, which the daemon accepts only on loopback, a `unix://` socket, a listener that requires client certificates, or with `--allow-unauthenticated`. In-process TLS termination is available via the optional `daemon-tls` build feature: pass `--tls-cert` / `--tls-key` to terminate TLS for the HTTP REST, OTLP/HTTP, and OTLP/gRPC surfaces on the same `--api-addr`, and `--tls-client-ca` to require mTLS. See [TLS termination for the API listener](security.md#tls-termination-for-the-api-listener) for the full flag set.
+The Permission column applies only when authentication is enabled; without it every route is open, which the daemon accepts only on loopback, a `unix://` socket, a listener that requires client certificates, or with `--allow-unauthenticated`. In-process TLS termination is available via the optional `daemon-tls` build feature: pass `--tls-cert`/`--tls-key` to terminate TLS for the HTTP REST, OTLP/HTTP, and OTLP/gRPC surfaces on the same `--api-addr`, and `--tls-client-ca` to require mTLS. See [TLS termination for the API listener](security.md#tls-termination-for-the-api-listener) for the full flag set.
 
 Endpoint details are split across three pages:
 
@@ -76,7 +76,7 @@ Clients send `Authorization: Bearer <token>`. Each route requires the `resource:
 
 Token secrets never live in YAML: `token_env` names an environment variable, resolved once at startup, and a missing or empty variable fails startup. Token comparison is constant time. `GET /healthz` and `GET /readyz` are always unauthenticated so liveness probes need no secrets; `anonymous_permissions` grants a permission set to requests without an `Authorization` header (for example `["metrics:read"]` keeps Prometheus scraping token-free, and `["*:read"]` protects only the mutating endpoints).
 
-Failure semantics: a missing or unrecognized token gets `401 Unauthorized` (with a `WWW-Authenticate: Bearer` header); a recognized token without the required permission gets `403 Forbidden` naming the missing permission. A presented-but-invalid token is always 401, never a fallback to the anonymous grants. OTLP/gRPC clients pass the same `authorization` metadata and receive `UNAUTHENTICATED` / `PERMISSION_DENIED` gRPC status codes. Rejections are counted in `rsigma_api_auth_failures_total{reason}` and logged at warn level with the token name (never the secret). See [Security](security.md#daemon-api-authentication) for the threat-model discussion.
+Failure semantics: a missing or unrecognized token gets `401 Unauthorized` (with a `WWW-Authenticate: Bearer` header); a recognized token without the required permission gets `403 Forbidden` naming the missing permission. A presented-but-invalid token is always 401, never a fallback to the anonymous grants. OTLP/gRPC clients pass the same `authorization` metadata and receive `UNAUTHENTICATED` or `PERMISSION_DENIED` gRPC status codes. Rejections are counted in `rsigma_api_auth_failures_total{reason}` and logged at warn level with the token name (never the secret). See [Security](security.md#daemon-api-authentication) for the threat-model discussion.
 
 ## Probes
 

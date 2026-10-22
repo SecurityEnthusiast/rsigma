@@ -69,7 +69,7 @@ OTLP `LogRecord` carries data across several fields: timestamp, severity, body, 
 | `InstrumentationScope.name` | `scope.name` | As-is. |
 | `InstrumentationScope.version` | `scope.version` | As-is. |
 
-The map-body flattening is the important part. It means a rule that selects `EventID: 4625` against your Sysmon events works whether the agent ships them via OTLP, NATS, or stdin. You do not need an OTLP-specific pipeline.
+Because of the map-body flattening, a rule that selects `EventID: 4625` against your Sysmon events works whether the agent ships them via OTLP, NATS, or stdin. You do not need an OTLP-specific pipeline.
 
 ## Agent recipes
 
@@ -206,7 +206,7 @@ service:
       exporters: [otlp_http/rsigma]
 ```
 
-Verified with `otelcol-contrib` v0.152. The previous aliases (`filelog`, `otlphttp`) still work in v0.152 but emit deprecation warnings; the underscored names are the future-proof ones. The `json_parser` operator flattens each JSON line into a map body so Sigma rules match its top-level fields.
+Verified with `otelcol-contrib` v0.152. The previous aliases (`filelog`, `otlphttp`) still work in v0.152 but emit deprecation warnings, so use the underscored names. The `json_parser` operator flattens each JSON line into a map body so Sigma rules match its top-level fields.
 
 ## TLS
 
@@ -235,7 +235,7 @@ Each of the four agents documented above can be pointed at an `https://` endpoin
 
 ## Authentication
 
-When API auth is enabled (`--api-token-env` or a `daemon.api.auth` config block), `POST /v1/logs` and the gRPC `LogsService/Export` require the `events:ingest` permission. Agents send a bearer token via the usual `Authorization: Bearer <token>` header (or gRPC `authorization` metadata). Off by default, the listener is open and network position is the only guard.
+When API auth is enabled (`--api-token-env` or a `daemon.api.auth` config block), `POST /v1/logs` and the gRPC `LogsService/Export` require the `events:ingest` permission. Agents send a bearer token via the usual `Authorization: Bearer <token>` header (or gRPC `authorization` metadata). Auth is off by default, in which case the listener is open and network position is the only guard.
 
 For agent-to-daemon pinning without tokens, use mutual TLS via `--tls-client-ca` so every agent presents a CA-signed client cert at the handshake. Auth and TLS complement each other: see [Daemon API authentication](../reference/security.md#daemon-api-authentication) and [TLS termination](../reference/security.md#tls-termination-for-the-api-listener).
 

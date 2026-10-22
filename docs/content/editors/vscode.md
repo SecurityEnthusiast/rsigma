@@ -9,8 +9,8 @@ The extension also runs as-is in [Cursor](https://cursor.sh/) and any other VS C
 | Capability | Detail |
 |------------|--------|
 | Diagnostics | All {{ rsigma.lint.rules }} lint rules, plus YAML and condition-expression parse errors, plus per-rule compile errors. Three layers run on every save and after a 150 ms debounce on every change. |
-| Code actions | One-click quick-fixes for the {{ rsigma.lint.autofix }} lint rules with a `Safe` fix. Cursor over a squiggle, press `Cmd+.` / `Ctrl+.`, pick the suggestion. |
-| Completions | Modifier names after `|`, MITRE ATT&CK tags inside `tags:`, valid `status` / `level` / `product` / `category` / `service` values, top-level keys, selection names referenced from `condition:`. |
+| Code actions | One-click quick-fixes for the {{ rsigma.lint.autofix }} lint rules with a `Safe` fix. Cursor over a squiggle, press `Cmd+.`/`Ctrl+.`, pick the suggestion. |
+| Completions | Modifier names after `|`, MITRE ATT&CK tags inside `tags:`, valid `status`, `level`, `product`, `category`, and `service` values, top-level keys, selection names referenced from `condition:`. |
 | Hover | Modifier documentation, MITRE ATT&CK tactic and technique descriptions (with link-out to attack.mitre.org). |
 | Document symbols | Hierarchical outline of `title`, `logsource`, `detection`, `correlation`, used by VS Code's Outline view and breadcrumb. |
 

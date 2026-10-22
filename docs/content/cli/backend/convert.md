@@ -14,7 +14,7 @@ rsigma backend convert [OPTIONS] --target <TARGET> [RULES]...
 
 Reads one or more rule files (or a directory) and emits backend-native query strings, one per rule. Output goes to stdout by default; use `-o` to write to a file. Sigma filters among the input files are merged into the rules they reference before pipelines run, and a correlation rule fails with `UnsupportedCorrelation` on a backend without correlation support. {{ added "0.24.0" }} Use [`backend targets`](targets.md) to list available backends and [`backend formats`](formats.md) to list the output formats supported by a specific backend.
 
-Targets with no native backend are delegated to an external [sigma-cli](https://github.com/SigmaHQ/sigma-cli) when one is installed, unlocking the full pySigma backend ecosystem (`splunk`, `elasticsearch`, `kusto`, `qradar`, `loki`, …). See [sigma-cli delegation](../../reference/backends/sigma-cli.md) for discovery, the `RSIGMA_SIGMA_CLI` override, the flag mapping, and limitations.
+Targets with no native backend are delegated to an external [sigma-cli](https://github.com/SigmaHQ/sigma-cli) when one is installed, which reaches the full pySigma backend set (`splunk`, `elasticsearch`, `kusto`, `qradar`, `loki`, …). See [sigma-cli delegation](../../reference/backends/sigma-cli.md) for discovery, the `RSIGMA_SIGMA_CLI` override, the flag mapping, and limitations.
 
 For narrative coverage, including the PostgreSQL and LynxDB workflows, see [Rule Conversion](../../guide/rule-conversion.md).
 

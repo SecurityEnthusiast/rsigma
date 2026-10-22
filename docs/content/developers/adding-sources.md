@@ -2,7 +2,7 @@
 
 Dynamic pipeline sources (`http`, `command`, `file`, `nats`) live behind one trait: `SourceResolver`. Each `DynamicSource` carries a typed `SourceType` plus shared metadata (`id`, refresh policy, error policy, optional extract). The shipped `DefaultSourceResolver` dispatches on `SourceType`, hits the right adapter, and stores the result in a shared `Arc<SourceCache>`. This page walks through adding a new source type (S3, BigQuery, Redis, an internal HTTP endpoint with non-standard auth) and wiring it into the parser, resolver, and CLI.
 
-Source declarations live in standalone YAML loaded with `--source` / `--source-file`. Each file has a top-level `sources:` list. Pipeline-embedded `sources:` is rejected (hard parse error pointing at `rsigma rule migrate-sources`).
+Source declarations live in standalone YAML loaded with `--source` or `--source-file`. Each file has a top-level `sources:` list. Pipeline-embedded `sources:` is rejected (hard parse error pointing at `rsigma rule migrate-sources`).
 
 ## Decide on the shape
 
@@ -147,7 +147,7 @@ async fn resolve(&self, source: &DynamicSource) -> Result<ResolvedValue, SourceE
 }
 ```
 
-The `cache.store(&source.id, &value.data)` call in the success arm is shared across every `SourceType`, so your new variant gets cache write + `on_error: use_cached` / `use_default` / `fail` behavior for free.
+The `cache.store(&source.id, &value.data)` call in the success arm is shared across every `SourceType`, so your new variant gets cache write + `on_error: use_cached`/`use_default`/`fail` behavior for free.
 
 Step 5: feature-flag heavy dependencies. The `aws-sdk-s3` crate pulls in tokio-compat I/O, a TLS stack, and a sigv4 implementation; gate it behind a feature so the default daemon binary stays small.
 
@@ -258,7 +258,7 @@ Source resolution touches the network and the filesystem; before merging:
 - [ ] A timeout is enforced on the fetch call (`tokio::time::timeout` or the underlying client's `request_timeout`).
 - [ ] Secrets (tokens, signing keys) come from env vars or `${ENV_VAR}` template expansion, not from inline YAML.
 - [ ] The new type is opt-in via a Cargo feature if it adds heavy or transitive deps.
-- [ ] Path-traversal / SSRF surfaces are bounded (file paths sandboxed if applicable, URL allow-list flag if the type is exposed remotely).
+- [ ] Path-traversal and SSRF surfaces are bounded (file paths sandboxed if applicable, URL allow-list flag if the type is exposed remotely).
 
 ## Checklist
 

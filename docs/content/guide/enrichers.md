@@ -47,7 +47,7 @@ Detection variables (`${detection.*}`):
 
 | Variable | Resolves to |
 |---|---|
-| `${detection.rule.title}` / `.id` / `.level` | Rule metadata from `RuleHeader` |
+| `${detection.rule.title}`/`.id`/`.level` | Rule metadata from `RuleHeader` |
 | `${detection.tags}` | Comma-joined `tags` |
 | `${detection.fields.<name>}` | The matched value of `<name>` from `matched_fields` |
 | `${detection.event.<dotted.path>}` | JSON path into the original event (when `rsigma.include_event: "true"` on the rule) |
@@ -56,7 +56,7 @@ Correlation variables (`${correlation.*}`):
 
 | Variable | Resolves to |
 |---|---|
-| `${correlation.rule.title}` / `.id` / `.level` | Rule metadata from `RuleHeader` |
+| `${correlation.rule.title}`/`.id`/`.level` | Rule metadata from `RuleHeader` |
 | `${correlation.tags}` | Comma-joined `tags` |
 | `${correlation.type}` | `event_count`, `temporal`, `value_sum`, ... |
 | `${correlation.aggregated_value}` | The value that crossed the condition threshold |
@@ -81,7 +81,7 @@ There is no `scope.kinds` axis: the top-level `kind` already gates which result 
 
 ### `template`: pure string interpolation
 
-Cheapest primitive. No I/O. Cannot fail past config-load-time template parse errors.
+The cheapest primitive: it does no I/O and cannot fail past config-load-time template parse errors.
 
 ```yaml
 - id: runbook_det
@@ -93,7 +93,7 @@ Cheapest primitive. No I/O. Cannot fail past config-load-time template parse err
 
 ### `lookup`: read from the dynamic-pipelines source cache
 
-Reads a value from the dynamic-pipelines [source cache](../reference/dynamic-sources.md) by `source_id` and applies an `extract` expression (jq / JSONPath / CEL) with template-expanded variables to slice it. Zero-network-cost for anything already loaded as a dynamic source.
+Reads a value from the dynamic-pipelines [source cache](../reference/dynamic-sources.md) by `source_id` and applies an `extract` expression (jq/JSONPath/CEL) with template-expanded variables to slice it. Zero-network-cost for anything already loaded as a dynamic source.
 
 ```yaml
 - id: asset_context_corr
@@ -120,7 +120,7 @@ The decision matrix:
 
 {{ added "0.23.0" }}
 
-Query a local [`FsStore`](../library/rstix.md#rstix-graph-marking-store) opened by the daemon via `--stix-store <dir>` (same on-disk layout as [`taxii sync`](../cli/taxii/sync.md) and [`taxii store`](../cli/taxii/store.md)). Requires the **`stix-enrich`** feature (included in prebuilt `--all-features` binaries). Zero-network-cost for anything already imported into the store.
+Query a local [`FsStore`](../library/rstix.md#rstix-graph-marking-store) opened by the daemon via `--stix-store <dir>` (same on-disk layout as [`taxii sync`](../cli/taxii/sync.md) and [`taxii store`](../cli/taxii/store.md)). Requires the `stix-enrich` feature (included in prebuilt `--all-features` binaries). Zero-network-cost for anything already imported into the store.
 
 ```yaml
 - id: hash_intel
@@ -144,7 +144,7 @@ Query modes (at least one required):
 | `text_search` | Template-expanded substring → [`StixQuery::text_search`](../library/rstix.md#rstix-graph-marking-store). |
 | `attack_technique: true` | Uses the first `attack.t*` technique tag on the firing rule (for example `attack.t1059.001` → search `1059.001`). |
 
-Optional `type_filter` restricts to known STIX 2.1 type names (`indicator`, `attack-pattern`, …). Custom `x_*` MITRE types are matched via `text_search` without a filter. `max_results` defaults to **1**. On miss, `default` overrides `on_error` (same contract as `lookup`).
+Optional `type_filter` restricts to known STIX 2.1 type names (`indicator`, `attack-pattern`, …). Custom `x_*` MITRE types are matched via `text_search` without a filter. `max_results` defaults to `1`. On miss, `default` overrides `on_error` (same contract as `lookup`).
 
 Operational loop:
 
@@ -289,7 +289,7 @@ For vendor APIs, use `http` with a `cache_ttl` instead of shipping a dump (same 
 
 ### `enrich_hash_virustotal`: hash reputation with cache
 
-`cache_ttl` is mandatory for the 4 req/min free tier and a major win for duplicate-detection bursts on any tier:
+`cache_ttl` is mandatory for the 4 req/min free tier and saves repeat requests during duplicate-detection bursts on any tier:
 
 ```yaml
 # enrichers.yml
@@ -381,7 +381,7 @@ register_builtin(
 ).unwrap();
 ```
 
-Reserved names (`template`, `lookup`, `http`, `command`) are rejected at registration time; duplicate registrations of the same name are rejected to keep the global registry append-only. Bespoke types follow the same `kind` / `scope` / template rules as the four primitives; promotion does not change the YAML shape, only the `type:` value.
+Reserved names (`template`, `lookup`, `http`, `command`) are rejected at registration time; duplicate registrations of the same name are rejected to keep the global registry append-only. Bespoke types follow the same `kind`, `scope`, and template rules as the four primitives; promotion does not change the YAML shape, only the `type:` value.
 
 ## Output shape
 
@@ -395,7 +395,7 @@ The pipeline writes into `RuleHeader::enrichments` lazily, so detections and cor
 
 | Metric | Labels | Description |
 |---|---|---|
-| `rsigma_enrichment_total` | `enricher_id`, `kind`, `status` | Per-call outcome counter; `status` is `success` / `skip` / `error` / `timeout` / `drop` |
+| `rsigma_enrichment_total` | `enricher_id`, `kind`, `status` | Per-call outcome counter; `status` is `success`/`skip`/`error`/`timeout`/`drop` |
 | `rsigma_enrichment_duration_seconds` | `enricher_id`, `kind` | Per-enricher latency histogram |
 | `rsigma_enrichment_queue_depth` | none | Pending enrichment calls (sum across both kinds) |
 | `rsigma_enrichment_http_cache_hits_total` | `enricher_id` | HTTP enricher response-cache hits |

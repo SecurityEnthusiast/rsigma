@@ -14,7 +14,7 @@ rsigma pipeline resolve [OPTIONS] --pipeline <PIPELINES> --source-file <FILE_OR_
 
 Loads standalone dynamic-source declarations (HTTP, file, command, NATS), fetches each source, applies any `extract:` expression, and prints the resulting JSON. Useful for verifying that sources are reachable, that the `extract` selectors return the expected shape, and that a remote feed is publishing what the rule expects.
 
-Source declarations live in standalone YAML files with a top-level `sources:` block and are loaded with `--source-file` (the same shape as the daemon's `--source` / `rule validate --source`). Pipeline-embedded `sources:` blocks are rejected; migrate them with [`rule migrate-sources`](../rule/migrate-sources.md). The required `-p` flag still parses each pipeline so a stale inline `sources:` block surfaces its migration error; resolution output is driven by the loaded `--source-file` declarations.
+Source declarations live in standalone YAML files with a top-level `sources:` block and are loaded with `--source-file` (the same shape as the daemon's `--source` and `rule validate --source`). Pipeline-embedded `sources:` blocks are rejected; migrate them with [`rule migrate-sources`](../rule/migrate-sources.md). The required `-p` flag still parses each pipeline so a stale inline `sources:` block surfaces its migration error; resolution output is driven by the loaded `--source-file` declarations.
 
 This command does not load rules or evaluate events. It is the offline counterpart of what [`engine daemon`](../engine/daemon.md) does at rule-load time for dynamic sources. Use it locally before pushing a dynamic pipeline to production, and in CI as a gate for [`rule validate --resolve-sources`](../rule/validate.md).
 
@@ -78,7 +78,7 @@ rsigma pipeline resolve -p pipelines/dynamic.yml --source-file sources.yml --dry
 ]
 ```
 
-Good for catching typos and refresh-policy mistakes before they hit production.
+Use it to catch typos and refresh-policy mistakes before they reach production.
 
 ## Exit codes
 

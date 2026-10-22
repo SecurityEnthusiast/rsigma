@@ -32,7 +32,7 @@ daemon:
       - /etc/rsigma/webhooks/
 ```
 
-Webhook configs are loaded and validated once at startup. A config that references the wrong template namespace, declares an unknown `kind`, omits `url`, or sets a malformed retry or rate-limit value rejects the daemon with a clear, field-scoped error. Hot reload is not supported: webhook changes take effect on restart.
+Webhook configs are loaded and validated once at startup. A config that references the wrong template namespace, declares an unknown `kind`, omits `url`, or sets a malformed retry or rate-limit value rejects the daemon with a field-scoped error. Hot reload is not supported: webhook changes take effect on restart.
 
 ## Config reference
 
@@ -95,7 +95,7 @@ The `retry.*` and `queue_size` settings override the daemon's global `--sink-*` 
 
 `url`, every header value, and `body` are templates rendered per result by the same engine the [enrichers](enrichers.md) use:
 
-- `${detection.*}` / `${correlation.*}` for result data, matching the webhook's `kind`. Common paths: `${detection.rule.title}`, `${detection.rule.id}`, `${detection.rule.level}`, `${detection.tags}`, `${detection.fields.<Name>}`, `${detection.event.<dotted.path>}`; `${correlation.type}`, `${correlation.aggregated_value}`, `${correlation.group_key.<field>}`.
+- `${detection.*}` or `${correlation.*}` for result data, matching the webhook's `kind`. Common paths: `${detection.rule.title}`, `${detection.rule.id}`, `${detection.rule.level}`, `${detection.tags}`, `${detection.fields.<Name>}`, `${detection.event.<dotted.path>}`; `${correlation.type}`, `${correlation.aggregated_value}`, `${correlation.group_key.<field>}`.
 - `${ENV_VAR}` (single segment, no dot) for secrets. Resolved from the daemon process environment at render time, so secrets live in the environment, never in the webhook YAML.
 
 The `body` is JSON-string-escaped: interpolated values (rule titles, event field strings) that land inside a JSON string literal have their quotes, backslashes, and control characters escaped, so a rule title containing a quote cannot break the payload. Header values are not escaped (CR and LF are rejected).
@@ -141,7 +141,7 @@ webhooks:
       client_key: /etc/rsigma/tls/client.key
 ```
 
-Webhook TLS uses rustls and verifies the endpoint against the URL host. PEM files are read and validated at startup, so a missing file, a malformed certificate, or a `client_cert` without its `client_key` rejects the daemon with a clear error.
+Webhook TLS uses rustls and verifies the endpoint against the URL host. PEM files are read and validated at startup, so a missing file, a malformed certificate, or a `client_cert` without its `client_key` rejects the daemon with an error.
 
 ## Signing requests
 

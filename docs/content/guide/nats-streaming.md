@@ -13,7 +13,7 @@ cargo install --locked rsigma --features daemon-nats
 The daemon uses NATS JetStream (not core NATS) for two reasons:
 
 - **At-least-once delivery**. JetStream persists every message until acknowledged. If the daemon crashes between receipt and sink delivery, the message redelivers after `ack_wait` expires. Core NATS publishes are fire-and-forget.
-- **Server-confirmed publishes**. When the daemon writes a detection to NATS, the publish-ack arrives after the message lands in the stream. We never lose detections to a transient network blip.
+- **Server-confirmed publishes**. When the daemon writes a detection to NATS, the publish-ack arrives after the message lands in the stream, so a transient network blip does not lose a detection.
 
 The trade-off is a JetStream-enabled NATS server. Run `nats-server -js` or any NATS deployment with JetStream enabled. RSigma will not start with a `nats://` URL pointing at a core-NATS server.
 
@@ -81,7 +81,7 @@ What this guarantees:
 - After retries are exhausted (or a permanent sink error), the result is handed to the [DLQ](#dead-letter-queue) writer and the source message is acked, so the same failure does not loop forever. With `--dlq` set, the writer then persists it; a failed DLQ write is logged and counted on `rsigma_dlq_write_failures_total`, and the result is lost. Without `--dlq`, the result is dropped with a rate-limited warning. {{ added "0.25.0" }}
 - If a parse error happens before the engine, the failed event is routed to the DLQ (when configured) and the source message is acked, preventing infinite redelivery of unparseable data.
 
-What this does NOT guarantee:
+What this does not guarantee:
 
 - Exactly-once. A redelivery can produce duplicate detections downstream. Plan for idempotent consumers.
 - Order across reconnects. NATS redelivers in the order it sees fit.
@@ -144,7 +144,7 @@ RSIGMA_CONSUMER_GROUP=detection-workers \
 
 Without `--consumer-group`, the daemon names the consumer `rsigma-daemon-<sanitized-subject>`. Two daemons with the same subject and no explicit group therefore share that durable consumer automatically.
 
-Multi-node correlation state is NOT automatically partitioned by consumer group. Each daemon maintains its own SQLite correlation state. If your rules need cross-node correlation, you have two options:
+Multi-node correlation state is not automatically partitioned by consumer group. Each daemon maintains its own SQLite correlation state. If your rules need cross-node correlation, you have two options:
 
 - Route all events to a single daemon (no consumer group).
 - Partition by `group_by` key upstream (e.g. one consumer-group subject per shard).

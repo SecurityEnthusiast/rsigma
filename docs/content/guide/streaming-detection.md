@@ -98,7 +98,7 @@ When an event has no parseable timestamp, the daemon falls back to the wall cloc
 A correlation rule's optional `window` attribute controls how its `timespan` is anchored to the stream, and the engine evaluates each mode directly:
 
 - `sliding` (the default, and what an absent `window` means): a trailing per-event window. When an event arrives at time `t`, the correlation is evaluated over `(t - timespan, t]`, so two events correlate whenever they are within `timespan` of each other regardless of any fixed boundary.
-- `tumbling`: fixed, boundary-aligned, non-overlapping buckets of size `timespan`. The per-group state resets when an event lands in a new bucket. Use this when you genuinely want calendar-style buckets (for example a per-hour quota), accepting that events on opposite sides of a boundary are not compared.
+- `tumbling`: fixed, boundary-aligned, non-overlapping buckets of size `timespan`. The per-group state resets when an event lands in a new bucket. Use this when you want calendar-style buckets (for example a per-hour quota), accepting that events on opposite sides of a boundary are not compared.
 - `session`: a dynamic window that stays open while consecutive in-group events are within `gap` of each other, and closes after `gap` of inactivity. It restarts once the total span would exceed `timespan` (the hard cap). This is the only mode that catches a low-and-slow chain whose steps are each close together but whose total span exceeds any fixed `timespan`.
 
 `window` and `gap` are an RSigma extension (a portable-spec version was declined upstream), so the primary spelling is the `rsigma.*` engine-extension namespace and the bare keys are kept as aliases. Both of these are equivalent:
@@ -124,7 +124,7 @@ All three modes have the same per-event cost (the window decision is O(1)), so c
 
 ## Output sinks
 
-The `--output` flag is repeatable, which gives you fan-out for free. Each match is cloned to every configured sink via a bounded mpsc channel:
+The `--output` flag is repeatable, so one daemon can fan out to several sinks. Each match is cloned to every configured sink via a bounded mpsc channel:
 
 | Sink URI | Behavior |
 |----------|----------|
@@ -180,7 +180,7 @@ rsigma engine daemon -r rules/ --state-db /var/lib/rsigma/state.db
 
 The daemon loads any existing snapshot on startup, saves periodically (every 30 s by default, tunable with `--state-save-interval`), and saves on graceful shutdown. The database is a single SQLite file in WAL journal mode that holds one JSON snapshot row per kind of state (correlation, alert pipeline, risk, and dispositions). Each save captures all of them back to back and writes them in one transaction, so a crash mid-save leaves the previous save intact rather than a mix of old and new state. {{ added "0.25.0" }}
 
-This means an `event_count` correlation that has seen 4 of 5 required events resumes at 4 after a restart, not 0.
+For example, an `event_count` correlation that has seen 4 of 5 required events resumes at 4 after a restart, not 0.
 
 ### State restore during NATS replay
 
@@ -218,7 +218,7 @@ The table below is a subset of the core surface. The full catalog (incidents, si
 | `/api/v1/sources` | GET | Status of dynamic pipeline sources. |
 | `/api/v1/sources/resolve` | POST | Force re-resolution of all (or some) dynamic sources. |
 | `/api/v1/tap` | GET | Stream a bounded, redactable window of the live event stream as NDJSON. Disabled by default; enable with `daemon.tap.enabled: true`. See [`engine tap`](../cli/engine/tap.md). |
-| `/api/v1/detections/stream` | GET | Stream live detections as NDJSON, with optional `level` / `rule` filters. Disabled by default; enable with `daemon.tail.enabled: true`. See [`engine tail`](../cli/engine/tail.md). |
+| `/api/v1/detections/stream` | GET | Stream live detections as NDJSON, with optional `level` and `rule` filters. Disabled by default; enable with `daemon.tail.enabled: true`. See [`engine tail`](../cli/engine/tail.md). |
 | `/v1/logs` | POST | OTLP log ingestion (`application/x-protobuf` or `application/json`). |
 
 Wire `/readyz` to your orchestrator's startup probe and `/healthz` to the liveness probe. Scrape `/metrics` at 15-30s intervals.

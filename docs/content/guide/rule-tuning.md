@@ -70,7 +70,7 @@ Tuning runs the target through the real evaluator twice:
 1. The target rule is compiled without a filter. Every supplied FP and TP must fire, otherwise the command returns the non-firing exemplar indexes as a labeling error.
 2. The target and proposed filter are added to one collection. `Engine::add_collection` applies the filter exactly as production loading does. Every TP must still fire and every covered FP must stop firing.
 
-This catches polarity errors, Sigma wildcard escaping, modifier semantics, pipeline field mappings, filter targeting, and logsource compatibility through the production code path rather than a second approximation.
+This catches polarity errors, Sigma wildcard escaping, modifier semantics, pipeline field mappings, filter targeting, and logsource compatibility, because both runs use the production code path.
 
 When `--expectations` is supplied, report mode also lists the target's existing backtest bounds and emits list entries to add under the file's existing `expectations` key. Relative `@path` inputs preserve their directory scope; `--fp-corpus` and `--tp-corpus` provide explicit scopes for absolute or inline inputs. The entries pin the post-filter FP count and require at least the verified TP count, so the tuning change can carry its own regression evidence into CI.
 
@@ -118,7 +118,7 @@ If some FPs do not share a clean pattern with the rest, `--allow-partial` may em
 
 ## Pipelines and logsource
 
-Pass the same `-p` / `--pipeline` values used by evaluation or deployment. The target rule is transformed before tuning, so emitted field names and the copied logsource match the compiled detection. Copying the target's post-pipeline logsource keeps the filter lint-clean and guarantees `filter_logsource_contains` cannot skip it.
+Pass the same `-p`/`--pipeline` values used by evaluation or deployment. The target rule is transformed before tuning, so emitted field names and the copied logsource match the compiled detection. Copying the target's post-pipeline logsource keeps the filter lint-clean and guarantees `filter_logsource_contains` cannot skip it.
 
 ## Human review boundary
 

@@ -165,7 +165,7 @@ Each path segment is validated against the SQL identifier regex (`^[A-Za-z_][A-Z
 
 In JSONB mode the backend lowers the experimental [array matching](../../guide/array-matching.md) constructs:
 
-- **Positional index** `field[N]` emits `->n` / `->>n`. Negative indices use PostgreSQL's native negative subscripts (`->-1`, PG 11+):
+- **Positional index** `field[N]` emits `->n`/`->>n`. Negative indices use PostgreSQL's native negative subscripts (`->-1`, PG 11+):
 
 ```sql
 -- Sigma field: args[0]
@@ -174,7 +174,7 @@ data->'args'->>0
 data->'args'->>-1
 ```
 
-- **Object-scope blocks** `field[any]:` / `field[all]:` emit an `EXISTS` over `jsonb_array_elements`, guarded by `jsonb_typeof(...) = 'array'`:
+- **Object-scope blocks** `field[any]:` and `field[all]:` emit an `EXISTS` over `jsonb_array_elements`, guarded by `jsonb_typeof(...) = 'array'`:
 
 ```sql
 -- connections[any]: { protocol: TCP, ip|cidr: 123.1.0.0/16 }

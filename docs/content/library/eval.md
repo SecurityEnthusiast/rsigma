@@ -12,7 +12,7 @@ The detection and correlation engine. Compiles parsed Sigma rules into a matcher
 - Build a custom front-end on top of the engine (different input format, different sink shape).
 - Reuse the matcher optimizer, pipeline machinery, or correlation engine in another tool.
 
-For streaming I/O (stdin / HTTP / NATS / OTLP), source resolution, and hot-reload, layer [`rsigma-runtime`](runtime.md) on top.
+For streaming I/O (stdin, HTTP, NATS, OTLP), source resolution, and hot-reload, layer [`rsigma-runtime`](runtime.md) on top.
 
 ## Install
 
@@ -39,16 +39,16 @@ serde_json = "1"   # only if you use the JsonEvent shim
 | `ConditionSet<T>` | One pipeline condition scope: identifier-keyed conditions, `and`/`or` linking, optional negation, and an optional expression. `TransformationItem` has one set each for rule, detection-item, and field-name conditions. {{ added "0.24.0" }} |
 | `pipeline::parse_pipeline(&str) -> Result<Pipeline>` | Parse a pipeline YAML string. |
 | `pipeline::sources::scan_source_templates(&str)` | Find every `${source.<id>}` and `${source.<id>.<path>}` template in a string, with its id, path, and byte offset. It is the single reference grammar shared by pipeline parsing and `rsigma-runtime`'s expansion. `is_valid_source_id` checks the id character set (ASCII letters, digits, `_`, `-`) that source declarations must use. {{ added "0.25.0" }} |
-| `TransformedRule` + `transform_rule` / `transform_collection` | Apply pipelines and hand back the rewritten rule, the transformation ids that fired, and the merged `PipelineState`, without compiling or loading. `Engine::transform_rule` / `Engine::transform_collection` do the same over an engine's configured pipelines. |
+| `TransformedRule` + `transform_rule` / `transform_collection` | Apply pipelines and hand back the rewritten rule, the transformation ids that fired, and the merged `PipelineState`, without compiling or loading. `Engine::transform_rule` and `Engine::transform_collection` do the same over an engine's configured pipelines. |
 | `apply_filters(&SigmaCollection) -> Vec<SigmaRule>` | Merge each filter into the detection rules it targets, as pySigma does when a collection loads, and return the rules for pipelines to transform. Filters target rules the same way `Engine::apply_filter` does. Conversion uses it. {{ added "0.24.0" }} |
 | `LogSourceExtractor` | Derives an event's `LogSource` from configurable fields plus optional static defaults, for conflict-based logsource pruning. Pass to `Engine::set_logsource_extractor`. |
 | `ExtractLogSource<E: Event>` | Trait behind logsource pruning, with one method, `extract(&self, &E) -> LogSource`. `LogSourceExtractor` implements it for every event type. Implement it for your own event type to prune by logsource carried outside the matchable fields, such as metadata beside the payload. See [Custom logsource extractors](#custom-logsource-extractors). {{ added "0.25.0" }} |
 | `Event` trait + `JsonEvent`, `KvEvent`, `MapEvent`, `PlainEvent` | The event shapes the engine consumes. `JsonEvent::into_value` unwraps the JSON value, cloning only when the event borrows it. {{ added "0.25.0" }} |
-| `EvaluationResult` | One detection match or correlation firing. Composes a `RuleHeader` (rule metadata, custom attributes, optional enrichments) and a `ResultBody::Detection(DetectionBody)` / `ResultBody::Correlation(CorrelationBody)` payload. Serializes to one flat JSON object per result. |
+| `EvaluationResult` | One detection match or correlation firing. Composes a `RuleHeader` (rule metadata, custom attributes, optional enrichments) and a `ResultBody::Detection(DetectionBody)` or `ResultBody::Correlation(CorrelationBody)` payload. Serializes to one flat JSON object per result. |
 | `RuleHeader`, `DetectionBody`, `CorrelationBody` | The three composable structs behind `EvaluationResult`. `RuleHeader` carries the fields shared between kinds (`rule_title`, `rule_id`, `level`, `tags`, `custom_attributes`, and an optional `enrichments` map); the body variants carry the kind-specific fields. |
 | `ResultBody` | `#[serde(untagged)]` enum that picks the kind-specific payload. Use `EvaluationResult::as_detection() / as_correlation()` accessors or pattern match on `result.body` to read its fields. |
 | `ProcessResult` | Alias for `Vec<EvaluationResult>`. The `CorrelationEngine::process_event` return: every result for an event, detections first then correlations, in evaluation order. |
-| `ProcessResultExt` | Extension trait on `[EvaluationResult]` exposing `detections()` / `correlations()` iterators and `detection_count()` / `correlation_count()`. Bring this into scope when you want kind-filtered iteration without pattern matching. |
+| `ProcessResultExt` | Extension trait on `[EvaluationResult]` exposing the `detections()` and `correlations()` iterators plus `detection_count()` and `correlation_count()`. Bring this into scope when you want kind-filtered iteration without pattern matching. |
 | `CompiledMatcher`, `CompiledRule` | Internal matcher tree types; consume via the AST conversion or build them yourself for an alternative front-end. |
 | `draft_rule`, `DraftConfig`, `DraftReport` | Profile positive exemplars against an optional baseline and emit a verified detection-rule draft. |
 | `rule_draft::correlation::{draft_correlation, GroupedExemplar, TimedEvent, CorrelationDraftConfig, CorrelationDraftReport}` | Infer recurring slots, entity, order, and window from grouped timed exemplars, then emit and verify a multi-document temporal correlation. |

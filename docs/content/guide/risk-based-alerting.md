@@ -24,7 +24,7 @@ The score is resolved by a fixed precedence, so you can reason about it without 
 
 1. An explicit per-rule score: the `rsigma.risk_score` custom attribute (settable in a processing pipeline with `SetCustomAttribute`). A number or a numeric string wins outright.
 2. A `tag_scores` map, scoring by tag. Keys are an exact tag or a `prefix.*` wildcard such as `attack.*`. When more than one entry matches, `tag_reducer` combines them (`sum`, the default, or `max`).
-3. A `level_scores` map, mapping the severity (`informational` / `low` / `medium` / `high` / `critical`) to a number.
+3. A `level_scores` map, mapping the severity (`informational`, `low`, `medium`, `high`, or `critical`) to a number.
 4. `default_score` for everything else.
 
 ### Risk objects

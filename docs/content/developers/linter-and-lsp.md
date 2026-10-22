@@ -45,15 +45,15 @@ The compile-time catalog of severities and fix availability is [`crates/rsigma-p
 
 ## Adding a new lint rule
 
-Step 1: classify it. The four buckets and the file each lives in:
+Step 1: classify it. The five buckets and the file each lives in:
 
 | Bucket | File |
 |--------|------|
-| Infrastructure / shared metadata (title, id, description, status, level, dates, tags). | `crates/rsigma-parser/src/lint/rules/metadata.rs` |
+| Infrastructure/shared metadata (title, id, description, status, level, dates, tags). | `crates/rsigma-parser/src/lint/rules/metadata.rs` |
 | Detection rules (logsource, detection block, condition references, falsepositives, scope, …). | `crates/rsigma-parser/src/lint/rules/detection.rs` |
 | Correlation rules. | `crates/rsigma-parser/src/lint/rules/correlation.rs` |
 | Filter rules. | `crates/rsigma-parser/src/lint/rules/filter.rs` |
-| Detection-logic / modifier hygiene (cross-cuts detection and correlation). | `crates/rsigma-parser/src/lint/rules/shared.rs` |
+| Detection-logic/modifier hygiene (cross-cuts detection and correlation). | `crates/rsigma-parser/src/lint/rules/shared.rs` |
 
 Pick one. If your rule genuinely crosses more than one, prefer the bucket where the bulk of the check happens; do not split.
 
@@ -145,10 +145,10 @@ Three operations:
 
 ## Suppressions
 
-Two layers, both already implemented:
+Suppressions work at two layers:
 
 - **YAML comments.** There is **no colon** after the directive. A line comment `# rsigma-disable-next-line missing_title, invalid_status` suppresses those rules for the immediately following line; `# rsigma-disable-next-line` (no list) suppresses all rules on the next line. A file-level `# rsigma-disable missing_title` suppresses those rules across the whole document, and `# rsigma-disable` (no list) suppresses every rule in the document. The parser is in `parse_inline_suppressions`.
-- **`LintConfig`.** Programmatic; CLI flags map as `--disable <id1,id2>` -> `LintConfig.disabled_rules`, `--exclude '<glob>'` -> `LintConfig.exclude_patterns`, `--tag-namespace <ns>` -> `LintConfig.tag_namespaces`, and a YAML config file (`.rsigma-lint.yml` / `.rsigma-lint.yaml`, or `--config <path>`) feeds all four fields plus `severity_overrides`.
+- **`LintConfig`.** Programmatic; CLI flags map as `--disable <id1,id2>` -> `LintConfig.disabled_rules`, `--exclude '<glob>'` -> `LintConfig.exclude_patterns`, `--tag-namespace <ns>` -> `LintConfig.tag_namespaces`, and a YAML config file (`.rsigma-lint.yml`/`.rsigma-lint.yaml`, or `--config <path>`) feeds all four fields plus `severity_overrides`.
 
 `apply_suppressions(warnings, &LintConfig, &InlineSuppressions) -> Vec<LintWarning>` filters out suppressed warnings and applies the severity overrides. Both the CLI and the LSP call it after linting.
 
@@ -183,7 +183,7 @@ for w in &warnings {
 }
 ```
 
-The translation layer that turns a `FixPatch::ReplaceValue { path }` into an LSP `TextEdit { range, new_text }` lives in `code_action.rs`. If your patch type is one of the three existing ones, no change required. If you need a new patch shape (e.g. `InsertBefore`), open an issue first; this affects both the linter and the LSP.
+The translation layer that turns a `FixPatch::ReplaceValue { path }` into an LSP `TextEdit { range, new_text }` lives in `code_action.rs`. If your patch type is one of the three existing ones, no change is required. If you need a new patch shape (e.g. `InsertBefore`), open an issue first; this affects both the linter and the LSP.
 
 ## Extending the LSP itself
 
@@ -192,7 +192,7 @@ The other LSP modules are smaller and orthogonal to lints:
 | Module | Purpose | Add a feature by... |
 |--------|---------|---------------------|
 | `completion.rs` | Field name and keyword completions. | Adding entries to the static completion table, or wiring a context-sensitive resolver. |
-| `position.rs` | UTF-16 / UTF-8 / byte-offset conversion. | Rarely; touch only if you spot a multi-byte off-by-one. |
+| `position.rs` | UTF-16, UTF-8, and byte-offset conversion. | Rarely; touch only if you spot a multi-byte off-by-one. |
 | `data.rs` | Static reference data (modifier list, well-known tags, severity colors). | Adding entries to the constant arrays. |
 | `server.rs` | The LSP server-loop wiring (`tower_lsp_server`). | Adding new LSP methods (e.g. hover, goto-definition). |
 

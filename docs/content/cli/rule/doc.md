@@ -13,7 +13,7 @@ rsigma rule doc --scaffold [--in-place] <RULE>
 
 ## Description
 
-The [ADS framework](https://github.com/palantir/alerting-detection-strategy-framework) is the durable, peer-reviewed strategy document every production detection should carry: a goal, an ATT&CK categorization, a strategy abstract, technical context, stated blind spots and assumptions, false-positive notes, a true-positive validation recipe, a priority, and a response plan. RSigma carries four of those on standard Sigma fields (`description`, `attack.*` `tags`, `falsepositives`, `level`) and the rest under the [`rsigma.ads.*`](../../reference/custom-attributes.md#ads-detection-strategy-attributes-rsigmaads) custom-attribute namespace.
+The [ADS framework](https://github.com/palantir/alerting-detection-strategy-framework) defines a peer-reviewed strategy document for each production detection: a goal, an ATT&CK categorization, a strategy abstract, technical context, stated blind spots and assumptions, false-positive notes, a true-positive validation recipe, a priority, and a response plan. RSigma carries four of those on standard Sigma fields (`description`, `attack.*` `tags`, `falsepositives`, `level`) and the rest under the [`rsigma.ads.*`](../../reference/custom-attributes.md#ads-detection-strategy-attributes-rsigmaads) custom-attribute namespace.
 
 `rule doc` has two modes:
 

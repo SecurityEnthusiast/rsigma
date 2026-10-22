@@ -50,7 +50,7 @@ Reproduce with `cargo bench -p rsigma-eval --bench eval -- rule_load`. Loading t
 
 The bloom pre-filter is the right knob when:
 
-- Most events do NOT match any rule.
+- Most events do not match any rule.
 - Your rules are dominated by positive substring needles (`|contains`, `|startswith`, `|endswith`, IOC lists).
 - Per-event latency matters more than rule-load latency.
 
@@ -86,7 +86,7 @@ Rules with `Exact`, `Regex`, `Numeric`, or `Cidr` matchers, or with `not` select
 
 ### Building with the feature
 
-The flag is feature-gated. The default `cargo install rsigma` does NOT include it. Build or install with `daachorse-index`:
+The flag is feature-gated. The default `cargo install rsigma` does not include it. Build or install with `daachorse-index`:
 
 ```bash
 cargo install --locked rsigma --features daachorse-index
@@ -190,7 +190,7 @@ Window modes (`sliding`/`tumbling`/`session`) have identical per-event cost; the
 
 Two workload shapes deserve attention:
 
-- **`value_count` with high-cardinality values.** Every `(timestamp, value)` pair is retained for the window, and the distinct count is recomputed per event over the whole window: O(window size) per event. At 1,800 distinct values per window, measured throughput drops from ~1.1M to 63K events/s. CPU collapses before memory does. Prefer `event_count` where distinctness is not actually required, shorten the window, or set `--max-group-entries` to bound the retained pairs.
+- **`value_count` with high-cardinality values.** Every `(timestamp, value)` pair is retained for the window, and the distinct count is recomputed per event over the whole window: O(window size) per event. At 1,800 distinct values per window, measured throughput drops from ~1.1M to 63K events/s. CPU collapses before memory does. Prefer `event_count` where distinctness is not required, shorten the window, or set `--max-group-entries` to bound the retained pairs.
 - **Group-key cardinality floods.** Under cap pressure the stalest groups are evicted first, so a burst of unique keys can push a slow-burning session out of state before it completes. The eviction warning in the log is the tripwire; raise `--max-state-entries` if the warning fires during legitimate traffic.
 
 Watch:

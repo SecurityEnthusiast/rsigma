@@ -38,7 +38,7 @@ Every variable in the table has a corresponding `--flag` that takes precedence, 
 
 The five NATS auth variables are mutually exclusive. The first configured method wins, in the order listed in `--nats-*` flag definition. See [NATS Streaming: authentication](../guide/nats-streaming.md#authentication).
 
-Config-named secrets are separate: `daemon.api.auth.tokens[].token_env` and webhook `signing.secret_env` / `rotate_secret_env` name arbitrary environment variables resolved at startup. Those names are not fixed on this page.
+Config-named secrets are separate: `daemon.api.auth.tokens[].token_env` and webhook `signing.secret_env` and `rotate_secret_env` name arbitrary environment variables resolved at startup. Those names are not fixed on this page.
 
 ## Precedence
 
@@ -56,7 +56,7 @@ uses `bar`, not `foo`. The env var is convenient for not putting the token in `p
 
 Common variables that `rsigma` does NOT consume, in case operators are wondering why setting them has no effect:
 
-- `SIGMA_RULES_DIR`, `RSIGMA_RULES`: not implemented. Use `--rules` on the command line or `daemon.rules`/`eval.rules` in a config file (or set the corresponding `RSIGMA_DAEMON__RULES` / `RSIGMA_EVAL__RULES`).
+- `SIGMA_RULES_DIR`, `RSIGMA_RULES`: not implemented. Use `--rules` on the command line or `daemon.rules`/`eval.rules` in a config file (or set the corresponding `RSIGMA_DAEMON__RULES`/`RSIGMA_EVAL__RULES`).
 - `OTEL_EXPORTER_OTLP_*`: rsigma is an OTLP *receiver*, not an exporter. These env vars apply to the agent publishing logs into rsigma (see [OTLP Integration](../guide/otlp-integration.md)), not to rsigma itself.
 - `PROMETHEUS_*`: the daemon exposes `/metrics` on `--api-addr`; no client-side env vars are involved.
 

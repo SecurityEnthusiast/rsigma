@@ -14,7 +14,7 @@ rsigma rule lint [OPTIONS] <PATH>
 
 Reads one rule file or every `*.yml`/`*.yaml` in a directory, runs each rule through the linter's check pipeline, and reports findings on stdout. Each finding has a severity (`error`, `warning`, `info`, `hint`), a rule ID, a message, and a JSON-pointer location.
 
-{{ rsigma.lint.autofix }} of the {{ rsigma.lint.rules }} rules carry safe auto-fixes; pass `--fix` to apply them in place. Optional JSON schema validation, three suppression tiers (CLI, config file, inline comments), and a tiered `--fail-level` for CI gating.
+{{ rsigma.lint.autofix }} of the {{ rsigma.lint.rules }} rules carry safe auto-fixes; pass `--fix` to apply them in place. The command also supports optional JSON schema validation, three suppression tiers (CLI, config file, inline comments), and a tiered `--fail-level` for CI gating.
 
 For the narrative version with the full lint-rule catalog and CI patterns see [Linting Rules](../../guide/linting-rules.md).
 
@@ -35,7 +35,7 @@ The wire format and color resolution are controlled by the global `--output-form
 |------|---------|-------------|
 | `-v, --verbose` | off | Show details for all files, including those with zero findings. |
 
-The human-friendly table renderer is the default when `--output-format` is unset (the TTY-aware NDJSON fallback would regress the existing UX). When `--output-format` is set explicitly, the machine renderers take over:
+The human-readable table renderer is the default when `--output-format` is unset; `rule lint` does not use the TTY-aware NDJSON fallback. When `--output-format` is set explicitly, the machine renderers take over:
 
 | Format | What it emits |
 |--------|--------------|
@@ -43,7 +43,7 @@ The human-friendly table renderer is the default when `--output-format` is unset
 | `ndjson` | One `{"path", "severity", "rule", "message", "line"}` object per finding, no envelope. Stream-friendly for `jq`. |
 | `csv`, `tsv` | One header row plus one row per finding (`PATH,SEVERITY,RULE,LINE,MESSAGE`). Stream-friendly for spreadsheet tools. |
 
-`--quiet` / `-q` suppresses both the "Loaded lint config: …" stderr progress line and the trailing "Checked N file(s) …" summary on stdout; findings still print. `--no-stats` keeps the progress line but drops the summary.
+`--quiet`/`-q` suppresses both the "Loaded lint config: …" stderr progress line and the trailing "Checked N file(s) …" summary on stdout; findings still print. `--no-stats` keeps the progress line but drops the summary.
 
 ### Severity gate
 

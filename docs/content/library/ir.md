@@ -47,7 +47,7 @@ The crate is sync-only (no tokio/reqwest).
 
 ## HIR cache
 
-`cache::*` serializes lowered rules to a versioned, self-describing blob, the on-disk HIR cache. It is what [`rsigma-eval`](eval.md)'s `Engine::save_hir` / `load_hir` use for a restart cache that skips parse, pipeline, and lowering; the engine keeps the HIR to save only after `Engine::set_retain_hir(true)`.
+`cache::*` serializes lowered rules to a versioned, self-describing blob, the on-disk HIR cache. It is what [`rsigma-eval`](eval.md)'s `Engine::save_hir` and `load_hir` use for a restart cache that skips parse, pipeline, and lowering; the engine keeps the HIR to save only after `Engine::set_retain_hir(true)`.
 
 - The blob is a `HirCacheHeader` (schema version + producing crate version) followed by the rules. `decode_rules` reads and version-checks the header before decoding the rules, rejecting a blob written under an incompatible `HIR_SCHEMA_VERSION`.
 - CBOR is the binary format: the HIR embeds `LogSource`, whose `#[serde(flatten)]` custom-key map serializes with an unknown length that fixed-layout encoders reject.
@@ -67,7 +67,7 @@ Each pass preserves the match decision and the set of matched selections and fie
 
 ## Lowering notes
 
-- Lowering is **purely structural**: it resolves *which* comparison applies but never lowercases, compiles regexes, or expands encodings. Eval does that at compile time; convert expands encodings with `encoding::expand_encoded_detections` and renders wildcards to backend tokens. This keeps the HIR lossless.
+- Lowering is purely structural: it resolves *which* comparison applies but never lowercases, compiles regexes, or expands encodings. Eval does that at compile time; convert expands encodings with `encoding::expand_encoded_detections` and renders wildcards to backend tokens. This keeps the HIR lossless.
 - Selectors such as `1 of selection_*` and `all of them` are preserved as `IrCondition::Selector`, so evaluation stays count-based and reports every matching detection. `them` and every pattern that does not start with `_` skip `_`-prefixed detection names; a pattern that starts with `_`, such as `1 of _filter*`, selects them. A selector that matches no detection name fails lowering with `IrError::NoSelectorMatches`, so evaluation and conversion reject the rule alike. {{ added "0.24.0" }}
 - Modifier contradictions (`|cidr|contains`, `|base64|base64offset`, …) fail at lower time with the same error kinds eval previously surfaced from `compile_rule`. So do values an encoding cannot represent: a wildcard under `|base64` or `|base64offset`, and a non-ASCII value under a UTF-16 encoding with no base64 step. {{ added "0.24.0" }}
 - An `|expand` value whose placeholders are all resolved by the pipeline lowers to an ordinary string matcher; only values with placeholders left become `IrMatcher::Expand`. {{ added "0.24.0" }}
@@ -75,5 +75,5 @@ Each pass preserves the match decision and the set of matched selections and fie
 
 ## Related
 
-- [`rsigma-eval`](eval.md): `compile_rule` (IR path) and `Engine::save_hir` / `load_hir` (HIR restart cache).
+- [`rsigma-eval`](eval.md): `compile_rule` (IR path) and `Engine::save_hir` and `load_hir` (HIR restart cache).
 - [`rsigma-parser`](parser.md): source AST.

@@ -29,7 +29,7 @@ Every subcommand accepts five global flags. They share the same layered preceden
 | `--output-format` | TTY-aware | `json`, `ndjson`, `table`, `csv`, `tsv` | Selects the wire format for any tabular data the subcommand emits. Many structured commands default to pretty `json` on a TTY and `ndjson` when piped; human-oriented commands often default to `table`. |
 | `--color` | `auto` | `auto`, `always`, `never` | Controls ANSI color on human-readable paths (lint findings, summaries). Honors [`NO_COLOR`](https://no-color.org/) when `auto`. |
 | `--quiet` / `-q` | off | flag | Suppress every non-data line (progress, summary, fallback warnings). Errors still go to stderr. |
-| `--no-stats` | off | flag | Suppress only the trailing summary / stats line. Progress messages still appear. |
+| `--no-stats` | off | flag | Suppress only the trailing summary/stats line. Progress messages still appear. |
 
 `--log-format` adds the diagnostic-log stream alongside the existing stdout/stderr output; it never replaces them. See [Observability](../guide/observability.md) for the full RUST_LOG target catalog. For the output formats and color resolution model see the [Output reference](../reference/output.md).
 

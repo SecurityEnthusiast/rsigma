@@ -1,6 +1,6 @@
 # Helr (HTTP API log collector)
 
-[Helr](https://github.com/timescale/helr) is a sister project to RSigma: a single-binary HTTP API log collector that polls audit-log endpoints (Okta, Google Workspace, GitHub, Slack, 1Password, Tailscale, and any HTTP API that returns a JSON array with cursor / Link-header / page pagination) and emits NDJSON to stdout, a file, an HTTP endpoint, or a NATS subject.
+[Helr](https://github.com/timescale/helr) is a sister project to RSigma: a single-binary HTTP API log collector that polls audit-log endpoints (Okta, Google Workspace, GitHub, Slack, 1Password, Tailscale, and any HTTP API that returns a JSON array with cursor, Link-header, or page pagination) and emits NDJSON to stdout, a file, an HTTP endpoint, or a NATS subject.
 
 It exists because the streaming side of RSigma (`engine daemon`) wants NDJSON in and Sigma matches out, but it does not poll SaaS APIs itself. Helr is the missing collector, designed to feed straight into rsigma without an intermediate log shipper if you do not already run one. Background and design rationale: [Declarative Audit Log Collection from HTTP APIs](https://mostafa.dev/declarative-audit-log-collection-from-http-apis-b0092185a63c).
 
@@ -17,7 +17,7 @@ It exists because the streaming side of RSigma (`engine daemon`) wants NDJSON in
                          (SQLite/Redis)                                 (stdout/NATS/etc)
 ```
 
-Helr handles pagination, rate limits, OAuth refresh, watermarking, and back-pressure. RSigma handles Sigma rule evaluation, correlation, and pipeline transformations. Both binaries are stateful, both expose Prometheus metrics, both ship rootless container images.
+Helr handles pagination, rate limits, OAuth refresh, watermarking, and back-pressure. RSigma handles Sigma rule evaluation, correlation, and pipeline transformations. Both binaries are stateful, expose Prometheus metrics, and ship rootless container images.
 
 ## The minimal wire-up
 
@@ -122,11 +122,11 @@ volumes:
   helr-state:
 ```
 
-Events flow Okta -> Helr -> NATS -> rsigma daemon -> stdout (or whatever next sink). Both services expose Prometheus metrics; both ship signed multi-arch images. The Docker hardening flags (`read_only`, `cap_drop: [ALL]`, non-root user `65534`) match the [Docker deployment guidance](../deployment/docker.md) for rsigma. `--allow-plaintext` is required because the compose example binds a non-loopback `--api-addr` without TLS, and the API token is required because a non-loopback bind refuses to serve an unauthenticated API. {{ added "0.25.0" }} Events arrive over NATS, so only the metrics and control API use the token.
+Events flow Okta -> Helr -> NATS -> rsigma daemon -> stdout (or whatever next sink). Both services expose Prometheus metrics and ship signed multi-arch images. The Docker hardening flags (`read_only`, `cap_drop: [ALL]`, non-root user `65534`) match the [Docker deployment guidance](../deployment/docker.md) for rsigma. `--allow-plaintext` is required because the compose example binds a non-loopback `--api-addr` without TLS, and the API token is required because a non-loopback bind refuses to serve an unauthenticated API. {{ added "0.25.0" }} Events arrive over NATS, so only the metrics and control API use the token.
 
 ## Alternatives to NATS as the glue
 
-NATS JetStream is the recommended transport because it provides at-least-once delivery, replay, and back-pressure naturally. If you do not run NATS, two simpler options:
+NATS JetStream is the recommended transport because it provides at-least-once delivery, replay, and back-pressure. If you do not run NATS, these simpler transports also work:
 
 | Transport | Helr side | rsigma side | Trade-off |
 |-----------|-----------|-------------|-----------|
@@ -166,7 +166,7 @@ The same pattern works for every SaaS Helr supports. The [Processing pipelines g
 |---------|------|--------|
 | Polling SaaS APIs with auth and pagination. | Yes (declarative + optional JS hooks). | No. |
 | Rate-limit handling, OAuth refresh. | Yes. | No. |
-| Durable cursor / watermark state. | Yes (SQLite, Redis, or Postgres). | No (rsigma's state is correlation state, not source state). |
+| Durable cursor/watermark state. | Yes (SQLite, Redis, or Postgres). | No (rsigma's state is correlation state, not source state). |
 | Sigma rule evaluation. | No. | Yes. |
 | Backend query generation. | No. | Yes. |
 

@@ -115,7 +115,7 @@ pub fn parse_line(line: &str, format: &InputFormat) -> Option<EventInputDecoded>
 }
 ```
 
-Step 6: optionally extend `auto_detect` so users on `--input-format auto` (the default) hit your format. Keep it cheap: a single byte / prefix check before the more expensive JSON parse. If your format does not have a cheap fingerprint, do not add it to auto; ship it as an explicit `--input-format <name>` opt-in.
+Step 6: optionally extend `auto_detect` so users on `--input-format auto` (the default) hit your format. Keep it cheap: a single byte or prefix check before the more expensive JSON parse. If your format does not have a cheap fingerprint, do not add it to auto; ship it as an explicit `--input-format <name>` opt-in.
 
 `--input` selects the event source URL/mode (stdin, HTTP, NATS, and on Unix a unix-domain socket). `--input-format` selects the line parser. Do not conflate the two flags.
 
@@ -153,11 +153,11 @@ The Docker image and release archives are built with `--all-features`; opt-in us
 
 ## Wire it into the CLI
 
-The `--input-format` flag is parsed in `crates/rsigma-cli/src/commands/daemon.rs` (via `parse_input_format`). The current value-parser already accepts strings; add a `"lecf"` arm in the match that turns the string into an `InputFormat`. Look for the existing `"cef"` / `"logfmt"` arms; same pattern. Mirror the same flag on `engine eval` and `rule backtest` if those commands should accept the format too.
+The `--input-format` flag is parsed in `crates/rsigma-cli/src/commands/daemon.rs` (via `parse_input_format`). The current value-parser already accepts strings; add a `"lecf"` arm in the match that turns the string into an `InputFormat`. The existing `"cef"` and `"logfmt"` arms follow the same pattern. Mirror the same flag on `engine eval` and `rule backtest` if those commands should accept the format too.
 
 ## Test it
 
-Two test layers:
+Three test layers:
 
 1. **Unit tests** in `crates/rsigma-runtime/src/input/lecf.rs`:
 

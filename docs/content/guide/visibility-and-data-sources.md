@@ -39,7 +39,7 @@ Each rule logsource resolves through the mapping table to the ATT&CK data source
 | greater than 50%, less than 100% | 3 | good |
 | all observed | 4 | excellent |
 
-A data source whose mapped fields are all unobserved is a **blind spot**: your rules reference it but the telemetry never arrived. A data source you observe but no rule consumes is **untapped**: data you pay to collect with no detection written against it. The two are inverses, and surfacing both is the point.
+A data source whose mapped fields are all unobserved is a **blind spot**: your rules reference it but the telemetry never arrived. A data source you observe but no rule consumes is **untapped**: data you pay to collect with no detection written against it. The two are inverses, and the command reports both.
 
 The scores are deliberately conservative seeds. DeTT&CT files are meant to be analyst-tuned, so the emitted YAML marks every score as a seed for review and the `data_quality` dimensions carry the seed value rather than fabricated precision.
 

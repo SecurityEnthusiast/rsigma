@@ -15,7 +15,7 @@ Capture is detection-only and `group_by`-only.
 - If dedup is configured, every `group.by` selector must also appear in `dedup.fingerprint`.
 - Capture runs after inhibition and silencing, and before dedup, so muted events never become evidence while repeated admitted firings do.
 
-Changing any `daemon.capture.*` key requires a restart. The setting is not hot-reloadable.
+Changing any `daemon.capture.*` key requires a restart; the setting is not hot-reloadable.
 
 ## Enable
 

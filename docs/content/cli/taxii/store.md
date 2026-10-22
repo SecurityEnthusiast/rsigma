@@ -4,7 +4,7 @@
 
 Import a local STIX 2.1 bundle JSON file into an on-disk store ([`FsStore`](../../library/rstix.md#rstix-graph-marking-store)).
 
-Requires the **`taxii-sync`** Cargo feature (included in prebuilt release binaries and the GHCR image built with `--all-features`).
+Requires the `taxii-sync` Cargo feature (included in prebuilt release binaries and the GHCR image built with `--all-features`).
 
 ## Synopsis
 
@@ -16,11 +16,11 @@ Use `--bundle -` to read bundle JSON from stdin.
 
 ## Description
 
-`taxii store` parses a STIX bundle from disk (or stdin) and imports it with [`FsStore::import_bundle`](../../library/rstix.md#rstix-graph-marking-store). Validation uses the same **`Validator::producer_strict()`** profile as [`taxii sync`](sync.md), per-object validation before import, References phase skipped (appropriate for large bundles where refs resolve after the full import).
+`taxii store` parses a STIX bundle from disk (or stdin) and imports it with [`FsStore::import_bundle`](../../library/rstix.md#rstix-graph-marking-store). Validation uses the same `Validator::producer_strict()` profile as [`taxii sync`](sync.md): per-object validation before import, with the References phase skipped (appropriate for large bundles where refs resolve after the full import).
 
 Re-running against the same store is idempotent: unchanged objects increment `objects_deduplicated` rather than `objects_added`.
 
-Use this for air-gapped feeds, local MITRE ATT&CK JSON releases, CI fixtures, and development without a TAXII server. Network ingest remains [`taxii sync`](sync.md).
+Use this for air-gapped feeds, local MITRE ATT&CK JSON releases, CI fixtures, and development without a TAXII server. For network ingest, use [`taxii sync`](sync.md).
 
 ## Flags
 
@@ -36,8 +36,8 @@ Use this for air-gapped feeds, local MITRE ATT&CK JSON releases, CI fixtures, an
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--bundle-id <ID>` | bundle file `id` | Synthetic bundle id for [`export_bundle`](../../library/rstix.md#rstix-graph-marking-store). |
-| `--allow-custom` | off | Parse MITRE ATT&CK and other custom SDOs (`x_*` types). **Required** for enterprise ATT&CK bundle files. |
-| `--strict` | on | Exit **1** when validation rejects one or more objects. |
+| `--allow-custom` | off | Parse MITRE ATT&CK and other custom SDOs (`x_*` types). Required for enterprise ATT&CK bundle files. |
+| `--strict` | on | Exit `1` when validation rejects one or more objects. |
 | `--allow-invalid` | off | Import objects even when validation fails (diagnostics still recorded; conflicts with `--strict`). |
 
 ## Output

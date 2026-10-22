@@ -12,12 +12,12 @@ rsigma config schema
 
 ## Description
 
-Prints a JSON Schema (draft 2020-12) derived from the same `RsigmaConfigPartial` Rust types the loader uses, so the schema can never drift from what the binary accepts. The schema covers every supported key, including feature-gated sections, the secrets-out-of-config policy (secret fields are simply absent), and the section structure.
+Prints a JSON Schema (draft 2020-12) derived from the same `RsigmaConfigPartial` Rust types the loader uses, so the schema can never drift from what the binary accepts. The schema covers every supported key, including feature-gated sections, the secrets-out-of-config policy (secret fields are absent), and the section structure.
 
-Two main consumers:
+The schema has two main consumers:
 
-- **Editors** with the [yaml-language-server](https://github.com/redhat-developer/yaml-language-server) extension auto-complete keys and flag typos as you edit. The template emitted by [`config init`](init.md) carries a `# yaml-language-server: $schema=` header pointing at the published schema.
-- **AI agents and CI tooling** can programmatically validate a config before applying it.
+- Editors with the [yaml-language-server](https://github.com/redhat-developer/yaml-language-server) extension auto-complete keys and flag typos as you edit. The template emitted by [`config init`](init.md) carries a `# yaml-language-server: $schema=` header pointing at the published schema.
+- AI agents and CI tooling can programmatically validate a config before applying it.
 
 ## Output
 

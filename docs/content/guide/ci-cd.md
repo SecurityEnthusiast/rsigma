@@ -97,7 +97,7 @@ It exits `1` when a selected `--fail-on` condition matches, the same gating mode
 rsigma engine eval -r rules/ --fail-on-detection -e @ci/should-not-match.ndjson
 ```
 
-In a "should match" fixture, you actually want exit `1`:
+In a "should match" fixture, exit `1` is the result you want:
 
 ```bash
 if rsigma engine eval -r rules/ --fail-on-detection -e @ci/should-match.ndjson; then
@@ -139,7 +139,7 @@ The two gates agree on absent sections. They differ only on a section whose key 
 
 ## `rule validate` in CI
 
-`rule validate` is the cheapest gate: it just parses and compiles every rule, no events involved. Wire it as the first step of any detection-as-code pipeline:
+`rule validate` is the cheapest gate: it parses and compiles every rule without any events. Wire it as the first step of any detection-as-code pipeline:
 
 ```bash
 rsigma rule validate rules/

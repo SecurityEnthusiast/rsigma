@@ -30,7 +30,7 @@ The extractor resolves each dimension independently, taking the first value it f
 
 ### The format guardrail
 
-RSigma never infers `product` from an ambiguous wire format. Because pruning is conflict-based, a wrong product guess does not merely fail to help, it drops correct rules: a Windows-over-syslog stream mistagged `linux` would prune away every Windows rule. Syslog is a transport, not a platform; CEF carries its product in the message content, not the wire format; and JSON, logfmt, and OTLP are pure containers. So only platform-locked formats (today, EVTX) set a format-derived default; everything else stays unset. `category` is never derived from a format.
+RSigma never infers `product` from an ambiguous wire format. Because pruning is conflict-based, a wrong product guess drops correct rules: a Windows-over-syslog stream mistagged `linux` would prune away every Windows rule. Syslog is a transport, not a platform; CEF carries its product in the message content, not the wire format; and JSON, logfmt, and OTLP are pure containers. So only platform-locked formats (today, EVTX) set a format-derived default; everything else stays unset. `category` is never derived from a format.
 
 ## Usage
 
@@ -119,5 +119,5 @@ The daemon exposes these metrics (see [metrics](../reference/metrics.md)):
 
 - [Schema Routing](schema-routing.md) for per-schema pipelines and schema-derived logsource fill.
 - [CLI: `engine eval`](../cli/engine/eval.md) and [`engine daemon`](../cli/engine/daemon.md) for the logsource flags.
-- [Configuration reference](../reference/configuration.md) for the `daemon.logsource_routing` / `eval.logsource_routing` keys.
+- [Configuration reference](../reference/configuration.md) for the `daemon.logsource_routing` and `eval.logsource_routing` keys.
 - [Prometheus metrics](../reference/metrics.md) for the pruning counters and per-schema gauges.

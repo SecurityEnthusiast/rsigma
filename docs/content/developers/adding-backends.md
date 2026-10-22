@@ -29,7 +29,7 @@ crates/rsigma-convert/src/backends/
 
 Add `pub mod splunk;` to `crates/rsigma-convert/src/backends/mod.rs`.
 
-Step 2: write the `TextQueryConfig` constant. The full schema lives on [docs.rs/rsigma-convert](https://docs.rs/rsigma-convert). `TextQueryConfig` does not have a `Default` impl; the cleanest pattern is to copy `crates/rsigma-convert/src/backends/postgres/mod.rs` (the `POSTGRES_CONFIG` block at the top of the file) or `lynxdb/mod.rs` (the `LYNXDB_CONFIG` block) as a starting template and edit the operators, quoting, and templates to match your target language. The key fields you almost always need to set:
+Step 2: write the `TextQueryConfig` constant. The full schema lives on [docs.rs/rsigma-convert](https://docs.rs/rsigma-convert). `TextQueryConfig` does not have a `Default` impl; the cleanest pattern is to copy `crates/rsigma-convert/src/backends/postgres/mod.rs` (the `POSTGRES_CONFIG` block at the top of the file) or `lynxdb/mod.rs` (the `LYNXDB_CONFIG` block) as a starting template and edit the operators, quoting, and templates to match your target language. The fields you almost always need to set:
 
 | Field | Example |
 |-------|---------|
@@ -43,7 +43,7 @@ Step 2: write the `TextQueryConfig` constant. The full schema lives on [docs.rs/
 
 Run `rustdoc` (`cargo doc --open -p rsigma-convert`) for the full list of ~90 fields.
 
-Step 3: implement the trait. Hold the config as `&'static TextQueryConfig`, delegate `convert_rule` to `convert_rule_via_ir`, and implement leaf converters plus `finish_query` / `finalize_query`. `ConversionState` is from `rsigma_convert::state`; `PipelineState` is from `rsigma_eval::pipeline::state`.
+Step 3: implement the trait. Hold the config as `&'static TextQueryConfig`, delegate `convert_rule` to `convert_rule_via_ir`, and implement leaf converters plus `finish_query` and `finalize_query`. `ConversionState` is from `rsigma_convert::state`; `PipelineState` is from `rsigma_eval::pipeline::state`.
 
 The condition walker passes every compound operand through `convert_condition_group` before combining it. Delegating to `text_convert_condition_group` parenthesizes by the config's `precedence`, so a target where `OR` binds tighter than `AND` only needs a different `precedence` tuple. {{ added "0.24.0" }}
 
@@ -214,7 +214,7 @@ fn try_native_backend(
 }
 ```
 
-Update `NATIVE_TARGETS`, the `Available targets:` / install-hint paths that take `NATIVE_TARGETS`, and the `cmd_list_targets` printer in the same file so unknown targets and `rsigma backend targets` both include the new option.
+Update `NATIVE_TARGETS`, the `Available targets:` and install-hint paths that take `NATIVE_TARGETS`, and the `cmd_list_targets` printer in the same file so unknown targets and `rsigma backend targets` both include the new option.
 
 Then run `cargo install --path crates/rsigma-cli --force --features daemon` and:
 
@@ -244,7 +244,7 @@ fn splunk_basic_keyword() {
 
 Cover at least: keyword match, field=value, regex (`re|`), CIDR, IN-list (`OR`-folding), NULL, negation, and at least one correlation rule. The existing `crates/rsigma-convert/tests/golden_postgres.rs`, `golden_lynxdb.rs`, and `golden_fibratus.rs` files are the reference structure.
 
-If your backend produces stable golden output, add expected files under `crates/rsigma-convert/tests/golden/<name>/` and compare in the test; the Postgres / LynxDB / Fibratus golden suites are the template.
+If your backend produces stable golden output, add expected files under `crates/rsigma-convert/tests/golden/<name>/` and compare in the test; the Postgres, LynxDB, and Fibratus golden suites are the template.
 
 ## Document it
 
@@ -258,10 +258,10 @@ Three places to update:
 
 - [ ] Module added under `crates/rsigma-convert/src/backends/<name>/mod.rs`.
 - [ ] Re-exported from `crates/rsigma-convert/src/lib.rs`.
-- [ ] `Backend` trait implemented (config held on the struct; `text_convert_*` / `convert_rule_via_ir` used for text-query backends).
+- [ ] `Backend` trait implemented (config held on the struct; `text_convert_*` and `convert_rule_via_ir` used for text-query backends).
 - [ ] `finish_query` and `finalize_query` implemented.
 - [ ] CLI dispatch wired in `try_native_backend` + `NATIVE_TARGETS` in `crates/rsigma-cli/src/commands/convert.rs`.
-- [ ] Integration / golden tests in `crates/rsigma-convert/tests/golden_<name>.rs`.
+- [ ] Integration and golden tests in `crates/rsigma-convert/tests/golden_<name>.rs`.
 - [ ] Backend reference page under `docs/content/reference/backends/<name>.md`.
 - [ ] CHANGELOG entry.
 

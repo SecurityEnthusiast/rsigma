@@ -54,7 +54,7 @@ Dynamic pipeline sources are not resolved by `engine eval`. Dynamic references s
 
 ### Output
 
-The global `--output-format` / `--color` / `--quiet` / `--no-stats` flags apply here too; see [Output Formats](../../reference/output.md). The flags below are eval-specific.
+The global `--output-format`, `--color`, `--quiet`, and `--no-stats` flags apply here too; see [Output Formats](../../reference/output.md). The flags below are eval-specific.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -88,7 +88,7 @@ The global `--output-format` / `--color` / `--quiet` / `--no-stats` flags apply 
 
 ### Field observability (offline coverage report)
 
-The same gap / broken-coverage signals exposed by the daemon's `/api/v1/fields*` endpoints are available offline as a one-shot report:
+The same gap and broken-coverage signals exposed by the daemon's `/api/v1/fields*` endpoints are available offline as a one-shot report:
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -169,7 +169,7 @@ rsigma engine eval -r rules/ -e @Security.evtx
 rsigma engine eval -r rules/ -p sysmon -e @Microsoft-Windows-Sysmon%4Operational.evtx
 ```
 
-Requires the `evtx` feature (included in release binaries and the Docker image). Records keep the nested `Event.System.*` / `Event.EventData.*` shape from the Windows XML; rules must use those full dotted paths. The builtin `sysmon` and `ecs_windows` pipelines do not flatten that nested EVTX shape; they help once events are already flat (or for Sysmon EventID routing on flat fields). See [Input Formats](../../guide/input-formats.md#evtx-windows-event-log-feature-gated).
+Requires the `evtx` feature (included in release binaries and the Docker image). Records keep the nested `Event.System.*`/`Event.EventData.*` shape from the Windows XML; rules must use those full dotted paths. The builtin `sysmon` and `ecs_windows` pipelines do not flatten that nested EVTX shape; they help once events are already flat (or for Sysmon EventID routing on flat fields). See [Input Formats](../../guide/input-formats.md#evtx-windows-event-log-feature-gated).
 
 ### Tail a JSON log file into the engine
 

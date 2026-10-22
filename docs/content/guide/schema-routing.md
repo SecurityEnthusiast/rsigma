@@ -93,7 +93,7 @@ Built-in implied logsources cover the platform-locked schemas:
 | `ecs_windows` | `windows / (none)` |
 | `ecs_linux` | `linux / (none)` |
 
-Cloud / SaaS sources supply the exact SigmaHQ taxonomy service tokens, so `product`/`service`-scoped rules route correctly:
+Cloud and SaaS sources supply the exact SigmaHQ taxonomy service tokens, so `product`/`service`-scoped rules route correctly:
 
 | Schema | Implied logsource (product / service) |
 |--------|---------------------------------------|
@@ -118,7 +118,7 @@ Off-taxonomy sources use the `logsource.custom` dimension rather than inserting 
 
 Plain cross-platform schemas (`ecs`, `ocsf`, `cef`, `generic_json`) imply nothing, because they carry events from many platforms.
 
-An ECS event that also carries a platform marker (`winlog.*`, `host.os.type`) classifies as `ecs_windows`/`ecs_linux` and gets the platform for pruning automatically. These specializations are aliases of `ecs` (see below), so an existing `ecs` binding still matches them, no config change needed. For a source ECS routes without a marker, point the logsource extractor at the event's own OS field instead (`--logsource-field-map product=host.os.type`).
+An ECS event that also carries a platform marker (`winlog.*`, `host.os.type`) classifies as `ecs_windows`/`ecs_linux` and gets the platform for pruning automatically. These specializations are aliases of `ecs` (see below), so an existing `ecs` binding still matches them without a config change. For a source ECS routes without a marker, point the logsource extractor at the event's own OS field instead (`--logsource-field-map product=host.os.type`).
 
 ### Schema aliases
 
@@ -196,5 +196,5 @@ On a running daemon, `--discover-schemas` (which implies `--observe-schemas`) sa
 - [CLI: `engine classify`](../cli/engine/classify.md) for one-shot classification and user signature authoring.
 - [CLI: `engine discover-schemas`](../cli/engine/discover-schemas.md) for offline signature mining.
 - [HTTP API: Schema observability](../reference/http-api-observability.md#schema-observability) for `/api/v1/schemas` and `/api/v1/schemas/suggestions`.
-- [Configuration reference](../reference/configuration.md) for the `daemon.schema` / `eval.schema` keys.
+- [Configuration reference](../reference/configuration.md) for the `daemon.schema` and `eval.schema` keys.
 - [Cloud Collection Recipes](cloud-collection-recipes.md) for schema-routing deployments of built-in cloud schemas.

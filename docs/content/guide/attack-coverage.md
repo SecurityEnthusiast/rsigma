@@ -4,7 +4,7 @@
 
 [`rsigma rule coverage`](../cli/rule/coverage.md) maps a rule set onto the MITRE ATT&CK matrix. It answers "what does my rule set cover, and where are the holes" by reading the `attack.*` tags off your rules, exporting an ATT&CK Navigator heatmap, and diffing your coverage against external references.
 
-Where [`rule backtest`](../cli/rule/backtest.md) tells you whether your rules fire correctly, `rule coverage` tells you whether you have rules for the techniques you care about. Together they are the two halves of a detection-as-code pipeline.
+Where [`rule backtest`](../cli/rule/backtest.md) tells you whether your rules fire correctly, `rule coverage` tells you whether you have rules for the techniques you care about.
 
 ## How techniques are extracted
 
@@ -119,7 +119,7 @@ coverage:
   fail_on_gaps: true
 ```
 
-CLI flags always win over the config file. When `-r` / `--rules` is omitted, `coverage.rules` fills it.
+CLI flags always win over the config file. When `-r`/`--rules` is omitted, `coverage.rules` fills it.
 
 ## See also
 
