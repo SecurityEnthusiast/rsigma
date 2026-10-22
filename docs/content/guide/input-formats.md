@@ -2,7 +2,7 @@
 
 RSigma can read events in seven formats, with auto-detection as the default. This page covers when to choose each format, the parser specifics, the timestamps extracted, and the format-specific flags.
 
-Line-oriented formats (`json`, `syslog`, `plain`, and the feature-gated `logfmt` / `cef`) work in both `engine eval` and `engine daemon` via `--input-format`. EVTX is eval-only (`-e @file.evtx`). OTLP is daemon-only (`POST /v1/logs` / gRPC). Without `--input-format`, auto-detect tries JSON, then syslog (when the line starts with `<`), then plain text on every line.
+Line-oriented formats (`json`, `syslog`, `plain`, and the feature-gated `logfmt`/`cef`) work in both `engine eval` and `engine daemon` via `--input-format`. EVTX is eval-only (`-e @file.evtx`). OTLP is daemon-only (`POST /v1/logs` or gRPC). Without `--input-format`, auto-detect tries JSON, then syslog (when the line starts with `<`), then plain text on every line.
 
 ## Format summary
 
@@ -55,13 +55,13 @@ RFC 3164 syslog does not carry a timezone. RSigma assumes UTC by default. Overri
 tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --syslog-tz +05:30
 ```
 
-The value is a fixed offset in `+HH:MM` / `-HH:MM` form (`+05:30`, `-08:00`). Compact forms like `+0530` are rejected. For ambiguity-free parsing, prefer RFC 5424 sources that carry the offset inline.
+The value is a fixed offset in `+HH:MM`/`-HH:MM` form (`+05:30`, `-08:00`). Compact forms like `+0530` are rejected. For ambiguity-free parsing, prefer RFC 5424 sources that carry the offset inline.
 
 ### UTF-8 BOM handling
 
 RFC 5424 section 6.4 says a UTF-8 `MSG` should begin with a byte order mark (`U+FEFF`, bytes `EF BB BF`) as an encoding marker, not as content. RSigma strips a single leading BOM from the message body by default, so it does not leak into the `_raw` field, break anchored matchers (`startswith`, exact equality), or block embedded-JSON detection (a BOM-prefixed JSON payload is parsed as JSON rather than degrading to a raw string).
 
-To keep the message byte-for-byte instead, pass `--syslog-strip-bom false` (or set `input.syslog_strip_bom: false` / `eval.syslog_strip_bom: false` in the config file).
+To keep the message byte-for-byte instead, pass `--syslog-strip-bom false` (or set `input.syslog_strip_bom: false`/`eval.syslog_strip_bom: false` in the config file).
 
 ```bash
 tail -f /var/log/syslog | rsigma engine eval -r rules/ --input-format syslog --syslog-strip-bom false
@@ -276,7 +276,7 @@ When an event has no parseable timestamp, the correlation engine falls back to t
 | Modern application logs | JSON, with `--jq '.event'` if wrapped |
 | Sysmon, Winlogbeat, ECS-shaped events | JSON, often paired with the `ecs_windows` builtin pipeline |
 | Offline forensics on an EVTX file | `@file.evtx` |
-| Cisco / Palo Alto / network appliance | syslog |
+| Cisco/Palo Alto/network appliance | syslog |
 | ArcSight, McAfee export | CEF (`--features cef`) |
 | Go service writing `key=value` logs | logfmt (`--features logfmt`) |
 | OTel-instrumented service | OTLP via `/v1/logs` |

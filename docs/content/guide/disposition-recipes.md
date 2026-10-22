@@ -4,7 +4,7 @@
 
 The [triage feedback loop](triage-feedback.md) turns analyst verdicts into a live per-rule false-positive ratio. Its pull path, `--disposition-source`, reads verdicts from wherever they already live: your case system. This page gives copy-paste, tested `--disposition-source` configs for the three most common ones, TheHive, Jira, and GitHub Issues, so you do not have to re-derive the extract expression, the auth wiring, and the idempotency reasoning yourself.
 
-Each recipe is one [dynamic-source](../reference/dynamic-sources.md) file: an HTTP source that polls the case system for recently-closed cases on an interval, and a jq `extract` that reshapes that system's API response into [disposition records](triage-feedback.md#disposition-format). No extra service, no glue script. The exact files below are committed as test fixtures and run against canned API responses in CI, so they cannot silently drift from what the engine accepts.
+Each recipe is one [dynamic-source](../reference/dynamic-sources.md) file: an HTTP source that polls the case system for recently-closed cases on an interval, and a jq `extract` that reshapes that system's API response into [disposition records](triage-feedback.md#disposition-format), with no extra service or glue script. The exact files below are committed as test fixtures and run against canned API responses in CI, so they cannot silently drift from what the engine accepts.
 
 ## How the pull loop works
 
@@ -21,7 +21,7 @@ rsigma engine daemon -r rules/ --input http \
 
 A verdict only keys back to the right rule if the case carries the alert's identity. Dispositions deduplicate on `(fingerprint or incident_id, verdict, rule_id)`, so the case must know the `incident_id` (or `fingerprint`) the alert was created with, plus the `rule_id`.
 
-That means the integration is a **round-trip**: the alert delivery that opened the case must stamp the identity into it, and the recipe reads it back out. Configure your [webhook sink](webhooks.md) (the carrier that opened the ticket) to template `rule_id` and `incident_id` into the case at creation, as shown in [Closing the loop with delivery](triage-feedback.md#closing-the-loop-with-delivery). Without a stable `incident_id` (or `fingerprint`), Jira and TheHive recipes omit `timestamp` and each re-poll gets a new ingest-time default, so the fallback key `(rule_id, timestamp, analyst)` can double-count the same case. Stamp the identity at creation time.
+That means the integration is a **round-trip**: the alert delivery that opened the case must stamp the identity into it, and the recipe reads it back out. Configure your [webhook sink](webhooks.md) (the carrier that opened the ticket) to template `rule_id` and `incident_id` into the case at creation, as shown in [Closing the loop with delivery](triage-feedback.md#closing-the-loop-with-delivery). Without a stable `incident_id` (or `fingerprint`), Jira and TheHive recipes omit `timestamp` and each re-poll gets a new ingest-time default, so the fallback key `(rule_id, timestamp, analyst)` can double-count the same case.
 
 The recipes carry the identity in a label or tag (`incident:<id>`, `rsigma-incident-<id>`, `rsigma-incident:<id>`) because that is the most portable field across case systems. A dedicated custom field works too where you have one.
 
@@ -248,13 +248,13 @@ TheHive has no native benign-true-positive status. Teams that track BTP add a ca
 
 ## Idempotency and windowing
 
-**Re-polls are safe.** Every recipe polls on an interval and returns the same closed cases until they age out of the query window. That is fine: ingestion deduplicates on `(fingerprint or incident_id, verdict, rule_id)`, so a case returned on ten consecutive polls counts once. This is what makes interval polling correct rather than a double-counting hazard.
+**Re-polls are safe.** Every recipe polls on an interval and returns the same closed cases until they age out of the query window. That is fine: ingestion deduplicates on `(fingerprint or incident_id, verdict, rule_id)`, so a case returned on ten consecutive polls counts once.
 
 **Window to bound payload size, not for correctness.** Each recipe filters to recently-updated closed cases (`since=` for GitHub, `updated >= -1d` for Jira, a `_updatedAt` sort plus `page` for TheHive). This keeps each response small; it is not required for correctness because of the dedup above. Pick a window comfortably larger than your poll interval.
 
 **No pagination following.** A source does a single fetch (capped at 10 MiB); it does not follow a `Link` header or a `nextPageToken` cursor. Keep each response inside one page by pairing a tight update window with the page-size cap (`per_page=100`, `maxResults=100`, TheHive's `page` clause). If more cases close in one window than a single page holds, the overflow is picked up on the next poll only if it still matches the window, so size the window and interval so a single page comfortably covers the closures between polls.
 
-**Healthy signal.** A working recipe increments `rsigma_disposition_ingest_total{source="http",result="accepted"}` on first sight of each verdict and `result="duplicate"` on every re-poll thereafter. A recipe whose extract emits a malformed record increments `rsigma_disposition_ingest_errors_total{reason="validation"}`; a broken sources file fails the daemon at boot with `CONFIG_ERROR`, so a recipe either loads and works or stops the daemon loudly.
+**Healthy signal.** A working recipe increments `rsigma_disposition_ingest_total{source="http",result="accepted"}` on first sight of each verdict and `result="duplicate"` on every re-poll thereafter. A recipe whose extract emits a malformed record increments `rsigma_disposition_ingest_errors_total{reason="validation"}`; a broken sources file fails the daemon at boot with `CONFIG_ERROR`.
 
 ## Limits and follow-ons
 

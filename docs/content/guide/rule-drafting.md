@@ -2,7 +2,7 @@
 
 {{ added "0.19.0" }}
 
-`rsigma rule draft` turns exemplar events into a complete draft Sigma rule. You supply the interesting events (from an incident, a red-team exercise, or a threat report's sample telemetry) and optionally a baseline corpus of normal traffic; the tool classifies fields and values, picks the discriminative ones, and emits standard Sigma YAML you review, edit, and commit. It proposes, you decide: the output is a starting point with explicit `TODO` placeholders, not a finished detection.
+`rsigma rule draft` turns exemplar events into a complete draft Sigma rule. You supply the interesting events (from an incident, a red-team exercise, or a threat report's sample telemetry) and optionally a baseline corpus of normal traffic; the tool classifies fields and values, picks the discriminative ones, and emits standard Sigma YAML you review, edit, and commit. The output is a starting point with explicit `TODO` placeholders, not a finished detection.
 
 ## Workflow
 
@@ -21,7 +21,7 @@ rsigma rule lint draft.yml
 rsigma engine eval --rules draft.yml -e @more-telemetry.ndjson
 ```
 
-Before printing the YAML, the command verifies the draft through the real evaluation engine: every exemplar must match. Without a baseline, stderr ends with a line like `matches 3/3 exemplars`. With a baseline, it also reports the false-positive estimate, for example `matches 3/3 exemplars, 0/86400 baseline events (0.0%)`. A draft that cannot honestly cover the exemplars is an error, not a weaker rule.
+Before printing the YAML, the command verifies the draft through the real evaluation engine: every exemplar must match. Without a baseline, stderr ends with a line like `matches 3/3 exemplars`. With a baseline, it also reports the false-positive estimate, for example `matches 3/3 exemplars, 0/86400 baseline events (0.0%)`. If the draft cannot cover every exemplar, the command fails instead of emitting a weaker rule.
 
 You can also draft from a Windows Event Log file (`-e @Security.evtx`) when the `evtx` feature is compiled in; the prebuilt binaries include it.
 
@@ -77,7 +77,7 @@ falsepositives:
 level: medium
 ```
 
-Metadata placeholders stay yours to fill in either case. Use `--include-field` / `--exclude-field` when the scorer's pick is close but not quite right for your environment.
+Metadata placeholders stay yours to fill in either case. Use `--include-field` and `--exclude-field` when the scorer's pick is close but not quite right for your environment.
 
 ## How fields are chosen
 
@@ -94,7 +94,7 @@ Volatile fields are dropped up front: timestamp-shaped names and values (`UtcTim
 
 The survivors are scored. With a baseline, the score is exemplar stability times baseline rarity, so a `field: value` pair present in every exemplar and absent from normal traffic ranks first, and a field that is ubiquitous in the baseline (`proto: tcp`) sinks even when constant in the exemplars. Without a baseline, constant beats enumerable beats patterned, and envelope fields (`hostname`, `severity`) are demoted. The top fields (default 4, `--max-fields`) form the selection.
 
-Two guards keep pattern inference honest: shared tokens shorter than 4 characters are never used for `|contains`, and with a baseline, tokens matching more than 5% of baseline values for that field are rejected as too generic (`powershell` will not become the detection just because every exemplar contains it). Literal `*` and `?` in observed values are escaped, so a logged `SELECT * FROM` cannot silently become a wildcard match.
+Two guards constrain pattern inference: shared tokens shorter than 4 characters are never used for `|contains`, and with a baseline, tokens matching more than 5% of baseline values for that field are rejected as too generic (`powershell` will not become the detection just because every exemplar contains it). Literal `*` and `?` in observed values are escaped, so a logged `SELECT * FROM` cannot silently become a wildcard match.
 
 ### Pin or drop fields
 
@@ -123,11 +123,11 @@ detection:
     condition: 1 of selection_*
 ```
 
-The split only happens when it is earned: each group needs at least two exemplars, and the split must make some multi-valued field single-valued within every group (otherwise a flat OR list is emitted instead, which matches the same events without the cross-field precision).
+The split happens only when each group has at least two exemplars and the split makes some multi-valued field single-valued within every group. Otherwise a flat OR list is emitted instead, which matches the same events without the cross-field precision.
 
 ## Logsource inference
 
-The exemplars are classified with the built-in schema classifier ([schema routing](schema-routing.md) uses the same signatures). Sysmon exemplars yield `product: windows`, and a shared EventID maps to its Sigma category (EventID 1 gives `category: process_creation`); rendered Windows Event Log yields `product: windows`; ECS platform specializations yield their platform. Anything else gets a `product: todo` placeholder plus a warning. `--logsource-category` / `--logsource-product` / `--logsource-service` override any inference per dimension.
+The exemplars are classified with the built-in schema classifier ([schema routing](schema-routing.md) uses the same signatures). Sysmon exemplars yield `product: windows`, and a shared EventID maps to its Sigma category (EventID 1 gives `category: process_creation`); rendered Windows Event Log yields `product: windows`; ECS platform specializations yield their platform. Anything else gets a `product: todo` placeholder plus a warning. `--logsource-category`, `--logsource-product`, and `--logsource-service` override any inference per dimension.
 
 ## The draft is schema-native
 

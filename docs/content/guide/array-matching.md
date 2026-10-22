@@ -9,8 +9,8 @@ Array matching is a proposed extension to the Sigma specification, not part of S
 Many log sources put values in arrays: AWS CloudTrail, GCP, Okta, Azure Activity, Kubernetes audit, and Windows Event Logs all do. RSigma can match against array members in three ways, all expressed with `[...]` selectors on the field path:
 
 1. **Implicit any-member**: a plain field expression matches a scalar or any array member.
-2. **Object-scope blocks**: `field[any]` / `[all]` / `[all_or_empty]` / `[none]` bind several predicates to the **same** element.
-3. **Positional indexing**: `field[N]` / `field[-N]` select one ordered slot.
+2. **Object-scope blocks**: `field[any]`/`[all]`/`[all_or_empty]`/`[none]` bind several predicates to the **same** element.
+3. **Positional indexing**: `field[N]`/`field[-N]` select one ordered slot.
 
 ## Requires `sigma-version: 3`
 
@@ -31,7 +31,7 @@ detection:
 
 When `sigma-version` is absent, a document resolves to a fixed floor (major `2`, the v2.x line). At the floor a trailing `[...]` is **not** a selector but a literal part of the field name, so an unversioned rule keeps its pre-array-matching meaning and is never silently reinterpreted. Only the major matters (a release string such as `"2.1.0"` is read for its major), since breaking changes occur only at major bumps.
 
-The linter helps catch the mismatch: [`array_matching_without_version`](../reference/lint-rules.md) (warning) flags a rule that uses bracket-selector syntax but resolves below major `3`, and [`unsupported_sigma_version`](../reference/lint-rules.md) (error) flags a declared major newer than RSigma implements. To keep a literal bracket in a field name at major `3`, escape it as `\[` / `\]` (see [Escaping literal brackets](#escaping-literal-brackets)).
+The linter helps catch the mismatch: [`array_matching_without_version`](../reference/lint-rules.md) (warning) flags a rule that uses bracket-selector syntax but resolves below major `3`, and [`unsupported_sigma_version`](../reference/lint-rules.md) (error) flags a declared major newer than RSigma implements. To keep a literal bracket in a field name at major `3`, escape it as `\[`/`\]` (see [Escaping literal brackets](#escaping-literal-brackets)).
 
 ## Try it with `engine eval`
 
@@ -221,7 +221,7 @@ Each key opens its own independent scope, so this matches an event with a TCP co
 
 ## Positional indexing: `field[N]`
 
-Some arrays are **ordered**: argument vectors (`args[0]` is the process image, `args[1..]` are parameters), `[source, destination]` pairs, or delimited fields exported as arrays. Here `any` is lossy, it cannot tell which element matched. A zero-based index selects one specific element:
+Some arrays are **ordered**: argument vectors (`args[0]` is the process image, `args[1..]` are parameters), `[source, destination]` pairs, or delimited fields exported as arrays. Here `any` is lossy: it cannot tell which element matched. A zero-based index selects one specific element:
 
 ```yaml
 detection:
@@ -270,17 +270,17 @@ ports[all]: 443             # EVERY member of the ports array equals 443
 
 ## Backend support
 
-RSigma's evaluator (`rsigma engine eval` / `engine daemon`) implements all three constructs over ordered JSON arrays and is the reference for the semantics. The converter (`rsigma backend convert`) lowers what each backend can express and errors loudly otherwise, rather than emitting a query with different semantics:
+RSigma's evaluator (`rsigma engine eval`/`engine daemon`) implements all three constructs over ordered JSON arrays and is the reference for the semantics. The converter (`rsigma backend convert`) lowers what each backend can express and errors loudly otherwise, rather than emitting a query with different semantics:
 
 | Construct | Evaluator | PostgreSQL / TimescaleDB (JSONB) | Other backends |
 |-----------|-----------|----------------------------------|----------------|
 | Implicit any-member | Yes | Yes (`->>` path access) | Backend-dependent (native on Splunk/KQL multivalue fields) |
-| `[any]` / `[all]` block | Yes | Yes (`jsonb_array_elements` + `EXISTS` / `NOT EXISTS`, JSONB mode) | Unsupported (`UnsupportedArrayMatching`) |
-| `[all_or_empty]` / `[none]` block | Yes | Yes (`CASE`-guarded `NOT EXISTS` so empty/missing matches, JSONB mode) | Unsupported (`UnsupportedArrayMatching`) |
-| Extended block body (`condition:` + named sub-selections) | Yes | Yes (same primitive as the basic block, with a boolean inner predicate `OR` / `NOT`) | Unsupported (`UnsupportedArrayMatching`) |
-| Positional `[N]`, including `[-N]` | Yes | Yes (`->n` / `->>n`, negative subscripts on PG 11+, JSONB mode) | Unsupported (loud error) until backend-specific lowering lands |
+| `[any]`/`[all]` block | Yes | Yes (`jsonb_array_elements` + `EXISTS`/`NOT EXISTS`, JSONB mode) | Unsupported (`UnsupportedArrayMatching`) |
+| `[all_or_empty]`/`[none]` block | Yes | Yes (`CASE`-guarded `NOT EXISTS` so empty/missing matches, JSONB mode) | Unsupported (`UnsupportedArrayMatching`) |
+| Extended block body (`condition:` + named sub-selections) | Yes | Yes (same primitive as the basic block, with a boolean inner predicate `OR`/`NOT`) | Unsupported (`UnsupportedArrayMatching`) |
+| Positional `[N]`, including `[-N]` | Yes | Yes (`->n`/`->>n`, negative subscripts on PG 11+, JSONB mode) | Unsupported (loud error) until backend-specific lowering lands |
 
-PostgreSQL array matching requires JSONB-backed events (set `json_field`); in flat-column mode there is no array to unnest. The object-scope block and positional indexing both report `UnsupportedArrayMatching` on backends that cannot express them (LynxDB and other text backends today, and PostgreSQL flat-column mode), rather than emitting a query that diverges from the evaluator. A backend advertises positional-index support through `Backend::supports_field_index`. Note that Elasticsearch-style backends cannot express positional indexing at all because Lucene arrays are unordered sets; this is exactly why RSigma evaluates the index directly rather than relying on `any`.
+PostgreSQL array matching requires JSONB-backed events (set `json_field`); in flat-column mode there is no array to unnest. The object-scope block and positional indexing both report `UnsupportedArrayMatching` on backends that cannot express them (LynxDB and other text backends today, and PostgreSQL flat-column mode), rather than emitting a query that diverges from the evaluator. A backend advertises positional-index support through `Backend::supports_field_index`. Elasticsearch-style backends cannot express positional indexing at all because Lucene arrays are unordered sets, which is why RSigma evaluates the index directly instead of relying on `any`.
 
 ## See also
 

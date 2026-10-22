@@ -74,7 +74,7 @@ silences:
 ### The silence API
 
 - `POST /api/v1/silences` creates a silence from a JSON body (`matchers`, optional `starts_at`/`ends_at` RFC 3339, `created_by`, `comment`) and returns the assigned `id`. It returns `429 Too Many Requests` once the dynamic-silence cap (`max_silences`, default 1000) is reached; delete silences or raise the cap.
-- `GET /api/v1/silences` lists every silence with its derived `state` (`pending` / `active` / `expired`) and `origin`.
+- `GET /api/v1/silences` lists every silence with its derived `state` (`pending`/`active`/`expired`) and `origin`.
 - `DELETE /api/v1/silences/{id}` removes a silence.
 
 Expired silences are garbage-collected on the background tick. The dynamic (API) silence count is bounded by `max_silences` so an unbounded number of silences cannot accumulate; static silences from the config do not count against it. Metrics: `rsigma_silenced_total` (results muted) and `rsigma_silences_active` (currently-active silences).
@@ -108,8 +108,8 @@ dedup:
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `strip_event` | `false` | Retain the event for selector resolution, then drop raw event payloads (detection `event`, correlation `events` / `event_refs`) before sink delivery. |
-| `scope.rules` / `scope.tags` / `scope.levels` | empty | Restrict which results the layer acts on. Out-of-scope results pass through untouched. Same syntax as the enrichers `scope`. |
+| `strip_event` | `false` | Retain the event for selector resolution, then drop raw event payloads (detection `event`, correlation `events`/`event_refs`) before sink delivery. |
+| `scope.rules`/`scope.tags`/`scope.levels` | empty | Restrict which results the layer acts on. Out-of-scope results pass through untouched. Same syntax as the enrichers `scope`. |
 | `dedup.fingerprint` | required | Selectors hashed (with the rule identity) into the fingerprint. At least one is required when `dedup` is set. |
 | `dedup.repeat_interval` | `0` | Re-emit cadence for a still-active alert (humantime, e.g. `1h`). `0` means pure suppression. |
 | `dedup.resolve_timeout` | `1h` | Idle timeout after which an active alert resolves and is evicted (humantime). |
@@ -165,7 +165,7 @@ Grouping collapses related results into incidents and emits a higher-level `Inci
 Two modes:
 
 - `group_by` (default): group by equality on an ordered selector list. The `incident_id` is a deterministic fingerprint of the `(selector -> value)` pairs, so the same logical incident keeps one id across restarts and re-emissions. The rule identity is deliberately excluded from the key, so an incident can span rules that share the group value.
-- `entity_graph` (opt-in): union-find over `(selector, value)` entity pairs. A result joins (and merges) any open incident that shares an entity value, and the `incident_id` is a surrogate UUID. This is powerful but prone to the *giant-component* failure, where one common value (a domain controller, a shared service account, an egress NAT IP) transitively merges unrelated incidents. It ships with mandatory guards: a `stop_values` list of non-joinable values and a per-value `max_value_cardinality` ceiling above which a value stops acting as a join key (both surfaced on `rsigma_incident_overmerge_total`).
+- `entity_graph` (opt-in): union-find over `(selector, value)` entity pairs. A result joins (and merges) any open incident that shares an entity value, and the `incident_id` is a surrogate UUID. This mode is prone to the *giant-component* failure, where one common value (a domain controller, a shared service account, an egress NAT IP) transitively merges unrelated incidents. It ships with mandatory guards: a `stop_values` list of non-joinable values and a per-value `max_value_cardinality` ceiling above which a value stops acting as a join key (both surfaced on `rsigma_incident_overmerge_total`).
 
 ### Timers
 
@@ -204,7 +204,7 @@ In `entity_graph` mode, `max_entities_per_incident` bounds the values an inciden
 
 ### Wire shape
 
-An `IncidentResult` is one flat NDJSON object, disambiguated downstream by the presence of an `incident_id` key. It carries the `state` (`open` / `resolved`), the `trigger` (`group_wait` / `group_interval` / `repeat` / `resolved`), the window bounds, the `max_level`, the `result_count`, per-rule `rule_counts`, the `group_by` key (group_by mode) or `entities` map (entity_graph mode), and the `refs` or `results`. Incidents are delivered to stdout, file, NATS, and unix sinks; with `nats_subject` set, incidents publish to that dedicated subject instead of the detection stream. OTLP and webhook sinks do not receive incidents.
+An `IncidentResult` is one flat NDJSON object, disambiguated downstream by the presence of an `incident_id` key. It carries the `state` (`open`/`resolved`), the `trigger` (`group_wait`/`group_interval`/`repeat`/`resolved`), the window bounds, the `max_level`, the `result_count`, per-rule `rule_counts`, the `group_by` key (group_by mode) or `entities` map (entity_graph mode), and the `refs` or `results`. Incidents are delivered to stdout, file, NATS, and unix sinks; with `nats_subject` set, incidents publish to that dedicated subject instead of the detection stream. OTLP and webhook sinks do not receive incidents.
 
 Open incidents are also readable at `GET /api/v1/incidents`, and one at a time at `GET /api/v1/incidents/{id}`.
 
@@ -216,7 +216,7 @@ An incident names the rules that contributed to it by key and counts them, which
 rsigma engine incidents export f8bcd62a829b1126 --bundle-format markdown -o incident.md
 ```
 
-Because the join happens at read time against the currently loaded rule set, each rule in a bundle also reports how its key resolved: `unique`, `ambiguous` when several loaded rules carry that key with differing documentation, or `missing` when the rule set changed while the incident was open. A bundle says which of the three happened rather than quietly dropping a rule it could not document.
+Because the join happens at read time against the currently loaded rule set, each rule in a bundle also reports how its key resolved: `unique`, `ambiguous` when several loaded rules carry that key with differing documentation, or `missing` when the rule set changed while the incident was open. A rule the bundle could not document is reported with that status instead of being dropped.
 
 A bundle is only served once the incident has cleared `group_wait` and been reported at least once, since until then its contents can still change. The snapshot routes report that as `bundle_ready`, and the bundle route returns `409` before it.
 
@@ -227,7 +227,7 @@ See [`engine incidents export`](../cli/engine/incidents-export.md) and [HTTP API
 - `rsigma_incidents_open`: open incidents currently tracked.
 - `rsigma_incidents_emitted_total{trigger}`: incident emissions by trigger.
 - `rsigma_incident_results_total`: total incident records emitted.
-- `rsigma_incident_overmerge_total{guard}`: entity-graph guard hits (`stop_value` / `cardinality_ceiling`).
+- `rsigma_incident_overmerge_total{guard}`: entity-graph guard hits (`stop_value`/`cardinality_ceiling`).
 
 ## See also
 

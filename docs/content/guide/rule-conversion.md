@@ -67,7 +67,7 @@ Every native backend converts the encoding modifiers (`windash`, `wide`, `utf16l
 
 ## Delegated targets (sigma-cli)
 
-The targets above are converted natively. For any other target, `rsigma backend convert` delegates to an external [sigma-cli](https://github.com/SigmaHQ/sigma-cli) when one is installed, so the full pySigma backend ecosystem (`splunk`, `elasticsearch`, `kusto`, `qradar`, `loki`, `crowdstrike`, and more) is reachable from the same command. No Python is required unless you actually convert to a delegated target, and native backends always take precedence.
+The targets above are converted natively. For any other target, `rsigma backend convert` delegates to an external [sigma-cli](https://github.com/SigmaHQ/sigma-cli) when one is installed, so the full pySigma backend ecosystem (`splunk`, `elasticsearch`, `kusto`, `qradar`, `loki`, `crowdstrike`, and more) is reachable from the same command. No Python is required unless you convert to a delegated target, and native backends always take precedence.
 
 Install sigma-cli and the backend you want, then convert as usual:
 
@@ -81,7 +81,7 @@ If a target has no native backend and sigma-cli is not installed, the command ex
 
 ## PostgreSQL and TimescaleDB
 
-The PostgreSQL backend is the most fully featured. It leverages native operators that map cleanly to Sigma modifiers:
+The PostgreSQL backend is the most fully featured. It uses native operators that map cleanly to Sigma modifiers:
 
 | Sigma modifier | PostgreSQL operator |
 |----------------|---------------------|
@@ -401,7 +401,7 @@ rsigma backend convert rules/ -t fibratus -p fibratus_windows -O emit_metadata=f
 rsigma backend convert rules/ -t fibratus -p fibratus_windows -O case_sensitive=true
 ```
 
-Correlation rules lower to Fibratus's inline `sequence` DSL: `temporal_ordered` and `temporal` become a sequence with one stage per referenced rule; small-threshold `event_count` / `value_count` rules expand into repeated/distinct stages capped at `-O max_repeated_slots` (default 5). The four math-aggregate types (`value_sum`/`value_avg`/`value_percentile`/`value_median`) return `UnsupportedCorrelation` because Fibratus has no running-sum or quantile primitive. See the [Fibratus backend reference](../reference/backends/fibratus.md) for the full coverage matrix and an end-to-end correlation example.
+Correlation rules lower to Fibratus's inline `sequence` DSL: `temporal_ordered` and `temporal` become a sequence with one stage per referenced rule; small-threshold `event_count` and `value_count` rules expand into repeated/distinct stages capped at `-O max_repeated_slots` (default 5). The four math-aggregate types (`value_sum`/`value_avg`/`value_percentile`/`value_median`) return `UnsupportedCorrelation` because Fibratus has no running-sum or quantile primitive. See the [Fibratus backend reference](../reference/backends/fibratus.md) for the full coverage matrix and an end-to-end correlation example.
 
 ## Selecting columns with `fields:`
 

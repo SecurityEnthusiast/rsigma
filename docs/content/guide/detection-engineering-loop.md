@@ -1,6 +1,6 @@
 # Detection Engineering Loop
 
-Detection engineering spans human judgment (what deserves a detection, what the telemetry shows) and repeatable software work (authoring, testing, deployment, detection, alerting, measurement, hunting). RSigma owns the software phases and exposes clean interfaces to the rest. This page is the map: one revolution of the loop, station by station, with links into the detailed guides.
+Detection engineering spans human judgment (what deserves a detection, what the telemetry shows) and repeatable software work (authoring, testing, deployment, detection, alerting, measurement, hunting). RSigma owns the software phases and hands off the rest. This page is the map: one revolution of the loop, station by station, with links into the detailed guides.
 
 ![RSigma detection engineering loop](../../assets/images/detection-loop.svg)
 
@@ -77,7 +77,7 @@ Review the portfolio on evidence instead of vibes.
 
 ## Hunt
 
-The daemon only sees now. Hunt compiles the same rule for historical stores and feeds findings back into authoring.
+The daemon only sees events as they arrive. Hunt compiles the same rule for historical stores and feeds findings back into authoring.
 
 - [`backend convert`](../cli/backend/convert.md): native PostgreSQL, LynxDB, and Fibratus targets; sigma-cli delegation for Splunk, Elasticsearch, Sentinel, and 30+ more. See [Rule Conversion](rule-conversion.md).
 - [`rule fields`](../cli/rule/fields.md): mapping catalog for the fields a rule references.
@@ -94,7 +94,7 @@ The daemon only sees now. Hunt compiles the same rule for historical stores and 
 
 ## Relationship to broader detection-engineering lifecycles
 
-The loop above is an RSigma product map. Its station names organize software surfaces by what a practitioner does with RSigma; they are not a new lifecycle standard, nor a direct rendering of the [NIST Cybersecurity Framework](https://www.nist.gov/cyberframework) functions. Published detection-engineering lifecycles instead describe the team's end-to-end process. They differ in wording but converge on roughly six phases: **requirements and discovery**, **triage and feasibility**, **investigation**, **development**, **testing and validation**, and **deployment and maintenance**. For representative treatments, see the [SANS detection engineering lifecycle](https://www.sans.org/blog/logs-alerts-introducing-detection-engineering-poster), the [NVISO detection development lifecycle](https://blog.nviso.eu/2025/07/08/detection-engineering-practicing-detection-as-code-introduction-part-1/), and [Splunk's detection engineering overview](https://www.splunk.com/en_us/blog/learn/detection-engineering.html).
+The loop above is an RSigma product map. Its station names organize software surfaces by what a practitioner does with RSigma; they are not a new lifecycle standard, nor a direct rendering of the [NIST Cybersecurity Framework](https://www.nist.gov/cyberframework) functions. Published detection-engineering lifecycles instead describe the team's end-to-end process. They differ in wording but converge on roughly six phases: requirements and discovery, triage and feasibility, investigation, development, testing and validation, and deployment and maintenance. For representative treatments, see the [SANS detection engineering lifecycle](https://www.sans.org/blog/logs-alerts-introducing-detection-engineering-poster), the [NVISO detection development lifecycle](https://blog.nviso.eu/2025/07/08/detection-engineering-practicing-detection-as-code-introduction-part-1/), and [Splunk's detection engineering overview](https://www.splunk.com/en_us/blog/learn/detection-engineering.html).
 
 The station tour and the broader lifecycle overlap, but they are not one-to-one:
 
@@ -107,7 +107,7 @@ The station tour and the broader lifecycle overlap, but they are not one-to-one:
 | Testing and validation | Test | Validate, explain, replay corpora, backtest expectations, and inspect pipeline transformations. |
 | Deployment and maintenance | Deploy → Detect → Alert and triage → Measure | CI and packaging ship the ruleset; the daemon evaluates it; the alert path groups and enriches findings; measurements drive tuning or retirement. |
 
-The views are complementary. The broader lifecycle locates the team in the detection process; the RSigma loop locates the repeatable work in the product. RSigma leaves pre-development judgment in **Before the loop**, maps development and validation directly onto **Author** and **Test**, expands deployment and maintenance across four operational stations, and promotes **Hunt** to an explicit feedback path because historical findings commonly become the next rule or test exemplar.
+The broader lifecycle locates the team in the detection process; the RSigma loop locates the repeatable work in the product. RSigma leaves pre-development judgment in **Before the loop**, maps development and validation directly onto **Author** and **Test**, expands deployment and maintenance across four operational stations, and promotes **Hunt** to an explicit feedback path because historical findings commonly become the next rule or test exemplar.
 
 ## Further reading
 

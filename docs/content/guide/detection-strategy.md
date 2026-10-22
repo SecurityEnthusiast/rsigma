@@ -2,7 +2,7 @@
 
 {{ added "0.18.0" }}
 
-A production detection is more than its logic. The [Palantir Alerting and Detection Strategy (ADS) framework](https://github.com/palantir/alerting-detection-strategy-framework) captures the durable, peer-reviewed context every alert should carry: a goal, an ATT&CK categorization, a strategy abstract, technical context, stated blind spots and assumptions, false-positive notes, a true-positive validation recipe, a priority, and a response plan.
+The [Palantir Alerting and Detection Strategy (ADS) framework](https://github.com/palantir/alerting-detection-strategy-framework) captures the durable, peer-reviewed context every alert should carry beyond its detection logic: a goal, an ATT&CK categorization, a strategy abstract, technical context, stated blind spots and assumptions, false-positive notes, a true-positive validation recipe, a priority, and a response plan.
 
 RSigma stores that context on the rule itself (standard fields plus `rsigma.ads.*`) so authoring, lint, and CI stay on one artifact instead of a separate wiki that can drift.
 
@@ -66,7 +66,7 @@ There are two gates. They share the same ADS bar when a `.rsigma-lint.yml` `ads:
 | Gate | Without `.rsigma-lint.yml` `ads:` | With `ads:` configured |
 |------|----------------------------------|-------------------------|
 | `rule lint` | No ADS findings (opt-in). | Emits `ads_missing_*`, `ads_empty_section`, and `ads_unknown_section` for enforced rules. |
-| `rule doc --fail-on-missing` | Built-in defaults: enforce `stable`, require all nine sections. | Uses the same `enforce_status` / `required` / severity bar. |
+| `rule doc --fail-on-missing` | Built-in defaults: enforce `stable`, require all nine sections. | Uses the same `enforce_status`, `required`, and severity bar. |
 
 Add an `ads:` block to your layered [`.rsigma-lint.yml`](../reference/lint-rules.md#ads-detection-strategy-metadata-11) when you want lint and doc to share an explicit policy:
 

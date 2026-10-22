@@ -306,9 +306,9 @@ See [Custom Attributes reference](../reference/custom-attributes.md) for the ful
 
 ## Dynamic pipelines
 
-Static pipelines hardcode every value in YAML. Dynamic pipelines let those values come from external sources at runtime: HTTP APIs, local commands, files, or NATS subjects. pySigma later added similar file, HTTP, and command placeholder transformations for conversion ([SigmaHQ/pySigma#470](https://github.com/SigmaHQ/pySigma/issues/470)), inspired by this RSigma work. RSigma's model still goes further for streaming engines: detached `--source` files, refresh policies (`once`, interval, `watch`, `push`, `on_demand`), NATS, include directives, and hot-reload through the daemon HTTP API, most of which might not be relevant to rule conversion.
+Static pipelines hardcode every value in YAML. Dynamic pipelines let those values come from external sources at runtime: HTTP APIs, local commands, files, or NATS subjects. pySigma later added similar file, HTTP, and command placeholder transformations for conversion ([SigmaHQ/pySigma#470](https://github.com/SigmaHQ/pySigma/issues/470)), inspired by this RSigma work. RSigma's model adds features aimed at streaming engines: detached `--source` files, refresh policies (`once`, interval, `watch`, `push`, `on_demand`), NATS, include directives, and hot-reload through the daemon HTTP API, most of which might not be relevant to rule conversion.
 
-The use cases are concrete:
+Typical use cases:
 - A threat-intel feed publishes IOC lists. Reference them inside an `add_condition` so detection rules update without rule edits.
 - A central config service hands out field mappings per environment. Reference them inside `field_name_mapping`.
 - An on-prem catalog publishes which tables hold which event categories. Reference it inside `set_state` to route rules to the right `postgres.table` per logsource.
@@ -463,7 +463,7 @@ rsigma pipeline resolve -p pipeline.yml --source-file sources.yml --dry-run
 
 `--dry-run` lists each source's type, refresh policy, and `required` flag without performing the actual fetch. Good for catching config typos before they hit production.
 
-`rsigma rule validate --resolve-sources -p pipeline.yml --source sources.yml` extends validation to also exercise source resolution. Sources must be reachable for validation to pass, so this is the right gate to wire into CI for dynamic pipelines.
+`rsigma rule validate --resolve-sources -p pipeline.yml --source sources.yml` extends validation to also exercise source resolution. Sources must be reachable for validation to pass, which makes this the check to run in CI for dynamic pipelines.
 
 ### Hot-reload and dynamic sources
 

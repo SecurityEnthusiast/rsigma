@@ -5,7 +5,7 @@ RSigma is built on `tracing` plus the `prometheus` crate. Every meaningful event
 - A `tracing` event (info, warning, error, debug, or trace) on stderr.
 - A Prometheus counter, gauge, or histogram exposed on `/metrics` (daemon only).
 
-This page covers the four observability surfaces you actually operate on: the log subscriber and its format, the `RUST_LOG` filter targets that surface specific concerns (NATS lifecycle, dynamic sources, hot-reload, HTTP requests, correlation memory pressure), what to scrape with Prometheus, and how to recognize the most useful tracing spans.
+This page covers the four observability surfaces you operate on: the log subscriber and its format, the `RUST_LOG` filter targets that surface specific concerns (NATS lifecycle, dynamic sources, hot-reload, HTTP requests, correlation memory pressure), what to scrape with Prometheus, and how to recognize the most useful tracing spans.
 
 ## Log format and verbosity
 
@@ -37,7 +37,7 @@ Every emitted event carries a `target` field naming the module that produced it.
 | `rsigma_runtime::engine` | Rules + pipeline load, swap, recompile timing. | `debug` to confirm the engine swap path during hot-reload. |
 | `rsigma_runtime::sources` | Per-source fetches (HTTP, file, command, NATS), cache hits and misses, parse failures. | `debug` when a dynamic source is misbehaving. |
 | `rsigma_runtime::sources::refresh` | Scheduled refresh ticks for interval-based sources. | `debug` to see refresh cadence; usually noisy. |
-| `rsigma_eval::correlation_engine` | Correlation state pressure (`max_state_entries` evictions), correlation matches. | `warn` is enough in practice; the eviction message is what you actually want to alert on. |
+| `rsigma_eval::correlation_engine` | Correlation state pressure (`max_state_entries` evictions), correlation matches. | `warn` is enough in practice; the eviction message is the one to alert on. |
 | `rsigma_eval::engine` | Cross-rule AC index limits, bloom-filter sizing. Static one-shot warnings. | `warn`. |
 | `async_nats::connector` | NATS connect/disconnect/reconnect lifecycle. Appears with `daemon-nats` enabled. | `debug` to trace transient connection drops; `info` is enough for steady-state. |
 | `async_nats` | NATS event-stream messages (`event: connected`, `event: closed`). | Same. |
@@ -130,7 +130,7 @@ The full table with every label and source-of-truth pointer lives in the [Promet
 
 ## Useful alerting recipes
 
-These four alerts catch most operational regressions for free.
+These four alerts catch most operational regressions.
 
 ```yaml
 groups:
@@ -228,9 +228,9 @@ For Kubernetes-style orchestrators:
 
 ## OpenTelemetry receivers
 
-OTLP is one of the [supported input formats](otlp-integration.md) for the daemon (with the `daemon-otlp` feature). RSigma does NOT export traces of its own internal work over OTLP; the OTLP wiring is one-way and is for receiving log records from agents.
+OTLP is one of the [supported input formats](otlp-integration.md) for the daemon (with the `daemon-otlp` feature). RSigma does not export traces of its own internal work over OTLP; the OTLP wiring is one-way and is for receiving log records from agents.
 
-If you want to ship the daemon's `tracing` events into a tracing backend, the standard `tracing-opentelemetry` Rust bridge would be the path, but no first-party integration ships today. The structured JSON log stream is the canonical observability surface; pipe it into Loki, Vector → ClickHouse, Datadog Logs, or any equivalent.
+If you want to ship the daemon's `tracing` events into a tracing backend, the standard `tracing-opentelemetry` Rust bridge would be the path, but no first-party integration ships today. The structured JSON log stream is the canonical observability surface; pipe it into Loki, ClickHouse through Vector, Datadog Logs, or any equivalent.
 
 ## Quick verification
 

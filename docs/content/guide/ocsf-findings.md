@@ -36,7 +36,7 @@ rsigma engine daemon -r rules/ \
 | Webhooks | No query surface. Webhooks are declared in `--webhook` YAML files; a body template can render whatever JSON the endpoint wants. |
 | `--dlq`, `daemon.api.audit.sink` | Rejected at startup: those channels carry DLQ entries and API audit records, not findings. |
 
-An unusable or unknown `format` value fails startup with a pointed message rather than silently emitting something you did not ask for.
+An unusable or unknown `format` value fails startup with a pointed message.
 
 ## What a finding looks like
 
@@ -115,13 +115,13 @@ All four emitted shapes (detections, correlations, alert-pipeline incidents, and
 
 ### Nothing is dropped
 
-The mapping is conservative on purpose. A field moves into OCSF only where the fit is faithful; everything else rides under `unmapped` with the key it has on the native line. That is what makes `?format=ocsf` safe as a daemon's only output rather than a lossy side channel: a consumer that only understands class 2004 gets a conformant finding, and a consumer that knows RSigma finds the rest where it expects it.
+The mapping is conservative on purpose. A field moves into OCSF only where the fit is faithful; everything else rides under `unmapped` with the key it has on the native line. This makes `?format=ocsf` safe as a daemon's only output: a consumer that only understands class 2004 gets a conformant finding, and a consumer that knows RSigma finds the rest where it expects it.
 
 The risk enrichments are the one place keys move: `risk.score` and `risk.objects` are lifted to `risk_score`, `resources[]`, and `actor`, and removed from the `unmapped.enrichments` copy. A malformed value (a `risk.objects` that is not an array of `{type, value}` pairs, a non-integer `risk.score`) is left in `unmapped` untouched rather than coerced.
 
 ### Detections carry no event time
 
-An `EvaluationResult` has no event-timestamp field, which is why the native NDJSON has none either. Rather than invent one, a detection or correlation finding stamps `time` with the serialization clock. When you need event time, either retain the event (`--include-event` or `rsigma.include_event`) and read it from `evidences[].data.event`, or consume the incident shapes, whose `start_time` and `end_time` are real observed bounds.
+An `EvaluationResult` has no event-timestamp field (the native NDJSON has none either), so a detection or correlation finding stamps `time` with the serialization clock. When you need event time, either retain the event (`--include-event` or `rsigma.include_event`) and read it from `evidences[].data.event`, or consume the incident shapes, whose `start_time` and `end_time` are real observed bounds.
 
 ### Sidecar lines stay native
 
@@ -144,7 +144,7 @@ This is output only. RSigma does not deserialize OCSF findings, does not bless a
 
 ## See also
 
-- [Alert Pipeline](alert-pipeline.md) for the incident shapes the `Create` / `Update` / `Close` activities describe.
+- [Alert Pipeline](alert-pipeline.md) for the incident shapes the `Create`, `Update`, and `Close` activities describe.
 - [Risk-Based Alerting](risk-based-alerting.md) for the `risk.score` and `risk.objects` enrichments that become `risk_score`, `resources[]`, and `actor`.
 - [Streaming Detection](streaming-detection.md) for the sink and delivery model the format rides on.
 - [Schema Routing](schema-routing.md) for recognizing OCSF events on the input side.

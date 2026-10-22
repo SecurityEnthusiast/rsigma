@@ -4,7 +4,7 @@
 
 `rsigma hunt run` closes the bottom arrow of the [detection-engineering loop](detection-engineering-loop.md): a hunt takes a detection rule, runs it against the PostgreSQL/TimescaleDB archive your telemetry already lands in, and streams the matching rows back as exemplar-shaped NDJSON that every downstream authoring tool already reads.
 
-The boundary is deliberate: rsigma does not store or search logs. The logs stay in your store; rsigma is a read-only client of a store it already generates queries for and whose SQL dialect it owns via the [PostgreSQL backend](../reference/backends/postgres.md). No index, no retention, no query language of its own.
+The boundary is deliberate: rsigma does not store or search logs. The logs stay in your store; rsigma is a read-only client of a store it already generates queries for and whose SQL dialect it owns via the [PostgreSQL backend](../reference/backends/postgres.md). It has no index, retention, or query language of its own.
 
 ## Workflow
 
@@ -39,7 +39,7 @@ Two archive layouts are supported, selected by the backend's `-O` options:
 
 ## Safety posture
 
-- **Read-only is enforced, not promised.** The session opens with `SET default_transaction_read_only = on` and `SET statement_timeout = <timeout>` before any hunt SQL runs, so even a buggy generated query cannot write and a pathological scan is bounded server-side. A dedicated read-only role for the DSN is still recommended defense in depth.
+- **Read-only is enforced by the session.** The session opens with `SET default_transaction_read_only = on` and `SET statement_timeout = <timeout>` before any hunt SQL runs, so even a buggy generated query cannot write and a pathological scan is bounded server-side. A dedicated read-only role for the DSN is still recommended defense in depth.
 - **DSN hygiene.** The connection string comes from `--dsn` or `RSIGMA_HUNT_DSN` (keeping the password out of `ps aux` and shell history). Logs and errors render a DSN rebuilt from the non-secret fields; the password never appears.
 - **TLS from the start.** rustls with the system root store; `sslmode` in the DSN is honored (`disable`, `prefer` with plaintext fallback, `require`).
 

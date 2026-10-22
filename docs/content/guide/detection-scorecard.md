@@ -2,7 +2,7 @@
 
 {{ added "0.17.0" }}
 
-The detection scorecard is the single artifact a mature detection program reviews on a cadence: a per-rule table of precision, volume, ATT&CK context, and a keep/tune/retire verdict. [`rsigma rule scorecard`](../cli/rule/scorecard.md) produces it by fusing the rule-side outputs the toolkit already emits, so it adds no new collection or evaluation.
+The detection scorecard is the artifact a detection program reviews on a cadence: a per-rule table of precision, volume, ATT&CK context, and a keep/tune/retire verdict. [`rsigma rule scorecard`](../cli/rule/scorecard.md) produces it by fusing the rule-side outputs the toolkit already emits, so it adds no new collection or evaluation.
 
 ## Why a scorecard
 
@@ -12,7 +12,7 @@ The detection-as-code triad gives you the inputs but not the decision:
 - [`rule coverage`](../cli/rule/coverage.md) answers "what does my rule set cover" and emits the per-rule ATT&CK mapping.
 - The per-rule Prometheus counters answer "how often does each rule fire in production."
 
-Each is a raw output. None is the artifact you act on. The SOC quality-metrics literature is explicit about the shape that is: the per-rule scorecard that pulls precision (a false-positive proxy), volume (true-positive count), latency (MTTD/MTTR), and the verdict into one table, reviewed on a cadence. `rule scorecard` is that fusion-and-verdict layer.
+The SOC quality-metrics literature describes the artifact you act on: a per-rule scorecard that pulls precision (a false-positive proxy), volume (true-positive count), latency (MTTD/MTTR), and the verdict into one table, reviewed on a cadence. `rule scorecard` is that fusion-and-verdict layer.
 
 ## The verdict model
 

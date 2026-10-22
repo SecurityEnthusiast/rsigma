@@ -8,7 +8,7 @@ The server is gated behind the opt-in `mcp` Cargo feature. Build from source wit
 
 ## Why an MCP server
 
-A detection engineer working with an agent wants a grounded write-lint-evaluate loop: the agent drafts a rule, the linter tells it exactly what is wrong (with the spec rule id and whether a safe fix exists), it evaluates the rule against sample events to confirm it fires, and it converts the rule to the target backend. Every step returns structured data the agent can reason over, and nothing requires the agent to parse human-formatted CLI output.
+A detection engineer working with an agent wants a grounded write-lint-evaluate loop: the agent drafts a rule, the linter tells it exactly what is wrong (with the spec rule id and whether a safe fix exists), it evaluates the rule against sample events to confirm it fires, and it converts the rule to the target backend. Every step returns structured data the agent can reason over.
 
 ## Transport
 
@@ -47,7 +47,7 @@ Either way the client launches `rsigma mcp serve` as a subprocess and talks to i
 
 ## Tool reference
 
-Fifteen Engineer-cycle tools always register. When `--daemon-url` (or `mcp.daemon_url`) points at a running daemon, six Operate-cycle read tools join `tools/list`; `--allow-operate-writes` adds the two mutating tools. Content-bearing Engineer tools accept **either** inline content (`yaml`, `condition`, `events`, `query`) **or** a file `path`, never both. Path arguments resolve against `--rules-dir` when relative (and `tune_rules` / `test_exemplars` path inputs stay confined to that root when it is set). Outputs are JSON with an `ok` flag plus tool-specific fields. Content errors (a rule that fails to parse, a backend that cannot represent a rule, or a daemon that returns non-2xx) come back inside a successful response as `{ "ok": false, ... }` so the agent can read and act on them; only malformed requests return MCP errors.
+Fifteen Engineer-cycle tools always register. When `--daemon-url` (or `mcp.daemon_url`) points at a running daemon, six Operate-cycle read tools join `tools/list`; `--allow-operate-writes` adds the two mutating tools. Content-bearing Engineer tools accept **either** inline content (`yaml`, `condition`, `events`, `query`) **or** a file `path`, never both. Path arguments resolve against `--rules-dir` when relative (and `tune_rules` and `test_exemplars` path inputs stay confined to that root when it is set). Outputs are JSON with an `ok` flag plus tool-specific fields. Content errors (a rule that fails to parse, a backend that cannot represent a rule, or a daemon that returns non-2xx) come back inside a successful response as `{ "ok": false, ... }` so the agent can read and act on them; only malformed requests return MCP errors.
 
 | Tool | Input | Output |
 |------|-------|--------|
@@ -105,7 +105,7 @@ Three registration tiers:
 
 `create_silence` refuses an unbounded window: supply `ends_at` (RFC 3339) or `duration` (humantime, converted at call time). An optional client `id` is checked against `GET /api/v1/silences` first so a retried create is a no-op. `post_disposition` requires `fingerprint` or `incident_id` so the disposition store's redelivery key engages; without an identity a retry would double-count.
 
-A typical triage loop: `list_incidents` (optionally `min_level` / `limit`) → `get_incident` / `get_incident_bundle` → `list_risk_entities` and `get_rule_quality` → `create_silence` with a TTL → `post_disposition` → `tune_rules` if the verdict is a false positive.
+A typical triage loop calls `list_incidents` (optionally with `min_level` or `limit`), then `get_incident` or `get_incident_bundle`, then `list_risk_entities` and `get_rule_quality`, then `create_silence` with a TTL and `post_disposition`, and finally `tune_rules` if the verdict is a false positive.
 
 ## Resources
 
@@ -198,7 +198,7 @@ Delegation is off by default because it spawns a subprocess, a category change f
 
 ## The agentic loop
 
-A productive pattern an agent can run end to end:
+A pattern an agent can run end to end:
 
 1. **Draft** a rule (hand-authored YAML, or `reverse_convert` from a Lucene query) and call `parse_rule` to confirm it is structurally valid.
 2. **Lint** with `lint_rules`; for each finding, the `rule` id and `fixable` flag tell the agent whether to apply a known-safe correction or rewrite by hand.
