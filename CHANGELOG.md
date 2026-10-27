@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix: confidence scale label mapping without panic sites
+### rstix: confidence scale label mapping without panic sites (#637)
 
 - Verbal confidence scales (`NiLScale`, `AdmiraltyScale`, `WepScale`, `DniScale`, `MispScale`) map known labels through private [`Confidence::known`](crates/rstix/README.md) for compile-time literals in `0..=100`, replacing `.expect("in range")` on those paths. Behavior and public [`Confidence::new`](crates/rstix/README.md) are unchanged.
 
