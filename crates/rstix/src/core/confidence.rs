@@ -21,6 +21,11 @@ impl Confidence {
         }
     }
 
+    /// Construct from a compile-time-known value in `0..=100` (scale tables only).
+    const fn known(val: u8) -> Self {
+        Self(val)
+    }
+
     /// Access the underlying value.
     pub const fn get(self) -> u8 {
         self.0
@@ -42,10 +47,10 @@ pub struct NiLScale;
 impl ConfidenceScale for NiLScale {
     fn to_stix(&self, label: &str) -> Result<Confidence, ConfidenceError> {
         match label.to_ascii_lowercase().as_str() {
-            "none" => Ok(Confidence::new(0).expect("in range")),
-            "low" => Ok(Confidence::new(15).expect("in range")),
-            "medium" => Ok(Confidence::new(50).expect("in range")),
-            "high" => Ok(Confidence::new(85).expect("in range")),
+            "none" => Ok(Confidence::known(0)),
+            "low" => Ok(Confidence::known(15)),
+            "medium" => Ok(Confidence::known(50)),
+            "high" => Ok(Confidence::known(85)),
             _ => Err(ConfidenceError::UnknownLabel(label.to_owned())),
         }
     }
@@ -66,12 +71,12 @@ pub struct AdmiraltyScale;
 impl ConfidenceScale for AdmiraltyScale {
     fn to_stix(&self, label: &str) -> Result<Confidence, ConfidenceError> {
         match label {
-            "1" => Ok(Confidence::new(90).expect("in range")),
-            "2" => Ok(Confidence::new(75).expect("in range")),
-            "3" => Ok(Confidence::new(55).expect("in range")),
-            "4" => Ok(Confidence::new(35).expect("in range")),
-            "5" => Ok(Confidence::new(15).expect("in range")),
-            "6" => Ok(Confidence::new(0).expect("in range")),
+            "1" => Ok(Confidence::known(90)),
+            "2" => Ok(Confidence::known(75)),
+            "3" => Ok(Confidence::known(55)),
+            "4" => Ok(Confidence::known(35)),
+            "5" => Ok(Confidence::known(15)),
+            "6" => Ok(Confidence::known(0)),
             _ => Err(ConfidenceError::UnknownLabel(label.to_owned())),
         }
     }
@@ -125,12 +130,12 @@ pub struct WepScale;
 impl ConfidenceScale for WepScale {
     fn to_stix(&self, label: &str) -> Result<Confidence, ConfidenceError> {
         match label.to_ascii_lowercase().as_str() {
-            "remote" | "almost-no-chance" => Ok(Confidence::new(5).expect("in range")),
-            "unlikely" => Ok(Confidence::new(20).expect("in range")),
-            "possible" => Ok(Confidence::new(45).expect("in range")),
-            "likely" => Ok(Confidence::new(70).expect("in range")),
-            "highly-likely" => Ok(Confidence::new(85).expect("in range")),
-            "almost-certain" => Ok(Confidence::new(95).expect("in range")),
+            "remote" | "almost-no-chance" => Ok(Confidence::known(5)),
+            "unlikely" => Ok(Confidence::known(20)),
+            "possible" => Ok(Confidence::known(45)),
+            "likely" => Ok(Confidence::known(70)),
+            "highly-likely" => Ok(Confidence::known(85)),
+            "almost-certain" => Ok(Confidence::known(95)),
             _ => Err(ConfidenceError::UnknownLabel(label.to_owned())),
         }
     }
@@ -153,11 +158,11 @@ pub struct DniScale;
 impl ConfidenceScale for DniScale {
     fn to_stix(&self, label: &str) -> Result<Confidence, ConfidenceError> {
         match label.to_ascii_lowercase().as_str() {
-            "very-unlikely" => Ok(Confidence::new(7).expect("in range")),
-            "unlikely" => Ok(Confidence::new(22).expect("in range")),
-            "roughly-even" => Ok(Confidence::new(50).expect("in range")),
-            "likely" => Ok(Confidence::new(78).expect("in range")),
-            "very-likely" => Ok(Confidence::new(93).expect("in range")),
+            "very-unlikely" => Ok(Confidence::known(7)),
+            "unlikely" => Ok(Confidence::known(22)),
+            "roughly-even" => Ok(Confidence::known(50)),
+            "likely" => Ok(Confidence::known(78)),
+            "very-likely" => Ok(Confidence::known(93)),
             _ => Err(ConfidenceError::UnknownLabel(label.to_owned())),
         }
     }
@@ -179,11 +184,11 @@ pub struct MispScale;
 impl ConfidenceScale for MispScale {
     fn to_stix(&self, label: &str) -> Result<Confidence, ConfidenceError> {
         match label.to_ascii_lowercase().as_str() {
-            "completely-confident" => Ok(Confidence::new(100).expect("in range")),
-            "usually-confident" => Ok(Confidence::new(75).expect("in range")),
-            "fairly-confident" => Ok(Confidence::new(50).expect("in range")),
-            "rarely-confident" => Ok(Confidence::new(25).expect("in range")),
-            "unconfident" => Ok(Confidence::new(0).expect("in range")),
+            "completely-confident" => Ok(Confidence::known(100)),
+            "usually-confident" => Ok(Confidence::known(75)),
+            "fairly-confident" => Ok(Confidence::known(50)),
+            "rarely-confident" => Ok(Confidence::known(25)),
+            "unconfident" => Ok(Confidence::known(0)),
             _ => Err(ConfidenceError::UnknownLabel(label.to_owned())),
         }
     }
