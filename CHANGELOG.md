@@ -4,7 +4,7 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
-### rstix: pattern canonical printer without panic sites
+### rstix: pattern canonical printer without panic sites (#638)
 
 - The STIX pattern AST printer formats integers, booleans, hex literals, indices, and floats with infallible [`String`](https://doc.rust-lang.org/std/string/struct.String.html) appends instead of `write!(…).expect("fmt")`. Canonical pattern output is unchanged.
 
