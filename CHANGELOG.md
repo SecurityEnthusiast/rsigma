@@ -4,6 +4,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 ## [Unreleased]
 
+### rstix: confidence scale label mapping without panic sites
+
+- Verbal confidence scales (`NiLScale`, `AdmiraltyScale`, `WepScale`, `DniScale`, `MispScale`) map known labels through private [`Confidence::known`](crates/rstix/README.md) for compile-time literals in `0..=100`, replacing `.expect("in range")` on those paths. Behavior and public [`Confidence::new`](crates/rstix/README.md) are unchanged.
+
 ### The detection loop tutorial moves to the User Guide (#624)
 
 [Tutorial: The Detection Loop](https://rsigma.io/guide/detection-loop/) is now the first page under the User Guide, right after the Detection Engineering Loop map it walks through, instead of sitting in Getting Started between the Quick Start and Core Concepts. Its old URL, `/getting-started/detection-loop/`, redirects to the new one.
