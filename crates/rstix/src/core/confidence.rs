@@ -23,6 +23,7 @@ impl Confidence {
 
     /// Construct from a compile-time-known value in `0..=100` (scale tables only).
     const fn known(val: u8) -> Self {
+        assert!(val <= 100);
         Self(val)
     }
 
