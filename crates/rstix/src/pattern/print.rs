@@ -366,4 +366,20 @@ mod tests {
         assert_eq!(pattern.canonical(), print(pattern.ast()));
         assert_eq!(pattern.to_string(), print(pattern.ast()));
     }
+
+    #[test]
+    fn canonical_spelling_pins_literals() {
+        // Uppercase hex and an integer-valued float must come back in canonical form.
+        // Semantic round-trips accept any spelling that parses to the same value.
+        let source = "[file:magic_number_hex = h'FFD8' AND file:defanged = true \
+                      AND file:extensions.'windows-pebinary-ext'.sections[0].entropy = 7.0] \
+                      REPEATS 2 TIMES";
+        let pattern = Pattern::parse(source).expect("parse");
+        let printed = print(pattern.ast());
+        assert_eq!(
+            printed,
+            "[file:magic_number_hex = h'ffd8' AND file:defanged = true AND file:extensions.'windows-pebinary-ext'.sections[0].entropy = 7] REPEATS 2 TIMES"
+        );
+        assert_eq!(pattern.canonical(), printed);
+    }
 }
