@@ -8,6 +8,10 @@ All notable changes to RSigma are documented in this file. Each entry correspond
 
 - The STIX pattern AST printer formats integers, booleans, hex literals, indices, and floats with infallible [`String`](https://doc.rust-lang.org/std/string/struct.String.html) appends instead of `write!(…).expect("fmt")`. Canonical pattern output is unchanged.
 
+### rstix: confidence scale label mapping without panic sites (#637)
+
+- Verbal confidence scales (`NiLScale`, `AdmiraltyScale`, `WepScale`, `DniScale`, `MispScale`) map known labels through private `Confidence::known` for literals in `0..=100`, replacing `.expect("in range")` on those paths. Public `Confidence::new` is unchanged.
+
 ### The detection loop tutorial moves to the User Guide (#624)
 
 [Tutorial: The Detection Loop](https://rsigma.io/guide/detection-loop/) is now the first page under the User Guide, right after the Detection Engineering Loop map it walks through, instead of sitting in Getting Started between the Quick Start and Core Concepts. Its old URL, `/getting-started/detection-loop/`, redirects to the new one.
